@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { HiOutlineExclamationTriangle } from "../icons";
 import { PdfToolbar } from "./PdfToolbar";
 import { PdfThumbnails } from "./PdfThumbnails";
@@ -49,7 +50,7 @@ export function PdfViewer(props: PdfViewerProps) {
         <div class="flex-1 overflow-auto flex items-start justify-center p-4 bg-bg-panel/30">
           <Show when={viewer.loading()}>
             <div class="flex flex-col items-center justify-center h-full gap-2">
-              <div class="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+              <CoreSpinner size={32} />
               <span class="text-sm text-txt-secondary">Loading PDF...</span>
             </div>
           </Show>
@@ -72,7 +73,7 @@ export function PdfViewer(props: PdfViewerProps) {
             <div class="relative">
               <Show when={viewer.pageRendering()}>
                 <div class="absolute inset-0 bg-bg/50 flex items-center justify-center">
-                  <div class="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  <CoreSpinner size={24} />
                 </div>
               </Show>
               <canvas

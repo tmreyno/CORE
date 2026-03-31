@@ -16,6 +16,7 @@
  */
 
 import { Show } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { ChipIcon } from "../icons";
 import { HiOutlineExclamationTriangle } from "../icons";
 import { formatBytes } from "../../utils";
@@ -52,7 +53,7 @@ export function BinaryViewer(props: BinaryViewerProps) {
           when={!bv.loading()}
           fallback={
             <div class="flex flex-col items-center justify-center h-full gap-2">
-              <div class="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+              <CoreSpinner size={32} />
               <span class="text-txt-muted">Analyzing binary...</span>
             </div>
           }

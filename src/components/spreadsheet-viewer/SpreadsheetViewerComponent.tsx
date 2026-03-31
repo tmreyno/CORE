@@ -12,6 +12,7 @@
  */
 
 import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
@@ -355,7 +356,7 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
           fallback={
             <div class="flex items-center justify-center h-full">
               <div class="flex flex-col items-center gap-2">
-                <div class="animate-spin w-6 h-6 border-2 border-accent border-t-transparent rounded-full" />
+                <CoreSpinner size={24} />
                 <span class="text-sm text-txt-muted">
                   Loading spreadsheet...
                 </span>
@@ -380,7 +381,7 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
           >
             <Show when={loadingSheet()}>
               <div class="absolute inset-0 bg-bg/50 flex items-center justify-center z-10">
-                <div class="animate-spin w-6 h-6 border-2 border-accent border-t-transparent rounded-full" />
+                <CoreSpinner size={24} />
               </div>
             </Show>
 

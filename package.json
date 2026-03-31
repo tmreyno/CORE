@@ -1,6 +1,6 @@
 {
   "name": "core-ffx",
-  "version": "0.1.81",
+  "version": "0.1.82",
   "description": "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer",
   "type": "module",
   "scripts": {
@@ -22,6 +22,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@core-suite/design-tokens": "file:../core-shared/packages/design-tokens",
     "@core-suite/icons": "file:../core-shared/packages/icons",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",

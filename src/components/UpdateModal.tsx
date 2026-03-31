@@ -13,6 +13,7 @@
  */
 
 import { Component, Show, For, createSignal, createMemo, onMount } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -258,7 +259,7 @@ const UpdateModal: Component<UpdateModalProps> = (props) => {
             {/* Checking */}
             <Show when={state() === "checking"}>
               <div class="flex flex-col items-center gap-3 py-4">
-                <div class="animate-spin w-6 h-6 border-2 border-accent border-t-transparent rounded-full" />
+                <CoreSpinner size={24} />
                 <p class="text-txt-secondary text-sm">Checking for updates…</p>
               </div>
             </Show>

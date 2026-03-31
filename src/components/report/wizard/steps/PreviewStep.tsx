@@ -11,6 +11,7 @@
 import { Show, For, createEffect } from "solid-js";
 import DOMPurify from "dompurify";
 import { HiOutlineArrowPath } from "../../../icons";
+import { CoreSpinner } from "@core-suite/icons";
 import { SEVERITIES } from "../../constants";
 import { useWizard } from "../WizardContext";
 
@@ -126,7 +127,7 @@ export function PreviewStep() {
 
       <Show when={ctx.previewLoading()}>
         <div class="flex items-center justify-center py-8">
-          <HiOutlineArrowPath class="w-6 h-6 animate-spin text-accent" />
+          <CoreSpinner size={24} />
         </div>
       </Show>
 

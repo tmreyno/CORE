@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { HiOutlineExclamationTriangle } from "../icons";
 import { useExifData } from "./useExifData";
 import {
@@ -27,7 +28,7 @@ export function ExifPanelComponent(props: ExifPanelProps) {
         when={!state.loading()}
         fallback={
           <div class="flex flex-col items-center justify-center h-full gap-2">
-            <div class="animate-spin w-6 h-6 border-2 border-accent border-t-transparent rounded-full" />
+            <CoreSpinner size={24} />
             <span class="text-txt-muted text-xs">Reading EXIF...</span>
           </div>
         }

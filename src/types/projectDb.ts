@@ -441,7 +441,7 @@ export interface DbExportRecord {
 // COC Items (v4 — detailed chain-of-custody evidence items)
 // -----------------------------------------------------------------------------
 
-/** A COC item — detailed evidence item with custody tracking (Form 7-01 aligned) */
+/** A COC item — detailed evidence item with custody tracking */
 export interface DbCocItem {
   id: string;
   cocNumber: string;
@@ -455,26 +455,26 @@ export interface DbCocItem {
   /** NOT NULL in schema — must always be provided (empty string OK) */
   itemType: string;
 
-  // ── Form 7-01 Header Fields ──
-  /** Case Title (Form 7-01 header) */
+  // ── Header Fields ──
+  /** Case Title */
   caseTitle?: string;
-  /** Office (Form 7-01 header) */
+  /** Office */
   office?: string;
 
   // ── Owner / Source / Contact ──
-  /** Owner Name (Form 7-01) */
+  /** Owner Name */
   ownerName?: string;
-  /** Owner Address (Form 7-01) */
+  /** Owner Address */
   ownerAddress?: string;
-  /** Owner Phone Number (Form 7-01) */
+  /** Owner Phone Number */
   ownerPhone?: string;
-  /** Source of the evidence (Form 7-01) */
+  /** Source of the evidence */
   source?: string;
-  /** Other Contact Name (Form 7-01) */
+  /** Other Contact Name */
   otherContactName?: string;
-  /** Relation to Owner (Form 7-01) */
+  /** Relation to Owner */
   otherContactRelation?: string;
-  /** Other Contact Phone (Form 7-01) */
+  /** Other Contact Phone */
   otherContactPhone?: string;
 
   // ── Collection Method ──
@@ -497,7 +497,7 @@ export interface DbCocItem {
   enteredCustodyDate: string;
   /** NOT NULL in schema — must always be provided (empty string OK) */
   submittedBy: string;
-  /** Date collected (Form 7-01) */
+  /** Date collected */
   collectedDate?: string;
   /** NOT NULL in schema — must always be provided (empty string OK) */
   receivedBy: string;
@@ -508,13 +508,13 @@ export interface DbCocItem {
   intakeHashesJson?: string;
   notes?: string;
 
-  // ── Final Disposition (Form 7-01) ──
+  // ── Final Disposition ──
   disposition?: string;
-  /** Final Disposition By (Form 7-01) */
+  /** Final Disposition By */
   dispositionBy?: string;
-  /** Returned to (Form 7-01) */
+  /** Returned to */
   returnedTo?: string;
-  /** Destruction Date (Form 7-01) */
+  /** Destruction Date */
   destructionDate?: string;
   dispositionDate?: string;
   dispositionNotes?: string;
@@ -530,7 +530,7 @@ export interface DbCocItem {
   lockedBy?: string;
 }
 
-/** A COC transfer — custody handoff record for a COC item (Form 7-01) */
+/** A COC transfer — custody handoff record for a COC item */
 export interface DbCocTransfer {
   id: string;
   /** FK to coc_items.id */
@@ -540,9 +540,9 @@ export interface DbCocTransfer {
   receivedBy: string;
   purpose: string;
   location?: string;
-  /** Storage location (Form 7-01) */
+  /** Storage location */
   storageLocation?: string;
-  /** Storage date entered (Form 7-01) */
+  /** Storage date entered */
   storageDate?: string;
   method?: string;
   notes?: string;

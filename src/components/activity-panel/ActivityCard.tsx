@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show, Component, createEffect, on } from "solid-js";
+import { CoreSpinner, CoreProgressBar } from "@core-suite/icons";
 import { getBasename } from "../../utils/pathUtils";
 import {
   HiOutlineArchiveBox,
@@ -198,7 +199,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
           {/* Percent */}
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1.5">
-              <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <CoreSpinner size={12} />
               <Show when={activity().progress?.currentFile}>
                 <span class="text-xs text-txt-muted truncate max-w-[140px]">
                   {activity().progress!.currentFile}
@@ -211,12 +212,7 @@ export const ActivityCard: Component<ActivityCardProps> = (props) => {
           </div>
 
           {/* Animated progress bar */}
-          <div class="h-2 bg-bg-secondary rounded-full overflow-hidden">
-            <div
-              class="h-full bg-accent rounded-full progress-fill-active transition-all duration-300"
-              style={{ width: `${activity().progress?.percent || 0}%` }}
-            />
-          </div>
+          <CoreProgressBar progress={activity().progress?.percent || 0} height={8} showSpinner={false} />
 
           {/* Stats row */}
           <div class="flex items-center justify-between text-xs text-txt-muted">

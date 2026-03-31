@@ -10,6 +10,7 @@
 
 import { Show } from "solid-js";
 import { HiOutlineArrowPath, HiOutlineChevronDown } from "../icons";
+import { CoreSpinner } from "@core-suite/icons";
 import { TREE_ROW_BASE_CLASSES, TREE_ROW_NORMAL_CLASSES, getTreeIndent } from "./constants";
 
 export interface LoadMoreButtonProps {
@@ -36,7 +37,7 @@ export function LoadMoreButton(props: LoadMoreButtonProps) {
         when={!props.isLoading} 
         fallback={
           <span class="flex items-center gap-2 text-xs text-txt-secondary">
-            <HiOutlineArrowPath class="w-3.5 h-3.5 animate-spin" />
+            <CoreSpinner size={14} />
             Loading...
           </span>
         }

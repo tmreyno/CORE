@@ -13,6 +13,7 @@
  */
 
 import { createSignal, createEffect, Show, untrack, createMemo } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
 import {
@@ -415,14 +416,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           {/* Preview Loading */}
           <Show when={previewLoading()}>
             <div class="flex flex-col items-center justify-center h-full gap-4">
-              <div class="relative w-12 h-12">
-                <div class="absolute inset-0 rounded-full border-2 border-border opacity-30" />
-                <div class="absolute inset-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                <div
-                  class="absolute inset-2 rounded-full border-2 border-accent/50 border-b-transparent animate-spin"
-                  style="animation-direction: reverse; animation-duration: 0.8s"
-                />
-              </div>
+              <CoreSpinner size={32} />
               <div class="text-center">
                 <p class="text-txt-secondary font-medium">Extracting file...</p>
                 <p class="text-txt-muted text-xs mt-1">{props.entry.name}</p>

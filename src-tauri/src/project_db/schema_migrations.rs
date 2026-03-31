@@ -511,7 +511,7 @@ impl ProjectDatabase {
                 }
             }
 
-            // v8 → v9: Form 7-01 COC alignment — new columns on coc_items and coc_transfers
+            // v8 → v9: Extended COC fields — new columns on coc_items and coc_transfers
             if current_version < 9 {
                 let coc_columns_to_add = vec![
                     "case_title",
@@ -569,11 +569,11 @@ impl ProjectDatabase {
 
                 if coc_added > 0 || transfer_added > 0 {
                     info!(
-                        "Running v8 → v9 migration: added {} columns to coc_items, {} to coc_transfers (Form 7-01)",
+                        "Running v8 → v9 migration: added {} columns to coc_items, {} to coc_transfers",
                         coc_added, transfer_added
                     );
                 } else {
-                    info!("v8 → v9 migration: all Form 7-01 columns already exist, skipping");
+                    info!("v8 → v9 migration: all extended COC columns already exist, skipping");
                 }
             }
 

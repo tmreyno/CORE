@@ -2431,7 +2431,7 @@ The Acquire binary is ~45% smaller than the full binary because `--no-default-fe
 |--------|---------|----------|
 | `APPLE_CERTIFICATE` | Base64-encoded .p12 Developer ID certificate | macOS |
 | `APPLE_CERTIFICATE_PASSWORD` | Password for the .p12 certificate | macOS |
-| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Terry Reynolds (GUCPH36XX9)` | macOS |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAM_ID)` | macOS |
 | `APPLE_API_ISSUER` | App Store Connect API issuer UUID | macOS (notarization) |
 | `APPLE_API_KEY` | App Store Connect API key ID | macOS (notarization) |
 | `APPLE_API_KEY_CONTENT` | Full `.p8` private key file contents | macOS (notarization) |
@@ -3644,15 +3644,15 @@ Tools → "Import Acquisitions"
 
 ---
 
-### COC Immutability Model (Schema v9 — Form 7-01 Alignment)
+### COC Immutability Model (Schema v9 — Extended COC Fields)
 
 Chain of Custody records use an **append-only immutability model** enforced at both the Rust backend and the SolidJS frontend. This ensures forensic integrity and a complete audit trail for all evidence handling.
 
-The COC data model and UI are aligned with **EPA CID OCEFT Form 7-01 (Rev\_03/2017)**, the standard Chain of Custody form used by EPA Criminal Investigation Division.
+The COC data model and UI follow a standardized chain of custody form structure with fields for owner identification, collection method, transfer records, and final disposition.
 
-**Form 7-01 Field Mapping (schema v9, 15 new coc\_items columns + 2 coc\_transfers columns):**
+**COC Field Mapping (schema v9, 15 new coc\_items columns + 2 coc\_transfers columns):**
 
-| Form 7-01 Section | Fields | DB Columns |
+| COC Section | Fields | DB Columns |
 |---|---|---|
 | Header | Case Title, Office, COC# | `case_title`, `office` |
 | Owner / Source / Contact | Owner Name/Address/Phone, Source, Other Contact Name/Relation/Phone | `owner_name`, `owner_address`, `owner_phone`, `source`, `other_contact_name`, `other_contact_relation`, `other_contact_phone` |
@@ -3661,7 +3661,7 @@ The COC data model and UI are aligned with **EPA CID OCEFT Form 7-01 (Rev\_03/20
 | Final Disposition | Disposition By, Returned To, Destruction Date | `disposition_by`, `returned_to`, `destruction_date` |
 | Transfer Rows | Storage Location, Date Entered Storage | `storage_location` (on coc\_transfers), `storage_date` (on coc\_transfers) |
 
-**COCItemRow UI structure** (8 numbered sections matching Form 7-01):
+**COCItemRow UI structure** (8 numbered sections):
 1. Case Information (Case Title, Office, Case#, COC#, Evidence ID)
 2. Owner / Source / Contact
 3. Collection Method (radio buttons: 7 options from `COC_COLLECTION_METHODS`)
@@ -3745,10 +3745,10 @@ The COC data model and UI are aligned with **EPA CID OCEFT Form 7-01 (Rev\_03/20
 | `src/types/projectDb.ts` | `DbCocItem`, `DbCocAmendment`, `DbCocAuditEntry` TS interfaces |
 | `src/hooks/project/useProjectDbSync.ts` | Fire-and-forget sync functions (use `cocDbSync.ts` for awaitable COC/collection saves) |
 | `src/components/report/types.ts` | `COCItem` with `status`, `locked_at`, `locked_by` fields |
-| `src/components/report/constants.ts` | `COC_COLLECTION_METHODS` — Form 7-01 collection method options |
+| `src/components/report/constants.ts` | `COC_COLLECTION_METHODS` — COC collection method options |
 | `src/components/report/wizard/utils/cocPrefill.ts` | `prefillCocFromContainer()`, `overlayCocFromCollection()` — maps container/collection data to COCItem |
 | `src/components/report/wizard/steps/reportdata/COCFormSection.tsx` | UI with lock/amend/void modals, auto-populate from container metadata |
-| `src/components/report/wizard/steps/reportdata/COCItemRow.tsx` | Form 7-01 structured layout (8 numbered sections) |
+| `src/components/report/wizard/steps/reportdata/COCItemRow.tsx` | Structured COC layout (8 numbered sections) |
 
 **Do NOT:**
 - Allow direct UPDATE of locked COC items — all edits must go through `amend_coc_item` with initials + reason

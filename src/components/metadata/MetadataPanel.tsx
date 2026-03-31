@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show, createSignal, createMemo } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import type { MetadataField } from "../HexViewer";
 import { isE01Container } from "../EvidenceTree/containerDetection";
 import { readEwfImageInfo, type EwfImageInfo } from "../../api/ewfExport";
@@ -172,7 +173,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
         <div class="border-b border-border">
           <div class={s.categoryHeader}>
             <span class="flex items-center gap-1 text-2xs leading-tight font-medium text-txt-tertiary">
-              <HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Loading container info...
+              <CoreSpinner size={12} /> Loading container info...
             </span>
           </div>
         </div>

@@ -21,6 +21,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineCircleStack,
   HiOutlineArrowPath,
@@ -400,7 +401,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
             title="Refresh drives"
             disabled={drivesLoading()}
           >
-            <HiOutlineArrowPath class="w-4 h-4" classList={{ "animate-spin": drivesLoading() }} />
+            <Show when={drivesLoading()} fallback={<HiOutlineArrowPath class="w-4 h-4" />}><CoreSpinner size={16} /></Show>
           </button>
         </div>
       </div>

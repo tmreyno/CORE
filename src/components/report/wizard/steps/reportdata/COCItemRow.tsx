@@ -7,10 +7,10 @@
 /**
  * COCItemRow — Individual Chain of Custody item row component.
  *
- * Renders a collapsible card structured to match EPA CID OCEFT Form 7-01:
+ * Renders a collapsible card structured as a standard COC form:
  *  1. Header: Case Title, Office, Case Number, COC#
  *  2. Owner / Source / Contact
- *  3. Collection Method (checkboxes matching Form 7-01)
+ *  3. Collection Method
  *  4. Item Details (Item/Box Number, Description, Type, Make, Model, etc.)
  *  5. Collection & Custody (Collected By, Date, Storage Location)
  *  6. Remarks / Notes
@@ -165,7 +165,7 @@ export function COCItemRow(props: COCItemRowProps) {
         </div>
       </div>
 
-      {/* ── Expanded Form (Form 7-01 layout) ── */}
+      {/* ── Expanded Form (COC layout) ── */}
       <Show when={props.isExpanded && !isVoided()}>
         <div class="px-3 pb-3 pt-1 border-t border-border/30 space-y-3">
           {/* Locked banner */}
@@ -182,7 +182,7 @@ export function COCItemRow(props: COCItemRowProps) {
             </div>
           </Show>
 
-          {/* ─── 1. Header Section (Form 7-01 top row) ─── */}
+          {/* ─── 1. Header Section ─── */}
           <SectionHeader title="Case Information" number="1" />
           <div class="grid grid-cols-4 gap-2">
             <div class="form-group col-span-2">
@@ -306,7 +306,7 @@ export function COCItemRow(props: COCItemRowProps) {
             </div>
           </div>
 
-          {/* ─── 3. Collection Method (Form 7-01 checkboxes) ─── */}
+          {/* ─── 3. Collection Method ─── */}
           <SectionHeader title="Collection Method" number="3" />
           <div class="flex flex-wrap gap-x-4 gap-y-1.5 py-1">
             <For each={COC_COLLECTION_METHODS}>
@@ -506,7 +506,7 @@ export function COCItemRow(props: COCItemRowProps) {
             />
           </div>
 
-          {/* ─── 7. Transfer Records (Form 7-01 transfer rows) ─── */}
+          {/* ─── 7. Transfer Records ─── */}
           <SectionHeader title="Transfer Records" number="7" />
           <div class="space-y-2">
             <div class="flex items-center justify-end">
@@ -570,7 +570,7 @@ export function COCItemRow(props: COCItemRowProps) {
             </Show>
           </div>
 
-          {/* ─── 8. Final Disposition (Form 7-01 bottom section) ─── */}
+          {/* ─── 8. Final Disposition ─── */}
           <SectionHeader title="Final Disposition" number="8" />
           <div class="grid grid-cols-3 gap-2">
             <div class="form-group">

@@ -6,6 +6,7 @@
 
 import { createContext, useContext, createSignal, For, Show, onCleanup, type ParentComponent } from "solid-js";
 import { Portal } from "solid-js/web";
+import { CoreSpinner } from "@core-suite/icons";
 import { 
   HiOutlineCheckCircle,
   HiOutlineXCircle,
@@ -204,7 +205,7 @@ const ToastIcon = (props: { type: ToastType; class?: string }) => {
     case "info":
       return <HiOutlineInformationCircle class={iconClass()} />;
     case "loading":
-      return <HiOutlineArrowPath class={`${iconClass()} animate-spin`} />;
+      return <CoreSpinner size={20} />;
     default:
       return <HiOutlineInformationCircle class={iconClass()} />;
   }

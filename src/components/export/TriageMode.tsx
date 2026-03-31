@@ -11,6 +11,7 @@
 
 import { Show, For, onMount, createMemo, createEffect, on } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
+import { CoreSpinner, CoreProgressBar } from "@core-suite/icons";
 import {
   HiOutlineShieldCheck,
   HiOutlineShieldExclamation,
@@ -230,7 +231,7 @@ export function TriageMode(props: TriageModeProps) {
               <div class="callout">
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    <CoreSpinner size={12} />
                     <span class="text-xs font-medium text-txt">
                       {p().phase === "collecting"
                         ? `Collecting ${p().currentCategory}...`
@@ -245,12 +246,7 @@ export function TriageMode(props: TriageModeProps) {
                   </div>
                   <span class="text-sm font-semibold text-accent">{p().percent.toFixed(1)}%</span>
                 </div>
-                <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(p().percent, 100))} aria-valuemin={0} aria-valuemax={100} aria-label="Triage collection progress">
-                  <div
-                    class="progress-fill-active rounded-full"
-                    style={{ width: `${Math.min(p().percent, 100)}%` }}
-                  />
-                </div>
+                <CoreProgressBar progress={Math.min(p().percent, 100)} height={8} showSpinner={false} />
                 <div class="flex items-center justify-between mt-1.5 text-xs text-txt-muted">
                   <span>{p().filesCollected} / {p().filesTotal} files • {formatSize(p().bytesCollected)}</span>
                   <div class="flex items-center gap-2">

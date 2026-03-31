@@ -21,6 +21,7 @@ import {
   HiOutlineInbox,
   HiOutlineMagnifyingGlass,
 } from "../icons";
+import { CoreSpinner } from "@core-suite/icons";
 
 interface CaseDocumentsEmptyStatesProps {
   loading: boolean;
@@ -39,7 +40,7 @@ export const CaseDocumentsEmptyStates: Component<CaseDocumentsEmptyStatesProps> 
       {/* Loading State */}
       <Show when={props.loading}>
         <div class="flex flex-col items-center justify-center h-full py-8">
-          <HiOutlineArrowPath class="w-8 h-8 text-accent animate-spin" />
+          <CoreSpinner size={32} />
           <p class="mt-2 text-sm text-txt-secondary">Searching for case documents...</p>
         </div>
       </Show>

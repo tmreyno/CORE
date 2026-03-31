@@ -393,7 +393,7 @@ impl ProjectDatabase {
                 evidence_id TEXT NOT NULL,
                 description TEXT NOT NULL,
                 item_type TEXT NOT NULL,
-                -- Form 7-01 Header
+                -- Header
                 case_title TEXT,
                 office TEXT,
                 -- Owner / Source / Contact

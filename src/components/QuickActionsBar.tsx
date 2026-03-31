@@ -15,6 +15,7 @@
  */
 
 import { Component, For, Show, createMemo } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import type { QuickAction } from "../hooks/useWorkspaceProfiles";
 import { ACTION_MODULE_MAP } from "../hooks/useWorkspaceMode";
 import { isFullEdition } from "../utils/edition";
@@ -245,7 +246,7 @@ export const QuickActionsBar: Component<QuickActionsBarProps> = (props) => {
       {/* Loading State */}
       <Show when={props.loading}>
         <div class="flex items-center gap-2 px-2">
-          <div class="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+          <CoreSpinner size={16} />
           <span class="text-xs text-txt-muted">Loading...</span>
         </div>
       </Show>

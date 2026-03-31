@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show } from "solid-js";
+import { CoreProgressBar } from "@core-suite/icons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface ProgressModalProps {
@@ -32,12 +33,7 @@ export function ProgressModal(props: ProgressModalProps) {
             <p class="text-sm text-txt-muted mb-4">{props.message}</p>
             
             {/* Progress bar */}
-            <div class="h-2 bg-bg rounded-full overflow-hidden mb-2">
-              <div 
-                class="h-full bg-accent transition-all duration-200 ease-out"
-                style={{ width: `${percent()}%` }}
-              />
-            </div>
+            <CoreProgressBar progress={percent()} height={8} class="mb-2" />
             
             {/* Progress text */}
             <div class="flex justify-between text-xs text-txt-muted mb-4" aria-live="polite">

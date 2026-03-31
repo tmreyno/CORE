@@ -15,6 +15,7 @@
  */
 
 import { Show, type Component, type Accessor } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 
 export interface LoadingState {
   isLoading: Accessor<boolean>;
@@ -46,7 +47,7 @@ export const LoadingOverlay: Component<LoadingOverlayProps> = (props) => {
           aria-live="polite"
         >
           {/* Spinner */}
-          <div class="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+          <CoreSpinner size={16} />
           <span class="text-xs text-txt">{props.message()}</span>
         </div>
       </Show>

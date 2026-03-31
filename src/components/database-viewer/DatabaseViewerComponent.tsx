@@ -10,6 +10,7 @@
  */
 
 import { Show, For } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { HiOutlineExclamationTriangle } from "../icons";
 import { ChevronDownIcon, ChevronRightIcon } from "../icons";
 import { formatBytes } from "../../utils";
@@ -207,7 +208,7 @@ export function DatabaseViewer(props: DatabaseViewerProps) {
               <div class="flex-1 overflow-auto">
                 <Show when={db.rowsLoading()}>
                   <div class="flex items-center justify-center py-8">
-                    <div class="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                    <CoreSpinner size={24} />
                   </div>
                 </Show>
                 <Show when={!db.rowsLoading() && db.tableRows()}>

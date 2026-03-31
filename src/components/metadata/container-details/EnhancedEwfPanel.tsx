@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineMagnifyingGlass,
   HiOutlineArrowPath,
@@ -42,7 +43,7 @@ export function EnhancedEwfPanel(props: EnhancedEwfPanelProps) {
         </Show>
         <Show when={props.enhancedEwfLoading()}>
           <span class="flex items-center gap-1 text-2xs text-txt-muted">
-            <HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Loading libewf info...
+            <CoreSpinner size={12} /> Loading libewf info...
           </span>
         </Show>
         <Show when={props.enhancedEwfError()}>

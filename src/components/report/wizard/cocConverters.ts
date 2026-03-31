@@ -34,7 +34,7 @@ export function cocItemToDb(item: COCItem): DbCocItem {
     evidenceId: item.evidence_id || "",
     description: item.description,
     itemType: item.item_type || "HardDrive",
-    // Form 7-01 Header
+    // Header
     caseTitle: item.case_title,
     office: item.office,
     // Owner / Source / Contact
@@ -91,7 +91,7 @@ export function dbToCocItem(db: DbCocItem): COCItem {
     case_number: db.caseNumber || "",
     description: db.description,
     item_type: (db.itemType || "HardDrive") as COCItem["item_type"],
-    // Form 7-01 Header
+    // Header
     case_title: db.caseTitle,
     office: db.office,
     // Owner / Source / Contact

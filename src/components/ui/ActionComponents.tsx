@@ -6,6 +6,7 @@
 
 import { JSX, splitProps, ParentComponent, Component, Show, createEffect } from "solid-js";
 import { makeEventListener } from "@solid-primitives/event-listener";
+import { CoreSpinner } from "@core-suite/icons";
 
 // =============================================================================
 // SPINNER COMPONENT
@@ -19,22 +20,21 @@ interface SpinnerProps {
 }
 
 /**
- * Standardized loading spinner
+ * Standardised loading spinner — CORE C-logo with counter-rotating arcs.
  */
 export const Spinner: Component<SpinnerProps> = (props) => {
-  const sizeClasses: Record<string, string> = {
-    sm: "w-3 h-3 border",
-    md: "w-5 h-5 border-2",
-    lg: "w-8 h-8 border-2",
+  const sizeMap: Record<string, number> = {
+    sm: 12,
+    md: 20,
+    lg: 32,
   };
   
   const size = props.size || "md";
   
   return (
-    <div 
-      class={`${sizeClasses[size]} border-current border-t-transparent rounded-full animate-spin ${props.class || ""}`}
-      role="status"
-      aria-label="Loading"
+    <CoreSpinner
+      size={sizeMap[size]}
+      class={props.class}
     />
   );
 };

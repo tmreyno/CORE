@@ -6,6 +6,7 @@
 
 import { Component, Show, createMemo, createSignal, type Accessor, type Setter } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineArrowPath,
   HiOutlineCircleStack,
@@ -155,7 +156,7 @@ const AcquireIdentifyView: Component<AcquireIdentifyViewProps> = (props) => {
                 <Show when={props.hasProject() && isLoading()}>
                   <div class="callout">
                     <div class="flex items-center gap-2 text-sm text-txt">
-                      <HiOutlineArrowPath class="w-icon-sm h-icon-sm text-accent animate-spin" />
+                      <CoreSpinner size={16} />
                       Collecting system, volume, and destination metadata...
                     </div>
                   </div>
@@ -179,7 +180,7 @@ const AcquireIdentifyView: Component<AcquireIdentifyViewProps> = (props) => {
                 <div class="flex flex-wrap gap-2">
                   <button class="btn btn-primary gap-1" onClick={() => void runIdentify()} disabled={!props.hasProject() || isLoading()}>
                     <Show when={isLoading()} fallback={<HiOutlineComputerDesktop class="w-icon-sm h-icon-sm" />}>
-                      <HiOutlineArrowPath class="w-icon-sm h-icon-sm animate-spin" />
+                      <CoreSpinner size={16} />
                     </Show>
                     {hasSystemData() ? "Re-Run Identify" : "Identify System"}
                   </button>

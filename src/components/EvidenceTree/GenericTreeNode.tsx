@@ -15,6 +15,7 @@
  */
 
 import { For, Show, createMemo, type JSX } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   TreeRow,
   TREE_ROW_BASE_CLASSES,
@@ -157,7 +158,7 @@ export function GenericTreeNode<T>(props: GenericTreeNodeProps<T>): JSX.Element 
               when={!isLoadingMore()} 
               fallback={
                 <span class="flex items-center gap-2 text-xs text-txt-secondary">
-                  <HiOutlineArrowPath class="w-3.5 h-3.5 animate-spin" />
+                  <CoreSpinner size={14} />
                   Loading...
                 </span>
               }

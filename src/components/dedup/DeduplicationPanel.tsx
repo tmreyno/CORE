@@ -22,6 +22,7 @@ import {
   createMemo,
   onMount,
 } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineDocumentDuplicate,
   HiOutlineXMark,
@@ -344,7 +345,7 @@ const DeduplicationPanel: Component<DeduplicationPanelProps> = (props) => {
             {/* Loading */}
             <Show when={loading()}>
               <div class="flex flex-col items-center justify-center py-16 gap-3">
-                <div class="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                <CoreSpinner size={32} />
                 <span class="text-sm text-txt-muted">
                   Scanning for duplicates...
                 </span>

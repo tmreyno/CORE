@@ -172,10 +172,10 @@ pub struct ForensicReport {
     /// Report type — determines output structure (e.g., "chain_of_custody", "evidence_collection")
     #[serde(default)]
     pub report_type: Option<String>,
-    /// Chain of Custody items (per-evidence EPA CID Form 7-01 data)
+    /// Chain of Custody items
     #[serde(default)]
     pub coc_items: Option<Vec<CocItem>>,
-    /// Evidence Collection Report data (EPA CID Computer Forensics Lab form)
+    /// Evidence Collection Report data
     #[serde(default)]
     pub evidence_collection: Option<EvidenceCollectionData>,
 }

@@ -9,6 +9,7 @@
  */
 
 import { For, Show } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineCpuChip,
   HiOutlineArrowPath,
@@ -65,7 +66,7 @@ export function FindingsStep() {
                 disabled={!!aiState().generating}
               >
                 {aiState().generating === "executive_summary"
-                  ? <><HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Generating...</>
+                  ? <><CoreSpinner size={12} /> Generating...</>
                   : <><HiOutlineCpuChip class="w-3 h-3" /> AI Generate</>
                 }
               </button>
@@ -99,7 +100,7 @@ export function FindingsStep() {
                 disabled={!!aiState().generating}
               >
                 {aiState().generating === "methodology"
-                  ? <><HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Generating...</>
+                  ? <><CoreSpinner size={12} /> Generating...</>
                   : <><HiOutlineCpuChip class="w-3 h-3" /> AI Generate</>
                 }
               </button>
@@ -123,7 +124,7 @@ export function FindingsStep() {
                 disabled={!!aiState().generating}
               >
                 {aiState().generating === "conclusion"
-                  ? <><HiOutlineArrowPath class="w-3 h-3 animate-spin" /> Generating...</>
+                  ? <><CoreSpinner size={12} /> Generating...</>
                   : <><HiOutlineCpuChip class="w-3 h-3" /> AI Generate</>
                 }
               </button>

@@ -313,7 +313,7 @@ export function COCFormSection() {
           <div>
             <h3 class="text-sm font-semibold">Chain of Custody Records</h3>
             <p class="text-xs text-txt/50">
-              EPA CID OCEFT Form 7-01 COC per evidence item. Auto-populates from container metadata.
+              Chain of custody per evidence item. Auto-populates from container metadata.
             </p>
           </div>
         </div>

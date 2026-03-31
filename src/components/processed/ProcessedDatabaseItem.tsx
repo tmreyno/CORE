@@ -9,6 +9,7 @@
  */
 
 import { Component, Show, For, createSignal } from 'solid-js';
+import { CoreSpinner } from "@core-suite/icons";
 import type { ProcessedDatabase, AxiomCaseInfo, AxiomKeywordFile } from '../../types/processed';
 import type { DetailViewType } from '../../hooks/useProcessedDatabases';
 import {
@@ -78,7 +79,7 @@ export const ProcessedDatabaseItem: Component<ProcessedDatabaseItemProps> = (pro
         </div>
         <div class={`flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${props.isLoading ? 'opacity-100' : 'hover:opacity-100'}`}>
           <Show when={props.isLoading}>
-            <HiOutlineArrowPath class={`w-3 h-3 animate-spin text-accent`} />
+            <CoreSpinner size={12} />
           </Show>
           <button 
             class={`bg-transparent border-none px-1 py-0.5 cursor-pointer text-compact leading-tight text-txt-faint opacity-70 hover:opacity-100 hover:text-error transition-all flex items-center`}

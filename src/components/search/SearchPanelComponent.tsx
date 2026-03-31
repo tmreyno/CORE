@@ -10,6 +10,7 @@
  */
 
 import { createSignal, createEffect, Show, For, onMount } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import {
   HiOutlineMagnifyingGlass,
@@ -135,7 +136,7 @@ export function SearchPanel(props: SearchPanelProps) {
               onBlur={() => setTimeout(() => setShowHistory(false), 200)}
             />
             <Show when={search.isSearching()}>
-              <div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+              <CoreSpinner size={20} />
             </Show>
             <Show when={search.query() && !search.isSearching()}>
               <span class="text-xs text-txt-muted px-2 py-1 bg-bg-secondary rounded-md">

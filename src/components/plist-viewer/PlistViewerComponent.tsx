@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { createSignal, createEffect, Show, For, createMemo } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { getBasename } from "../../utils/pathUtils";
 import { HiOutlineExclamationTriangle } from "../icons";
@@ -173,7 +174,7 @@ export function PlistViewerComponent(props: PlistViewerProps) {
           when={!loading()}
           fallback={
             <div class="flex flex-col items-center justify-center h-full gap-2">
-              <div class="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+              <CoreSpinner size={32} />
               <span class="text-txt-muted">Parsing plist...</span>
             </div>
           }

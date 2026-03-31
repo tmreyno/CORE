@@ -22,6 +22,7 @@ import { createSignal, createEffect, createMemo, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBytes, getBasename } from "../utils";
 import { HiOutlineExclamationTriangle } from "./icons";
+import { CoreSpinner } from "@core-suite/icons";
 import { formatDate } from "../utils/metadata";
 import { logger } from '../utils/logger';
 import type { DocumentMetadataSection } from "../types/viewerMetadata";
@@ -252,7 +253,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
             fallback={
               <div class="flex items-center justify-center h-full">
                 <div class="flex flex-col items-center gap-2">
-                  <div class="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+                  <CoreSpinner size={32} />
                   <span class="text-txt-muted">Loading document...</span>
                 </div>
               </div>

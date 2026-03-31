@@ -13,6 +13,7 @@
 
 import { Component, Show, For, createSignal, createMemo, onMount } from "solid-js";
 import type { Accessor } from "solid-js";
+import { CoreSpinner, CoreProgressBar } from "@core-suite/icons";
 import {
   HiOutlineShieldCheck,
   HiOutlineShieldExclamation,
@@ -333,13 +334,11 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
                 return (
                   <div class="callout">
                     <div class="flex items-center gap-2 mb-2">
-                      <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                      <CoreSpinner size={16} />
                       <span class="text-sm font-medium text-txt">Triage collection in progress...</span>
                     </div>
                     <Show when={act().progress}>
-                      <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(act().progress!.percent, 100))} aria-valuemin={0} aria-valuemax={100}>
-                        <div class="h-full bg-accent rounded-full transition-all duration-200" style={{ width: `${Math.min(act().progress!.percent, 100)}%` }} />
-                      </div>
+                      <CoreProgressBar progress={Math.min(act().progress!.percent, 100)} height={8} showSpinner={false} />
                       <div class="flex justify-between mt-1 text-xs text-txt-muted">
                         <Show when={act().progress!.filesProcessed != null}>
                           <span>{act().progress!.filesProcessed}{act().progress!.totalFiles ? ` / ${act().progress!.totalFiles}` : ""} files</span>
@@ -356,7 +355,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
             <Show when={collecting() && !progress() && !result()}>
               <div class="callout">
                 <div class="flex items-center gap-2">
-                  <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  <CoreSpinner size={16} />
                   <span class="text-sm font-medium text-txt">Initializing triage collection...</span>
                 </div>
                 <div class="text-xs text-txt-muted mt-1">
@@ -381,9 +380,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
                       </span>
                       <span class="text-xs text-txt-muted">{p().percent.toFixed(1)}%</span>
                     </div>
-                    <div class="w-full h-2 bg-bg-secondary rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(p().percent, 100))} aria-valuemin={0} aria-valuemax={100}>
-                      <div class="h-full bg-accent rounded-full transition-all duration-200" style={{ width: `${Math.min(p().percent, 100)}%` }} />
-                    </div>
+                    <CoreProgressBar progress={Math.min(p().percent, 100)} height={8} showSpinner={false} />
                     <div class="flex justify-between mt-1 text-xs text-txt-muted">
                       <span>{p().filesCollected} / {p().filesTotal} files</span>
                       <span>{formatSize(p().bytesCollected)}</span>
