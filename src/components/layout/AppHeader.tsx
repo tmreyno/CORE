@@ -14,9 +14,9 @@
 import { Show } from "solid-js";
 import type { Accessor, Setter, Component } from "solid-js";
 import { HiOutlineBolt } from "../icons";
-import { CoreLogo } from "@core-suite/icons";
-import type { CoreAppId } from "@core-suite/icons";
-import { APP_SHORT, isAcquireEdition } from "../../utils/edition";
+import { isAcquireEdition } from "../../utils/edition";
+import coreFFXIcon from "@core-suite/icons/branding/core-ffx-icon.svg";
+import coreAcqIcon from "@core-suite/icons/branding/core-acq-icon.svg";
 
 export interface AppHeaderProps {
   /** Project name (undefined when no project is loaded) */
@@ -35,13 +35,13 @@ export interface AppHeaderProps {
 }
 
 export const AppHeader: Component<AppHeaderProps> = (props) => {
-  const logoAppId = (): CoreAppId => isAcquireEdition() ? "ACQ" : "FFX";
+  const logoSrc = () => isAcquireEdition() ? coreAcqIcon : coreFFXIcon;
+  const logoAlt = () => isAcquireEdition() ? "CORE Acquire" : "CORE FFX";
 
   return (
     <header class="app-header">
       <div class="brand">
-        <CoreLogo app={logoAppId()} size={24} />
-        <span class="text-xs font-bold tracking-wider text-txt-muted ml-1 select-none">{APP_SHORT}</span>
+        <img src={logoSrc()} alt={logoAlt()} class="w-6 h-6 select-none" draggable={false} />
       </div>
 
       {/* Project Badge */}

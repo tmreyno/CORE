@@ -161,8 +161,7 @@ describe("ExifPanel", () => {
         <ExifPanel path="/tmp/photo.jpg" />
       ));
 
-      const spinner = container.querySelector(".animate-spin");
-      expect(spinner).toBeTruthy();
+      expect(container.textContent).toContain("Reading EXIF...");
     });
 
     it("shows error state when extraction fails", async () => {
