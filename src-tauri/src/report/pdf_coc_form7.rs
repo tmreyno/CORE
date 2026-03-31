@@ -535,12 +535,9 @@ fn add_continuation_header(
 fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
     doc.push(Break::new(0.5));
     doc.push(
-        Paragraph::new(format!(
-            "Chain of Custody Form  Page {} of __",
-            page_num
-        ))
-        .aligned(Alignment::Center)
-        .styled(style::Style::new().with_font_size(7)),
+        Paragraph::new(format!("Chain of Custody Form  Page {} of __", page_num))
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(7)),
     );
     Ok(())
 }

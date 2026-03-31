@@ -612,11 +612,9 @@ fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
 
     doc.push(Break::new(0.3));
     doc.push(
-        Paragraph::new(
-            "Evidence Collection Form",
-        )
-        .aligned(Alignment::Center)
-        .styled(style::Style::new().with_font_size(7)),
+        Paragraph::new("Evidence Collection Form")
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(7)),
     );
     Ok(())
 }
