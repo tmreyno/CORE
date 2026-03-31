@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">CORE-FFX Icon</title>
+  <desc id="desc">CORE Forensic File Explorer application icon with blue badge.</desc>
+  <defs>
+    <linearGradient id="core-arc" x1="18" y1="18" x2="82" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06b6d4"/>
+      <stop offset="0.52" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="badge" x1="52" y1="4" x2="52" y2="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5b8def"/>
+      <stop offset="1" stop-color="#3366cc"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="#111827"/>
+  <circle cx="50" cy="50" r="46" fill="none" stroke="#334155" stroke-width="1.25"/>
+  <path d="M 63 21 A 33 33 0 1 0 63 79" fill="none" stroke="url(#core-arc)" stroke-width="8.5" stroke-linecap="round"/>
+  <path d="M 58 29 A 24 24 0 1 0 58 71" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="3" stroke-linecap="round"/>
+  <rect x="52" y="4" width="44" height="22" rx="7" fill="url(#badge)"/>
+  <rect x="52" y="4" width="44" height="10" rx="7" fill="rgba(255,255,255,0.16)"/>
+  <rect x="52" y="4" width="44" height="22" rx="7" fill="none" stroke="rgba(0,0,0,0.22)" stroke-width="0.8"/>
+  <text x="74" y="19" fill="#ffffff" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="800" letter-spacing="0.8">FFX</text>
+</svg>
