@@ -6,6 +6,7 @@
 
 import { createContext, useContext, createSignal, For, Show, onCleanup, type ParentComponent } from "solid-js";
 import { Portal } from "solid-js/web";
+import { CoreSpinner } from "@core-suite/icons";
 import { 
   HiOutlineCheckCircle,
   HiOutlineXCircle,

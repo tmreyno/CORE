@@ -11,6 +11,7 @@
 import { Show, For, createEffect } from "solid-js";
 import DOMPurify from "dompurify";
 import { HiOutlineArrowPath } from "../../../icons";
+import { CoreSpinner } from "@core-suite/icons";
 import { SEVERITIES } from "../../constants";
 import { useWizard } from "../WizardContext";
 

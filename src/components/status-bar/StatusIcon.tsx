@@ -10,6 +10,7 @@ import {
   HiOutlineArrowPath,
   HiOutlineMinusCircle,
 } from "../icons";
+import { CoreSpinner } from "@core-suite/icons";
 
 /** Status icon with appropriate styling based on status kind */
 export function StatusIcon(props: { kind: "idle" | "working" | "ok" | "error" }) {

@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show, createSignal, createMemo } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import type { MetadataField } from "../HexViewer";
 import { isE01Container } from "../EvidenceTree/containerDetection";
 import { readEwfImageInfo, type EwfImageInfo } from "../../api/ewfExport";

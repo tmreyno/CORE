@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Component, createSignal, For, Show } from 'solid-js';
+import { CoreSpinner } from "@core-suite/icons";
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import {

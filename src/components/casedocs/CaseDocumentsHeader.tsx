@@ -16,6 +16,7 @@
 
 import { Component, Show } from "solid-js";
 import { HiOutlineClipboardDocumentList, HiOutlineArrowPath } from "../icons";
+import { CoreSpinner } from "@core-suite/icons";
 
 interface CaseDocumentsHeaderProps {
   documentCount: number;

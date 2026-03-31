@@ -21,6 +21,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineCircleStack,
   HiOutlineArrowPath,

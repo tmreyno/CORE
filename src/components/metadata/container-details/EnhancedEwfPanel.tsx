@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Show } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineMagnifyingGlass,
   HiOutlineArrowPath,

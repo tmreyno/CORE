@@ -21,6 +21,7 @@ import {
   HiOutlineInbox,
   HiOutlineMagnifyingGlass,
 } from "../icons";
+import { CoreSpinner } from "@core-suite/icons";
 
 interface CaseDocumentsEmptyStatesProps {
   loading: boolean;

@@ -15,6 +15,7 @@
  */
 
 import { For, Show, createMemo, type JSX } from "solid-js";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   TreeRow,
   TREE_ROW_BASE_CLASSES,

@@ -10,6 +10,7 @@
 
 import { Show } from "solid-js";
 import { HiOutlineArrowPath, HiOutlineChevronDown } from "../icons";
+import { CoreSpinner } from "@core-suite/icons";
 import { TREE_ROW_BASE_CLASSES, TREE_ROW_NORMAL_CLASSES, getTreeIndent } from "./constants";
 
 export interface LoadMoreButtonProps {

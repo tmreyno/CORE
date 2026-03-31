@@ -9,6 +9,7 @@
  */
 
 import { Component, Show, For, createSignal } from 'solid-js';
+import { CoreSpinner } from "@core-suite/icons";
 import type { ProcessedDatabase, AxiomCaseInfo, AxiomKeywordFile } from '../../types/processed';
 import type { DetailViewType } from '../../hooks/useProcessedDatabases';
 import {

@@ -20,6 +20,7 @@ import {
   onMount,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineCircleStack,
   HiOutlineArrowPath,

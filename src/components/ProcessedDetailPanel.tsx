@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { Component, For, Show } from 'solid-js';
+import { CoreSpinner } from "@core-suite/icons";
 import {
   HiOutlineCircleStack,
   HiOutlineClipboardDocument,
