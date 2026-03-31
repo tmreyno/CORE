@@ -255,10 +255,14 @@ jobs:
 
           # ─── CORE Acquire Build (macOS) ──────────────────────────────────────────
       - name: Clean bundle for Acquire build (macOS)
-        run: rm -rf target/release/bundle
+        run: |
+          rm -rf target/release/bundle
+          # Detach any lingering DMG volumes from the FFX build
+          hdiutil detach /Volumes/CORE-FFX* 2>/dev/null || true
+          hdiutil detach /Volumes/CORE-Acquisition* 2>/dev/null || true
 
       - name: Build CORE Acquire (macOS)
-        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
+        run: npm run tauri build -- --verbose --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
         env:
           VITE_EDITION: acquire
           VITE_GITHUB_UPDATE_TOKEN: ${{ secrets.GH_UPDATE_TOKEN }}
