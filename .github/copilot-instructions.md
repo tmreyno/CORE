@@ -1496,17 +1496,21 @@ Help → "Check for Updates…"
   → menu.rs emits "check-updates" event
   → useMenuActions dispatches onCheckForUpdates
   → App.tsx sets showUpdateModal(true)
-  → UpdateModal.tsx (lazy-loaded)
-    ├── check() from @tauri-apps/plugin-updater → hits latest.json endpoint
-    ├── update.downloadAndInstall() → downloads + installs update
-    └── relaunch() from @tauri-apps/plugin-process → restarts app
+  → src/components/UpdateModal.tsx (lazy-loaded wrapper)
+    └── @core-suite/components UpdateModal
+        └── useUpdater() from core-shared updater package
+            ├── check() from @tauri-apps/plugin-updater → hits latest.json endpoint
+            ├── update.downloadAndInstall() → downloads + installs update
+            └── relaunch() from @tauri-apps/plugin-process → restarts app
 ```
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/components/UpdateModal.tsx` | Modal UI: checking → available → downloading → ready states |
+| `src/components/UpdateModal.tsx` | Thin CORE-FFX wrapper that passes updater config into the shared modal |
+| `../core-shared/packages/components/src/updater/UpdateModal.tsx` | Shared modal UI: checking → available → downloading → ready states |
+| `../core-shared/packages/components/src/updater/useUpdater.ts` | Shared updater lifecycle hook (check, download, relaunch, auth headers) |
 | `src-tauri/tauri.conf.json` | `plugins.updater` config: endpoint URL + Ed25519 public key (CORE-FFX) |
 | `src-tauri/tauri.acquire.conf.json` | Overlay config for CORE-Acquisition: updater endpoint → `latest-acquire.json`, bundle icons → `src-tauri/icons-acq/` |
 | `src-tauri/capabilities/default.json` | `updater:default` + `process:default` permissions |
@@ -1552,7 +1556,7 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 1. **Secret:** `GH_UPDATE_TOKEN` — PAT with `contents:read` on the CORE repo (GitHub disallows `GITHUB_` prefix for secrets)
 2. **Build-time injection:** Release workflow sets `VITE_GITHUB_UPDATE_TOKEN=${{ secrets.GH_UPDATE_TOKEN }}` on all 3 platform build steps
 3. **Vite define:** `vite.config.ts` exposes it as `__GITHUB_UPDATE_TOKEN__`
-4. **Runtime:** `UpdateModal.tsx` uses `getAuthHeaders()` to build `{ Authorization: "token <PAT>" }` and passes it to BOTH `check({ headers })` AND `downloadAndInstall(onEvent, { headers })`. The same headers MUST be passed to both calls — `check()` uses them for the manifest fetch, and `downloadAndInstall()` uses them for the binary download. Without headers on the download, GitHub returns 404/HTML for private repo assets and the signature verification fails against garbage data.
+4. **Runtime:** `src/components/UpdateModal.tsx` passes `authToken` into the shared updater config, and `useUpdater()` in `../core-shared/packages/components/src/updater/useUpdater.ts` builds `{ Authorization: "token <PAT>" }` headers and passes them to BOTH `check({ headers })` AND `downloadAndInstall(onEvent, { headers })`. The same headers MUST be passed to both calls — `check()` uses them for the manifest fetch, and `downloadAndInstall()` uses them for the binary download. Without headers on the download, GitHub returns 404/HTML for private repo assets and the signature verification fails against garbage data.
 5. **Graceful fallback:** If the token is empty (repo made public, secret not set), the updater works without auth
 
 ### Do NOT
@@ -1567,7 +1571,8 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Move the "Download release artifacts" step before "Checkout code for changelog" in `publish-release` — the checkout wipes the working directory and destroys downloaded artifacts
 - Use v1-compatible patterns (`*.nsis.zip`, `*.AppImage.tar.gz`) in download or manifest steps — Tauri v2 produces `*-setup.exe` and `*.AppImage` directly
 - Change `createUpdaterArtifacts` from `true` to `"v1Compatible"` without updating the manifest generation globs in `release.yml`
-- Remove the `{ headers }` option from `downloadAndInstall()` in `UpdateModal.tsx` — without auth headers on the binary download, private repo updates fail with "signature verification failed"
+- Inline the updater implementation back into `src/components/UpdateModal.tsx` — keep CORE-FFX as a thin config wrapper over the shared updater package
+- Remove the `{ headers }` option from `downloadAndInstall()` in `../core-shared/packages/components/src/updater/useUpdater.ts` — without auth headers on the binary download, private repo updates fail with "signature verification failed"
 - Pass auth headers to `check()` only — BOTH `check()` and `downloadAndInstall()` need them for private repos
 
 ---

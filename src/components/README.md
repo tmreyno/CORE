@@ -150,7 +150,7 @@ components/
 |-- Transition.tsx             # Animation transitions
 |-- TreePanel.tsx              # UFED associated file tree
 |-- TypeFilterBar.tsx          # Evidence type filter bar
-|-- UpdateModal.tsx            # Auto-updater modal (check/download/install/relaunch)
+|-- UpdateModal.tsx            # Thin CORE-FFX wrapper over the shared updater modal in @core-suite/components
 |-- VirtualList.tsx            # Virtualized list for large datasets
 |-- index.ts                    # Barrel exports
 ```
@@ -291,7 +291,7 @@ components/
 
 ### Updates
 
-- `UpdateModal` - Auto-updater modal (check → available → downloading → ready states, supports private repo auth)
+- `UpdateModal` - Thin CORE-FFX config wrapper over the shared updater modal and hook from `@core-suite/components`
 
 ### Help
 

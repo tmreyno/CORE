@@ -181,7 +181,7 @@ const AcquireTriageView: Component<AcquireTriageViewProps> = (props) => {
       shellClass=""
     >
       <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2">
-        <div class="w-full max-w-[640px] mx-auto max-w-lg space-y-3">
+        <div class="w-full max-w-[640px] mx-auto space-y-3">
 
           {/* ── SETUP PHASE ── */}
           <Show when={phase() === "setup"}>
