@@ -2,6 +2,47 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.83] - 2026-03-31
+
+### Changed
+
+- Version bump to 0.1.83, updated version references across documentation
+
+## [0.1.82] - 2026-03-31
+
+### Added
+
+- **CORE branding overhaul** — new spinner components (`CoreSpinner`) integrated into 16 components, refreshed app icons, updated logo assets, and branding-aligned CSS/Tailwind config
+- **Extended COC fields (schema v9)** — 15 new `coc_items` columns and 2 new `coc_transfers` columns for standardized chain of custody form: owner/source/contact info, collection method (7 options), collected date, final disposition, storage location/date on transfers
+- **COC prefill from containers** — `prefillCocFromContainer()` maps E01/AD1/UFED metadata to COCItem fields; `overlayCocFromCollection()` enriches from evidence collection data
+
+### Fixed
+
+- **CI: core-shared checkout** — fixed release workflow to use `gh` CLI for authenticated core-shared checkout as sibling directory
+- **CI: DMG volume cleanup** — detach lingering DMG volumes before Acquire build to prevent resource conflicts
+
+### Changed
+
+- **Documentation overhaul** — comprehensive update to copilot-instructions.md covering COC immutability model, acquisition companion files, export panel architecture, and more
+
+## [0.1.81] - 2026-03-30
+
+### Fixed
+
+- **Release workflow** — fixed local shared dependency setup for CI builds
+
+## [0.1.80] - 2026-03-29
+
+### Fixed
+
+- **Windows build fixes** — resolved Windows-specific compilation issues
+
+## [0.1.79] - 2026-03-29
+
+### Changed
+
+- **Acquire dashboard** — updated `AcquireDashboard` component
+
 ## [0.1.78] - 2026-03-27
 
 ### Fixed
