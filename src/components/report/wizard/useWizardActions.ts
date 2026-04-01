@@ -14,6 +14,7 @@
 
 import { onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import type {
   CaseInfo,
   CustodyRecord,
@@ -121,9 +122,6 @@ export function useWizardActions(
     try {
       const report = buildReport();
       const format = state.outputFormats().find((f) => f.format === state.selectedFormat());
-
-      // Import save dialog dynamically
-      const { save } = await import("@tauri-apps/plugin-dialog");
 
       // Open save dialog
       const path = await save({

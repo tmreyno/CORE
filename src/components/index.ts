@@ -53,8 +53,6 @@ export type { ParsedMetadata, FileTypeInfo, HeaderRegion, MetadataField } from "
 export { MetadataPanel } from "./MetadataPanel";
 export { ViewerMetadataPanel, type ViewerMetadataPanelProps } from "./ViewerMetadataPanel";
 export { TextViewer } from "./TextViewer";
-export { PdfViewer } from "./PdfViewer";
-export { ImageViewer } from "./ImageViewer";
 
 // Unified Center Pane (new unified tab interface)
 export { CenterPane, type CenterPaneProps, type CenterTab, type CenterTabType, type CenterPaneViewMode } from "./layout";
@@ -209,7 +207,6 @@ export {
 } from "./layout";
 
 // Project Management Components
-export { RecoveryModal } from "./project/RecoveryModal";
 export { ProfileSelector } from "./project/ProfileSelector";
 export { TemplateGallery } from "./project/TemplateGallery";
 export { ActivityHeatmap } from "./project/ActivityHeatmap";

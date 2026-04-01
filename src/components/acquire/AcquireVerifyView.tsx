@@ -24,6 +24,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { CoreProgressBar } from "@core-suite/icons";
 import {
   HiOutlineFingerPrint,
@@ -157,7 +158,6 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
   const handleAddFiles = async () => {
     log.debug("Opening file dialog for hash verification");
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
         multiple: true,
         title: "Select files or forensic containers to hash",
@@ -175,7 +175,6 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
 
   const handleAddFolder = async () => {
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
         directory: true,
         title: "Select folder containing files or containers to hash",

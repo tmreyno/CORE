@@ -9,18 +9,19 @@
  * and export modes. Tab management is delegated to useDetailPanelTabs.
  */
 
-import { Show } from "solid-js";
+import { Show, Suspense, lazy } from "solid-js";
 import { DetailPanelContent } from "./DetailPanelContent";
 import { useDetailPanelTabs } from "./useDetailPanelTabs";
 import { HexViewer } from "../HexViewer";
 import { TextViewer } from "../TextViewer";
-import { PdfViewer } from "../PdfViewer";
 import { ExportPanel } from "../ExportPanel";
 import { TabBar } from "../TabBar";
 import type { TabViewMode, OpenTab } from "../TabBar";
 import { Breadcrumb } from "../Breadcrumb";
 import { logger } from "../../utils/logger";
 import type { DetailPanelProps } from "./DetailPanelTypes";
+
+const PdfViewer = lazy(() => import("../PdfViewer").then((module) => ({ default: module.PdfViewer })));
 
 // Re-export TabViewMode and OpenTab for backward compatibility
 export type { TabViewMode, OpenTab };
@@ -126,7 +127,9 @@ export function DetailPanel(props: DetailPanelProps) {
         </Show>
 
         <Show when={tabs.getActiveViewMode() === "pdf" && tabs.activeTabFile()}>
-          <PdfViewer path={tabs.activeTabFile()!.path} />
+          <Suspense>
+            <PdfViewer path={tabs.activeTabFile()!.path} />
+          </Suspense>
         </Show>
 
         <Show when={tabs.getActiveViewMode() === "export"}>

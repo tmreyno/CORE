@@ -13,6 +13,7 @@
  */
 
 import type { Accessor, Setter } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
 import type { ContextMenuItem, SearchFilter, SearchResult, TabViewMode } from "../components";
 import type { DiscoveredFile } from "../types";
 import type { useFileManager, useHashManager, useProject, BuildProjectOptions } from "./index";
@@ -130,7 +131,6 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
     // Tier 2: FTS5 cross-entity search (bookmarks, notes, activity log)
     if (query.length >= 2 && projectManager.project()) {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
         await invoke("project_db_rebuild_fts").catch(() => {});
         const ftsResults = await invoke<Array<{
           source: string;

@@ -20,6 +20,7 @@ import { announce } from "../../utils/accessibility";
 import { logger } from "../../utils/logger";
 import { joinPath } from "../../utils/pathUtils";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { isAcquireEdition } from "../../utils/edition";
 import caseFolderTemplate from "../../templates/project/case-folder-template.json";
 import acquireFolderTemplate from "../../templates/project/acquire-folder-template.json";
@@ -68,7 +69,6 @@ export interface HandleOpenDirectoryParams {
  */
 export async function handleOpenDirectory(params: HandleOpenDirectoryParams) {
   const { setPendingProjectRoot, setShowProjectWizard, toast } = params;
-  const { open } = await import("@tauri-apps/plugin-dialog");
 
   try {
     const selected = await open({

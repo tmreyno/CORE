@@ -28,6 +28,7 @@ import {
   type Accessor,
   type Setter,
 } from "solid-js";
+import { open } from "@tauri-apps/plugin-dialog";
 import AcquireDashboard, { type AcquireAction } from "./AcquireDashboard";
 import AcquireVerifyView from "./AcquireVerifyView";
 import type { ExportMode } from "../../hooks/export/types";
@@ -186,7 +187,6 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
   const handleQuickVerify = async () => {
     log.debug("Opening quick verify file picker");
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
         multiple: true,
         title: "Select files to verify",

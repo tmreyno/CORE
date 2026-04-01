@@ -41,8 +41,8 @@ import { logger } from "../../utils/logger";
 import AcquireProcessShell from "./AcquireProcessShell";
 
 const ExportPanel = lazy(() =>
-  import("../export-panel").then((m) => ({
-    default: m.ExportPanel,
+  import("../export-panel/ExportPanelComponent").then((m) => ({
+    default: m.ExportPanelComponent,
   })),
 );
 

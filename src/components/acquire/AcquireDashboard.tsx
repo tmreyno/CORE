@@ -25,6 +25,7 @@ import {
   Suspense,
   type Accessor,
 } from "solid-js";
+import { open } from "@tauri-apps/plugin-dialog";
 import { CoreProgressBar } from "@core-suite/icons";
 import {
   HiOutlineCircleStack,
@@ -389,7 +390,6 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
 
   async function handleBrowseDestination() {
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({ directory: true, title: "Select output folder" });
       if (selected && typeof selected === "string") {
         setManualDestination(selected);

@@ -6,6 +6,7 @@
 
 import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense, batch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, useSearchIndex, useWorkspaceMode, TAB_MODULE_MAP, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useAppHandlers } from "./hooks/useAppHandlers";
@@ -271,7 +272,6 @@ function App() {
   /** Open a file dialog to pick and load an existing .acquisition.json session */
   const handleLoadSession = async () => {
     if (!sessionManager) return;
-    const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
       title: "Open Acquisition Session",
       filters: [{ name: "Acquisition Session", extensions: ["acquisition.json"] }],
@@ -799,7 +799,6 @@ function App() {
     onProjectRecovery: () => { if (projectManager.hasProject()) setShowRecoveryModal(true); },
     onCollectLogs: async () => {
       try {
-        const { save } = await import("@tauri-apps/plugin-dialog");
         const datePart = new Date().toISOString().slice(0, 10);
         const path = await save({
           title: "Save Support Logs",
@@ -1253,7 +1252,6 @@ function App() {
                 const proj = projectManager.project();
                 if (!proj?.bookmarks?.length) return;
                 try {
-                  const { save } = await import("@tauri-apps/plugin-dialog");
                   const path = await save({
                     title: "Export Bookmarks",
                     defaultPath: `bookmarks.json`,

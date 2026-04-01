@@ -24,6 +24,7 @@ import type { useProcessedDatabases } from "./useProcessedDatabases";
 import type { CenterPaneTabsState } from "./useCenterPaneTabs";
 import type { LeftPanelTab } from "../components";
 import type { QuickAction } from "./useWorkspaceProfiles";
+import { dbSync } from "./project/useProjectDbSync";
 import { logger } from "../utils/logger";
 
 const log = logger.scope("AppHandlers");
@@ -111,7 +112,6 @@ export function useAppHandlers(deps: UseAppHandlersDeps): AppHandlers {
           processedDbManager.addDatabases(results);
 
           // Sync each to ffxdb
-          const { dbSync } = await import("./project/useProjectDbSync");
           for (const db of results) {
             dbSync.upsertProcessedDatabase(db);
           }

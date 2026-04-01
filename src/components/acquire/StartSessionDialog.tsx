@@ -10,6 +10,7 @@
  */
 
 import { Component, Show, createSignal } from "solid-js";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineFolderOpen,
   HiOutlineArchiveBoxArrowDown,
@@ -40,7 +41,6 @@ const StartSessionDialog: Component<StartSessionDialogProps> = (props) => {
     outputFolder().trim().length > 0;
 
   async function handleBrowse() {
-    const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({ directory: true, title: "Select Output Folder" });
     if (selected && typeof selected === "string") {
       setOutputFolder(selected);

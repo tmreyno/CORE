@@ -12,6 +12,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { logger } from "../../../utils/logger";
 import type { ForensicReport } from "../types";
 import { loadEvidenceCollectionById } from "./cocPersistence";
@@ -74,7 +75,6 @@ export async function exportEvidenceCollectionPdf(
     };
 
     // Show save dialog
-    const { save } = await import("@tauri-apps/plugin-dialog");
     const defaultName = `Evidence_Collection_${caseNumber || "report"}_${new Date().toISOString().split("T")[0]}.pdf`;
     const path = await save({
       defaultPath: defaultName,
@@ -129,7 +129,6 @@ export async function exportEvidenceCollection(
 
     const { data } = result;
     const info = FORMAT_LABELS[format];
-    const { save } = await import("@tauri-apps/plugin-dialog");
     const dateSuffix = new Date().toISOString().split("T")[0];
     const defaultName = `Evidence_Collection_${caseNumber || "report"}_${dateSuffix}.${info.extension}`;
 
