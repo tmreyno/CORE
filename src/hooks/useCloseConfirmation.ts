@@ -13,25 +13,14 @@
  * - Allowing save before close
  */
 
-import { onMount, onCleanup, type Accessor } from "solid-js";
-import { getCurrentWindow, type CloseRequestedEvent } from "@tauri-apps/api/window";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import {
+  useCloseConfirmation as useSharedCloseConfirmation,
+  confirmUnsavedChanges as confirmSharedUnsavedChanges,
+} from "@core-suite/desktop-hooks";
+export type { UseCloseConfirmationOptions } from "@core-suite/desktop-hooks";
 import { logger } from "../utils/logger";
 
 const log = logger.scope("CloseConfirmation");
-
-export interface UseCloseConfirmationOptions {
-  /** Whether there are unsaved changes */
-  hasUnsavedChanges: Accessor<boolean>;
-  /** Callback to save changes (returns true if save was successful) */
-  onSave?: () => Promise<boolean>;
-  /** Optional callback when close is confirmed */
-  onClose?: () => void;
-  /** Title for the confirmation dialog */
-  dialogTitle?: string;
-  /** Message for the confirmation dialog */
-  dialogMessage?: string;
-}
 
 /**
  * Hook to show confirmation dialog when closing window with unsaved changes
@@ -40,85 +29,7 @@ export interface UseCloseConfirmationOptions {
  * a native dialog asking the user to save or discard changes.
  */
 export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
-  const {
-    hasUnsavedChanges,
-    onSave,
-    onClose,
-    dialogTitle = "Unsaved Changes",
-    dialogMessage = "You have unsaved changes. Do you want to save before closing?",
-  } = options;
-
-  let unlisten: (() => void) | undefined;
-
-  onMount(async () => {
-    log.debug("Setting up close listener");
-    try {
-      const window = getCurrentWindow();
-
-      // Guard against re-entrant close: window.close() re-triggers
-      // onCloseRequested, so we need to allow it through on re-entry.
-      let isClosing = false;
-      
-      // Listen for close requested event
-      unlisten = await window.onCloseRequested(async (event: CloseRequestedEvent) => {
-        // If we already decided to close, allow it through
-        if (isClosing) {
-          log.debug("Re-entrant close, allowing through");
-          onClose?.();
-          return;
-        }
-
-        const unsaved = hasUnsavedChanges();
-        log.debug(`Close requested, hasUnsavedChanges=${unsaved}`);
-        
-        // If no unsaved changes, allow close
-        if (!unsaved) {
-          log.debug("No unsaved changes, allowing close");
-          onClose?.();
-          return;
-        }
-
-        // Prevent the close while we show the dialog
-        log.debug("Showing confirmation dialog");
-        event.preventDefault();
-
-        // Show confirmation dialog
-        const shouldSave = await confirm(dialogMessage, {
-          title: dialogTitle,
-          kind: "warning",
-          okLabel: "Save & Close",
-          cancelLabel: "Discard Changes",
-        });
-
-        log.debug(`User chose shouldSave=${shouldSave}`);
-        if (shouldSave && onSave) {
-          // Try to save
-          const saved = await onSave();
-          log.debug(`Save result=${saved}`);
-          if (saved) {
-            // Save successful, close window
-            isClosing = true;
-            onClose?.();
-            await window.close();
-          }
-          // If save failed, don't close (user can retry)
-        } else {
-          // User chose to discard or there's no save handler
-          log.debug("Discarding changes and closing");
-          isClosing = true;
-          onClose?.();
-          await window.close();
-        }
-      });
-      log.debug("Close listener setup complete");
-    } catch (err) {
-      log.warn("Failed to setup close confirmation:", err);
-    }
-  });
-
-  onCleanup(() => {
-    unlisten?.();
-  });
+  return useSharedCloseConfirmation(options, { log });
 }
 
 /**
@@ -129,19 +40,5 @@ export async function confirmUnsavedChanges(options?: {
   title?: string;
   message?: string;
 }): Promise<"save" | "discard" | "cancel"> {
-  const title = options?.title ?? "Unsaved Changes";
-  const message = options?.message ?? "You have unsaved changes. What would you like to do?";
-  
-  try {
-    const result = await confirm(message, {
-      title,
-      kind: "warning",
-      okLabel: "Save Changes",
-      cancelLabel: "Discard",
-    });
-    
-    return result ? "save" : "discard";
-  } catch {
-    return "cancel";
-  }
+  return confirmSharedUnsavedChanges(options, { log });
 }

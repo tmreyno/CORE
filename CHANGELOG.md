@@ -2,6 +2,20 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.85] - 2026-04-01
+
+### Added
+
+- **Shared desktop project contracts** — Moved duplicated project manifest, project-file state, processed viewer, case-document, quick-report, and hash contract layers into `core-shared` while preserving local wrapper imports
+
+### Changed
+
+- **Shared updater integration** — Continued normalizing desktop shared package usage across the release surface
+
+### Fixed
+
+- **Frontend build hygiene** — Reduced Vite warning noise and addressed audit-related frontend cleanup in the current release line
+
 ## [0.1.83] - 2026-03-31
 
 ### Changed

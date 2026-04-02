@@ -23,8 +23,10 @@
   "license": "MIT",
   "dependencies": {
     "@core-suite/components": "file:../core-shared/packages/components",
+    "@core-suite/desktop-hooks": "file:../core-shared/packages/desktop-hooks",
     "@core-suite/design-tokens": "file:../core-shared/packages/design-tokens",
     "@core-suite/icons": "file:../core-shared/packages/icons",
+    "@core-suite/types": "file:../core-shared/packages/types",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@solid-primitives/event-listener": "^2.3.3",

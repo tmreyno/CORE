@@ -221,6 +221,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
   const hashSingleFile = async (file: DiscoveredFile): Promise<string | undefined> => {
     log.debug(`hashSingleFile called for ${file.filename}, path=${file.path}, size=${file.size}`);
+    console.warn(`[HASH-DIAG] hashSingleFile: file=${file.filename}, container_type=${file.container_type}, path=${file.path}, size=${file.size}`);
 
     // Check if confirmation is required
     if (getPreference("confirmBeforeHash")) {
@@ -242,6 +243,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     // Listen for progress events
     const unlisten = await listen<{ path: string; percent: number }>("verify-progress", (e) => {
       if (e.payload.path === file.path) {
+        console.warn(`[HASH-DIAG] verify-progress: path=${e.payload.path}, percent=${e.payload.percent}`);
         updateFileStatus(file.path, "hashing", e.payload.percent);
       }
     });
@@ -251,10 +253,13 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       const extension = file.filename.split(".").pop()?.toLowerCase() || "";
 
       // Compute hash using unified hash utility
+      console.warn(`[HASH-DIAG] calling hashContainer: path=${file.path}, ext=${extension}, algo=${algorithm}`);
       const hash = await hashContainer(file.path, extension, algorithm);
+      console.warn(`[HASH-DIAG] hashContainer returned: hash=${hash?.substring(0, 16)}...`);
 
       // Verify, persist, and record using shared handler
       const { verified, verifiedAgainst } = handleHashCompleted(file.path, hash, algorithm.toUpperCase(), file);
+      console.warn(`[HASH-DIAG] handleHashCompleted done: verified=${verified}, verifiedAgainst=${verifiedAgainst}`);
 
       log.debug(`Hash complete: ${algorithm}=${hash.substring(0, 16)}... verified=${verified}`);
       setOk(`Hash computed: ${algorithm.toUpperCase()} ${hash.substring(0, 16)}…${verified === true ? " ✓ Verified" : verified === false ? " ✗ MISMATCH" : ""}`);
@@ -274,6 +279,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       return hash;
     } catch (err) {
       const errMsg = normalizeError(err);
+      console.warn(`[HASH-DIAG] hashSingleFile ERROR: ${errMsg}`);
       log.warn(`Hash computation failed: ${errMsg}`);
       updateFileStatus(file.path, "error", 0, errMsg);
       throw err;
@@ -436,6 +442,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         updateBatch(batchId, { percent: computeOverallPercent() });
       } else if (status === "completed" && hash && algorithm) {
         const file = files.find((f) => f.path === path);
+        console.warn(`[HASH-DIAG] batch completed: path=${path}, hash=${hash.substring(0, 16)}..., algo=${algorithm}, fileFound=${!!file}, container_type=${file?.container_type}`);
 
         // Use shared completion handler (verify + persist + audit)
         const { verified } = handleHashCompleted(path, hash, algorithm, file);
@@ -455,6 +462,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
           percent: computeOverallPercent(),
         });
       } else if (status === "error") {
+        console.warn(`[HASH-DIAG] batch error: path=${path}, error=${error}`);
         updateFileStatus(path, "error", 0, error || "Unknown error");
         completedCount++;
         activeFilePercents.delete(path);
@@ -489,11 +497,13 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       // Only send overrides if at least one is non-zero (user customized)
       const hasCustomOverrides = Object.values(concurrencyOverrides).some((v) => v > 0);
 
+      console.warn(`[HASH-DIAG] invoking batch_hash with ${files.length} files:`, files.map(f => ({ path: f.path, ct: f.container_type })));
       await invoke<{ path: string; algorithm: string; hash?: string; error?: string; driveKind?: string }[]>("batch_hash", {
         files: files.map((f) => ({ path: f.path, containerType: f.container_type })),
         algorithm: selectedHashAlgorithm(),
         concurrencyOverrides: hasCustomOverrides ? concurrencyOverrides : null,
       });
+      console.warn(`[HASH-DIAG] batch_hash invoke returned, terminatedFiles: ${terminatedFiles.size}/${files.length}`);
 
       // Count results from current state (already updated via events)
       const hashMap = fileHashMap();

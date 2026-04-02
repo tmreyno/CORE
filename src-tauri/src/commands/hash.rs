@@ -831,7 +831,7 @@ pub async fn batch_hash(
                     done_flag.clone(),
                 );
 
-                debug!(container_type = %container_for_hash, algorithm = %algo_for_hash, "About to start hashing");
+                info!(container_type = %container_for_hash, algorithm = %algo_for_hash, path = %path_for_hash, "[HASH-DIAG] About to start hashing");
                 let _hash_start = std::time::Instant::now();
 
                 // Check cache first - this can skip expensive recomputation
@@ -897,8 +897,11 @@ pub async fn batch_hash(
                         aff4_verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
                     } else {
                         // Raw, UFED, archives, unknown — hash file bytes directly
-                        raw::verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
-                            .map_err(|e| e.to_string())
+                        info!(path = %path_for_hash, container_type = %container_for_hash, "[HASH-DIAG] Routing to raw::verify_with_progress (archive/raw/unknown)");
+                        let raw_result = raw::verify_with_progress(&path_for_hash, &algo_for_hash, &mut progress_cb)
+                            .map_err(|e| e.to_string());
+                        info!(path = %path_for_hash, success = raw_result.is_ok(), "[HASH-DIAG] raw::verify_with_progress returned");
+                        raw_result
                     }
                 };
 
@@ -958,7 +961,7 @@ pub async fn batch_hash(
             // Build result
             let batch_result = match result {
                 Ok(hash) => {
-                    debug!(idx = idx + 1, hash_prefix = %&hash[..8.min(hash.len())], "File completed");
+                    info!(idx = idx + 1, path = %path, hash_prefix = %&hash[..8.min(hash.len())], algorithm = %algo, "[HASH-DIAG] File completed — emitting batch-progress completed");
                     let _ = app_clone.emit(
                         "batch-progress",
                         BatchProgress {
@@ -985,7 +988,7 @@ pub async fn batch_hash(
                     }
                 }
                 Err(e) => {
-                    debug!(idx = idx + 1, error = %e, "File error");
+                    info!(idx = idx + 1, path = %path, error = %e, "[HASH-DIAG] File error — emitting batch-progress error");
                     let _ = app_clone.emit(
                         "batch-progress",
                         BatchProgress {
