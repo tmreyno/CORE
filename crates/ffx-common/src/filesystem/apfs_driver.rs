@@ -76,7 +76,7 @@ const ROOT_DIR_INODE_ID: u64 = 2;
 
 fn clamp_read_end(offset: u64, size: usize, file_size: u64) -> u64 {
     let requested = u64::try_from(size).unwrap_or(u64::MAX);
-    offset.checked_add(requested).unwrap_or(u64::MAX).min(file_size)
+    offset.saturating_add(requested).min(file_size)
 }
 
 fn bounded_apfs_read_len(start: u64, end: u64) -> Result<usize, VfsError> {
