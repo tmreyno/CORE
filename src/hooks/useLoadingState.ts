@@ -21,9 +21,9 @@
 
 import { useLoadingState as useSharedLoadingState } from "@core-suite/desktop-hooks";
 export type { LoadingStateReturn } from "@core-suite/desktop-hooks";
-import { logger } from "../utils/logger";
+import { createDesktopHookLogger } from "./desktopHookLogger";
 
-const log = logger.scope("LoadingState");
+const log = createDesktopHookLogger("LoadingState");
 export function useLoadingState() {
   return useSharedLoadingState({ log });
 }

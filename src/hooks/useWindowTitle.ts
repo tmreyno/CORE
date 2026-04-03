@@ -17,11 +17,12 @@ import {
   useWindowTitle as useSharedWindowTitle,
   setWindowTitle as setSharedWindowTitle,
 } from "@core-suite/desktop-hooks";
+import type { UseWindowTitleOptions } from "@core-suite/desktop-hooks";
 export type { UseWindowTitleOptions } from "@core-suite/desktop-hooks";
-import { logger } from "../utils/logger";
+import { createDesktopHookLogger } from "./desktopHookLogger";
 import { APP_NAME } from "../utils/edition";
 
-const log = logger.scope("WindowTitle");
+const log = createDesktopHookLogger("WindowTitle");
 
 /**
  * Hook to manage window title with project name and unsaved indicator

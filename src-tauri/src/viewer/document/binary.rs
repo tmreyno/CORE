@@ -315,7 +315,8 @@ fn analyze_mach(
 
             // Try to parse and analyze the first architecture fully
             if let Some(arch) = fat.iter_arches().flatten().next() {
-                if let Some(slice) = checked_u64_slice(&data, arch.offset as u64, arch.size as u64) {
+                if let Some(slice) = checked_u64_slice(&data, arch.offset as u64, arch.size as u64)
+                {
                     if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) =
                         Object::parse(slice)
                     {

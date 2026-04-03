@@ -524,10 +524,10 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
 
 #[cfg(test)]
 mod tests {
+    use super::ewf_detailed_info_to_metadata;
     use crate::ewf::parser::types::{
         EwfDetailedInfo, EwfSectionHeader, EwfVariant, SECTION_HEADER_SIZE,
     };
-    use super::ewf_detailed_info_to_metadata;
 
     fn info_with_section(section: EwfSectionHeader) -> EwfDetailedInfo {
         EwfDetailedInfo {
@@ -576,7 +576,10 @@ mod tests {
             .find(|region| region.name == "hash Data")
             .expect("hash data region should be present");
 
-        assert_eq!(data_region.start, section_offset + SECTION_HEADER_SIZE as u64);
+        assert_eq!(
+            data_region.start,
+            section_offset + SECTION_HEADER_SIZE as u64
+        );
         assert_eq!(data_region.end, data_region.start + 1024);
     }
 }

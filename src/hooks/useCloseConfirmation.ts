@@ -17,10 +17,11 @@ import {
   useCloseConfirmation as useSharedCloseConfirmation,
   confirmUnsavedChanges as confirmSharedUnsavedChanges,
 } from "@core-suite/desktop-hooks";
+import type { UseCloseConfirmationOptions } from "@core-suite/desktop-hooks";
 export type { UseCloseConfirmationOptions } from "@core-suite/desktop-hooks";
-import { logger } from "../utils/logger";
+import { createDesktopHookLogger } from "./desktopHookLogger";
 
-const log = logger.scope("CloseConfirmation");
+const log = createDesktopHookLogger("CloseConfirmation");
 
 /**
  * Hook to show confirmation dialog when closing window with unsaved changes
