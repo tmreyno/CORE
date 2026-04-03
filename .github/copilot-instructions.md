@@ -2083,7 +2083,7 @@ The pure-Rust L01 reader (`src-tauri/src/ewf/l01_reader.rs`) parses ltree sectio
 - Compute raw VFS physical read lengths or seek positions in `crates/ffx-raw/src/vfs.rs` or `src-tauri/src/raw/vfs.rs` with raw `(total_size - offset) as usize` arithmetic or saturating seek math — use checked subtraction, bounded `u64 -> usize` conversion, and checked seek-position helpers so large raw images cannot truncate the remaining-byte calculation or silently saturate invalid seek offsets before physical-read buffer allocation.
 - Compute shared binary reader buffer sizes in `crates/ffx-common/src/binary.rs` with direct `vec![0; length]` allocation from untrusted lengths — use checked exact-buffer reservation so malformed string or byte lengths fail cleanly instead of attempting impossible allocations.
 - Compute portable free-space bytes in `src-tauri/src/commands/portable.rs` with raw `f_bavail * f_frsize` multiplication — use checked multiplication so malformed filesystem metadata degrades safely instead of wrapping the reported byte count.
-- Gate `checked_available_bytes()` in `src-tauri/src/commands/portable.rs` behind `#[cfg(unix)]` — keep the checked-multiplication helper platform-neutral so its unit tests and Windows clippy builds still compile even though the `statvfs` caller is Unix-only.
+- Gate `checked_available_bytes()` in `src-tauri/src/commands/portable.rs` behind `#[cfg(unix)]` only — keep the checked-multiplication helper available for `#[cfg(test)]` builds too (for example `#[cfg(any(unix, test))]`) so Windows clippy/test builds still compile even though the `statvfs` caller is Unix-only.
 
 ---
 
