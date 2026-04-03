@@ -4,6 +4,13 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.88] - 2026-04-03
+
+### Fixed
+
+- **Release recovery** — Deleted the local release tag before the follow-up docs push so changelog sync no longer tries to clobber the published tag
+- **Windows CI build** — Gated the portable free-space helper to Unix so cross-platform release builds do not fail on dead-code warnings
+
 ## [0.1.87] - 2026-04-03
 
 ### Changed
@@ -1151,5 +1158,6 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.18]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.18
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0
+[0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.87...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.88...HEAD

@@ -1005,6 +1005,7 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add README.md CHANGELOG.md
             git commit -m "docs: update version references to ${VERSION} [skip ci]"
-            git push origin release-docs-update:main
+            git tag -d "v${VERSION}" >/dev/null 2>&1 || true
+            git -c push.followTags=false push origin "refs/heads/release-docs-update:refs/heads/main"
             echo "✓ Pushed version reference updates to main"
           fi
