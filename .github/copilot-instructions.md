@@ -1558,6 +1558,7 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 3. **Vite define:** `vite.config.ts` exposes it as `__GITHUB_UPDATE_TOKEN__`
 4. **Runtime:** `src/components/UpdateModal.tsx` passes `authToken` into the shared updater config, and `useUpdater()` in `../core-shared/packages/components/src/updater/useUpdater.ts` builds `{ Authorization: "token <PAT>" }` headers and passes them to BOTH `check({ headers })` AND `downloadAndInstall(onEvent, { headers })`. The same headers MUST be passed to both calls — `check()` uses them for the manifest fetch, and `downloadAndInstall()` uses them for the binary download. Without headers on the download, GitHub returns 404/HTML for private repo assets and the signature verification fails against garbage data.
 5. **Graceful fallback:** If the token is empty (repo made public, secret not set), the updater works without auth
+6. **Release workflow handling:** Optional release secrets such as `GH_UPDATE_TOKEN`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and `APPLE_API_*` must only be masked or exported when they are non-empty. The workflow must treat whitespace-only placeholders as blank, and it must only export `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_CONTENT`, and `APPLE_API_KEY_PATH` when the full App Store Connect credential set is present.
 
 ### Do NOT
 
@@ -2489,6 +2490,8 @@ The Acquire binary is ~45% smaller than the full binary because `--no-default-fe
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the signing key (optional) | All platforms |
 | `GH_UPDATE_TOKEN` | PAT (`contents:read`) for private repo update checks | All platforms |
 | `GITHUB_TOKEN` | Auto-provided by GitHub Actions | All platforms |
+
+Blank or whitespace-only optional release secrets must be treated as absent in `release.yml`; do not append them to `GITHUB_ENV` or emit `::add-mask::` for empty values.
 
 ### Prebuild Workflow (`.github/workflows/prebuild-native-deps.yml`)
 
