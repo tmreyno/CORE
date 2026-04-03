@@ -1171,7 +1171,7 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.18]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.18
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0
-[0.1.90]: https://github.com/tmreyno/CORE/releases/tag/v0.1.90
+[0.1.90]: https://github.com/tmreyno/CORE/compare/v0.1.89...v0.1.90
 [0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
