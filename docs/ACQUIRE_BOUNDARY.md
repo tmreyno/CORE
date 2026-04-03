@@ -1,6 +1,6 @@
 # CORE Acquire Edition — Boundary Manifest
 
-> **Purpose:** Defines the explicit API surface for the Acquire edition, enabling clean separation into CORE-ACQ. This document is the source of truth for what belongs in the Acquire build vs. the Review/Full build.
+> **Purpose:** Defines the explicit API surface that was extracted into CORE-ACQ. In the CORE repo, this document is now a boundary reference only; standalone Acquire builds and releases belong in the CORE-ACQ repo, not here.
 
 ---
 
@@ -73,7 +73,7 @@ isAcquireEdition()  // true when edition === "acquire"
 isFullEdition()     // true when edition !== "acquire"
 ```
 
-Build command: `VITE_EDITION=acquire npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features`
+Standalone Acquire build ownership has moved to the CORE-ACQ repo. Do not build or release CORE-Acquisition from this repo's package scripts, CI, or release workflow.
 
 ### Acquire-Only Frontend Files
 
@@ -199,19 +199,12 @@ Acquire components currently import from non-Acquire paths. These must be resolv
 
 ## CI Build Matrix
 
-The CI validates both editions compile independently:
+The CORE repo now validates only the full CORE-FFX build. Standalone Acquire build validation lives in the CORE-ACQ repo.
 
 | Job | Cargo Features | Vite Edition | Purpose |
 |-----|----------------|--------------|---------|
 | `test-backend` | `--all-features` (default) | — | Full Rust compilation + tests |
 | `build` | default (full) | — | Full application build |
-| **`build-acquire`** | `--no-default-features --features acquire` | `acquire` | Acquire edition build + boundary lint |
-
-The `build-acquire` job runs:
-1. **Boundary lint** (`scripts/lint-acquire-boundary.sh`) — validates no review-only imports in acquire files (Linux only)
-2. **`cargo check`** with acquire features — validates Rust compiles cleanly
-3. **`cargo clippy`** with acquire features — lint warnings as errors
-4. **`npm run tauri build`** with acquire config — full Tauri build with signing
 
 ---
 
@@ -222,7 +215,7 @@ The `build-acquire` job runs:
 - [x] Edition detection works at build time (Vite) and runtime
 - [x] Acquire components are in dedicated `src/components/acquire/` directory
 - [x] Acquire hooks are in dedicated `src/hooks/acquire/` directory
-- [x] CI validates Acquire edition builds independently (`build-acquire` job in tests.yml)
+- [x] Standalone Acquire build and release ownership moved to CORE-ACQ
 - [x] Import boundary lint prevents new cross-boundary imports (`scripts/lint-acquire-boundary.sh`)
 - [ ] Cross-boundary UI imports resolved (Toast, CollapsibleGroup, etc.)
 - [ ] All shared types available via `@core-suite/types`

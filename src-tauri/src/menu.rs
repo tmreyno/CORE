@@ -17,8 +17,7 @@ use tracing::{error, info};
 
 /// Returns `true` when built as the Acquire edition.
 ///
-/// Detected via the `VITE_EDITION` environment variable at compile time.
-/// The acquire build script sets `VITE_EDITION=acquire` in the shell,
+/// Detected via the `VITE_EDITION` environment variable at compile time,
 /// which is picked up by `option_env!` during Rust compilation.
 fn is_acquire_edition() -> bool {
     matches!(option_env!("VITE_EDITION"), Some("acquire"))

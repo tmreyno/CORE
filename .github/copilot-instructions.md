@@ -74,17 +74,8 @@ CORE-FFX uses **Cargo feature flags** to produce separate binaries for different
 ### Custom Edition Examples
 
 ```bash
-# Acquisition-only (27 MB — portable field tool)
-cargo build --no-default-features --features acquire
-
-# Acquire + search (field tool with search capability)
-cargo build --no-default-features --features "acquire,mod-search"
-
 # Review-only (no acquisition commands)
 cargo build --no-default-features --features review
-
-# Custom: acquisition + viewers (no reports/search)
-cargo build --no-default-features --features "acquire,mod-viewers"
 
 # Full suite (default)
 cargo build
@@ -95,10 +86,9 @@ cargo build
 ```bash
 # Full edition (default)
 npm run tauri build
-
-# Acquire edition (45% smaller binary)
-npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
 ```
+
+Standalone CORE-Acquisition builds now belong in the CORE-ACQ repo. Do not build or release the Acquire app from CORE.
 
 ### Architecture: `lib.rs` Dispatch
 
@@ -136,7 +126,7 @@ fn run_full() { ... }
 - Remove `pub` from `run_acquire()` — it must be callable from both the default `run()` dispatch and potential future external entry points
 - Add `#[cfg]` gate back to `run_acquire()` — it must compile unconditionally
 - Reference cfg-gated modules (search, viewer::document, report, processed, dedup) from `run_acquire()` — those are only available in `run_full()`
-- Build Acquire edition without `--no-default-features` — default features include `full` which pulls in everything
+- Reintroduce CORE-Acquisition build or release instructions in this repo — standalone Acquire builds now belong in CORE-ACQ
 - Change `default = ["full"]` — the default dev/debug build must be the full suite
 
 ---
@@ -1497,7 +1487,7 @@ Help → "Check for Updates…"
   → useMenuActions dispatches onCheckForUpdates
   → App.tsx sets showUpdateModal(true)
   → src/components/UpdateModal.tsx (lazy-loaded wrapper)
-    └── @core-suite/components UpdateModal
+    └── @core-suite/components/updater UpdateModal
         └── useUpdater() from core-shared updater package
             ├── check() from @tauri-apps/plugin-updater → hits latest.json endpoint
             ├── update.downloadAndInstall() → downloads + installs update
@@ -1512,16 +1502,14 @@ Help → "Check for Updates…"
 | `../core-shared/packages/components/src/updater/UpdateModal.tsx` | Shared modal UI: checking → available → downloading → ready states |
 | `../core-shared/packages/components/src/updater/useUpdater.ts` | Shared updater lifecycle hook (check, download, relaunch, auth headers) |
 | `src-tauri/tauri.conf.json` | `plugins.updater` config: endpoint URL + Ed25519 public key (CORE-FFX) |
-| `src-tauri/tauri.acquire.conf.json` | Overlay config for CORE-Acquisition: updater endpoint → `latest-acquire.json`, bundle icons → `src-tauri/icons-acq/` |
 | `src-tauri/capabilities/default.json` | `updater:default` + `process:default` permissions |
 | `src-tauri/src/lib.rs` | Plugin registration: `tauri_plugin_updater`, `tauri_plugin_process` |
 | `src-tauri/src/menu.rs` | "Check for Updates…" menu item (`check-updates` ID) |
-| `.github/workflows/release.yml` | Signs artifacts + generates `latest.json` + `latest-acquire.json` manifests |
+| `.github/workflows/release.yml` | Signs artifacts + generates `latest.json` manifest for CORE-FFX |
 
 ### Configuration
 
 - **FFX Endpoint:** `https://github.com/tmreyno/CORE/releases/latest/download/latest.json`
-- **Acquire Endpoint:** `https://github.com/tmreyno/CORE/releases/latest/download/latest-acquire.json`
 - **Signing keys:** Ed25519 keypair at `~/.tauri/core-ffx.key` (private) and `.pub` (public)
 - **GitHub Secrets required:** `TAURI_SIGNING_PRIVATE_KEY` (contents of `~/.tauri/core-ffx.key`), optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 - **`createUpdaterArtifacts: true`** (boolean, NOT `"v1Compatible"`) — Tauri v2 native updater format
@@ -1538,16 +1526,16 @@ With `createUpdaterArtifacts: true` (boolean), Tauri v2 produces these updater a
 
 The `"v1Compatible"` string value would produce `.nsis.zip` and `.AppImage.tar.gz` wrapped bundles — we do NOT use that mode. The `publish-release` job's download patterns and manifest globs must match the v2 format above.
 
-### Manifest Generation (`latest.json` + `latest-acquire.json`)
+### Manifest Generation (`latest.json`)
 
-The `publish-release` job generates **two updater manifests** — one per edition. A `generate_manifest()` shell function is called twice with different product name prefixes:
+The `publish-release` job generates the CORE-FFX updater manifest only. CORE-Acquisition updater artifacts are owned by the standalone CORE-ACQ repo.
 
 1. **Determine version** — extracts tag/version
 2. **Checkout code** — sparse checkout for `CHANGELOG.md` (release notes)
 3. **Download artifacts** — `gh release download` fetches updater bundles + sigs into `artifacts/`
-4. **Generate manifests** — `generate_manifest "CORE-FFX" "latest.json"` then `generate_manifest "CORE-Acquisition" "latest-acquire.json"`
+4. **Generate manifest** — `generate_manifest "CORE-FFX" "latest.json"`
 
-Each manifest includes `darwin-aarch64`, `darwin-x86_64` (both use the same universal macOS bundle), `windows-x86_64`, and `linux-x86_64` platform entries. The function filters artifacts by the product name prefix to find the correct `.sig` and updater bundle files.
+The manifest includes `darwin-aarch64`, `darwin-x86_64` (both use the same universal macOS bundle), `windows-x86_64`, and `linux-x86_64` platform entries. The function filters artifacts by the product name prefix to find the correct `.sig` and updater bundle files.
 
 ### Private Repo Auth
 
@@ -1566,7 +1554,6 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Set `TAURI_SIGNING_PRIVATE_KEY` to empty string in production — updates won't be signed and will fail verification
 - Add `check-updates` to `PROJECT_DEPENDENT_IDS` — checking for updates should work without a project loaded
 - Add `merge-projects` to `PROJECT_DEPENDENT_IDS` — merging projects should work without a project loaded
-- Point `src-tauri/tauri.acquire.conf.json` back at `src-tauri/icons/` — CORE-Acquisition uses its own `src-tauri/icons-acq/` bundle
 - Remove `VITE_GITHUB_UPDATE_TOKEN` from the release workflow build steps — private repo updates will break
 - Expose the `GH_UPDATE_TOKEN` PAT in logs or committed config files — use build-time env var injection only
 - Move the "Download release artifacts" step before "Checkout code for changelog" in `publish-release` — the checkout wipes the working directory and destroys downloaded artifacts
@@ -2410,7 +2397,7 @@ cp build/lib7z_ffi.a ~/GitHub/CORE-1/sevenzip-ffi/build/lib7z_ffi.a
 
 ### Release Workflow (`.github/workflows/release.yml`)
 
-Triggered by tag push (`v*`) or manual `workflow_dispatch`. Produces signed installers for all 3 platforms for **both editions**: CORE-FFX (full suite) and CORE-Acquisition (lightweight field tool).
+Triggered by tag push (`v*`) or manual `workflow_dispatch`. Produces signed installers for all 3 platforms for **CORE-FFX only**. CORE-Acquisition builds and releases are owned by the standalone CORE-ACQ repo.
 
 **Jobs (5, sequential dependencies):**
 
@@ -2420,47 +2407,32 @@ create-release → build-macos ─┐
                  build-windows ┘
 ```
 
-Each platform build job builds **two editions** sequentially:
-1. CORE-FFX (default features = full, `npm run tauri build`)
-2. CORE-Acquisition (`VITE_EDITION=acquire npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features`)
-
-The Acquire overlay must keep pointing at the dedicated `src-tauri/icons-acq/` bundle generated from the acquisition branding asset, rather than reusing the main `src-tauri/icons/` bundle used by CORE-FFX.
-
-The Acquire binary is ~45% smaller than the full binary because `--no-default-features --features acquire` excludes 17 optional dependencies (viewers, search, reports). Cargo's incremental compilation means shared crates are not rebuilt.
+Each platform build job builds the CORE-FFX app once using the default feature set.
 
 | Job | Runner | Outputs |
 |-----|--------|---------|
 | **Create Release** | `ubuntu-latest` | Draft GitHub Release with changelog |
-| **Build macOS** | `macos-latest` (ARM64) | `.dmg` (signed + notarized) × 2 editions |
-| **Build Linux** | `ubuntu-22.04` | `.deb`, `.AppImage` × 2 editions |
-| **Build Windows** | `windows-latest` | `.exe` (NSIS), `.msi` × 2 editions |
-| **Publish Release** | `ubuntu-latest` | Marks release as non-draft, uploads `latest.json` + `latest-acquire.json` |
+| **Build macOS** | `macos-latest` (ARM64) | `.dmg` (signed + notarized) |
+| **Build Linux** | `ubuntu-22.04` | `.deb`, `.AppImage` |
+| **Build Windows** | `windows-latest` | `.exe` (NSIS), `.msi` |
+| **Publish Release** | `ubuntu-latest` | Marks release as non-draft, uploads `latest.json` |
 
-**Release artifacts (per edition):**
+**Release artifacts:**
 
 | File | Platform | Edition |
 |------|----------|---------|
 | `CORE-FFX_<ver>_aarch64.dmg` | macOS ARM64 | FFX |
-| `CORE-Acquisition_<ver>_aarch64.dmg` | macOS ARM64 | Acquire |
 | `CORE-FFX_<ver>_amd64.deb` | Linux x64 | FFX |
-| `CORE-Acquisition_<ver>_amd64.deb` | Linux x64 | Acquire |
 | `CORE-FFX_<ver>_amd64.AppImage` | Linux x64 | FFX |
-| `CORE-Acquisition_<ver>_amd64.AppImage` | Linux x64 | Acquire |
 | `CORE-FFX_<ver>_x64-setup.exe` | Windows x64 (NSIS) | FFX |
-| `CORE-Acquisition_<ver>_x64-setup.exe` | Windows x64 (NSIS) | Acquire |
 | `CORE-FFX_<ver>_x64_en-US.msi` | Windows x64 (MSI) | FFX |
-| `CORE-Acquisition_<ver>_x64_en-US.msi` | Windows x64 (MSI) | Acquire |
 | `latest.json` | Updater manifest | FFX |
-| `latest-acquire.json` | Updater manifest | Acquire |
 
-**Dual-edition build pattern (per platform):**
-1. Build CORE-FFX (default features) → upload FFX artifacts
-2. Clean `target/release/bundle/` directory
-3. Build CORE-Acquisition with `VITE_EDITION=acquire` + `--config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features` → upload Acquire artifacts
+Acquire artifacts and manifests are now published only by the standalone CORE-ACQ repo.
 
 **Updater manifest generation:**
 - `generate_manifest()` shell function takes a product name prefix and output filename
-- Called twice: `generate_manifest "CORE-FFX" "latest.json"` and `generate_manifest "CORE-Acquisition" "latest-acquire.json"`
+- Called once: `generate_manifest "CORE-FFX" "latest.json"`
 - Each manifest filters downloaded release assets by the product name prefix to find the correct `.sig` and updater bundle files
 
 **Version bump checklist (before tagging):**
@@ -3316,7 +3288,7 @@ Key files:
 
 ### Acquire Edition Boundary Enforcement (CORE-ACQ Separation Prep)
 
-The Acquire edition is being prepared for extraction into its own repository (**CORE-ACQ**). A boundary enforcement system validates that acquire-specific code does not import review-only modules.
+The Acquire edition has moved to the standalone **CORE-ACQ** repository. The remaining acquire-specific code in CORE exists for boundary/reference work only and must not be reintroduced into CORE CI or release builds.
 
 **Boundary manifest:** `docs/ACQUIRE_BOUNDARY.md` — the source of truth for what belongs in the Acquire build. Contains: Rust backend boundary (feature flags, command registration table), frontend file classification (acquire-only, shared, review-only), cross-boundary import catalog, CI build matrix, and separation readiness checklist.
 
@@ -3326,7 +3298,7 @@ The Acquire edition is being prepared for extraction into its own repository (**
 3. **No review-only hook imports** from acquire hooks
 4. **No review-only API imports** (dedup, projectMerge, search) from acquire files
 
-**CI validation:** The `build-acquire` job in `.github/workflows/tests.yml` runs the boundary lint (Linux only), cargo check, clippy, and a full Tauri build with `--no-default-features --features acquire` + `VITE_EDITION=acquire`.
+**CI validation:** Standalone Acquire build validation now lives in the CORE-ACQ repository. The CORE repo should not run acquire release or build jobs.
 
 **Allowed cross-boundary imports** (acquire files importing from non-acquire sibling directories):
 
@@ -3349,14 +3321,12 @@ The Acquire edition is being prepared for extraction into its own repository (**
 |------|---------|
 | `docs/ACQUIRE_BOUNDARY.md` | Boundary manifest — source of truth for acquire API surface |
 | `scripts/lint-acquire-boundary.sh` | Automated boundary lint (run in CI and locally) |
-| `.github/workflows/tests.yml` | `build-acquire` job validates acquire edition builds |
 | `src/utils/edition.ts` | `isAcquireEdition()`, `isFullEdition()`, `APP_NAME`, `APP_SHORT` |
 
 **Do NOT:**
 - Import review-only modules (`search/`, `dedup/`, `processed/`, `report/`, `workspace_profile*`) from any file under `src/components/acquire/` or `src/hooks/acquire/`
 - Add new cross-boundary imports from acquire files without adding them to `ALLOWED_CROSS_BOUNDARY` in `scripts/lint-acquire-boundary.sh`
-- Remove the `build-acquire` job from `tests.yml` — it validates the acquire edition compiles independently
-- Remove the boundary lint step from the `build-acquire` CI job
+- Reintroduce CORE-Acquisition build or release jobs to `.github/workflows/tests.yml` or `.github/workflows/release.yml` — standalone acquire builds belong in CORE-ACQ
 - Import review-only APIs (`dedup`, `projectMerge`, `search`) from acquire hooks or components
 - Modify `run_acquire()` in `lib.rs` to include review-only commands (search, dedup, viewer::document, report, processed)
 

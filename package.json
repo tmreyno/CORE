@@ -6,9 +6,7 @@
   "scripts": {
     "start": "vite",
     "dev": "vite",
-    "dev:acquire": "VITE_EDITION=acquire tauri dev --features acquire",
     "build": "vite build",
-    "build:acquire": "VITE_EDITION=acquire tauri build --config src-tauri/tauri.acquire.conf.json --features acquire",
     "serve": "vite preview",
     "tauri": "tauri",
     "test": "vitest",

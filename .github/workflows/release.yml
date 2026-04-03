@@ -365,50 +365,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-          # ─── CORE Acquire Build (macOS) ──────────────────────────────────────────
-      - name: Clean bundle for Acquire build (macOS)
-        run: |
-          rm -rf target/release/bundle
-          # Detach any lingering DMG volumes from the FFX build
-          hdiutil detach /Volumes/CORE-FFX* 2>/dev/null || true
-          hdiutil detach /Volumes/CORE-Acquisition* 2>/dev/null || true
-
-      - name: Build CORE Acquire (macOS)
-        run: |
-          has_value() {
-            printf '%s' "$1" | grep -q '[^[:space:]]'
-          }
-          if has_value "$APPLE_API_ISSUER" && has_value "$APPLE_API_KEY" && has_value "$APPLE_API_KEY_CONTENT"; then
-            export APPLE_API_KEY_PATH="${{ runner.temp }}/AuthKey.p8"
-          else
-            unset APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_CONTENT APPLE_API_KEY_PATH
-          fi
-          npm run tauri build -- --verbose --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
-        env:
-          VITE_EDITION: acquire
-          LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
-
-      - name: List Acquire build artifacts (macOS)
-        run: |
-          echo "=== DMG ==="
-          find target/release/bundle/dmg -type f 2>/dev/null || echo "No DMG found"
-          echo "=== Updater artifacts ==="
-          find target/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
-          ls -lhR target/release/bundle/ 2>/dev/null | head -50
-
-      - name: Upload macOS Acquire artifacts
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.create-release.outputs.tag_name }}
-          draft: true
-          files: |
-            target/release/bundle/dmg/*.dmg
-            target/release/bundle/macos/*.tar.gz
-            target/release/bundle/macos/*.sig
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # ─── Linux Build (x64 AppImage + deb) ────────────────────────────────────────
   build-linux:
     name: Build Linux
@@ -587,38 +543,6 @@ jobs:
           ls -lhR target/release/bundle/ 2>/dev/null | head -50
 
       - name: Upload Linux installers
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.create-release.outputs.tag_name }}
-          draft: true
-          files: |
-            target/release/bundle/appimage/*.AppImage
-            target/release/bundle/appimage/*.tar.gz
-            target/release/bundle/appimage/*.sig
-            target/release/bundle/deb/*.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ─── CORE Acquire Build (Linux) ──────────────────────────────────────────
-      - name: Clean bundle for Acquire build (Linux)
-        run: rm -rf target/release/bundle
-
-      - name: Build CORE Acquire (Linux)
-        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
-        env:
-          VITE_EDITION: acquire
-
-      - name: List Acquire build artifacts (Linux)
-        run: |
-          echo "=== AppImage ==="
-          find target/release/bundle/appimage -type f 2>/dev/null || echo "No AppImage found"
-          echo "=== DEB ==="
-          find target/release/bundle/deb -type f 2>/dev/null || echo "No deb found"
-          echo "=== Updater artifacts ==="
-          find target/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
-          ls -lhR target/release/bundle/ 2>/dev/null | head -50
-
-      - name: Upload Linux Acquire artifacts
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
@@ -934,40 +858,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ─── CORE Acquire Build (Windows) ────────────────────────────────────────
-      - name: Clean bundle for Acquire build (Windows)
-        run: Remove-Item -Recurse -Force target\release\bundle -ErrorAction SilentlyContinue
-        shell: pwsh
-
-      - name: Build CORE Acquire (Windows)
-        run: npm run tauri build -- --config src-tauri/tauri.acquire.conf.json --features acquire -- --no-default-features
-        env:
-          VITE_EDITION: acquire
-
-      - name: List Acquire build artifacts (Windows)
-        run: |
-          echo "=== MSI ==="
-          Get-ChildItem -Recurse target\release\bundle\msi\*.msi -ErrorAction SilentlyContinue
-          echo "=== NSIS ==="
-          Get-ChildItem -Recurse target\release\bundle\nsis\*.exe -ErrorAction SilentlyContinue
-          echo "=== Updater artifacts ==="
-          Get-ChildItem -Recurse target\release\bundle\nsis\*.zip -ErrorAction SilentlyContinue
-          Get-ChildItem -Recurse target\release\bundle\nsis\*.sig -ErrorAction SilentlyContinue
-        shell: pwsh
-
-      - name: Upload Windows Acquire artifacts
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.create-release.outputs.tag_name }}
-          draft: true
-          files: |
-            target/release/bundle/msi/*.msi
-            target/release/bundle/nsis/*.exe
-            target/release/bundle/nsis/*.zip
-            target/release/bundle/nsis/*.sig
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # ─── Publish Release & Generate Update Manifest ──────────────────────────────
   publish-release:
     name: Publish Release
@@ -1116,9 +1006,8 @@ jobs:
             cat "$OUTFILE"
           }
 
-          # Generate manifests for both editions
+          # Generate manifest for CORE-FFX only
           generate_manifest "CORE-FFX" "latest.json"
-          generate_manifest "CORE-Acquisition" "latest-acquire.json"
 
       - name: Upload update manifests
         uses: softprops/action-gh-release@v2
@@ -1126,7 +1015,6 @@ jobs:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           files: |
             latest.json
-            latest-acquire.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
