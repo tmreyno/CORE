@@ -197,7 +197,6 @@ fn get_free_space(path: &Path) -> u64 {
     }
 }
 
-#[cfg(unix)]
 fn checked_available_bytes(blocks: u64, block_size: u64) -> Option<u64> {
     blocks.checked_mul(block_size)
 }
