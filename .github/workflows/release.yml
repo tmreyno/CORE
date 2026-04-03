@@ -955,45 +955,45 @@ jobs:
             export TAG VERSION PREV_TAG
 
             python3 - <<'PY'
-            from pathlib import Path
-            import os
-            import re
+          from pathlib import Path
+          import os
+          import re
 
-            path = Path("CHANGELOG.md")
-            lines = path.read_text(encoding="utf-8").splitlines()
-            repo = os.environ["GITHUB_REPOSITORY"]
-            tag = os.environ["TAG"]
-            version = os.environ["VERSION"]
-            prev_tag = os.environ.get("PREV_TAG", "").strip()
+          path = Path("CHANGELOG.md")
+          lines = path.read_text(encoding="utf-8").splitlines()
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["TAG"]
+          version = os.environ["VERSION"]
+          prev_tag = os.environ.get("PREV_TAG", "").strip()
 
-            if not any(line.strip() == "## [Unreleased]" for line in lines):
-              insert_at = next((i for i, line in enumerate(lines) if re.match(r"^## \[\d+\.\d+\.\d+\]", line)), len(lines))
-              lines[insert_at:insert_at] = ["## [Unreleased]", ""]
+          if not any(line.strip() == "## [Unreleased]" for line in lines):
+            insert_at = next((i for i, line in enumerate(lines) if re.match(r"^## \[\d+\.\d+\.\d+\]", line)), len(lines))
+            lines[insert_at:insert_at] = ["## [Unreleased]", ""]
 
-            unreleased_ref = f"[Unreleased]: https://github.com/{repo}/compare/{tag}...HEAD"
-            unreleased_idx = next((i for i, line in enumerate(lines) if line.startswith("[Unreleased]: ")), None)
-            if unreleased_idx is None:
-              if lines and lines[-1] != "":
-                lines.append("")
-              lines.append(unreleased_ref)
-              unreleased_idx = len(lines) - 1
-            else:
-              lines[unreleased_idx] = unreleased_ref
+          unreleased_ref = f"[Unreleased]: https://github.com/{repo}/compare/{tag}...HEAD"
+          unreleased_idx = next((i for i, line in enumerate(lines) if line.startswith("[Unreleased]: ")), None)
+          if unreleased_idx is None:
+            if lines and lines[-1] != "":
+              lines.append("")
+            lines.append(unreleased_ref)
+            unreleased_idx = len(lines) - 1
+          else:
+            lines[unreleased_idx] = unreleased_ref
 
-            version_ref = (
-              f"[{version}]: https://github.com/{repo}/compare/{prev_tag}...{tag}"
-              if prev_tag
-              else f"[{version}]: https://github.com/{repo}/releases/tag/{tag}"
-            )
-            version_prefix = f"[{version}]: "
-            version_idx = next((i for i, line in enumerate(lines) if line.startswith(version_prefix)), None)
-            if version_idx is None:
-              lines.insert(unreleased_idx + 1, version_ref)
-            else:
-              lines[version_idx] = version_ref
+          version_ref = (
+            f"[{version}]: https://github.com/{repo}/compare/{prev_tag}...{tag}"
+            if prev_tag
+            else f"[{version}]: https://github.com/{repo}/releases/tag/{tag}"
+          )
+          version_prefix = f"[{version}]: "
+          version_idx = next((i for i, line in enumerate(lines) if line.startswith(version_prefix)), None)
+          if version_idx is None:
+            lines.insert(unreleased_idx + 1, version_ref)
+          else:
+            lines[version_idx] = version_ref
 
-            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            PY
+          path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
 
             echo "✓ CHANGELOG comparison links synced for ${VERSION}"
           fi
