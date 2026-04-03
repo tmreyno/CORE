@@ -163,7 +163,7 @@ fn parse_all_sections(
 
     while offset < file_size && sections.len() < max_sections {
         // Ensure enough space for section header
-        if offset + SECTION_HEADER_SIZE as u64 > file_size {
+        if checked_section_header_end(offset).is_none_or(|end| end > file_size) {
             break;
         }
 
@@ -221,7 +221,10 @@ fn parse_all_sections(
         if next_offset > 0 && next_offset > offset {
             offset = next_offset;
         } else if section_size > 0 {
-            offset += section_size;
+            let Some(next_offset) = checked_next_section_offset(offset, section_size) else {
+                break;
+            };
+            offset = next_offset;
         } else {
             break;
         }
@@ -233,6 +236,14 @@ fn parse_all_sections(
 /// Check if a section type is valid
 fn is_valid_section_type(section_type: &str) -> bool {
     SECTION_TYPES.contains(&section_type)
+}
+
+fn checked_section_header_end(offset: u64) -> Option<u64> {
+    offset.checked_add(SECTION_HEADER_SIZE as u64)
+}
+
+fn checked_next_section_offset(offset: u64, section_size: u64) -> Option<u64> {
+    offset.checked_add(section_size)
 }
 
 /// Parse volume section data
@@ -386,5 +397,15 @@ mod tests {
     fn test_format_size() {
         assert_eq!(format_size(1024), "1.00 KB (1024 bytes)");
         assert_eq!(format_size(1048576), "1.00 MB (1048576 bytes)");
+    }
+
+    #[test]
+    fn test_checked_section_header_end_overflow() {
+        assert_eq!(checked_section_header_end(u64::MAX), None);
+    }
+
+    #[test]
+    fn test_checked_next_section_offset_overflow() {
+        assert_eq!(checked_next_section_offset(u64::MAX, 1), None);
     }
 }

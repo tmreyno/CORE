@@ -323,6 +323,21 @@ impl<'a> MachO<'a> {
 }
 ```
 
+### ⚠️ Fat Mach Arch Offsets Need Checked Slicing
+
+When handling `Mach::Fat`, architecture offsets and sizes come from the file header. Do not compute `start + size` directly before slicing.
+
+```rust
+fn checked_u64_slice(data: &[u8], offset: u64, size: u64) -> Option<&[u8]> {
+    let start = usize::try_from(offset).ok()?;
+    let len = usize::try_from(size).ok()?;
+    let end = start.checked_add(len)?;
+    data.get(start..end)
+}
+```
+
+Using direct arithmetic like `let end = start + arch.size as usize;` can overflow on malformed universal-binary headers and panic before the bounds check runs.
+
 ### Elf<'a> — Key Fields
 
 ```rust

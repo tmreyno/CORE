@@ -157,7 +157,7 @@
   
   /* Badge styles */
   .badge {
-    @apply px-2 py-0.5 text-xs font-medium rounded;
+    @apply px-2.5 py-1 text-sm leading-none font-medium rounded;
   }
   
   .badge-accent {
@@ -412,7 +412,7 @@
   
   /* Count badge - small number overlay for icons */
   .count-badge {
-    @apply absolute -top-1 -right-2 px-1 text-2xs text-white rounded-full;
+    @apply absolute -top-1 -right-2 min-w-4.5 px-1.5 py-0.5 text-xs leading-none text-center font-semibold text-white rounded-full;
   }
   
   /* Label with icon pattern */

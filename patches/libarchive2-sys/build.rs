@@ -1,6 +1,32 @@
 use std::env;
 use std::path::PathBuf;
 
+fn macos_native_search_dirs() -> [&'static str; 2] {
+    ["/opt/homebrew/lib", "/usr/local/lib"]
+}
+
+fn emit_macos_native_search_dirs() {
+    for dir in macos_native_search_dirs() {
+        println!("cargo:rustc-link-search=native={}", dir);
+    }
+}
+
+fn link_macos_native_lib(lib: &str, prefer_static: bool) {
+    if prefer_static {
+        for dir in macos_native_search_dirs() {
+            if PathBuf::from(dir)
+                .join(format!("lib{}.a", lib))
+                .exists()
+            {
+                println!("cargo:rustc-link-lib=static={}", lib);
+                return;
+            }
+        }
+    }
+
+    println!("cargo:rustc-link-lib={}", lib);
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=libarchive/");
     println!("cargo:rerun-if-changed=prebuilt/");
@@ -100,18 +126,19 @@ fn try_prebuilt() -> bool {
         println!("cargo:rustc-link-lib=advapi32");
         println!("cargo:rustc-link-lib=ole32");
     } else if target.contains("apple-darwin") {
-        // macOS — link system compression libraries (Homebrew or system)
-        println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
-        println!("cargo:rustc-link-search=native=/usr/local/lib");
+        // macOS — prefer static archives when available.
+        // Homebrew's liblz4.dylib install name is @executable_path/../lib/liblz4.1.dylib,
+        // which breaks cargo run / tauri dev if linked dynamically into the debug binary.
+        emit_macos_native_search_dirs();
         println!("cargo:rustc-link-lib=iconv");
         println!("cargo:rustc-link-lib=xml2");
-        println!("cargo:rustc-link-lib=b2");
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=bz2");
-        println!("cargo:rustc-link-lib=lzma");
-        println!("cargo:rustc-link-lib=zstd");
-        println!("cargo:rustc-link-lib=lz4");
+        link_macos_native_lib("b2", true);
+        link_macos_native_lib("lzma", true);
+        link_macos_native_lib("zstd", true);
+        link_macos_native_lib("lz4", true);
     } else if target.contains("linux") {
         // Linux — link system libraries
         println!("cargo:rustc-link-lib=pthread");
@@ -446,17 +473,16 @@ fn build_libarchive() {
 
     if target.contains("apple-darwin") {
         // macOS
-        println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
-        println!("cargo:rustc-link-search=native=/usr/local/lib");
+        emit_macos_native_search_dirs();
         println!("cargo:rustc-link-lib=iconv");
         println!("cargo:rustc-link-lib=xml2");
-        println!("cargo:rustc-link-lib=b2");
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=bz2");
-        println!("cargo:rustc-link-lib=lzma");
-        println!("cargo:rustc-link-lib=zstd");
-        println!("cargo:rustc-link-lib=lz4");
+        link_macos_native_lib("b2", true);
+        link_macos_native_lib("lzma", true);
+        link_macos_native_lib("zstd", true);
+        link_macos_native_lib("lz4", true);
     } else if target.contains("apple-ios") {
         // iOS
         println!("cargo:rustc-link-lib=iconv");

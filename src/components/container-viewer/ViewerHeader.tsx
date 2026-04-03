@@ -44,23 +44,23 @@ export function ViewerHeader(props: ViewerHeaderProps) {
         </span>
         <span class="text-xs text-txt-muted">{formatBytes(props.entry.size)}</span>
         <Show when={props.entry.isDiskFile}>
-          <span class="px-1.5 py-0.5 text-2xs leading-tight bg-bg-hover text-txt-secondary rounded">
+          <span class="badge bg-bg-hover text-txt-secondary">
             Disk File
           </span>
         </Show>
         <Show when={props.entry.isVfsEntry}>
-          <span class="px-1.5 py-0.5 text-2xs leading-tight bg-blue-700/50 text-blue-300 rounded">
+          <span class="badge bg-blue-700/50 text-blue-300">
             VFS
           </span>
         </Show>
         <Show when={props.entry.isArchiveEntry}>
-          <span class="px-1.5 py-0.5 text-2xs leading-tight bg-purple-700/50 text-purple-300 rounded">
+          <span class="badge bg-purple-700/50 text-purple-300">
             Archive
           </span>
         </Show>
         <Show when={props.detectedFormat()}>
           <span
-            class="px-1.5 py-0.5 text-2xs leading-tight bg-cyan-700/50 text-cyan-300 rounded"
+            class="badge bg-cyan-700/50 text-cyan-300"
             title={`Detected: ${props.detectedFormat()!.description} (${props.detectedFormat()!.mimeType})`}
           >
             {props.detectedFormat()!.description}

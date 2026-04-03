@@ -21,6 +21,10 @@ use tracing::{debug, info, trace, warn};
 
 use super::types::*;
 
+fn checked_ad1_offset(offset: u64, field_offset: u64) -> Option<u64> {
+    offset.checked_add(field_offset)
+}
+
 /// AD1 logical margin (header offset)
 const AD1_LOGICAL_MARGIN: u64 = 512;
 
@@ -529,21 +533,42 @@ impl SessionV2 {
 
         trace!("Reading item at offset 0x{:X}", offset);
 
-        let next_item_addr = self.read_u64_at(offset + ITEM_NEXT_ADDR)?;
+        let next_item_offset = checked_ad1_offset(offset, ITEM_NEXT_ADDR)
+            .ok_or_else(|| Ad1Error::InvalidFormat("Item next-item offset overflow".to_string()))?;
+        let next_item_addr = self.read_u64_at(next_item_offset)?;
         debug!(
             "Read item @0x{:X}: next_item=0x{:X} ({} decimal)",
             offset, next_item_addr, next_item_addr
         );
 
-        let first_child_addr = self.read_u64_at(offset + ITEM_FIRST_CHILD_ADDR)?;
-        let first_metadata_addr = self.read_u64_at(offset + ITEM_FIRST_METADATA_ADDR)?;
-        let zlib_metadata_addr = self.read_u64_at(offset + ITEM_ZLIB_METADATA_ADDR)?;
-        let decompressed_size = self.read_u64_at(offset + ITEM_DECOMPRESSED_SIZE)?;
-        let item_type = self.read_u32_at(offset + ITEM_TYPE)?;
-        let name_length = self.read_u32_at(offset + ITEM_NAME_LENGTH)?;
+        let first_child_addr = self.read_u64_at(
+            checked_ad1_offset(offset, ITEM_FIRST_CHILD_ADDR)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Item first-child offset overflow".to_string()))?,
+        )?;
+        let first_metadata_addr = self.read_u64_at(
+            checked_ad1_offset(offset, ITEM_FIRST_METADATA_ADDR)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Item first-metadata offset overflow".to_string()))?,
+        )?;
+        let zlib_metadata_addr = self.read_u64_at(
+            checked_ad1_offset(offset, ITEM_ZLIB_METADATA_ADDR)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Item zlib-metadata offset overflow".to_string()))?,
+        )?;
+        let decompressed_size = self.read_u64_at(
+            checked_ad1_offset(offset, ITEM_DECOMPRESSED_SIZE)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Item decompressed-size offset overflow".to_string()))?,
+        )?;
+        let item_type = self.read_u32_at(
+            checked_ad1_offset(offset, ITEM_TYPE)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Item type offset overflow".to_string()))?,
+        )?;
+        let name_length_offset = checked_ad1_offset(offset, ITEM_NAME_LENGTH)
+            .ok_or_else(|| Ad1Error::InvalidFormat("Item name-length offset overflow".to_string()))?;
+        let name_length = self.read_u32_at(name_length_offset)?;
+        let name_offset = checked_ad1_offset(offset, ITEM_NAME)
+            .ok_or_else(|| Ad1Error::InvalidFormat("Item name offset overflow".to_string()))?;
 
         // Read item name bytes
-        let name_bytes = self.arbitrary_read(offset + ITEM_NAME, name_length as u64)?;
+        let name_bytes = self.arbitrary_read(name_offset, u64::from(name_length))?;
 
         // DEBUG: Log first 20 bytes
         debug!(
@@ -555,7 +580,9 @@ impl SessionV2 {
         let name = Self::decode_item_name(&name_bytes);
 
         // Read parent folder address
-        let parent_folder = self.read_u64_at(offset + ITEM_NAME + name_length as u64)?;
+        let parent_folder_offset = checked_ad1_offset(name_offset, u64::from(name_length))
+            .ok_or_else(|| Ad1Error::InvalidFormat("Item parent-folder offset overflow".to_string()))?;
+        let parent_folder = self.read_u64_at(parent_folder_offset)?;
 
         Ok(ItemHeader {
             offset,
@@ -608,12 +635,26 @@ impl SessionV2 {
             return Err(Ad1Error::InvalidFormat("Metadata offset is 0".to_string()));
         }
 
-        let next_metadata_addr = self.read_u64_at(offset + METADATA_NEXT_ADDR)?;
-        let category = self.read_u32_at(offset + METADATA_CATEGORY)?;
-        let key = self.read_u32_at(offset + METADATA_KEY)?;
-        let data_length = self.read_u32_at(offset + METADATA_DATA_LENGTH)?;
+        let next_metadata_addr = self.read_u64_at(
+            checked_ad1_offset(offset, METADATA_NEXT_ADDR)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata next-address offset overflow".to_string()))?,
+        )?;
+        let category = self.read_u32_at(
+            checked_ad1_offset(offset, METADATA_CATEGORY)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata category offset overflow".to_string()))?,
+        )?;
+        let key = self.read_u32_at(
+            checked_ad1_offset(offset, METADATA_KEY)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata key offset overflow".to_string()))?,
+        )?;
+        let data_length = self.read_u32_at(
+            checked_ad1_offset(offset, METADATA_DATA_LENGTH)
+                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata length offset overflow".to_string()))?,
+        )?;
+        let data_offset = checked_ad1_offset(offset, METADATA_DATA)
+            .ok_or_else(|| Ad1Error::InvalidFormat("Metadata data offset overflow".to_string()))?;
 
-        let data = self.arbitrary_read(offset + METADATA_DATA, data_length as u64)?;
+        let data = self.arbitrary_read(data_offset, u64::from(data_length))?;
 
         Ok(MetadataEntry {
             offset,
@@ -714,4 +755,19 @@ pub struct MetadataEntry {
     pub key: u32,
     pub data_length: u32,
     pub data: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checked_ad1_offset_overflow() {
+        assert_eq!(checked_ad1_offset(u64::MAX, 1), None);
+    }
+
+    #[test]
+    fn test_checked_ad1_offset_valid() {
+        assert_eq!(checked_ad1_offset(0x30, 0x10), Some(0x40));
+    }
 }

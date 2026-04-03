@@ -300,12 +300,9 @@ impl Ad1Vfs {
             .map_err(|e| VfsError::IoError(e.to_string()))?;
 
         // Apply offset and size
-        let start = offset as usize;
-        if start >= full_data.len() {
+        let Some((start, end)) = bounded_read_range(offset, size, full_data.len()) else {
             return Ok(Vec::new());
-        }
-
-        let end = (start + size).min(full_data.len());
+        };
         Ok(full_data[start..end].to_vec())
     }
 
@@ -421,6 +418,16 @@ impl VirtualFileSystem for Ad1Vfs {
 // Helper Functions
 // =============================================================================
 
+fn bounded_read_range(offset: u64, size: usize, len: usize) -> Option<(usize, usize)> {
+    let start = usize::try_from(offset).ok()?;
+    if start >= len {
+        return None;
+    }
+
+    let end = start.saturating_add(size).min(len);
+    Some((start, end))
+}
+
 /// Parse timestamp string to nanoseconds since epoch
 fn parse_timestamp(s: &str) -> Option<i64> {
     use chrono::{DateTime, NaiveDateTime};
@@ -461,5 +468,15 @@ mod tests {
 
         let ts = parse_timestamp("2024-01-15 10:30:00");
         assert!(ts.is_some());
+    }
+
+    #[test]
+    fn test_bounded_read_range_rejects_offset_past_end() {
+        assert_eq!(bounded_read_range(10, 4, 8), None);
+    }
+
+    #[test]
+    fn test_bounded_read_range_saturates_large_size() {
+        assert_eq!(bounded_read_range(6, usize::MAX, 8), Some((6, 8)));
     }
 }

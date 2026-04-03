@@ -177,6 +177,18 @@ impl PdfDocument {
             }];
         }
 
+        fn next_char_boundary(text: &str, index: usize) -> usize {
+            if index >= text.len() || text.is_char_boundary(index) {
+                return index.min(text.len());
+            }
+
+            let mut boundary = index;
+            while boundary < text.len() && !text.is_char_boundary(boundary) {
+                boundary += 1;
+            }
+            boundary.min(text.len())
+        }
+
         // Try to find form feed characters (page breaks)
         let pages_by_ff: Vec<&str> = text.split('\u{000C}').collect();
 
@@ -192,8 +204,8 @@ impl PdfDocument {
                 .collect();
         }
 
-        // Approximate split by character count
-        let chars_per_page = (text.len() / page_count).max(1);
+        // Approximate split by text length while honoring UTF-8 character boundaries.
+        let bytes_per_page = (text.len() / page_count).max(1);
         let mut pages = Vec::with_capacity(page_count);
         let mut remaining = text;
         let mut page_num = 1;
@@ -203,7 +215,7 @@ impl PdfDocument {
                 remaining.len()
             } else {
                 // Try to split at paragraph boundary
-                let target = chars_per_page.min(remaining.len());
+                let target = next_char_boundary(remaining, bytes_per_page.min(remaining.len()));
                 remaining[..target]
                     .rfind("\n\n")
                     .map(|p| p + 2)
@@ -470,6 +482,24 @@ mod tests {
         for page in &pages {
             assert!(!page.elements.is_empty());
         }
+    }
+
+    #[test]
+    fn test_split_into_pages_handles_multibyte_utf8_boundaries() {
+        let doc = PdfDocument::new();
+        let text = "😀😀😀😀";
+        let pages = doc.split_into_pages(text, 3);
+
+        let reconstructed = pages
+            .iter()
+            .flat_map(|page| page.elements.iter())
+            .filter_map(|element| match element {
+                DocumentElement::Paragraph(p) => Some(p.text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+
+        assert_eq!(reconstructed, text);
     }
 
     // =========================================================================

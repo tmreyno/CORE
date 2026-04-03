@@ -93,10 +93,9 @@ impl HtmlDocument {
                     match tag_name.as_str() {
                         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                             let level = tag_name
-                                .chars()
-                                .nth(1)
-                                .expect("h1-h6 tag has second char")
-                                .to_digit(10)
+                                .as_bytes()
+                                .get(1)
+                                .and_then(|digit| char::from(*digit).to_digit(10))
                                 .unwrap_or(1) as u8;
                             let close_tag = format!("</{}>", tag_name);
                             if let Some(close_idx) = remaining.find(&close_tag) {
@@ -198,7 +197,19 @@ impl HtmlDocument {
                     // Parse cells (th or td)
                     let mut cell_remaining = row_html;
                     while let Some(cell_start) = cell_remaining.find('<') {
-                        let tag_end = cell_remaining[cell_start..].find('>').unwrap_or(0);
+                        let Some(tag_end) = cell_remaining[cell_start..].find('>') else {
+                            break;
+                        };
+
+                        if tag_end <= 1 {
+                            if cell_start + 1 < cell_remaining.len() {
+                                cell_remaining = &cell_remaining[cell_start + 1..];
+                            } else {
+                                break;
+                            }
+                            continue;
+                        }
+
                         let tag = &cell_remaining[cell_start + 1..cell_start + tag_end];
                         let tag_name = tag.split_whitespace().next().unwrap_or("").to_lowercase();
 
@@ -840,5 +851,21 @@ mod tests {
         let html = b"<p>test</p>";
         let result = doc().read_bytes(html).unwrap();
         assert_eq!(result.metadata.format, DocumentFormat::Html);
+    }
+
+    #[test]
+    fn read_bytes_ignores_malformed_table_cells() {
+        let html = b"<body><table><tr><td Broken</tr></table><p>Fallback</p></body>";
+        let result = doc().read_bytes(html).unwrap();
+
+        assert!(!result.pages.is_empty());
+        assert!(result.pages[0]
+            .elements
+            .iter()
+            .any(|element| matches!(element, DocumentElement::Paragraph(_))));
+        assert!(!result.pages[0]
+            .elements
+            .iter()
+            .any(|element| matches!(element, DocumentElement::Table(_))));
     }
 }

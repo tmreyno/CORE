@@ -61,6 +61,12 @@ const SUPERBLOCK_SIZE: usize = 1024;
 /// Root directory inode number
 const ROOT_INODE: u32 = 2;
 
+/// Minimum EXT block group descriptor size
+const EXT_GROUP_DESC_MIN_SIZE: usize = 32;
+
+/// Minimum descriptor size required for 64-bit high fields
+const EXT_GROUP_DESC_64BIT_MIN_SIZE: usize = 64;
+
 // Feature flags for detecting ext3/ext4
 const EXT3_FEATURE_COMPAT_HAS_JOURNAL: u32 = 0x0004;
 const EXT4_FEATURE_INCOMPAT_EXTENTS: u32 = 0x0040;
@@ -405,6 +411,11 @@ impl ExtDriver {
         block_size: u32,
     ) -> Result<Vec<ExtBlockGroupDesc>, VfsError> {
         // Validate superblock fields to prevent divide by zero
+        if sb.blocks_count == 0 {
+            return Err(VfsError::Internal(
+                "Invalid ext superblock: blocks_count is 0".to_string(),
+            ));
+        }
         if sb.blocks_per_group == 0 {
             return Err(VfsError::Internal(
                 "Invalid ext superblock: blocks_per_group is 0".to_string(),
@@ -417,59 +428,50 @@ impl ExtDriver {
         }
 
         // Calculate number of block groups
-        let num_groups = sb.blocks_count.div_ceil(sb.blocks_per_group as u64) as usize;
+        let num_groups = usize::try_from(sb.blocks_count.div_ceil(sb.blocks_per_group as u64))
+            .map_err(|_| VfsError::Internal("Invalid ext block group count".to_string()))?;
 
         // Block group descriptor table is in the block after superblock
         // For 1K block size, superblock is in block 1, so BGD is in block 2
         // For larger block sizes, superblock is in block 0, BGD is in block 1
-        let bgd_block = if block_size == 1024 { 2 } else { 1 };
-        let bgd_offset = offset + (bgd_block * block_size) as u64;
+        let bgd_block: u32 = if block_size == 1024 { 2 } else { 1 };
+        let bgd_offset = offset
+            .checked_add(
+                u64::from(bgd_block)
+                    .checked_mul(u64::from(block_size))
+                    .ok_or_else(|| {
+                        VfsError::Internal(
+                            "Invalid ext block group descriptor offset".to_string(),
+                        )
+                    })?,
+            )
+            .ok_or_else(|| {
+                VfsError::Internal("Invalid ext block group descriptor offset".to_string())
+            })?;
 
-        let desc_size = sb.desc_size as usize;
-        let mut buf = vec![0u8; num_groups * desc_size];
-        device
+        let desc_size = usize::from(sb.desc_size);
+        let table_len = num_groups.checked_mul(desc_size).ok_or_else(|| {
+            VfsError::Internal("Invalid ext group descriptor table size".to_string())
+        })?;
+        let available_bytes = device.size().checked_sub(bgd_offset).ok_or_else(|| {
+            VfsError::Internal("Invalid ext block group descriptor offset".to_string())
+        })?;
+        if table_len > usize::try_from(available_bytes).unwrap_or(usize::MAX) {
+            return Err(VfsError::IoError(
+                "Ext group descriptor table extends past device size".to_string(),
+            ));
+        }
+
+        let mut buf = checked_ext_byte_buffer(table_len, "group descriptor table")?;
+        let bytes_read = device
             .read_at(bgd_offset, &mut buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
 
         let is_64bit = (sb.feature_incompat & EXT4_FEATURE_INCOMPAT_64BIT) != 0;
-        let mut descs = Vec::with_capacity(num_groups);
-
-        for i in 0..num_groups {
-            let d = &buf[i * desc_size..(i + 1) * desc_size];
-
-            let block_bitmap_lo = u32::from_le_bytes([d[0], d[1], d[2], d[3]]);
-            let inode_bitmap_lo = u32::from_le_bytes([d[4], d[5], d[6], d[7]]);
-            let inode_table_lo = u32::from_le_bytes([d[8], d[9], d[10], d[11]]);
-            let free_blocks_count_lo = u16::from_le_bytes([d[12], d[13]]) as u32;
-            let free_inodes_count_lo = u16::from_le_bytes([d[14], d[15]]) as u32;
-            let used_dirs_count_lo = u16::from_le_bytes([d[16], d[17]]) as u32;
-
-            let (block_bitmap, inode_bitmap, inode_table) = if is_64bit && desc_size >= 64 {
-                let bb_hi = u32::from_le_bytes([d[32], d[33], d[34], d[35]]);
-                let ib_hi = u32::from_le_bytes([d[36], d[37], d[38], d[39]]);
-                let it_hi = u32::from_le_bytes([d[40], d[41], d[42], d[43]]);
-                (
-                    ((bb_hi as u64) << 32) | (block_bitmap_lo as u64),
-                    ((ib_hi as u64) << 32) | (inode_bitmap_lo as u64),
-                    ((it_hi as u64) << 32) | (inode_table_lo as u64),
-                )
-            } else {
-                (
-                    block_bitmap_lo as u64,
-                    inode_bitmap_lo as u64,
-                    inode_table_lo as u64,
-                )
-            };
-
-            descs.push(ExtBlockGroupDesc {
-                block_bitmap,
-                inode_bitmap,
-                inode_table,
-                free_blocks_count: free_blocks_count_lo,
-                free_inodes_count: free_inodes_count_lo,
-                used_dirs_count: used_dirs_count_lo,
-            });
-        }
+        let descriptor_data = buf.get(..bytes_read).ok_or_else(|| {
+            VfsError::IoError("Short read for ext group descriptor table".to_string())
+        })?;
+        let descs = parse_group_descriptors(descriptor_data, desc_size, num_groups, is_64bit)?;
 
         tracing::debug!("Read {} block group descriptors", descs.len());
         Ok(descs)
@@ -498,7 +500,12 @@ impl ExtDriver {
             + inode_table_block * self.block_size as u64
             + index_in_group as u64 * self.inode_size as u64;
 
-        let mut buf = vec![0u8; self.inode_size as usize];
+        let inode_size = usize::from(self.inode_size);
+        if inode_size < 128 {
+            return Err(VfsError::Internal("Invalid ext inode size".to_string()));
+        }
+
+        let mut buf = checked_ext_byte_buffer(inode_size, "inode")?;
         self.device
             .read_at(inode_offset, &mut buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
@@ -563,7 +570,8 @@ impl ExtDriver {
             return Ok(Vec::new());
         }
 
-        let actual_size = std::cmp::min(size as u64, file_size - offset) as usize;
+        let actual_size = bounded_ext_read_len(file_size, offset, size)
+            .ok_or_else(|| VfsError::IoError("EXT read offset exceeded file size".to_string()))?;
         let mut result = vec![0u8; actual_size];
         let mut bytes_read = 0usize;
         let mut current_offset = offset;
@@ -580,12 +588,18 @@ impl ExtDriver {
                 // Sparse block (hole) - fill with zeros
                 // Already zeroed in result
                 bytes_read += bytes_to_read;
-                current_offset += bytes_to_read as u64;
+                current_offset = current_offset.checked_add(bytes_to_read as u64).ok_or_else(|| {
+                    VfsError::IoError("EXT sparse read offset overflow".to_string())
+                })?;
                 continue;
             }
 
-            let block_offset =
-                self.offset + block_num as u64 * self.block_size as u64 + offset_in_block as u64;
+            let block_offset = checked_ext_block_offset(
+                self.offset,
+                block_num,
+                self.block_size,
+                offset_in_block,
+            )?;
             self.device
                 .read_at(
                     block_offset,
@@ -594,7 +608,9 @@ impl ExtDriver {
                 .map_err(|e| VfsError::IoError(e.to_string()))?;
 
             bytes_read += bytes_to_read;
-            current_offset += bytes_to_read as u64;
+            current_offset = current_offset.checked_add(bytes_to_read as u64).ok_or_else(|| {
+                VfsError::IoError("EXT read offset overflow".to_string())
+            })?;
         }
 
         Ok(result)
@@ -685,41 +701,7 @@ impl ExtDriver {
         // Read all directory data
         let dir_size = inode.size() as usize;
         let data = self.read_inode_data(&inode, 0, dir_size)?;
-
-        let mut entries = Vec::new();
-        let mut offset = 0usize;
-
-        while offset + 8 <= data.len() {
-            let entry_inode = u32::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-            ]);
-            let rec_len = u16::from_le_bytes([data[offset + 4], data[offset + 5]]);
-            let name_len = data[offset + 6];
-            let file_type = data[offset + 7];
-
-            if rec_len == 0 {
-                break; // Prevent infinite loop
-            }
-
-            if entry_inode != 0 && name_len > 0 {
-                let name_end = offset + 8 + name_len as usize;
-                if name_end <= data.len() {
-                    let name = String::from_utf8_lossy(&data[offset + 8..name_end]).to_string();
-                    entries.push(ExtDirEntry {
-                        inode: entry_inode,
-                        rec_len,
-                        name_len,
-                        file_type,
-                        name,
-                    });
-                }
-            }
-
-            offset += rec_len as usize;
-        }
+        let entries = parse_directory_entries(&data);
 
         // Update cache
         self.dir_cache.write().insert(inode_num, entries.clone());
@@ -845,13 +827,231 @@ impl FilesystemDriver for ExtDriver {
     }
 }
 
+fn parse_directory_entries(data: &[u8]) -> Vec<ExtDirEntry> {
+    let mut entries = Vec::new();
+    let mut offset = 0usize;
+
+    while offset + 8 <= data.len() {
+        let entry_inode = u32::from_le_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]);
+        let rec_len = u16::from_le_bytes([data[offset + 4], data[offset + 5]]);
+        let name_len = data[offset + 6];
+        let file_type = data[offset + 7];
+
+        if rec_len < 8 {
+            break;
+        }
+
+        let Some(record_end) = offset.checked_add(rec_len as usize) else {
+            break;
+        };
+        if record_end > data.len() {
+            break;
+        }
+
+        if entry_inode != 0 && name_len > 0 {
+            let Some(name_end) = offset
+                .checked_add(8)
+                .and_then(|name_offset| name_offset.checked_add(name_len as usize))
+            else {
+                break;
+            };
+
+            if name_end <= record_end {
+                let name = String::from_utf8_lossy(&data[offset + 8..name_end]).to_string();
+                entries.push(ExtDirEntry {
+                    inode: entry_inode,
+                    rec_len,
+                    name_len,
+                    file_type,
+                    name,
+                });
+            }
+        }
+
+        offset = record_end;
+    }
+
+    entries
+}
+
+fn checked_ext_byte_buffer(length: usize, context: &str) -> Result<Vec<u8>, VfsError> {
+    let mut buf = Vec::new();
+    buf.try_reserve_exact(length)
+        .map_err(|_| VfsError::Internal(format!("Invalid ext {} buffer size", context)))?;
+    buf.resize(length, 0);
+    Ok(buf)
+}
+
+fn checked_ext_group_desc_capacity(count: usize) -> Result<Vec<ExtBlockGroupDesc>, VfsError> {
+    let mut descs = Vec::new();
+    descs
+        .try_reserve_exact(count)
+        .map_err(|_| VfsError::Internal("Invalid ext group descriptor count".to_string()))?;
+    Ok(descs)
+}
+
+fn bounded_ext_read_len(file_size: u64, offset: u64, requested: usize) -> Option<usize> {
+    let remaining = file_size.checked_sub(offset)?;
+    Some(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
+}
+
+fn checked_ext_block_offset(
+    base_offset: u64,
+    block_num: u32,
+    block_size: u32,
+    offset_in_block: usize,
+) -> Result<u64, VfsError> {
+    let block_offset = u64::from(block_num)
+        .checked_mul(u64::from(block_size))
+        .ok_or_else(|| VfsError::IoError("Invalid ext block offset".to_string()))?;
+    let block_offset = base_offset
+        .checked_add(block_offset)
+        .ok_or_else(|| VfsError::IoError("Invalid ext block offset".to_string()))?;
+    let offset_in_block = u64::try_from(offset_in_block)
+        .map_err(|_| VfsError::IoError("Invalid ext block offset".to_string()))?;
+    block_offset
+        .checked_add(offset_in_block)
+        .ok_or_else(|| VfsError::IoError("Invalid ext block offset".to_string()))
+}
+
+fn parse_group_descriptors(
+    data: &[u8],
+    desc_size: usize,
+    num_groups: usize,
+    is_64bit: bool,
+) -> Result<Vec<ExtBlockGroupDesc>, VfsError> {
+    if desc_size < EXT_GROUP_DESC_MIN_SIZE {
+        return Err(VfsError::Internal(format!(
+            "Invalid ext descriptor size: {}",
+            desc_size
+        )));
+    }
+
+    let table_len = num_groups.checked_mul(desc_size).ok_or_else(|| {
+        VfsError::Internal("Invalid ext group descriptor table size".to_string())
+    })?;
+    if data.len() < table_len {
+        return Err(VfsError::IoError(
+            "Short read for ext group descriptor table".to_string(),
+        ));
+    }
+
+    let mut descs = checked_ext_group_desc_capacity(num_groups)?;
+    for i in 0..num_groups {
+        let start = i.checked_mul(desc_size).ok_or_else(|| {
+            VfsError::Internal("Invalid ext group descriptor offset".to_string())
+        })?;
+        let end = start.checked_add(desc_size).ok_or_else(|| {
+            VfsError::Internal("Invalid ext group descriptor offset".to_string())
+        })?;
+        let d = data.get(start..end).ok_or_else(|| {
+            VfsError::IoError("Short read for ext group descriptor table".to_string())
+        })?;
+
+        let block_bitmap_lo = u32::from_le_bytes([d[0], d[1], d[2], d[3]]);
+        let inode_bitmap_lo = u32::from_le_bytes([d[4], d[5], d[6], d[7]]);
+        let inode_table_lo = u32::from_le_bytes([d[8], d[9], d[10], d[11]]);
+        let free_blocks_count_lo = u16::from_le_bytes([d[12], d[13]]) as u32;
+        let free_inodes_count_lo = u16::from_le_bytes([d[14], d[15]]) as u32;
+        let used_dirs_count_lo = u16::from_le_bytes([d[16], d[17]]) as u32;
+
+        let (block_bitmap, inode_bitmap, inode_table) =
+            if is_64bit && desc_size >= EXT_GROUP_DESC_64BIT_MIN_SIZE {
+                let bb_hi = u32::from_le_bytes([d[32], d[33], d[34], d[35]]);
+                let ib_hi = u32::from_le_bytes([d[36], d[37], d[38], d[39]]);
+                let it_hi = u32::from_le_bytes([d[40], d[41], d[42], d[43]]);
+                (
+                    ((bb_hi as u64) << 32) | (block_bitmap_lo as u64),
+                    ((ib_hi as u64) << 32) | (inode_bitmap_lo as u64),
+                    ((it_hi as u64) << 32) | (inode_table_lo as u64),
+                )
+            } else {
+                (
+                    block_bitmap_lo as u64,
+                    inode_bitmap_lo as u64,
+                    inode_table_lo as u64,
+                )
+            };
+
+        descs.push(ExtBlockGroupDesc {
+            block_bitmap,
+            inode_bitmap,
+            inode_table,
+            free_blocks_count: free_blocks_count_lo,
+            free_inodes_count: free_inodes_count_lo,
+            used_dirs_count: used_dirs_count_lo,
+        });
+    }
+
+    Ok(descs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::traits::{BlockDevice, BlockReader, SeekableBlockDevice};
+    use ffx_errors::ContainerError;
+    use std::io::Cursor;
 
     #[test]
     fn test_ext_magic() {
         assert_eq!(EXT_SUPER_MAGIC, 0xEF53);
+    }
+
+    struct MockBlockDevice {
+        data: Vec<u8>,
+    }
+
+    impl BlockDevice for MockBlockDevice {
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            if start >= self.data.len() {
+                return Ok(0);
+            }
+
+            let to_read = buf.len().min(self.data.len() - start);
+            buf[..to_read].copy_from_slice(&self.data[start..start + to_read]);
+            Ok(to_read)
+        }
+
+        fn size(&self) -> u64 {
+            self.data.len() as u64
+        }
+    }
+
+    impl SeekableBlockDevice for MockBlockDevice {
+        fn reader_at(&self, offset: u64) -> Box<dyn BlockReader> {
+            let start = usize::try_from(offset).unwrap_or(self.data.len());
+            Box::new(Cursor::new(self.data[start.min(self.data.len())..].to_vec()))
+        }
+    }
+
+    fn test_superblock() -> ExtSuperblock {
+        ExtSuperblock {
+            inodes_count: 0,
+            blocks_count: 1,
+            free_blocks_count: 0,
+            free_inodes_count: 0,
+            first_data_block: 0,
+            log_block_size: 0,
+            blocks_per_group: 1,
+            inodes_per_group: 1,
+            magic: EXT_SUPER_MAGIC,
+            state: 0,
+            rev_level: 0,
+            inode_size: 128,
+            block_group_nr: 0,
+            feature_compat: 0,
+            feature_incompat: 0,
+            feature_ro_compat: 0,
+            volume_name: String::new(),
+            desc_size: EXT_GROUP_DESC_MIN_SIZE as u16,
+        }
     }
 
     #[test]
@@ -877,5 +1077,120 @@ mod tests {
         inode.mode = S_IFREG | 0o644;
         assert!(!inode.is_directory());
         assert!(inode.is_regular_file());
+    }
+
+    #[test]
+    fn test_parse_directory_entries_keeps_valid_entry() {
+        let mut data = vec![0u8; 16];
+        data[0..4].copy_from_slice(&1u32.to_le_bytes());
+        data[4..6].copy_from_slice(&16u16.to_le_bytes());
+        data[6] = 3;
+        data[7] = 2;
+        data[8..11].copy_from_slice(b"bin");
+
+        let entries = parse_directory_entries(&data);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "bin");
+    }
+
+    #[test]
+    fn test_parse_directory_entries_rejects_name_past_record() {
+        let mut data = vec![0u8; 16];
+        data[0..4].copy_from_slice(&1u32.to_le_bytes());
+        data[4..6].copy_from_slice(&8u16.to_le_bytes());
+        data[6] = 4;
+        data[7] = 2;
+        data[8..12].copy_from_slice(b"oops");
+
+        let entries = parse_directory_entries(&data);
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_parse_directory_entries_rejects_short_record() {
+        let mut data = vec![0u8; 8];
+        data[0..4].copy_from_slice(&1u32.to_le_bytes());
+        data[4..6].copy_from_slice(&4u16.to_le_bytes());
+        data[6] = 1;
+        data[7] = 2;
+
+        let entries = parse_directory_entries(&data);
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_parse_group_descriptors_keeps_valid_descriptor() {
+        let mut data = vec![0u8; EXT_GROUP_DESC_MIN_SIZE];
+        data[0..4].copy_from_slice(&5u32.to_le_bytes());
+        data[4..8].copy_from_slice(&6u32.to_le_bytes());
+        data[8..12].copy_from_slice(&7u32.to_le_bytes());
+        data[12..14].copy_from_slice(&8u16.to_le_bytes());
+        data[14..16].copy_from_slice(&9u16.to_le_bytes());
+        data[16..18].copy_from_slice(&10u16.to_le_bytes());
+
+        let descs = parse_group_descriptors(&data, EXT_GROUP_DESC_MIN_SIZE, 1, false)
+            .expect("valid ext group descriptor should parse");
+
+        assert_eq!(descs.len(), 1);
+        assert_eq!(descs[0].block_bitmap, 5);
+        assert_eq!(descs[0].inode_bitmap, 6);
+        assert_eq!(descs[0].inode_table, 7);
+        assert_eq!(descs[0].free_blocks_count, 8);
+        assert_eq!(descs[0].free_inodes_count, 9);
+        assert_eq!(descs[0].used_dirs_count, 10);
+    }
+
+    #[test]
+    fn test_parse_group_descriptors_rejects_short_table() {
+        let data = vec![0u8; 16];
+        let err = parse_group_descriptors(&data, EXT_GROUP_DESC_MIN_SIZE, 1, false)
+            .expect_err("short ext descriptor table should be rejected");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_checked_ext_byte_buffer_rejects_huge_allocation() {
+        let err = checked_ext_byte_buffer(usize::MAX, "inode")
+            .expect_err("huge ext inode buffer should be rejected");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_checked_ext_group_desc_capacity_rejects_huge_allocation() {
+        let err = checked_ext_group_desc_capacity(usize::MAX)
+            .expect_err("huge ext descriptor capacity should be rejected");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_bounded_ext_read_len_rejects_underflow() {
+        assert_eq!(bounded_ext_read_len(8, 4, 16), Some(4));
+        assert_eq!(bounded_ext_read_len(8, 8, 16), Some(0));
+        assert_eq!(bounded_ext_read_len(8, 9, 16), None);
+    }
+
+    #[test]
+    fn test_checked_ext_block_offset_rejects_overflow() {
+        let err = checked_ext_block_offset(u64::MAX, 1, 1, 1)
+            .expect_err("overflowing ext block offset should be rejected");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_read_group_descriptors_rejects_table_past_device_size() {
+        let mut sb = test_superblock();
+        sb.blocks_count = 2;
+        let device: Arc<dyn SeekableBlockDevice> = Arc::new(MockBlockDevice {
+            data: vec![0u8; 4096 + EXT_GROUP_DESC_MIN_SIZE],
+        });
+
+        let err = ExtDriver::read_group_descriptors(&device, 0, &sb, 4096)
+            .expect_err("descriptor table past device end should be rejected");
+
+        assert!(matches!(err, VfsError::IoError(_)));
     }
 }

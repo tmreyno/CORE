@@ -93,20 +93,8 @@ impl std::io::Seek for RawBlockReader {
 
         let new_offset = match pos {
             std::io::SeekFrom::Start(o) => o,
-            std::io::SeekFrom::End(o) => {
-                if o >= 0 {
-                    size.saturating_add(o as u64)
-                } else {
-                    size.saturating_sub((-o) as u64)
-                }
-            }
-            std::io::SeekFrom::Current(o) => {
-                if o >= 0 {
-                    self.position.saturating_add(o as u64)
-                } else {
-                    self.position.saturating_sub((-o) as u64)
-                }
-            }
+            std::io::SeekFrom::End(o) => checked_seek_position(size, o)?,
+            std::io::SeekFrom::Current(o) => checked_seek_position(self.position, o)?,
         };
         self.position = new_offset.min(size);
         Ok(self.position)
@@ -408,7 +396,10 @@ impl VirtualFileSystem for RawVfs {
 
                     h.position = offset;
 
-                    let actual_size = size.min((total_size - offset) as usize);
+                    let Some(actual_size) = bounded_physical_read_len(total_size, offset, size)
+                    else {
+                        return Ok(Vec::new());
+                    };
                     let mut buf = vec![0u8; actual_size];
 
                     let bytes_read = h
@@ -431,5 +422,56 @@ impl VirtualFileSystem for RawVfs {
                 }
             }
         }
+    }
+}
+
+fn bounded_physical_read_len(total_size: u64, offset: u64, requested_size: usize) -> Option<usize> {
+    let remaining = total_size.checked_sub(offset)?;
+    if remaining == 0 {
+        return None;
+    }
+    let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+    Some(requested_size.min(remaining))
+}
+
+fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
+    if delta >= 0 {
+        base.checked_add(delta as u64).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "raw VFS seek overflow")
+        })
+    } else {
+        base.checked_sub(delta.unsigned_abs()).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "raw VFS seek before start")
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bounded_physical_read_len_rejects_eof() {
+        assert_eq!(bounded_physical_read_len(10, 10, 4), None);
+    }
+
+    #[test]
+    fn test_bounded_physical_read_len_clamps_to_remaining() {
+        assert_eq!(bounded_physical_read_len(10, 8, 5), Some(2));
+    }
+
+    #[test]
+    fn test_bounded_physical_read_len_handles_large_remaining() {
+        assert_eq!(bounded_physical_read_len(u64::MAX, 0, 8), Some(8));
+    }
+
+    #[test]
+    fn test_checked_seek_position_rejects_underflow() {
+        assert!(checked_seek_position(0, -1).is_err());
+    }
+
+    #[test]
+    fn test_checked_seek_position_rejects_overflow() {
+        assert!(checked_seek_position(u64::MAX, 1).is_err());
     }
 }

@@ -949,21 +949,52 @@ jobs:
 
           # ── 2. CHANGELOG comparison links ──
           if [ -f CHANGELOG.md ]; then
-            # Update [Unreleased] link to compare from the new tag
-            sed -i "s|\[Unreleased\]: https://github.com/[^/]*/[^/]*/compare/v[0-9]*\.[0-9]*\.[0-9]*\.\.\.HEAD|[Unreleased]: https://github.com/${{ github.repository }}/compare/${TAG}...HEAD|" CHANGELOG.md
+            git fetch origin --tags
+            PREV_TAG=$(git tag --list 'v*' --sort=-version:refname | awk -v tag="$TAG" '$0 != tag { print; exit }')
+            export TAG VERSION PREV_TAG
 
-            # Add comparison link for this version if it doesn't exist yet
-            if ! grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
-              # Find the previous version tag from the changelog links
-              PREV_TAG=$(grep -oP '^\[\d+\.\d+\.\d+\]: .*/compare/(v[\d.]+)\.\.\.' CHANGELOG.md | head -1 | grep -oP 'v[\d.]+$')
-              if [ -n "$PREV_TAG" ]; then
-                # Insert new version link after [Unreleased] line
-                sed -i "/^\[Unreleased\]:/a [${VERSION}]: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${TAG}" CHANGELOG.md
-                echo "✓ CHANGELOG link added: [${VERSION}] ${PREV_TAG}...${TAG}"
-              fi
-            else
-              echo "✓ CHANGELOG link for ${VERSION} already exists"
-            fi
+            python3 - <<'PY'
+            from pathlib import Path
+            import os
+            import re
+
+            path = Path("CHANGELOG.md")
+            lines = path.read_text(encoding="utf-8").splitlines()
+            repo = os.environ["GITHUB_REPOSITORY"]
+            tag = os.environ["TAG"]
+            version = os.environ["VERSION"]
+            prev_tag = os.environ.get("PREV_TAG", "").strip()
+
+            if not any(line.strip() == "## [Unreleased]" for line in lines):
+              insert_at = next((i for i, line in enumerate(lines) if re.match(r"^## \[\d+\.\d+\.\d+\]", line)), len(lines))
+              lines[insert_at:insert_at] = ["## [Unreleased]", ""]
+
+            unreleased_ref = f"[Unreleased]: https://github.com/{repo}/compare/{tag}...HEAD"
+            unreleased_idx = next((i for i, line in enumerate(lines) if line.startswith("[Unreleased]: ")), None)
+            if unreleased_idx is None:
+              if lines and lines[-1] != "":
+                lines.append("")
+              lines.append(unreleased_ref)
+              unreleased_idx = len(lines) - 1
+            else:
+              lines[unreleased_idx] = unreleased_ref
+
+            version_ref = (
+              f"[{version}]: https://github.com/{repo}/compare/{prev_tag}...{tag}"
+              if prev_tag
+              else f"[{version}]: https://github.com/{repo}/releases/tag/{tag}"
+            )
+            version_prefix = f"[{version}]: "
+            version_idx = next((i for i, line in enumerate(lines) if line.startswith(version_prefix)), None)
+            if version_idx is None:
+              lines.insert(unreleased_idx + 1, version_ref)
+            else:
+              lines[version_idx] = version_ref
+
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            PY
+
+            echo "✓ CHANGELOG comparison links synced for ${VERSION}"
           fi
 
           # ── Commit and push if anything changed ──

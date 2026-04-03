@@ -64,6 +64,55 @@ const FILE_RECORD: u16 = 0x0002;
 const FOLDER_THREAD_RECORD: u16 = 0x0003;
 const FILE_THREAD_RECORD: u16 = 0x0004;
 
+fn checked_buffer_end(start: usize, len: usize) -> Option<usize> {
+    start.checked_add(len)
+}
+
+fn has_buffer_range(buf: &[u8], start: usize, len: usize) -> bool {
+    match checked_buffer_end(start, len) {
+        Some(end) => end <= buf.len(),
+        None => false,
+    }
+}
+
+fn checked_record_offset(node_size: usize, index: usize) -> Option<usize> {
+    let distance_from_end = index.checked_mul(2)?.checked_add(2)?;
+    node_size.checked_sub(distance_from_end)
+}
+
+fn checked_u16_capacity(length: usize, context: &str) -> Result<Vec<u16>, VfsError> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(length)
+        .map_err(|_| VfsError::IoError(format!("{} allocation too large", context)))?;
+    Ok(values)
+}
+
+fn checked_hfsplus_mul_u64(lhs: u64, rhs: u64, context: &str) -> Result<u64, VfsError> {
+    lhs.checked_mul(rhs)
+        .ok_or_else(|| VfsError::IoError(format!("{} overflowed u64", context)))
+}
+
+fn checked_hfsplus_add_u64(lhs: u64, rhs: u64, context: &str) -> Result<u64, VfsError> {
+    lhs.checked_add(rhs)
+        .ok_or_else(|| VfsError::IoError(format!("{} overflowed u64", context)))
+}
+
+fn checked_hfsplus_block_offset(
+    base_offset: u64,
+    start_block: u64,
+    block_size: u64,
+    context: &str,
+) -> Result<u64, VfsError> {
+    let block_offset = checked_hfsplus_mul_u64(start_block, block_size, context)?;
+    checked_hfsplus_add_u64(base_offset, block_offset, context)
+}
+
+fn bounded_hfsplus_read_len(logical_size: u64, offset: u64, requested: usize) -> Option<usize> {
+    let remaining = logical_size.checked_sub(offset)?;
+    Some(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
+}
+
 // =============================================================================
 // HFS+ Structures
 // =============================================================================
@@ -459,7 +508,12 @@ impl HfsPlusDriver {
             return Err(VfsError::IoError("Catalog file has no extents".into()));
         }
 
-        let catalog_offset = offset + (first_extent.start_block as u64 * header.block_size as u64);
+        let catalog_offset = checked_hfsplus_block_offset(
+            offset,
+            first_extent.start_block as u64,
+            header.block_size as u64,
+            "HFS+ catalog header offset",
+        )?;
 
         // Read header node (at least 512 bytes for header record)
         let mut node_buf = vec![0u8; 512];
@@ -552,25 +606,30 @@ impl HfsPlusDriver {
     }
 
     /// Get record offsets from a node
-    fn get_record_offsets(&self, node_buf: &[u8], num_records: u16) -> Vec<u16> {
+    fn get_record_offsets(&self, node_buf: &[u8], num_records: u16) -> Result<Vec<u16>, VfsError> {
         let node_size = self.catalog_header.node_size as usize;
-        let mut offsets = Vec::with_capacity(num_records as usize + 1);
+        let desired_capacity = usize::from(num_records)
+            .saturating_add(1)
+            .min(node_buf.len() / 2);
+        let mut offsets = checked_u16_capacity(desired_capacity, "HFS+ record offsets")?;
 
         // Record offsets are stored at the end of the node, going backwards
         for i in 0..=num_records {
-            let offset_pos = node_size - 2 - (i as usize * 2);
-            if offset_pos + 2 <= node_buf.len() {
+            let Some(offset_pos) = checked_record_offset(node_size, i as usize) else {
+                break;
+            };
+            if has_buffer_range(node_buf, offset_pos, 2) {
                 let offset = u16::from_be_bytes([node_buf[offset_pos], node_buf[offset_pos + 1]]);
                 offsets.push(offset);
             }
         }
 
-        offsets
+        Ok(offsets)
     }
 
     /// Parse catalog key from buffer, return (key, bytes consumed)
-    fn parse_catalog_key(&self, buf: &[u8]) -> Result<(HfsPlusCatalogKey, usize), VfsError> {
-        if buf.len() < 6 {
+    fn parse_catalog_key(buf: &[u8]) -> Result<(HfsPlusCatalogKey, usize), VfsError> {
+        if buf.len() < 8 {
             return Err(VfsError::IoError("Buffer too small for catalog key".into()));
         }
 
@@ -579,13 +638,12 @@ impl HfsPlusDriver {
         let name_length = u16::from_be_bytes([buf[6], buf[7]]) as usize;
 
         // Parse UTF-16BE name
-        let mut name_chars = Vec::with_capacity(name_length);
-        for i in 0..name_length {
+        let chars_to_read = name_length.min(buf.len().saturating_sub(8) / 2);
+        let mut name_chars = checked_u16_capacity(chars_to_read, "HFS+ catalog key name")?;
+        for i in 0..chars_to_read {
             let char_offset = 8 + i * 2;
-            if char_offset + 2 <= buf.len() {
-                let code_unit = u16::from_be_bytes([buf[char_offset], buf[char_offset + 1]]);
-                name_chars.push(code_unit);
-            }
+            let code_unit = u16::from_be_bytes([buf[char_offset], buf[char_offset + 1]]);
+            name_chars.push(code_unit);
         }
         let node_name = String::from_utf16_lossy(&name_chars);
 
@@ -689,22 +747,24 @@ impl HfsPlusDriver {
 
         if node_desc.kind == INDEX_NODE {
             // Index node - find child nodes to traverse
-            let offsets = self.get_record_offsets(&node_buf, node_desc.num_records);
+            let offsets = self.get_record_offsets(&node_buf, node_desc.num_records)?;
 
             for i in 0..node_desc.num_records as usize {
                 if i + 1 >= offsets.len() {
                     break;
                 }
                 let record_start = offsets[i] as usize;
-                if record_start + 6 > node_buf.len() {
+                if !has_buffer_range(&node_buf, record_start, 6) {
                     continue;
                 }
 
-                let (key, key_size) = self.parse_catalog_key(&node_buf[record_start..])?;
+                let (key, key_size) = Self::parse_catalog_key(&node_buf[record_start..])?;
 
                 // Get child node pointer (after key)
-                let ptr_offset = record_start + key_size;
-                if ptr_offset + 4 <= node_buf.len() {
+                let Some(ptr_offset) = checked_buffer_end(record_start, key_size) else {
+                    continue;
+                };
+                if has_buffer_range(&node_buf, ptr_offset, 4) {
                     let child_node = u32::from_be_bytes([
                         node_buf[ptr_offset],
                         node_buf[ptr_offset + 1],
@@ -720,7 +780,7 @@ impl HfsPlusDriver {
             }
         } else if node_desc.kind == LEAF_NODE {
             // Leaf node - extract matching records
-            let offsets = self.get_record_offsets(&node_buf, node_desc.num_records);
+            let offsets = self.get_record_offsets(&node_buf, node_desc.num_records)?;
 
             for i in 0..node_desc.num_records as usize {
                 if i + 1 >= offsets.len() {
@@ -728,16 +788,18 @@ impl HfsPlusDriver {
                 }
                 let record_start = offsets[i] as usize;
                 let record_end = offsets[i + 1] as usize;
-                if record_start >= record_end || record_start + 6 > node_buf.len() {
+                if record_start >= record_end || !has_buffer_range(&node_buf, record_start, 6) {
                     continue;
                 }
 
-                let (key, key_size) = self.parse_catalog_key(&node_buf[record_start..])?;
+                let (key, key_size) = Self::parse_catalog_key(&node_buf[record_start..])?;
 
                 if key.parent_id == parent_id && !key.node_name.is_empty() {
                     // Parse the record data
-                    let data_offset = record_start + key_size;
-                    if data_offset + 2 <= node_buf.len() {
+                    let Some(data_offset) = checked_buffer_end(record_start, key_size) else {
+                        continue;
+                    };
+                    if has_buffer_range(&node_buf, data_offset, 2) {
                         let record_type =
                             u16::from_be_bytes([node_buf[data_offset], node_buf[data_offset + 1]]);
 
@@ -772,12 +834,12 @@ impl HfsPlusDriver {
                 let next_buf = self.read_node(node_desc.flink)?;
                 let next_desc = Self::parse_node_descriptor(&next_buf);
                 if next_desc.num_records > 0 {
-                    let next_offsets = self.get_record_offsets(&next_buf, next_desc.num_records);
+                    let next_offsets = self.get_record_offsets(&next_buf, next_desc.num_records)?;
                     if !next_offsets.is_empty() {
                         let first_record = next_offsets[0] as usize;
-                        if first_record + 6 <= next_buf.len() {
+                        if has_buffer_range(&next_buf, first_record, 6) {
                             if let Ok((first_key, _)) =
-                                self.parse_catalog_key(&next_buf[first_record..])
+                                Self::parse_catalog_key(&next_buf[first_record..])
                             {
                                 if first_key.parent_id == parent_id {
                                     self.traverse_btree(node_desc.flink, parent_id, entries)?;
@@ -896,7 +958,8 @@ impl HfsPlusDriver {
             return Ok(Vec::new());
         }
 
-        let actual_size = size.min((fork.logical_size - offset) as usize);
+        let actual_size = bounded_hfsplus_read_len(fork.logical_size, offset, size)
+            .ok_or_else(|| VfsError::IoError("HFS+ fork read offset exceeded logical size".into()))?;
         let mut result = vec![0u8; actual_size];
         let mut bytes_read = 0usize;
         let mut current_offset = offset;
@@ -909,8 +972,16 @@ impl HfsPlusDriver {
                 break;
             }
 
-            let extent_size = extent.block_count as u64 * self.header.block_size as u64;
-            let extent_logical_end = extent_logical_start + extent_size;
+            let extent_size = checked_hfsplus_mul_u64(
+                extent.block_count as u64,
+                self.header.block_size as u64,
+                "HFS+ extent size",
+            )?;
+            let extent_logical_end = checked_hfsplus_add_u64(
+                extent_logical_start,
+                extent_size,
+                "HFS+ extent logical end",
+            )?;
 
             // Check if this extent contains data we need
             if current_offset < extent_logical_end && bytes_read < actual_size {
@@ -918,12 +989,22 @@ impl HfsPlusDriver {
                 let extent_offset = current_offset.saturating_sub(extent_logical_start);
 
                 // Calculate physical offset
-                let physical_offset = self.offset
-                    + (extent.start_block as u64 * self.header.block_size as u64)
-                    + extent_offset;
+                let physical_block_offset = checked_hfsplus_block_offset(
+                    self.offset,
+                    extent.start_block as u64,
+                    self.header.block_size as u64,
+                    "HFS+ physical block offset",
+                )?;
+                let physical_offset = checked_hfsplus_add_u64(
+                    physical_block_offset,
+                    extent_offset,
+                    "HFS+ physical read offset",
+                )?;
 
                 // How much to read from this extent
-                let available_in_extent = extent_size - extent_offset;
+                let available_in_extent = extent_size.checked_sub(extent_offset).ok_or_else(|| {
+                    VfsError::IoError("HFS+ extent offset exceeded extent size".into())
+                })?;
                 let to_read = (actual_size - bytes_read).min(available_in_extent as usize);
 
                 self.device
@@ -1069,5 +1150,37 @@ mod tests {
     fn test_special_folder_ids() {
         assert_eq!(ROOT_FOLDER_ID, 2);
         assert_eq!(CATALOG_FILE_ID, 4);
+    }
+
+    #[test]
+    fn test_checked_record_offset_rejects_underflow() {
+        assert_eq!(checked_record_offset(8, 4), None);
+    }
+
+    #[test]
+    fn test_has_buffer_range_rejects_overflow() {
+        assert!(!has_buffer_range(b"abcd", usize::MAX - 1, 8));
+    }
+
+    #[test]
+    fn test_checked_u16_capacity_rejects_huge_allocation() {
+        assert!(checked_u16_capacity(usize::MAX, "test").is_err());
+    }
+
+    #[test]
+    fn test_checked_hfsplus_block_offset_rejects_overflow() {
+        assert!(checked_hfsplus_block_offset(u64::MAX, 1, 1, "test").is_err());
+    }
+
+    #[test]
+    fn test_bounded_hfsplus_read_len_rejects_underflow() {
+        assert_eq!(bounded_hfsplus_read_len(8, 4, 16), Some(4));
+        assert_eq!(bounded_hfsplus_read_len(8, 8, 16), Some(0));
+        assert_eq!(bounded_hfsplus_read_len(8, 9, 16), None);
+    }
+
+    #[test]
+    fn test_parse_catalog_key_requires_name_length_header() {
+        assert!(HfsPlusDriver::parse_catalog_key(&[0; 7]).is_err());
     }
 }

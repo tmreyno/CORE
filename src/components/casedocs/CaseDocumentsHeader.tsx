@@ -33,12 +33,12 @@ export const CaseDocumentsHeader: Component<CaseDocumentsHeaderProps> = (props) 
         <HiOutlineClipboardDocumentList class="w-4 h-4 text-accent" />
         <span class="text-sm font-medium text-txt">Case Documents</span>
         <Show when={props.documentCount > 0}>
-          <span class="px-1.5 py-0.5 text-xs bg-bg-panel text-txt-secondary rounded">
+          <span class="badge bg-bg-panel text-txt-secondary">
             {props.documentCount}
           </span>
         </Show>
         <Show when={props.cocCount > 0}>
-          <span class="px-1.5 py-0.5 text-xs bg-accent/20 text-accent rounded">
+          <span class="badge bg-accent/20 text-accent">
             {props.cocCount} COC
           </span>
         </Show>

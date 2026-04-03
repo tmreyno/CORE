@@ -74,6 +74,70 @@ const ROOT_INODE_ID: u64 = 2;
 /// Root directory inode ID
 const ROOT_DIR_INODE_ID: u64 = 2;
 
+fn clamp_read_end(offset: u64, size: usize, file_size: u64) -> u64 {
+    let requested = u64::try_from(size).unwrap_or(u64::MAX);
+    offset.checked_add(requested).unwrap_or(u64::MAX).min(file_size)
+}
+
+fn bounded_apfs_read_len(start: u64, end: u64) -> Result<usize, VfsError> {
+    let length = end
+        .checked_sub(start)
+        .ok_or_else(|| VfsError::Internal("APFS read range underflow".into()))?;
+
+    usize::try_from(length)
+        .map_err(|_| VfsError::Internal("APFS read range too large".into()))
+}
+
+fn checked_apfs_extent_end(logical_offset: u64, extent_length: u64) -> Result<u64, VfsError> {
+    logical_offset
+        .checked_add(extent_length)
+        .ok_or_else(|| VfsError::Internal("APFS extent end overflow".into()))
+}
+
+fn checked_apfs_physical_offset(
+    base_offset: u64,
+    extent_phys_block: u64,
+    block_size: u32,
+    read_start_in_extent: u64,
+) -> Result<u64, VfsError> {
+    base_offset
+        .checked_add(extent_phys_block.checked_mul(block_size as u64).ok_or_else(|| {
+            VfsError::Internal("APFS extent physical block offset overflow".into())
+        })?)
+        .and_then(|offset| offset.checked_add(read_start_in_extent))
+        .ok_or_else(|| VfsError::Internal("APFS physical read offset overflow".into()))
+}
+
+fn has_buffer_range(buf: &[u8], start: usize, len: usize) -> bool {
+    match start.checked_add(len) {
+        Some(end) => end <= buf.len(),
+        None => false,
+    }
+}
+
+fn checked_toc_entry_offset(toc_offset: usize, index: usize) -> Option<usize> {
+    toc_offset.checked_add(index.checked_mul(8)?)
+}
+
+fn checked_value_offset(block_size: usize, val_offset: u16, val_len: u16) -> Option<usize> {
+    block_size
+        .checked_sub(val_offset as usize)?
+        .checked_sub(val_len as usize)
+}
+
+fn checked_btree_offsets(node: &BtreeNodePhys) -> Option<(usize, usize)> {
+    let toc_offset = 56usize.checked_add(node.table_space_offset as usize)?;
+    let key_area_offset = toc_offset.checked_add(node.table_space_len as usize)?;
+    Some((toc_offset, key_area_offset))
+}
+
+fn checked_kvloc_capacity(count: usize) -> Result<Vec<KvLoc>, VfsError> {
+    let mut locs = Vec::new();
+    locs.try_reserve_exact(count)
+        .map_err(|_| VfsError::IoError("APFS TOC entry count too large".into()))?;
+    Ok(locs)
+}
+
 // =============================================================================
 // APFS Structures
 // =============================================================================
@@ -526,16 +590,18 @@ impl ApfsDriver {
         let node = Self::parse_btree_node(node_buf)?;
 
         let is_leaf = (node.flags & BTNODE_LEAF) != 0;
-        let toc_offset = 56 + node.table_space_offset as usize;
-        let key_area_offset = toc_offset + node.table_space_len as usize;
+        let (toc_offset, key_area_offset) = checked_btree_offsets(&node)
+            .ok_or_else(|| VfsError::IoError("APFS B-tree offset overflow".into()))?;
 
         // Get key-value locations from TOC
         let kvlocs = Self::parse_toc(node_buf, toc_offset, node.nkeys as usize)?;
 
         for kvloc in &kvlocs {
             // Read key (OID + XID)
-            let key_offset = key_area_offset + kvloc.key_offset as usize;
-            if key_offset + 16 > node_buf.len() {
+            let Some(key_offset) = key_area_offset.checked_add(kvloc.key_offset as usize) else {
+                continue;
+            };
+            if !has_buffer_range(node_buf, key_offset, 16) {
                 continue;
             }
 
@@ -545,9 +611,12 @@ impl ApfsDriver {
             if is_leaf {
                 if key_oid == target_oid {
                     // Value is at end of block, working backwards
-                    let val_offset =
-                        block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
-                    if val_offset + 16 <= node_buf.len() {
+                    let Some(val_offset) =
+                        checked_value_offset(block_size as usize, kvloc.val_offset, kvloc.val_len)
+                    else {
+                        continue;
+                    };
+                    if has_buffer_range(node_buf, val_offset, 16) {
                         // Skip flags (4 bytes) and size (4 bytes), get paddr
                         let paddr = u64::from_le_bytes(
                             node_buf[val_offset + 8..val_offset + 16]
@@ -560,9 +629,12 @@ impl ApfsDriver {
             } else {
                 // Index node - check if we should descend
                 if key_oid >= target_oid {
-                    let val_offset =
-                        block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
-                    if val_offset + 8 <= node_buf.len() {
+                    let Some(val_offset) =
+                        checked_value_offset(block_size as usize, kvloc.val_offset, kvloc.val_len)
+                    else {
+                        continue;
+                    };
+                    if has_buffer_range(node_buf, val_offset, 8) {
                         let child_oid = u64::from_le_bytes(
                             node_buf[val_offset..val_offset + 8].try_into().unwrap(),
                         );
@@ -579,8 +651,12 @@ impl ApfsDriver {
         // If not found in leaf, try last child in index nodes
         if !is_leaf && !kvlocs.is_empty() {
             let last = kvlocs.last().unwrap();
-            let val_offset = block_size as usize - last.val_offset as usize - last.val_len as usize;
-            if val_offset + 8 <= node_buf.len() {
+            let Some(val_offset) =
+                checked_value_offset(block_size as usize, last.val_offset, last.val_len)
+            else {
+                return Err(VfsError::NotFound(format!("OID {} not found", target_oid)));
+            };
+            if has_buffer_range(node_buf, val_offset, 8) {
                 let child_oid =
                     u64::from_le_bytes(node_buf[val_offset..val_offset + 8].try_into().unwrap());
                 let child_buf = Self::read_block_static(device, offset, block_size, child_oid)?;
@@ -619,11 +695,13 @@ impl ApfsDriver {
 
     /// Parse table of contents
     fn parse_toc(buf: &[u8], toc_offset: usize, nkeys: usize) -> Result<Vec<KvLoc>, VfsError> {
-        let mut locs = Vec::with_capacity(nkeys);
+        let mut locs = checked_kvloc_capacity(nkeys)?;
 
         for i in 0..nkeys {
-            let entry_offset = toc_offset + i * 8; // Each TOC entry is 8 bytes
-            if entry_offset + 8 > buf.len() {
+            let Some(entry_offset) = checked_toc_entry_offset(toc_offset, i) else {
+                break;
+            };
+            if !has_buffer_range(buf, entry_offset, 8) {
                 break;
             }
 
@@ -720,14 +798,16 @@ impl ApfsDriver {
     ) -> Result<(), VfsError> {
         let node = Self::parse_btree_node(node_buf)?;
         let is_leaf = (node.flags & BTNODE_LEAF) != 0;
-        let toc_offset = 56 + node.table_space_offset as usize;
-        let key_area_offset = toc_offset + node.table_space_len as usize;
+        let (toc_offset, key_area_offset) = checked_btree_offsets(&node)
+            .ok_or_else(|| VfsError::IoError("APFS B-tree offset overflow".into()))?;
 
         let kvlocs = Self::parse_toc(node_buf, toc_offset, node.nkeys as usize)?;
 
         for kvloc in &kvlocs {
-            let key_offset = key_area_offset + kvloc.key_offset as usize;
-            if key_offset + 10 > node_buf.len() {
+            let Some(key_offset) = key_area_offset.checked_add(kvloc.key_offset as usize) else {
+                continue;
+            };
+            if !has_buffer_range(node_buf, key_offset, 10) {
                 continue;
             }
 
@@ -740,8 +820,13 @@ impl ApfsDriver {
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
             if is_leaf {
-                let val_offset =
-                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
+                let Some(val_offset) = checked_value_offset(
+                    self.block_size as usize,
+                    kvloc.val_offset,
+                    kvloc.val_len,
+                ) else {
+                    continue;
+                };
 
                 if rec_type == J_DIR_REC_TYPE && inode_id == parent_id {
                     // This is a directory record for our parent
@@ -751,9 +836,14 @@ impl ApfsDriver {
                 }
             } else {
                 // Index node - traverse children that might contain our parent
-                let val_offset =
-                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
-                if val_offset + 8 <= node_buf.len() {
+                let Some(val_offset) = checked_value_offset(
+                    self.block_size as usize,
+                    kvloc.val_offset,
+                    kvloc.val_len,
+                ) else {
+                    continue;
+                };
+                if has_buffer_range(node_buf, val_offset, 8) {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),
                     );
@@ -811,14 +901,16 @@ impl ApfsDriver {
     fn find_inode_in_tree(&self, node_buf: &[u8], target_id: u64) -> Result<InodeRecord, VfsError> {
         let node = Self::parse_btree_node(node_buf)?;
         let is_leaf = (node.flags & BTNODE_LEAF) != 0;
-        let toc_offset = 56 + node.table_space_offset as usize;
-        let key_area_offset = toc_offset + node.table_space_len as usize;
+        let (toc_offset, key_area_offset) = checked_btree_offsets(&node)
+            .ok_or_else(|| VfsError::IoError("APFS B-tree offset overflow".into()))?;
 
         let kvlocs = Self::parse_toc(node_buf, toc_offset, node.nkeys as usize)?;
 
         for kvloc in &kvlocs {
-            let key_offset = key_area_offset + kvloc.key_offset as usize;
-            if key_offset + 10 > node_buf.len() {
+            let Some(key_offset) = key_area_offset.checked_add(kvloc.key_offset as usize) else {
+                continue;
+            };
+            if !has_buffer_range(node_buf, key_offset, 10) {
                 continue;
             }
 
@@ -829,15 +921,24 @@ impl ApfsDriver {
 
             if is_leaf {
                 if rec_type == J_INODE_VAL_TYPE && inode_id == target_id {
-                    let val_offset = self.block_size as usize
-                        - kvloc.val_offset as usize
-                        - kvloc.val_len as usize;
+                    let Some(val_offset) = checked_value_offset(
+                        self.block_size as usize,
+                        kvloc.val_offset,
+                        kvloc.val_len,
+                    ) else {
+                        continue;
+                    };
                     return self.parse_inode_value(&node_buf[val_offset..]);
                 }
             } else {
-                let val_offset =
-                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
-                if val_offset + 8 <= node_buf.len() {
+                let Some(val_offset) = checked_value_offset(
+                    self.block_size as usize,
+                    kvloc.val_offset,
+                    kvloc.val_len,
+                ) else {
+                    continue;
+                };
+                if has_buffer_range(node_buf, val_offset, 8) {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),
                     );
@@ -897,14 +998,16 @@ impl ApfsDriver {
     fn find_dstream_size(&self, node_buf: &[u8], target_id: u64) -> Result<u64, VfsError> {
         let node = Self::parse_btree_node(node_buf)?;
         let is_leaf = (node.flags & BTNODE_LEAF) != 0;
-        let toc_offset = 56 + node.table_space_offset as usize;
-        let key_area_offset = toc_offset + node.table_space_len as usize;
+        let (toc_offset, key_area_offset) = checked_btree_offsets(&node)
+            .ok_or_else(|| VfsError::IoError("APFS B-tree offset overflow".into()))?;
 
         let kvlocs = Self::parse_toc(node_buf, toc_offset, node.nkeys as usize)?;
 
         for kvloc in &kvlocs {
-            let key_offset = key_area_offset + kvloc.key_offset as usize;
-            if key_offset + 10 > node_buf.len() {
+            let Some(key_offset) = key_area_offset.checked_add(kvloc.key_offset as usize) else {
+                continue;
+            };
+            if !has_buffer_range(node_buf, key_offset, 10) {
                 continue;
             }
 
@@ -915,10 +1018,14 @@ impl ApfsDriver {
 
             if is_leaf {
                 if rec_type == J_DSTREAM_TYPE && inode_id == target_id {
-                    let val_offset = self.block_size as usize
-                        - kvloc.val_offset as usize
-                        - kvloc.val_len as usize;
-                    if val_offset + 24 <= node_buf.len() {
+                    let Some(val_offset) = checked_value_offset(
+                        self.block_size as usize,
+                        kvloc.val_offset,
+                        kvloc.val_len,
+                    ) else {
+                        continue;
+                    };
+                    if has_buffer_range(node_buf, val_offset, 24) {
                         let size = u64::from_le_bytes(
                             node_buf[val_offset..val_offset + 8].try_into().unwrap(),
                         );
@@ -926,9 +1033,14 @@ impl ApfsDriver {
                     }
                 }
             } else {
-                let val_offset =
-                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
-                if val_offset + 8 <= node_buf.len() {
+                let Some(val_offset) = checked_value_offset(
+                    self.block_size as usize,
+                    kvloc.val_offset,
+                    kvloc.val_len,
+                ) else {
+                    continue;
+                };
+                if has_buffer_range(node_buf, val_offset, 8) {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),
                     );
@@ -1068,8 +1180,8 @@ impl FilesystemDriver for ApfsDriver {
         }
 
         // Clamp read length to file boundary
-        let read_end = std::cmp::min(offset + size as u64, file_size);
-        let total_to_read = (read_end - offset) as usize;
+        let read_end = clamp_read_end(offset, size, file_size);
+        let total_to_read = bounded_apfs_read_len(offset, read_end)?;
 
         // Find file extents from catalog tree
         let root_block = self.read_block(self.volume.root_tree_oid)?;
@@ -1084,7 +1196,7 @@ impl FilesystemDriver for ApfsDriver {
         let mut bytes_filled = 0usize;
 
         for &(extent_logical_offset, extent_phys_block, extent_length) in &extents {
-            let extent_end = extent_logical_offset + extent_length;
+            let extent_end = checked_apfs_extent_end(extent_logical_offset, extent_length)?;
 
             // Skip extents before our read range
             if extent_end <= offset {
@@ -1097,16 +1209,29 @@ impl FilesystemDriver for ApfsDriver {
 
             // Calculate overlap between read range and this extent
             let read_start_in_extent = offset.saturating_sub(extent_logical_offset);
-            let read_end_in_extent = std::cmp::min(extent_length, read_end - extent_logical_offset);
+            let read_end_in_extent = std::cmp::min(
+                extent_length,
+                read_end.checked_sub(extent_logical_offset).ok_or_else(|| {
+                    VfsError::Internal("APFS extent overlap underflow".into())
+                })?,
+            );
 
-            let bytes_from_extent = (read_end_in_extent - read_start_in_extent) as usize;
+            if read_end_in_extent <= read_start_in_extent {
+                continue;
+            }
+
+            let bytes_from_extent = bounded_apfs_read_len(read_start_in_extent, read_end_in_extent)?;
             if bytes_from_extent == 0 {
                 continue;
             }
 
             // Calculate which physical blocks to read
-            let phys_byte_offset =
-                self.offset + (extent_phys_block * self.block_size as u64) + read_start_in_extent;
+            let phys_byte_offset = checked_apfs_physical_offset(
+                self.offset,
+                extent_phys_block,
+                self.block_size,
+                read_start_in_extent,
+            )?;
 
             let mut extent_buf = vec![0u8; bytes_from_extent];
             self.device
@@ -1115,17 +1240,31 @@ impl FilesystemDriver for ApfsDriver {
 
             // Copy into result at the right position
             let dest_offset = if extent_logical_offset > offset {
-                (extent_logical_offset - offset) as usize
+                usize::try_from(
+                    extent_logical_offset
+                        .checked_sub(offset)
+                        .ok_or_else(|| VfsError::Internal("APFS destination underflow".into()))?,
+                )
+                .map_err(|_| VfsError::Internal("APFS destination offset too large".into()))?
             } else {
                 0
             };
 
-            let copy_len = std::cmp::min(bytes_from_extent, total_to_read - dest_offset);
-            if dest_offset + copy_len <= result.len() {
-                result[dest_offset..dest_offset + copy_len]
-                    .copy_from_slice(&extent_buf[..copy_len]);
-                bytes_filled += copy_len;
+            let available_dest = total_to_read
+                .checked_sub(dest_offset)
+                .ok_or_else(|| VfsError::Internal("APFS destination range underflow".into()))?;
+            let copy_len = std::cmp::min(bytes_from_extent, available_dest);
+            if copy_len == 0 {
+                continue;
             }
+
+            let dest_end = dest_offset
+                .checked_add(copy_len)
+                .ok_or_else(|| VfsError::Internal("APFS destination range overflow".into()))?;
+            result[dest_offset..dest_end].copy_from_slice(&extent_buf[..copy_len]);
+            bytes_filled = bytes_filled
+                .checked_add(copy_len)
+                .ok_or_else(|| VfsError::Internal("APFS bytes filled overflow".into()))?;
         }
 
         // If no extents matched, the file may be inline or sparse
@@ -1153,14 +1292,16 @@ impl ApfsDriver {
     ) -> Result<(), VfsError> {
         let node = Self::parse_btree_node(node_buf)?;
         let is_leaf = (node.flags & BTNODE_LEAF) != 0;
-        let toc_offset = 56 + node.table_space_offset as usize;
-        let key_area_offset = toc_offset + node.table_space_len as usize;
+        let (toc_offset, key_area_offset) = checked_btree_offsets(&node)
+            .ok_or_else(|| VfsError::IoError("APFS B-tree offset overflow".into()))?;
 
         let kvlocs = Self::parse_toc(node_buf, toc_offset, node.nkeys as usize)?;
 
         for kvloc in &kvlocs {
-            let key_offset = key_area_offset + kvloc.key_offset as usize;
-            if key_offset + 16 > node_buf.len() {
+            let Some(key_offset) = key_area_offset.checked_add(kvloc.key_offset as usize) else {
+                continue;
+            };
+            if !has_buffer_range(node_buf, key_offset, 16) {
                 continue;
             }
 
@@ -1184,10 +1325,14 @@ impl ApfsDriver {
                     };
 
                     // Parse extent value: [flags(8)] [phys_block_num(8)] [length(8)]
-                    let val_offset = self.block_size as usize
-                        - kvloc.val_offset as usize
-                        - kvloc.val_len as usize;
-                    if val_offset + 24 <= node_buf.len() {
+                    let Some(val_offset) = checked_value_offset(
+                        self.block_size as usize,
+                        kvloc.val_offset,
+                        kvloc.val_len,
+                    ) else {
+                        continue;
+                    };
+                    if has_buffer_range(node_buf, val_offset, 24) {
                         // Skip 8-byte flags field
                         let phys_block = u64::from_le_bytes(
                             node_buf[val_offset + 8..val_offset + 16]
@@ -1204,9 +1349,14 @@ impl ApfsDriver {
                 }
             } else {
                 // Internal node - recurse into child
-                let val_offset =
-                    self.block_size as usize - kvloc.val_offset as usize - kvloc.val_len as usize;
-                if val_offset + 8 <= node_buf.len() {
+                let Some(val_offset) = checked_value_offset(
+                    self.block_size as usize,
+                    kvloc.val_offset,
+                    kvloc.val_len,
+                ) else {
+                    continue;
+                };
+                if has_buffer_range(node_buf, val_offset, 8) {
                     let child_addr = u64::from_le_bytes(
                         node_buf[val_offset..val_offset + 8].try_into().unwrap(),
                     );
@@ -1251,5 +1401,57 @@ mod tests {
     fn test_root_inode_id() {
         assert_eq!(ROOT_INODE_ID, 2);
         assert_eq!(ROOT_DIR_INODE_ID, 2);
+    }
+
+    #[test]
+    fn test_clamp_read_end_respects_file_boundary() {
+        assert_eq!(clamp_read_end(10, 8, 15), 15);
+    }
+
+    #[test]
+    fn test_clamp_read_end_handles_overflow() {
+        assert_eq!(clamp_read_end(u64::MAX - 2, 8, u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn test_bounded_apfs_read_len_rejects_underflow() {
+        let err = bounded_apfs_read_len(10, 9)
+            .expect_err("APFS read range underflow should be rejected");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_checked_apfs_extent_end_rejects_overflow() {
+        let err = checked_apfs_extent_end(u64::MAX - 1, 8)
+            .expect_err("APFS extent end overflow should be rejected");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_checked_apfs_physical_offset_rejects_overflow() {
+        let err = checked_apfs_physical_offset(u64::MAX - 1, 1, 2, 0)
+            .expect_err("APFS physical offset overflow should be rejected");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_checked_toc_entry_offset_handles_overflow() {
+        assert_eq!(checked_toc_entry_offset(usize::MAX - 4, 1), None);
+    }
+
+    #[test]
+    fn test_checked_value_offset_rejects_underflow() {
+        assert_eq!(checked_value_offset(64, 40, 32), None);
+    }
+
+    #[test]
+    fn test_checked_kvloc_capacity_rejects_huge_allocation() {
+        let err = checked_kvloc_capacity(usize::MAX)
+            .expect_err("huge APFS TOC entry count should be rejected");
+
+        assert!(matches!(err, VfsError::IoError(_)));
     }
 }

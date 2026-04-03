@@ -37,7 +37,7 @@ export function BinaryViewer(props: BinaryViewerProps) {
         <ChipIcon class="w-4 h-4 text-accent" />
         <span class="text-sm font-medium truncate" title={bv.filename()}>{bv.filename()}</span>
         <Show when={bv.badge()}>
-          <span class={`text-xs px-1.5 py-0.5 rounded border ${bv.badge()!.color}`}>
+          <span class={`badge border ${bv.badge()!.color}`}>
             {bv.badge()!.label}
           </span>
         </Show>

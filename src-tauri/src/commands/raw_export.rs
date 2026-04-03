@@ -344,7 +344,18 @@ pub async fn raw_create_image(
                 let remaining_in_chunk = bytes_read - data_offset;
 
                 if segment_size > 0 {
-                    let space_in_segment = segment_size - segment_bytes_written;
+                    if segment_bytes_written >= segment_size {
+                        drop(output_file);
+                        current_segment += 1;
+                        segment_bytes_written = 0;
+                        let next_seg = segment_path(&options.output_path, current_segment);
+                        output_file = std::fs::File::create(&next_seg).map_err(|e| {
+                            format!("Failed to create segment file {}: {}", next_seg, e)
+                        })?;
+                        info!("Opened segment {} at {}", current_segment, next_seg);
+                    }
+
+                    let space_in_segment = segment_size.saturating_sub(segment_bytes_written);
                     let write_len = remaining_in_chunk.min(space_in_segment as usize);
 
                     use std::io::Write;
@@ -357,18 +368,6 @@ pub async fn raw_create_image(
                     data_offset += write_len;
                     segment_bytes_written += write_len as u64;
                     global_bytes_written += write_len as u64;
-
-                    // Check if segment is full → open next segment
-                    if segment_bytes_written >= segment_size {
-                        drop(output_file);
-                        current_segment += 1;
-                        segment_bytes_written = 0;
-                        let next_seg = segment_path(&options.output_path, current_segment);
-                        output_file = std::fs::File::create(&next_seg).map_err(|e| {
-                            format!("Failed to create segment file {}: {}", next_seg, e)
-                        })?;
-                        info!("Opened segment {} at {}", current_segment, next_seg);
-                    }
                 } else {
                     // No segmentation — write all at once
                     use std::io::Write;

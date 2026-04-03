@@ -16,6 +16,10 @@ use std::sync::Arc;
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
 use crate::vfs::{normalize_path, DirEntry, FileAttr, VfsError};
 
+const FAT_BPB_MIN_LEN: usize = 14;
+const FAT12_16_SIGNATURE_END: usize = 62;
+const FAT32_SIGNATURE_END: usize = 90;
+
 // =============================================================================
 // FAT Driver
 // =============================================================================
@@ -44,9 +48,18 @@ impl FatDriver {
 
         // Read boot sector to determine FAT type
         let mut boot_sector = vec![0u8; 512];
-        device
+        let boot_sector_len = device
             .read_at(offset, &mut boot_sector)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
+
+        if boot_sector_len < FAT_BPB_MIN_LEN {
+            return Err(VfsError::IoError(format!(
+                "FAT boot sector too short: read {} bytes",
+                boot_sector_len
+            )));
+        }
+
+        let boot_sector = &boot_sector[..boot_sector_len];
 
         // Parse BPB (BIOS Parameter Block)
         let bytes_per_sector = u16::from_le_bytes([boot_sector[11], boot_sector[12]]) as u32;
@@ -54,12 +67,24 @@ impl FatDriver {
         let cluster_size = bytes_per_sector * sectors_per_cluster;
 
         // Determine FAT type from signature
-        let fs_type = if boot_sector.len() >= 90 && &boot_sector[82..90] == b"FAT32   " {
+        let fs_type = if boot_sector.len() >= FAT32_SIGNATURE_END
+            && &boot_sector[82..90] == b"FAT32   "
+        {
             FilesystemType::Fat32
-        } else if boot_sector.len() >= 62 && &boot_sector[54..62] == b"FAT16   " {
+        } else if boot_sector.len() >= FAT12_16_SIGNATURE_END && &boot_sector[54..62] == b"FAT16   " {
             FilesystemType::Fat16
-        } else if boot_sector.len() >= 62 && &boot_sector[54..62] == b"FAT12   " {
+        } else if boot_sector.len() >= FAT12_16_SIGNATURE_END && &boot_sector[54..62] == b"FAT12   " {
             FilesystemType::Fat12
+        } else if boot_sector.len() < FAT12_16_SIGNATURE_END {
+            return Err(VfsError::IoError(format!(
+                "FAT boot sector too short to identify filesystem type: read {} bytes",
+                boot_sector.len()
+            )));
+        } else if boot_sector.len() < FAT32_SIGNATURE_END {
+            return Err(VfsError::IoError(format!(
+                "FAT boot sector too short for FAT32 signature: read {} bytes",
+                boot_sector.len()
+            )));
         } else {
             FilesystemType::Fat32 // Default assumption
         };
@@ -70,7 +95,7 @@ impl FatDriver {
         } else {
             43
         };
-        let label = if boot_sector.len() > label_offset + 11 {
+        let label = if boot_sector.len() >= label_offset + 11 {
             let label_bytes = &boot_sector[label_offset..label_offset + 11];
             let label = String::from_utf8_lossy(label_bytes).trim().to_string();
             if label.is_empty() || label == "NO NAME" {
@@ -231,7 +256,10 @@ impl FilesystemDriver for FatDriver {
         file.seek(SeekFrom::Start(offset))
             .map_err(|e| VfsError::IoError(format!("Failed to seek: {}", e)))?;
 
-        let actual_size = size.min((file_size - offset) as usize);
+        let actual_size = match bounded_fat_read_len(file_size, offset, size) {
+            Some(actual_size) => actual_size,
+            None => return Ok(Vec::new()),
+        };
         let mut buf = vec![0u8; actual_size];
 
         let bytes_read = file
@@ -240,6 +268,32 @@ impl FilesystemDriver for FatDriver {
 
         buf.truncate(bytes_read);
         Ok(buf)
+    }
+}
+
+fn bounded_fat_read_len(file_size: u64, offset: u64, requested_size: usize) -> Option<usize> {
+    let remaining = file_size.checked_sub(offset)?;
+    if remaining == 0 {
+        return None;
+    }
+
+    let remaining_usize = usize::try_from(remaining).unwrap_or(usize::MAX);
+    Some(requested_size.min(remaining_usize))
+}
+
+fn checked_fat_absolute_offset(base: u64, position: u64) -> Option<u64> {
+    base.checked_add(position)
+}
+
+fn checked_fat_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
+    if delta >= 0 {
+        base.checked_add(delta as u64).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "FAT seek overflow")
+        })
+    } else {
+        base.checked_sub(delta.unsigned_abs()).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "FAT seek before start")
+        })
     }
 }
 
@@ -257,9 +311,11 @@ struct FatIoWrapper {
 
 impl Read for FatIoWrapper {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let absolute_offset = checked_fat_absolute_offset(self.offset, self.position)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "FAT read offset overflow"))?;
         let bytes_read = self
             .device
-            .read_at(self.offset + self.position, buf)
+            .read_at(absolute_offset, buf)
             .map_err(std::io::Error::other)?;
         self.position += bytes_read as u64;
         Ok(bytes_read)
@@ -284,20 +340,8 @@ impl Seek for FatIoWrapper {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(p) => p,
-            SeekFrom::Current(p) => {
-                if p >= 0 {
-                    self.position.saturating_add(p as u64)
-                } else {
-                    self.position.saturating_sub((-p) as u64)
-                }
-            }
-            SeekFrom::End(p) => {
-                if p >= 0 {
-                    self.size.saturating_add(p as u64)
-                } else {
-                    self.size.saturating_sub((-p) as u64)
-                }
-            }
+            SeekFrom::Current(p) => checked_fat_seek_position(self.position, p)?,
+            SeekFrom::End(p) => checked_fat_seek_position(self.size, p)?,
         };
         self.position = new_pos;
         Ok(new_pos)
@@ -370,9 +414,121 @@ fn navigate_to_entry<'a, IO: Read + Write + Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffx_errors::ContainerError;
+    use std::io::Cursor;
+
+    struct TestDevice {
+        data: Vec<u8>,
+    }
+
+    impl super::super::traits::BlockReader for Cursor<Vec<u8>> {}
+
+    impl super::super::traits::BlockDevice for TestDevice {
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            if start >= self.data.len() {
+                return Ok(0);
+            }
+
+            let available = self.data.len() - start;
+            let to_copy = available.min(buf.len());
+            buf[..to_copy].copy_from_slice(&self.data[start..start + to_copy]);
+            Ok(to_copy)
+        }
+
+        fn size(&self) -> u64 {
+            self.data.len() as u64
+        }
+    }
+
+    impl SeekableBlockDevice for TestDevice {
+        fn reader_at(&self, offset: u64) -> Box<dyn super::super::traits::BlockReader> {
+            let start = usize::try_from(offset)
+                .unwrap_or(usize::MAX)
+                .min(self.data.len());
+            Box::new(Cursor::new(self.data[start..].to_vec()))
+        }
+    }
+
+    fn fat32_boot_sector() -> Vec<u8> {
+        let mut boot_sector = vec![0u8; 512];
+        boot_sector[11..13].copy_from_slice(&512u16.to_le_bytes());
+        boot_sector[13] = 8;
+        boot_sector[71..82].copy_from_slice(b"COREFAT32  ");
+        boot_sector[82..90].copy_from_slice(b"FAT32   ");
+        boot_sector
+    }
 
     #[test]
     fn test_fat_filesystem_type() {
         assert_eq!(FilesystemType::Fat32.to_string(), "FAT32");
+    }
+
+    #[test]
+    fn test_fat_new_rejects_short_boot_sector() {
+        let result = FatDriver::new(Box::new(TestDevice { data: vec![0u8; 13] }), 0, 13);
+        assert!(matches!(result, Err(VfsError::IoError(message)) if message.contains("too short")));
+    }
+
+    #[test]
+    fn test_fat_new_uses_bytes_actually_read() {
+        let result = FatDriver::new(
+            Box::new(TestDevice {
+                data: fat32_boot_sector()[..64].to_vec(),
+            }),
+            0,
+            64,
+        );
+        assert!(matches!(result, Err(VfsError::IoError(message)) if message.contains("FAT32 signature")));
+    }
+
+    #[test]
+    fn test_fat_new_parses_valid_fat32_boot_sector() {
+        let driver = FatDriver::new(
+            Box::new(TestDevice {
+                data: fat32_boot_sector(),
+            }),
+            0,
+            512,
+        )
+        .unwrap();
+
+        assert_eq!(driver.info().fs_type, FilesystemType::Fat32);
+        assert_eq!(driver.info().cluster_size, 4096);
+        assert_eq!(driver.info().label.as_deref(), Some("COREFAT32"));
+    }
+
+    #[test]
+    fn test_bounded_fat_read_len_rejects_eof() {
+        assert_eq!(bounded_fat_read_len(128, 128, 16), None);
+    }
+
+    #[test]
+    fn test_bounded_fat_read_len_clamps_to_remaining() {
+        assert_eq!(bounded_fat_read_len(128, 120, 16), Some(8));
+    }
+
+    #[test]
+    fn test_bounded_fat_read_len_handles_large_remaining() {
+        assert_eq!(bounded_fat_read_len(u64::MAX, 0, 32), Some(32));
+    }
+
+    #[test]
+    fn test_checked_fat_absolute_offset_rejects_overflow() {
+        assert_eq!(checked_fat_absolute_offset(u64::MAX, 1), None);
+    }
+
+    #[test]
+    fn test_checked_fat_seek_position_rejects_underflow() {
+        let err = checked_fat_seek_position(0, -1).expect_err("seek before start should fail");
+
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_checked_fat_seek_position_rejects_overflow() {
+        let err = checked_fat_seek_position(u64::MAX, 1).expect_err("seek overflow should fail");
+
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 }

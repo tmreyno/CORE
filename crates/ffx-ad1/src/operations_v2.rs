@@ -264,6 +264,7 @@ const TIMESTAMP: u32 = 0x05;
 // Hash keys
 const MD5_HASH: u32 = 0x5001;
 const SHA1_HASH: u32 = 0x5002;
+const ZLIB_CHUNK_ADDR_SIZE: u64 = 0x08;
 
 // Timestamp keys
 const ACCESS_TIME: u32 = 0x07;
@@ -294,6 +295,30 @@ const SYMLINK: u32 = 0x39;
 // =============================================================================
 // On-Demand Metadata Loading
 // =============================================================================
+
+fn checked_zlib_chunk_table_entry_addr(base: u64, index: u64) -> Option<u64> {
+    let slot = index.checked_add(1)?;
+    let offset = slot.checked_mul(ZLIB_CHUNK_ADDR_SIZE)?;
+    base.checked_add(offset)
+}
+
+fn checked_chunk_address_capacity(chunk_count: u64) -> Result<usize, Ad1Error> {
+    let address_count = chunk_count
+        .checked_add(1)
+        .ok_or_else(|| Ad1Error::InvalidFormat("AD1 chunk count overflow".to_string()))?;
+    usize::try_from(address_count)
+        .map_err(|_| Ad1Error::InvalidFormat("AD1 chunk table exceeds memory limits".to_string()))
+}
+
+fn checked_decompressed_capacity(size: u64) -> Result<usize, Ad1Error> {
+    usize::try_from(size)
+        .map_err(|_| Ad1Error::InvalidFormat("AD1 decompressed size exceeds memory limits".to_string()))
+}
+
+fn checked_chunk_span(start: u64, end: u64) -> Result<u64, Ad1Error> {
+    end.checked_sub(start)
+        .ok_or_else(|| Ad1Error::InvalidFormat("AD1 zlib chunk addresses are out of order".to_string()))
+}
 
 /// Get metadata for a specific item by address (on-demand loading)
 ///
@@ -887,18 +912,31 @@ pub fn decompress_file_data(session: &SessionV2, item: &ItemHeader) -> Result<Ve
     );
 
     // Read chunk addresses
-    let mut chunk_addrs = Vec::with_capacity((chunk_count + 1) as usize);
+    let mut chunk_addrs = Vec::with_capacity(checked_chunk_address_capacity(chunk_count)?);
     for i in 0..=chunk_count {
-        let addr = session.read_u64_at(item.zlib_metadata_addr + ((i + 1) * 8))?;
+        let addr_offset = checked_zlib_chunk_table_entry_addr(item.zlib_metadata_addr, i)
+            .ok_or_else(|| {
+                Ad1Error::InvalidFormat(format!(
+                    "Item '{}' has overflowed zlib chunk table address",
+                    item.name
+                ))
+            })?;
+        let addr = session.read_u64_at(addr_offset)?;
         chunk_addrs.push(addr);
     }
 
     // Decompress all chunks
-    let mut decompressed = Vec::with_capacity(item.decompressed_size as usize);
+    let expected_decompressed_size = checked_decompressed_capacity(item.decompressed_size)?;
+    let mut decompressed = Vec::with_capacity(expected_decompressed_size);
 
-    for i in 0..chunk_count as usize {
-        let chunk_start = chunk_addrs[i];
-        let chunk_size = chunk_addrs[i + 1] - chunk_start;
+    for (i, chunk_pair) in chunk_addrs.windows(2).enumerate() {
+        let chunk_start = chunk_pair[0];
+        let chunk_size = checked_chunk_span(chunk_start, chunk_pair[1]).map_err(|_| {
+            Ad1Error::InvalidFormat(format!(
+                "Item '{}' has reversed zlib chunk addresses at index {}",
+                item.name, i
+            ))
+        })?;
 
         // Read compressed chunk
         let compressed = session.arbitrary_read(chunk_start, chunk_size)?;
@@ -913,7 +951,7 @@ pub fn decompress_file_data(session: &SessionV2, item: &ItemHeader) -> Result<Ve
         decompressed.extend_from_slice(&chunk_data);
     }
 
-    if decompressed.len() != item.decompressed_size as usize {
+    if decompressed.len() != expected_decompressed_size {
         warn!(
             "Decompressed size mismatch: expected {}, got {}",
             item.decompressed_size,
@@ -974,4 +1012,39 @@ pub fn verify_item_hash<P: AsRef<Path>>(path: P, item_addr: u64) -> Result<bool,
     let computed_md5 = format!("{:x}", result);
 
     Ok(stored_md5.eq_ignore_ascii_case(&computed_md5))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checked_zlib_chunk_table_entry_addr_valid() {
+        assert_eq!(checked_zlib_chunk_table_entry_addr(0x40, 0), Some(0x48));
+    }
+
+    #[test]
+    fn test_checked_zlib_chunk_table_entry_addr_overflow() {
+        assert_eq!(checked_zlib_chunk_table_entry_addr(u64::MAX, 0), None);
+        assert_eq!(checked_zlib_chunk_table_entry_addr(8, u64::MAX), None);
+    }
+
+    #[test]
+    fn test_checked_chunk_address_capacity_overflow() {
+        assert!(checked_chunk_address_capacity(u64::MAX).is_err());
+    }
+
+    #[test]
+    fn test_checked_decompressed_capacity_overflow() {
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(checked_decompressed_capacity(u64::MAX).unwrap(), usize::MAX);
+
+        #[cfg(not(target_pointer_width = "64"))]
+        assert!(checked_decompressed_capacity((usize::MAX as u64).checked_add(1).unwrap()).is_err());
+    }
+
+    #[test]
+    fn test_checked_chunk_span_rejects_reversed_addresses() {
+        assert!(checked_chunk_span(10, 5).is_err());
+    }
 }

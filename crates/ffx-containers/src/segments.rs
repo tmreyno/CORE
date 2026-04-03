@@ -23,6 +23,11 @@ pub fn is_numbered_segment(lower: &str) -> bool {
     false
 }
 
+fn suffix4(s: &str) -> Option<&str> {
+    let start = s.len().checked_sub(4)?;
+    s.get(start..)
+}
+
 /// Get the path to the first available segment given any segment path
 /// Tries .001 first, then scans for the lowest numbered segment
 /// NOTE: This does file I/O to check existence - use get_first_segment_path_fast for scanning
@@ -232,8 +237,7 @@ pub fn is_zip_continuation(lower: &str) -> bool {
         }
     }
     // .z02, .z03, etc.
-    if lower.len() >= 4 {
-        let ext = &lower[lower.len() - 4..];
+    if let Some(ext) = suffix4(lower) {
         if ext.starts_with(".z") && ext[2..].chars().all(|c| c.is_ascii_digit()) && ext != ".z01" {
             return true;
         }
@@ -243,8 +247,7 @@ pub fn is_zip_continuation(lower: &str) -> bool {
 
 /// Check if this is a RAR continuation segment (.r01, .r02, etc.)
 pub fn is_rar_continuation(lower: &str) -> bool {
-    if lower.len() >= 4 {
-        let ext = &lower[lower.len() - 4..];
+    if let Some(ext) = suffix4(lower) {
         if ext.starts_with(".r") && ext[2..].chars().all(|c| c.is_ascii_digit()) && ext != ".r00" {
             return true;
         }
@@ -295,16 +298,14 @@ pub fn get_segment_basename(filename: &str) -> String {
     }
 
     // Handle .z01, .z02, etc. (ZIP split)
-    if lower.len() >= 4 {
-        let ext = &lower[lower.len() - 4..];
+    if let Some(ext) = suffix4(&lower) {
         if ext.starts_with(".z") && ext[2..].chars().all(|c| c.is_ascii_digit()) {
             return filename[..filename.len() - 4].to_string();
         }
     }
 
     // Handle .r00, .r01, etc. (RAR segments)
-    if lower.len() >= 4 {
-        let ext = &lower[lower.len() - 4..];
+    if let Some(ext) = suffix4(&lower) {
         if ext.starts_with(".r") && ext[2..].chars().all(|c| c.is_ascii_digit()) {
             return filename[..filename.len() - 4].to_string();
         }
@@ -451,6 +452,13 @@ mod tests {
         assert!(!is_ad1_segment("image.e01")); // Not AD1
         assert!(!is_ad1_segment("image.ad1x")); // Not just digits
         assert!(!is_ad1_segment("x.a")); // Too short
+    }
+
+    #[test]
+    fn test_archive_segment_helpers_reject_short_names() {
+        assert!(!is_zip_continuation("a"));
+        assert!(!is_rar_continuation("x"));
+        assert_eq!(get_segment_basename("a"), "a");
     }
 
     #[test]

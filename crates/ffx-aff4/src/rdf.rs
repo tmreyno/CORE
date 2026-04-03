@@ -408,11 +408,16 @@ fn parse_string_literal(token: &str) -> String {
     let content_start = 1; // after opening "
     let mut i = content_start;
     let bytes = token.as_bytes();
+    let mut found_closing_quote = false;
 
     while i < bytes.len() {
         if bytes[i] == b'\\' {
-            i += 2; // skip escaped char
+            i += 1;
+            if i < bytes.len() {
+                i += 1;
+            }
         } else if bytes[i] == b'"' {
+            found_closing_quote = true;
             break;
         } else {
             i += 1;
@@ -420,6 +425,10 @@ fn parse_string_literal(token: &str) -> String {
     }
 
     let value = unescape_turtle_string(&token[content_start..i]);
+
+    if !found_closing_quote {
+        return value;
+    }
 
     // Check for type annotation after closing quote
     let rest = &token[i + 1..]; // after closing "
@@ -556,5 +565,15 @@ mod tests {
             compact_uri("http://example.org/foo"),
             "<http://example.org/foo>"
         );
+    }
+
+    #[test]
+    fn test_parse_string_literal_handles_unterminated_string() {
+        assert_eq!(parse_string_literal("\"unterminated"), "unterminated");
+    }
+
+    #[test]
+    fn test_parse_string_literal_handles_trailing_escape() {
+        assert_eq!(parse_string_literal("\"unterminated\\"), "unterminated\\");
     }
 }

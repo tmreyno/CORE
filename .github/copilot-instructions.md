@@ -163,7 +163,7 @@ fn run_full() { ... }
 | **Accent** | `--color-accent`, `--color-accent-hover` | `text-accent`, `hover:text-accent-hover` |
 | **Status** | `--color-success`, `--color-warning`, `--color-error`, `--color-info` | `text-success`, `text-error` |
 | **Container Types** | `--color-type-ad1`, `--color-type-e01`, `--color-type-l01`, `--color-type-raw`, `--color-type-ufed`, `--color-type-archive` | `text-type-ad1`, `text-type-e01` |
-| **Icons** | `--icon-size-micro` (12px), `--icon-size-small` (16px), `--icon-size-base` (20px), `--icon-size-lg` (24px) | `w-icon-sm h-icon-sm`, `w-icon-base h-icon-base` |
+| **Icons** | `--icon-size-micro` (14px), `--icon-size-small` (18px), `--icon-size-base` (22px), `--icon-size-lg` (26px) | `w-icon-sm h-icon-sm`, `w-icon-base h-icon-base` |
 | **Spacing** | `--gap-compact` (4px), `--gap-small` (6px), `--gap-base` (8px) | `gap-compact`, `gap-small`, `gap-base` |
 
 ### Typography Scale (Standardized)
@@ -259,9 +259,9 @@ At default (14), the minimum readable text size (`text-xs`) is 12px. Micro token
 <span className="text-error">Failed</span>
 
 // ✅ GOOD - Icon sizing
-<Icon className="w-icon-sm h-icon-sm" />   // 16px
-<Icon className="w-icon-base h-icon-base" /> // 20px
-<Icon className="w-icon-lg h-icon-lg" />   // 24px
+<Icon className="w-icon-sm h-icon-sm" />   // 18px
+<Icon className="w-icon-base h-icon-base" /> // 22px
+<Icon className="w-icon-lg h-icon-lg" />   // 26px
 
 // ❌ AVOID - Hardcoded colors
 <div className="bg-zinc-900 text-zinc-100 border-zinc-700" />
@@ -2089,6 +2089,12 @@ The pure-Rust L01 reader (`src-tauri/src/ewf/l01_reader.rs`) parses ltree sectio
 - Use the pure-Rust `ewf/` module for image creation — use `libewf-ffi::EwfWriter`
 - Forget CString null-termination when adding new FFI functions to `libewf-ffi/src/ffi.rs`
 - Map `"ex01"` to `EwfFormat::Encase7` — it must map to `EwfFormat::V2Encase7` (see `parse_format()` in `ewf_export.rs`)
+- Compute EWF viewer metadata section bounds in `ewf/parser/metadata.rs` with raw `section.file_offset + ...` arithmetic — use checked offset math so malformed section headers are skipped safely instead of overflowing region construction
+- Compute L01 entry read offsets in `commands/container.rs` with raw `entry.data_offset + offset` arithmetic — use checked addition after the zero-length guard so malformed logical-entry offsets cannot overflow chunk reads
+- Compute file byte read lengths in `commands/analysis.rs` with raw `(file_size - offset) as usize` arithmetic — use checked subtraction and bounded `u64 -> usize` conversion so large files cannot truncate the remaining-byte calculation before buffer allocation.
+- Compute raw VFS physical read lengths or seek positions in `crates/ffx-raw/src/vfs.rs` or `src-tauri/src/raw/vfs.rs` with raw `(total_size - offset) as usize` arithmetic or saturating seek math — use checked subtraction, bounded `u64 -> usize` conversion, and checked seek-position helpers so large raw images cannot truncate the remaining-byte calculation or silently saturate invalid seek offsets before physical-read buffer allocation.
+- Compute shared binary reader buffer sizes in `crates/ffx-common/src/binary.rs` with direct `vec![0; length]` allocation from untrusted lengths — use checked exact-buffer reservation so malformed string or byte lengths fail cleanly instead of attempting impossible allocations.
+- Compute portable free-space bytes in `src-tauri/src/commands/portable.rs` with raw `f_bavail * f_frsize` multiplication — use checked multiplication so malformed filesystem metadata degrades safely instead of wrapping the reported byte count.
 
 ---
 
@@ -2227,6 +2233,39 @@ Read-only filesystem drivers for parsing partitions inside forensic images. All 
 
 **Adding a new filesystem driver**: Create a module implementing `FilesystemDriver` (methods: `info()`, `getattr()`, `readdir()`, `read()`), add the match arm in `mount_filesystem()`, and add detection logic to `detect_filesystem_type()`.
 
+**Do NOT:**
+- Compute the APFS read clamp in `crates/ffx-common/src/filesystem/apfs_driver.rs` or `src-tauri/src/common/filesystem/apfs_driver.rs` with raw `offset + size as u64` arithmetic — use checked or saturating clamping first so oversized chunk requests cannot overflow before the file-boundary guard runs.
+- Compute APFS B-tree TOC/key/value offsets or reserve TOC vectors in `crates/ffx-common/src/filesystem/apfs_driver.rs` or `src-tauri/src/common/filesystem/apfs_driver.rs` with raw `toc_offset + ...`, `key_area_offset + ...`, `key_area_offset + kvloc.key_offset`, `block_size - val_offset - val_len`, or direct `Vec::with_capacity(nkeys)` reservation — use checked addition/subtraction plus fallible TOC reservation so malformed catalog, object-tree, or extent-node metadata cannot overflow, underflow, or request oversized upfront allocations before buffer slicing.
+- Compute APFS extent read lengths, logical extent ends, physical read offsets, or destination copy ranges in `crates/ffx-common/src/filesystem/apfs_driver.rs` or `src-tauri/src/common/filesystem/apfs_driver.rs` with raw `(read_end - offset) as usize`, raw `extent_logical_offset + extent_length`, raw `self.offset + extent_phys_block * block_size + read_start_in_extent`, raw `total_to_read - dest_offset`, or unchecked `bytes_filled += copy_len` arithmetic — use checked range-length helpers, checked extent-end and physical-offset assembly, and checked destination bookkeeping so malformed APFS extent metadata cannot underflow or wrap file reads.
+- Compute the exFAT read slice end in `exfat_driver.rs` with raw `start + size` arithmetic — use checked or saturating slicing so oversized chunk requests degrade safely instead of overflowing before the bounds check runs.
+- Compute exFAT cluster offsets, FAT entry offsets, parsed file sizes, contiguous cluster numbers, or result capacities in `crates/ffx-common/src/filesystem/exfat_driver.rs` or `src-tauri/src/common/filesystem/exfat_driver.rs` with raw reserved-cluster subtraction, unchecked absolute-offset addition, lossy `entry.size as usize`, unchecked `entry.start_cluster + i as u32`, or direct metadata-driven `Vec` capacity allocation — use checked arithmetic and fallible reservation so malformed cluster metadata fails cleanly instead of underflowing, wrapping, or attempting impossible allocations.
+- Compute HFS+ catalog record or key offsets in the shared or app-side `hfsplus_driver.rs` copies with raw `record_start + key_size` / `data_offset + ...` arithmetic or a 6-byte key-header minimum — use checked offset math and require the full 8-byte catalog-key header before reading `name_length`.
+- Allocate HFS+ record-offset or node-name buffers in `crates/ffx-common/src/filesystem/hfsplus_driver.rs` or `src-tauri/src/common/filesystem/hfsplus_driver.rs` with direct `Vec::with_capacity` calls from catalog record or name counts — use checked/clamped reservation so malformed catalog metadata cannot trigger oversized upfront allocations.
+- Compute HFS+ catalog-header or fork-read offsets in `crates/ffx-common/src/filesystem/hfsplus_driver.rs` or `src-tauri/src/common/filesystem/hfsplus_driver.rs` with raw `offset + start_block * block_size`, raw `(logical_size - offset) as usize`, raw `extent_logical_start + extent_size`, raw `self.offset + ... + extent_offset`, or raw `extent_size - extent_offset` arithmetic — use checked offset math and bounded read-length helpers so malformed HFS+ extents cannot wrap or underflow during catalog-header reads or file-fork reads.
+- Parse ext directory entries in `crates/ffx-common/src/filesystem/ext_driver.rs` or `src-tauri/src/common/filesystem/ext_driver.rs` with raw `offset + 8 + name_len`, advance `offset` without first validating `rec_len`, or allow names to extend past the current record — use checked record bounds so malformed ext directory metadata cannot read past an entry or step outside the buffer.
+- Build ext block-group descriptor tables in `crates/ffx-common/src/filesystem/ext_driver.rs` or `src-tauri/src/common/filesystem/ext_driver.rs` with unchecked `num_groups * desc_size`, raw `offset + block_size` arithmetic, direct `vec![0; inode_size as usize]` / descriptor-table buffer allocation, direct `Vec::with_capacity(num_groups)` reservation, or by ignoring the byte count returned from `read_at` — validate the table size against the device, reject undersized inode records, use checked descriptor offsets plus fallible inode/descriptor reservation, and parse only the bytes that were actually read so malformed ext metadata cannot overflow allocations or treat the zero-filled tail of the buffer as real descriptors.
+- Compute ext inode-read lengths or data-block offsets in `crates/ffx-common/src/filesystem/ext_driver.rs` or `src-tauri/src/common/filesystem/ext_driver.rs` with raw `file_size - offset`, raw `self.offset + block_num * block_size + offset_in_block`, or unchecked `current_offset += bytes_to_read` arithmetic — use checked subtraction, checked block-offset assembly, and checked rolling offsets so malformed ext inode metadata cannot underflow, wrap, or truncate the remaining-byte calculation before reading file data blocks.
+- Compute NTFS read offsets in `crates/ffx-common/src/filesystem/ntfs_driver.rs` or `src-tauri/src/common/filesystem/ntfs_driver.rs` with raw `self.offset + self.position` arithmetic, raw available-byte subtraction like `file_size - offset` or `self.size - self.position`, cast the remaining byte count directly to `usize`, or accept truncated NTFS boot sectors from `read_at` — clamp read lengths with checked subtraction and checked conversion, reject short boot-sector reads before parsing BPB fields, and validate seek/read offsets so malformed NTFS metadata cannot overflow absolute offsets or silently saturate invalid seeks.
+- Compute NTFS total filesystem size in `crates/ffx-common/src/filesystem/ntfs_driver.rs` or `src-tauri/src/common/filesystem/ntfs_driver.rs` with raw `total_sectors * bytes_per_sector` arithmetic — use checked multiplication so malformed boot-sector metadata fails cleanly instead of wrapping the reported NTFS size.
+- Compute DMG memory block read slices in the shared or app-side `dmg_driver.rs` copies with lossy `u64 -> usize` casts or raw `offset + to_read` / `position + to_read` arithmetic — use checked conversion and bounded slice ends so oversized offsets degrade to EOF safely.
+- Compute GPT entry-array sizes, entry offsets, or byte ranges in the shared or app-side `partition.rs` copies with raw multiplication/subtraction (`num_entries * entry_size`, `i * entry_size`, `end_lba - start_lba + 1`) or unchecked LBA-to-byte conversion — use checked arithmetic so malformed headers cannot overflow allocations, entry slices, or partition sizes.
+- Parse FAT boot sectors in `crates/ffx-common/src/filesystem/fat.rs` or `src-tauri/src/common/filesystem/fat.rs` without checking how many bytes `read_at` actually returned — use the real byte count for BPB, signature, and label parsing so short reads fail cleanly instead of reading the zero-filled tail of the fixed 512-byte buffer.
+- Compute FAT file read lengths, wrapper read offsets, or wrapper seek positions in `crates/ffx-common/src/filesystem/fat.rs` or `src-tauri/src/common/filesystem/fat.rs` with raw `(file_size - offset) as usize` arithmetic, unchecked `self.offset + self.position` addition, or saturating `SeekFrom::Current` / `SeekFrom::End` math — use checked subtraction, bounded `u64 -> usize` conversion, checked absolute-offset math, and checked seek-position helpers so large FAT files cannot truncate the remaining-byte calculation before allocation, overflow the underlying block-device read offset, or silently saturate invalid relative seeks.
+- Compute AFF4 bevy chunk ranges in `crates/ffx-aff4/src/reader.rs` with raw `entry.offset as usize..entry.offset as usize + entry.length as usize` slicing, divide by unchecked `chunk_size` / `chunks_per_segment` values, or add map ranges in `crates/ffx-aff4/src/map.rs` with unchecked `mapped_offset + length` / `target_offset + delta` arithmetic — validate the stream layout first and use checked AFF4 range bounds so malformed metadata returns `InvalidContainer`, `InvalidBevyIndex`, or `None` instead of panicking or wrapping.
+- Parse AFF4 Turtle string literals in `crates/ffx-aff4/src/rdf.rs` without assuming a closing quote or a complete escape sequence — track the closing quote first and only inspect typed-literal suffix text after it exists so malformed RDF strings cannot step past the token end or slice suffix text from an unterminated literal.
+- Compute archive file read slice ends in `crates/ffx-archive/src/vfs.rs` with raw `start + size` arithmetic — use checked or saturating slicing so oversized chunk requests degrade safely instead of overflowing before the bounds check runs.
+- Compute ZIP central-directory bounds, buffer sizes, filename slices, or next-entry offsets in `crates/ffx-archive/src/vfs.rs` or `crates/ffx-archive/src/zip_index.rs` with raw `cd_offset + cd_size`, `cd_size as usize`, `pos + 46 + filename_len`, or `46 + filename_len + extra_len + comment_len` arithmetic — use checked bound validation, checked size conversion, and checked range/advance helpers so malformed ZIP metadata cannot overflow central-directory allocation or slice past entry boundaries.
+- Compute ZIP local-file scan buffer sizes, decompressed output capacity, or next-entry offsets in `crates/ffx-archive/src/vfs.rs` with raw `compressed_size as usize`, `uncompressed_size as usize`, or `30 + filename_len as u64 + extra_len as u64 + compressed_size` arithmetic — use checked size conversion and checked local-header bound helpers so malformed ZIP local-file metadata cannot overflow allocation size or walk the VFS scan loop past archive bounds.
+- Compute native ZIP entry allocation size in `crates/ffx-archive/src/lib.rs` with raw `entry.size() as usize` reservation arithmetic — use checked size conversion and fallible buffer reservation so malformed ZIP metadata cannot truncate allocation size or panic on impossible reservations during native ZIP reads.
+- Compute AD1 file read slice ends in `crates/ffx-ad1/src/vfs.rs` with raw `start + size` arithmetic — use checked or saturating slicing so oversized chunk requests degrade safely instead of overflowing before the bounds check runs.
+- Compute AD1 zlib chunk-table entry addresses or chunk output end indexes in `crates/ffx-ad1/src/parser.rs` with unchecked addition or lossy `u64 -> usize` conversion — use checked address math, checked chunk-length conversion, and saturating output-index updates so malformed AD1 metadata returns parse errors instead of wrapping reads or output copies.
+- Compute AD1 item-name, parent-folder, or metadata field offsets in `crates/ffx-ad1/src/parser.rs` or `crates/ffx-ad1/src/reader_v2.rs` with raw `offset + ITEM_*`, `offset + METADATA_*`, or `offset + ITEM_NAME + name_length` arithmetic, or cast item-name or metadata lengths with `as usize` / `as u64` on either the lazy or eager read path — use checked offset helpers and explicit length conversion so malformed AD1 item and metadata records fail safely instead of wrapping item-name, parent-folder, or metadata-data reads.
+- Compute AD1 `reader_v2` decompression chunk-table entry addresses, chunk spans, or decompressed output capacity in `crates/ffx-ad1/src/operations_v2.rs` with raw `item.zlib_metadata_addr + ((index + 1) * ZLIB_CHUNK_ADDR_SIZE)`, `chunk_addrs[i + 1] - chunk_start`, or `item.decompressed_size as usize` arithmetic — use checked address math, checked subtraction, and checked capacity conversion so malformed AD1 compressed metadata returns `InvalidFormat` instead of wrapping chunk-table offsets, chunk lengths, or destination allocation size.
+- Compute EWF section walker bounds in `crates/ffx-ewf/src/parser/mod.rs` with raw `offset + SECTION_HEADER_SIZE` or `offset + section_size` arithmetic — use checked addition so malformed section metadata cannot wrap the parser before the next header read.
+- Parse split-archive suffixes in `crates/ffx-containers/src/segments.rs` without slicing the last four characters directly — use checked tail extraction so short or malformed filenames cannot panic while ZIP or RAR segment detection and basename grouping run.
+- Compute 7z next-header absolute offsets in `crates/ffx-archive/src/sevenz.rs` with raw `32 + next_offset_relative` arithmetic — use checked addition so malformed 7z metadata cannot wrap the seek target before next-header inspection runs.
+- Compute 7z multi-file seek targets or segment ends in `crates/ffx-archive/src/sevenz.rs` with raw `(self.total_size as i64 + p) as u64`, `(self.total_pos as i64 + p) as u64`, or `cumulative + size` arithmetic — use checked seek-target resolution and checked segment-end math so malformed or negative split-archive seeks cannot wrap reader positions across 7z segments.
+
 ---
 
 ## Processed Database Parsers (`src-tauri/src/processed/`)
@@ -2315,6 +2354,8 @@ Each library's `build.rs` follows a priority chain:
 2. Build from source via CMake (requires system libarchive + compression libs)
 3. Stub fallback for Windows cross-compilation
 
+**macOS libarchive linking rule:** `patches/libarchive2-sys/build.rs` must prefer static Homebrew archives (`libb2.a`, `liblzma.a`, `libzstd.a`, `liblz4.a`) when they exist. Homebrew's `liblz4.dylib` install name resolves to `@executable_path/../lib/liblz4.1.dylib`, which causes `cargo run` / `npm run tauri dev` to crash at launch if linked dynamically into `target/debug/core-ffx`.
+
 ### Rebuilding Pre-built Libraries
 
 Use the `prebuild-native-deps.yml` workflow to rebuild libraries:
@@ -2357,6 +2398,8 @@ cp build/lib7z_ffi.a ~/GitHub/CORE-1/sevenzip-ffi/build/lib7z_ffi.a
 - Remove the `ZLIB_DLL` stripping step from `prebuild-native-deps.yml` — it prevents `__imp_compress2` link failures
 - Build libewf as a DLL on Windows — the resulting import library is tiny (~72 KB) and won't contain actual code
 - Use `sevenzip-ffi/build/lib7z_ffi.a` on Linux CI — it may contain macOS objects (build.rs guards against this)
+- Revert `patches/libarchive2-sys/build.rs` to dynamic `lz4` linking on macOS — Homebrew's `liblz4.dylib` install name points at `@executable_path/../lib/liblz4.1.dylib`, which breaks `tauri dev`
+- Put `[profile.*]` or duplicate `[patch.crates-io]` sections back into `src-tauri/Cargo.toml` — workspace-level Cargo settings must live in the root `Cargo.toml` or they are ignored with warnings
 
 ---
 
@@ -2636,7 +2679,7 @@ The right panel (`src/components/layout/RightPanel.tsx`) renders metadata, activ
 | `OptionalMetadataRow` | Key-value row (auto-hides when empty) | Same styles as `MetadataRow`, wraps in `<Show when={value}>` |
 | `SectionHeader` | Non-collapsible heading | `text-2xs font-medium text-txt-muted uppercase tracking-wider` |
 | `SummaryRow` | Icon + label + value stat row | `text-xs` (NOT text-sm), `bg-bg-secondary rounded` |
-| `StatusBadge` | Draft/locked/voided badge | `text-2xs font-medium px-1.5 py-0.5 rounded`, status-colored |
+| `StatusBadge` | Draft/locked/voided badge | `inline-flex items-center px-2.5 py-1 text-sm leading-none font-medium rounded-full border`, status-colored |
 
 **Layout Rules:**
 
@@ -2857,6 +2900,7 @@ Archive containers (ZIP, 7z, TAR, GZ, RAR, DMG, ISO, etc.) use a **synthesized d
 - Bypass `synthesizeDirectories()` when listing archive root entries
 - Add manual path filtering (e.g., `!path.includes('/')`) for archive root entries — use `archive.getArchiveRootEntries()`
 - Assume archive entries always include explicit directory entries
+- Compute archive chunk slice ends with raw `start + size` arithmetic in `archive_read_entry_chunk` — use checked/saturating slicing because chunk sizes come from IPC and can overflow before the bounds check runs
 - Use `allArchiveEntries()` directly for file/folder counts — use `allSynthesizedEntries()` which includes virtual directories
 
 ---
@@ -2904,12 +2948,15 @@ const isNestedContainer = createMemo(() => !entry.isDir && isNestedContainerFile
 - `src/components/EvidenceTree/hooks/useNestedContainers.ts` — shared hook managing nested container state, caching, and IPC
 - `src/components/EvidenceTree/containerDetection.ts` — `isNestedContainerFile()`, `getNestedContainerType()`, `NESTED_CONTAINER_EXTENSIONS`
 - `src-tauri/src/commands/archive/nested.rs` — `get_or_create_nested_temp()`, `nested_container_get_tree()`, `nested_archive_read_entry_chunk()`
+- `src-tauri/src/commands/container.rs` — `parse_nested_archive_path()`, nested archive extraction routing, and entry context classification
 
 **Do NOT:**
 - Remove nested container props (`isNestedExpanded`, `onToggleNested`, etc.) from `VfsTreeNode`, `Ad1TreeNode`, or `ArchiveTreeNode`
 - Remove nested container props from `PartitionNodeProps` — they must pass through to `VfsTreeNode`
 - Remove the `isNestedContainer` memo or `isNestedContainerFile()` detection from any tree node
 - Remove the E01/Raw/AD1 parent detection in `get_or_create_nested_temp()` — the `is_ewf`/`is_raw`/`is_ad1` checks MUST run before the archive extension match
+- Treat malformed nested archive paths with empty outer or inner `::` segments as valid nested extractions in `src-tauri/src/commands/container.rs` — route detection and extraction through `parse_nested_archive_path()` so inputs like `::file.txt` and `outer.zip::` fall back to normal archive handling instead of extracting an empty path component
+- Compute nested archive chunk slice ends with raw `start + size` arithmetic in `nested_archive_read_entry_chunk()` — use checked/saturating slicing so oversized chunk requests degrade safely instead of overflowing
 - Remove `VfsNestedEntryNode` from `VfsTreeNode.tsx` or `Ad1NestedEntryNode` from `Ad1TreeNode.tsx`
 - Skip wiring `tree.nested.*` props when rendering `PartitionNode` or `Ad1TreeNode` in `EvidenceTree.tsx`
 
@@ -3559,6 +3606,7 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 - Remove the `get_available_space()` free space check from `export.rs` — exports to near-full destinations will silently fail mid-copy
 - Collapse triage per-category skipped artifacts into `filesFailed` — macOS permission/TCC/time-out skips must remain visible as skipped, not hard failures
 - Switch `triage.rs` back to `create_archive()` for packaging — use `create_archive_streaming()` to avoid the known in-memory packaging warning
+- Replace the `shared_category_details` mutex recovery helpers in `triage.rs` with `lock().unwrap()` or `into_inner().unwrap_or_default()` — poisoned triage workers must recover category stats instead of crashing or silently dropping them during final aggregation
 - Use `open()` dialog for repair output path — use `save()` dialog (the output is a new file being created, not an existing file being selected)
 - Move the sysinfo `mounted_ro` check BEFORE the write probe in `check_path_writable` — on macOS firmlinked paths (`/Users`, `/Library`), sysinfo incorrectly matches the read-only system volume `/` instead of the writable data volume. The write probe MUST run first as ground truth.
 - Remove `onSourceAdd`/`onSourceRemove` props from `DriveSourcePanel` — they power the live bidirectional sync between the drive panel and export panel

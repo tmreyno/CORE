@@ -120,6 +120,7 @@ pub struct ZipIndexEntry {
 
 const INDEX_VERSION: u8 = 1;
 const INDEX_MAGIC: &[u8] = b"ZIDX";
+const ZIP_CENTRAL_DIRECTORY_ENTRY_HEADER_SIZE: usize = 46;
 
 impl ZipIndex {
     /// Build index by parsing the ZIP central directory directly
@@ -152,7 +153,8 @@ impl ZipIndex {
         debug!(entries = entry_count, cd_offset, cd_size, "Found EOCD");
 
         // Read Central Directory in one shot
-        let mut cd_buf = vec![0u8; cd_size as usize];
+        checked_central_directory_bounds(cd_offset, cd_size, source_size)?;
+        let mut cd_buf = vec![0u8; checked_central_directory_size(cd_size)?];
         file.seek(SeekFrom::Start(cd_offset))
             .map_err(|e| format!("Failed to seek to CD: {}", e))?;
         file.read_exact(&mut cd_buf)
@@ -298,7 +300,11 @@ impl ZipIndex {
         let mut pos = 0usize;
         let mut index = 0u32;
 
-        while pos + 46 <= cd_buf.len() && index < entry_count {
+        while index < entry_count {
+            if checked_central_directory_header_end(pos, cd_buf.len()).is_none() {
+                break;
+            }
+
             // Verify signature (PK\x01\x02)
             if cd_buf[pos..pos + 4] != [0x50, 0x4B, 0x01, 0x02] {
                 break;
@@ -328,11 +334,12 @@ impl ZipIndex {
             ]);
 
             // Get filename
-            if pos + 46 + filename_len > cd_buf.len() {
+            let Some((filename_start, filename_end)) =
+                checked_central_directory_filename_range(pos, filename_len, cd_buf.len())
+            else {
                 break;
-            }
-            let filename =
-                String::from_utf8_lossy(&cd_buf[pos + 46..pos + 46 + filename_len]).to_string();
+            };
+            let filename = String::from_utf8_lossy(&cd_buf[filename_start..filename_end]).to_string();
             let is_directory = filename.ends_with('/');
             let normalized_path = filename.trim_end_matches('/').to_string();
 
@@ -376,7 +383,16 @@ impl ZipIndex {
             }
 
             // Move to next entry
-            pos += 46 + filename_len + extra_len + comment_len;
+            let Some(next_pos) = checked_central_directory_next_pos(
+                pos,
+                filename_len,
+                extra_len,
+                comment_len,
+                cd_buf.len(),
+            ) else {
+                break;
+            };
+            pos = next_pos;
             index += 1;
         }
 
@@ -571,6 +587,59 @@ impl ZipIndex {
     }
 }
 
+fn checked_central_directory_size(cd_size: u64) -> Result<usize, ContainerError> {
+    usize::try_from(cd_size)
+        .map_err(|_| ContainerError::InvalidFormat("ZIP central directory too large".to_string()))
+}
+
+fn checked_central_directory_bounds(
+    cd_offset: u64,
+    cd_size: u64,
+    file_size: u64,
+) -> Result<(), ContainerError> {
+    let cd_end = cd_offset.checked_add(cd_size).ok_or_else(|| {
+        ContainerError::InvalidFormat("ZIP central directory bounds overflow".to_string())
+    })?;
+
+    if cd_end > file_size {
+        return Err(ContainerError::InvalidFormat(
+            "ZIP central directory exceeds archive bounds".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn checked_central_directory_header_end(pos: usize, buf_len: usize) -> Option<usize> {
+    pos.checked_add(ZIP_CENTRAL_DIRECTORY_ENTRY_HEADER_SIZE)
+        .filter(|end| *end <= buf_len)
+}
+
+fn checked_central_directory_filename_range(
+    pos: usize,
+    filename_len: usize,
+    buf_len: usize,
+) -> Option<(usize, usize)> {
+    let start = checked_central_directory_header_end(pos, buf_len)?;
+    let end = start.checked_add(filename_len)?;
+    (end <= buf_len).then_some((start, end))
+}
+
+fn checked_central_directory_next_pos(
+    pos: usize,
+    filename_len: usize,
+    extra_len: usize,
+    comment_len: usize,
+    buf_len: usize,
+) -> Option<usize> {
+    let next = pos
+        .checked_add(ZIP_CENTRAL_DIRECTORY_ENTRY_HEADER_SIZE)?
+        .checked_add(filename_len)?
+        .checked_add(extra_len)?
+        .checked_add(comment_len)?;
+    (next <= buf_len).then_some(next)
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -587,5 +656,26 @@ mod tests {
 
         assert_eq!(path1, path2);
         assert_ne!(path1, path3);
+    }
+
+    #[test]
+    fn test_checked_central_directory_bounds_rejects_overflow() {
+        assert!(checked_central_directory_bounds(u64::MAX, 1, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn test_checked_central_directory_filename_range_rejects_overflow() {
+        assert_eq!(
+            checked_central_directory_filename_range(usize::MAX, 1, usize::MAX),
+            None
+        );
+    }
+
+    #[test]
+    fn test_checked_central_directory_next_pos_rejects_overflow() {
+        assert_eq!(
+            checked_central_directory_next_pos(usize::MAX, 1, 0, 0, usize::MAX),
+            None
+        );
     }
 }

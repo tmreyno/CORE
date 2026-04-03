@@ -33,6 +33,27 @@ fn format_compression(level: u8) -> String {
     }
 }
 
+fn checked_section_offset(base: u64, delta: u64) -> Option<u64> {
+    base.checked_add(delta)
+}
+
+fn checked_section_region(
+    base: u64,
+    start_delta: u64,
+    end_delta: u64,
+    name: String,
+    color_class: &str,
+    description: String,
+) -> Option<HeaderRegion> {
+    Some(HeaderRegion {
+        start: checked_section_offset(base, start_delta)?,
+        end: checked_section_offset(base, end_delta)?,
+        name,
+        color_class: color_class.to_string(),
+        description,
+    })
+}
+
 // ============================================================================
 // Conversion to ParsedMetadata for UI Display
 // ============================================================================
@@ -128,79 +149,89 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
 
     // Section header regions
     for section in &info.sections {
-        let header_end = section.file_offset + SECTION_HEADER_SIZE as u64;
+        if let Some(region) = checked_section_region(
+            section.file_offset,
+            0,
+            16,
+            format!("Section: {}", section.section_type),
+            "region-section-type",
+            format!("{} section type identifier", section.section_type),
+        ) {
+            regions.push(region);
+        }
 
-        // Section type field (16 bytes)
-        regions.push(HeaderRegion {
-            start: section.file_offset,
-            end: section.file_offset + 16,
-            name: format!("Section: {}", section.section_type),
-            color_class: "region-section-type".to_string(),
-            description: format!("{} section type identifier", section.section_type),
-        });
+        if let Some(region) = checked_section_region(
+            section.file_offset,
+            16,
+            24,
+            "Next Offset".to_string(),
+            "region-offset",
+            format!("Next section at 0x{:X}", section.next_offset),
+        ) {
+            regions.push(region);
+        }
 
-        // Next offset field (8 bytes)
-        regions.push(HeaderRegion {
-            start: section.file_offset + 16,
-            end: section.file_offset + 24,
-            name: "Next Offset".to_string(),
-            color_class: "region-offset".to_string(),
-            description: format!("Next section at 0x{:X}", section.next_offset),
-        });
+        if let Some(region) = checked_section_region(
+            section.file_offset,
+            24,
+            32,
+            "Section Size".to_string(),
+            "region-offset",
+            format!("{} bytes", section.section_size),
+        ) {
+            regions.push(region);
+        }
 
-        // Section size field (8 bytes)
-        regions.push(HeaderRegion {
-            start: section.file_offset + 24,
-            end: section.file_offset + 32,
-            name: "Section Size".to_string(),
-            color_class: "region-offset".to_string(),
-            description: format!("{} bytes", section.section_size),
-        });
+        if let Some(region) = checked_section_region(
+            section.file_offset,
+            32,
+            72,
+            "Padding".to_string(),
+            "region-reserved",
+            "Reserved padding bytes".to_string(),
+        ) {
+            regions.push(region);
+        }
 
-        // Padding (40 bytes)
-        regions.push(HeaderRegion {
-            start: section.file_offset + 32,
-            end: section.file_offset + 72,
-            name: "Padding".to_string(),
-            color_class: "region-reserved".to_string(),
-            description: "Reserved padding bytes".to_string(),
-        });
-
-        // Checksum (4 bytes)
-        regions.push(HeaderRegion {
-            start: section.file_offset + 72,
-            end: header_end,
-            name: "Checksum".to_string(),
-            color_class: "region-checksum".to_string(),
-            description: format!("Adler-32: 0x{:08X}", section.checksum),
-        });
+        if let Some(region) = checked_section_region(
+            section.file_offset,
+            72,
+            SECTION_HEADER_SIZE as u64,
+            "Checksum".to_string(),
+            "region-checksum",
+            format!("Adler-32: 0x{:08X}", section.checksum),
+        ) {
+            regions.push(region);
+        }
 
         // Section data region (if not too large)
         if section.section_size > SECTION_HEADER_SIZE as u64 {
-            let data_start = header_end;
-            let data_end = section.file_offset + section.section_size;
+            if let (Some(data_start), Some(data_end)) = (
+                checked_section_offset(section.file_offset, SECTION_HEADER_SIZE as u64),
+                checked_section_offset(section.file_offset, section.section_size),
+            ) {
+                let data_class = match section.section_type.as_str() {
+                    "header" | "header2" => "region-metadata",
+                    "volume" | "disk" => "region-metadata",
+                    "sectors" | "data" => "region-data",
+                    "table" | "table2" => "region-offset",
+                    "hash" | "digest" => "region-hash",
+                    "error2" => "region-error",
+                    _ => "region-data",
+                };
 
-            let data_class = match section.section_type.as_str() {
-                "header" | "header2" => "region-metadata",
-                "volume" | "disk" => "region-metadata",
-                "sectors" | "data" => "region-data",
-                "table" | "table2" => "region-offset",
-                "hash" | "digest" => "region-hash",
-                "error2" => "region-error",
-                _ => "region-data",
-            };
-
-            regions.push(HeaderRegion {
-                start: data_start,
-                end: data_end.min(data_start + 1024), // Limit displayed region
-                name: format!("{} Data", section.section_type),
-                color_class: data_class.to_string(),
-                description: format!(
-                    "{} section data ({} bytes)",
-                    section.section_type,
-                    section.section_size - SECTION_HEADER_SIZE as u64
-                ),
-            });
+                regions.push(HeaderRegion {
+                    start: data_start,
+                    end: data_end.min(data_start.saturating_add(1024)),
+                    name: format!("{} Data", section.section_type),
+                    color_class: data_class.to_string(),
+                    description: format!(
+                        "{} section data ({} bytes)",
+                        section.section_type,
+                        section.section_size - SECTION_HEADER_SIZE as u64
+                    ),
+                });
+            }
         }
     }
 
@@ -488,5 +519,64 @@ pub fn ewf_detailed_info_to_metadata(info: &EwfDetailedInfo) -> ParsedMetadata {
         version: Some(format!("EWF v{}", info.version)),
         fields,
         regions,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ewf::parser::types::{
+        EwfDetailedInfo, EwfSectionHeader, EwfVariant, SECTION_HEADER_SIZE,
+    };
+    use super::ewf_detailed_info_to_metadata;
+
+    fn info_with_section(section: EwfSectionHeader) -> EwfDetailedInfo {
+        EwfDetailedInfo {
+            variant: EwfVariant::E01,
+            version: 1,
+            segment_number: 1,
+            sections: vec![section],
+            file_size: 4096,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn metadata_skips_overflowed_section_regions() {
+        let metadata = ewf_detailed_info_to_metadata(&info_with_section(EwfSectionHeader {
+            section_type: "header".to_string(),
+            next_offset: 0,
+            section_size: SECTION_HEADER_SIZE as u64 + 128,
+            checksum: 0x1234_5678,
+            file_offset: u64::MAX - 8,
+        }));
+
+        let region_names = metadata
+            .regions
+            .iter()
+            .map(|region| region.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(region_names, vec!["EWF Signature", "Segment Info"]);
+    }
+
+    #[test]
+    fn metadata_keeps_valid_section_data_region() {
+        let section_offset = 128;
+        let metadata = ewf_detailed_info_to_metadata(&info_with_section(EwfSectionHeader {
+            section_type: "hash".to_string(),
+            next_offset: 0,
+            section_size: SECTION_HEADER_SIZE as u64 + 2048,
+            checksum: 0xABCD_EF01,
+            file_offset: section_offset,
+        }));
+
+        let data_region = metadata
+            .regions
+            .iter()
+            .find(|region| region.name == "hash Data")
+            .expect("hash data region should be present");
+
+        assert_eq!(data_region.start, section_offset + SECTION_HEADER_SIZE as u64);
+        assert_eq!(data_region.end, data_region.start + 1024);
     }
 }

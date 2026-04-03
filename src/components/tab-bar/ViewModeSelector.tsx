@@ -35,7 +35,7 @@ export function ViewModeSelector(props: ViewModeSelectorProps) {
       <div class="flex items-center rounded-md bg-bg-panel/50 p-0.5">
         {VIEW_MODES.map(({ mode, label, title, icon: Icon }) => (
           <button
-            class={`flex items-center gap-0.5 px-1.5 py-0.5 text-2xs leading-tight rounded transition-colors ${
+            class={`flex items-center gap-1 px-2 py-1 text-xs leading-none rounded transition-colors ${
               props.viewMode === mode
                 ? "bg-accent text-white"
                 : "text-txt-secondary hover:text-txt"
@@ -43,7 +43,7 @@ export function ViewModeSelector(props: ViewModeSelectorProps) {
             onClick={() => props.onViewModeChange(mode)}
             title={title}
           >
-            <Icon class="w-[10px] h-[10px]" /> {label}
+            <Icon class="w-3 h-3" /> {label}
           </button>
         ))}
       </div>

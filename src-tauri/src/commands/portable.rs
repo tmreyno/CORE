@@ -163,7 +163,7 @@ fn get_free_space(path: &Path) -> u64 {
             let mut stat: libc::statvfs = std::mem::zeroed();
             #[allow(clippy::unnecessary_cast)]
             if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
-                stat.f_bavail as u64 * stat.f_frsize as u64
+                checked_available_bytes(stat.f_bavail as u64, stat.f_frsize as u64).unwrap_or(0)
             } else {
                 0
             }
@@ -195,6 +195,10 @@ fn get_free_space(path: &Path) -> u64 {
         let _ = path;
         0
     }
+}
+
+fn checked_available_bytes(blocks: u64, block_size: u64) -> Option<u64> {
+    blocks.checked_mul(block_size)
 }
 
 /// Detect portable mode and build the configuration.
@@ -331,4 +335,19 @@ pub fn portable_ensure_dirs() -> Result<String, String> {
     }
 
     Ok(cfg.data_dir.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_available_bytes;
+
+    #[test]
+    fn test_checked_available_bytes_valid() {
+        assert_eq!(checked_available_bytes(128, 4096), Some(524_288));
+    }
+
+    #[test]
+    fn test_checked_available_bytes_overflow() {
+        assert_eq!(checked_available_bytes(u64::MAX, 2), None);
+    }
 }

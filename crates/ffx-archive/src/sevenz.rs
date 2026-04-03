@@ -130,14 +130,15 @@ impl Seek for MultiFileReader {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(p) => p,
-            SeekFrom::End(p) => (self.total_size as i64 + p) as u64,
-            SeekFrom::Current(p) => (self.total_pos as i64 + p) as u64,
+            SeekFrom::End(p) => checked_seek_target(self.total_size, p)?,
+            SeekFrom::Current(p) => checked_seek_target(self.total_pos, p)?,
         };
 
         // Find which file contains this position
         let mut cumulative = 0u64;
         for (i, (path, size)) in self.files.iter().enumerate() {
-            if new_pos < cumulative + size {
+            let segment_end = checked_segment_end(cumulative, *size)?;
+            if new_pos < segment_end {
                 // Position is in this file
                 if i != self.current_index {
                     self.current_file = Some(BufReader::with_capacity(
@@ -155,7 +156,7 @@ impl Seek for MultiFileReader {
                 self.total_pos = new_pos;
                 return Ok(new_pos);
             }
-            cumulative += size;
+            cumulative = segment_end;
         }
 
         // Position is at or past the end
@@ -170,6 +171,23 @@ impl Seek for MultiFileReader {
         self.total_pos = self.total_size;
         Ok(self.total_size)
     }
+}
+
+fn checked_seek_target(base: u64, delta: i64) -> std::io::Result<u64> {
+    let target = i128::from(base) + i128::from(delta);
+    if !(0..=i128::from(u64::MAX)).contains(&target) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "7z seek out of range",
+        ));
+    }
+    Ok(target as u64)
+}
+
+fn checked_segment_end(cumulative: u64, size: u64) -> std::io::Result<u64> {
+    cumulative.checked_add(size).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "7z segment bounds overflow")
+    })
 }
 
 /// Find all parts of a split archive
@@ -441,21 +459,23 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
     ));
 
     // Calculate absolute offset: 0x20 (32) + relative offset
-    let absolute_offset = 32 + next_offset_relative;
+    let absolute_offset = checked_next_header_offset(next_offset_relative);
 
     // Check if headers are encrypted by reading first byte of Next Header
     let mut encrypted = false;
-    if next_size > 0 && file.seek(SeekFrom::Start(absolute_offset)).is_ok() {
-        let mut next_header_byte = [0u8; 1];
-        if file.read_exact(&mut next_header_byte).is_ok() {
-            // 0x17 = EncodedHeader - metadata is compressed and/or encrypted
-            if next_header_byte[0] == header_types::ENCODED_HEADER {
-                debug!(
-                    path = %path,
-                    "7z has EncodedHeader - metadata may be encrypted"
-                );
-                // Try to detect AES in the encoded header stream info
-                encrypted = detect_encryption(&mut file, absolute_offset).unwrap_or(false);
+    if let Some(absolute_offset) = absolute_offset {
+        if next_size > 0 && file.seek(SeekFrom::Start(absolute_offset)).is_ok() {
+            let mut next_header_byte = [0u8; 1];
+            if file.read_exact(&mut next_header_byte).is_ok() {
+                // 0x17 = EncodedHeader - metadata is compressed and/or encrypted
+                if next_header_byte[0] == header_types::ENCODED_HEADER {
+                    debug!(
+                        path = %path,
+                        "7z has EncodedHeader - metadata may be encrypted"
+                    );
+                    // Try to detect AES in the encoded header stream info
+                    encrypted = detect_encryption(&mut file, absolute_offset).unwrap_or(false);
+                }
             }
         }
     }
@@ -463,7 +483,7 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
     debug!(
         path = %path,
         version = ?version,
-        next_header_offset = absolute_offset,
+        next_header_offset = ?absolute_offset,
         next_header_size = next_size,
         crc_valid = ?start_header_crc_valid,
         encrypted = encrypted,
@@ -471,7 +491,7 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
     );
 
     Ok(SevenZipMetadata {
-        next_header_offset: Some(absolute_offset),
+        next_header_offset: absolute_offset,
         next_header_size: Some(next_size),
         version,
         start_header_crc_valid,
@@ -514,6 +534,10 @@ fn detect_encryption(file: &mut File, next_header_offset: u64) -> Result<bool, C
     }
 
     Ok(false)
+}
+
+fn checked_next_header_offset(next_offset_relative: u64) -> Option<u64> {
+    32u64.checked_add(next_offset_relative)
 }
 
 // =============================================================================
@@ -616,6 +640,31 @@ mod tests {
         let result = parse_metadata("/nonexistent/path/to/archive.7z");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to open"));
+    }
+
+    #[test]
+    fn test_checked_next_header_offset_overflow() {
+        assert_eq!(checked_next_header_offset(u64::MAX), None);
+    }
+
+    #[test]
+    fn test_checked_next_header_offset_valid() {
+        assert_eq!(checked_next_header_offset(0), Some(32));
+    }
+
+    #[test]
+    fn test_checked_seek_target_rejects_negative_result() {
+        assert!(checked_seek_target(0, -1).is_err());
+    }
+
+    #[test]
+    fn test_checked_seek_target_valid_relative_seek() {
+        assert_eq!(checked_seek_target(10, -4).unwrap(), 6);
+    }
+
+    #[test]
+    fn test_checked_segment_end_overflow() {
+        assert!(checked_segment_end(u64::MAX, 1).is_err());
     }
 
     #[test]

@@ -315,10 +315,7 @@ fn analyze_mach(
 
             // Try to parse and analyze the first architecture fully
             if let Some(arch) = fat.iter_arches().flatten().next() {
-                let start = arch.offset as usize;
-                let end = start + arch.size as usize;
-                if end <= data.len() {
-                    let slice = &data[start..end];
+                if let Some(slice) = checked_u64_slice(&data, arch.offset as u64, arch.size as u64) {
                     if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) =
                         Object::parse(slice)
                     {
@@ -360,6 +357,13 @@ fn analyze_mach(
             })
         }
     }
+}
+
+fn checked_u64_slice(data: &[u8], offset: u64, size: u64) -> Option<&[u8]> {
+    let start = usize::try_from(offset).ok()?;
+    let len = usize::try_from(size).ok()?;
+    let end = start.checked_add(len)?;
+    data.get(start..end)
 }
 
 fn analyze_single_mach(
@@ -506,5 +510,17 @@ mod tests {
     fn test_binary_format_enum() {
         let format = BinaryFormat::PE64;
         assert!(matches!(format, BinaryFormat::PE64));
+    }
+
+    #[test]
+    fn test_checked_u64_slice_valid_range() {
+        let data = b"hello";
+        assert_eq!(checked_u64_slice(data, 1, 3), Some(&b"ell"[..]));
+    }
+
+    #[test]
+    fn test_checked_u64_slice_rejects_overflow_range() {
+        let data = b"hello";
+        assert!(checked_u64_slice(data, 4, u64::MAX).is_none());
     }
 }

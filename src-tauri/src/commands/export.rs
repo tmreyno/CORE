@@ -29,6 +29,16 @@ use tracing::{debug, info, warn};
 static EXPORT_CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+fn export_cancel_flags() -> std::sync::MutexGuard<'static, HashMap<String, Arc<AtomicBool>>> {
+    match EXPORT_CANCEL_FLAGS.lock() {
+        Ok(flags) => flags,
+        Err(poisoned) => {
+            warn!("EXPORT_CANCEL_FLAGS mutex poisoned; recovering cancel registry");
+            poisoned.into_inner()
+        }
+    }
+}
+
 /// Progress event for copy/export operations
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -446,7 +456,7 @@ pub async fn export_files(
     // Register cancellation flag
     let cancel_flag = Arc::new(AtomicBool::new(false));
     {
-        let mut flags = EXPORT_CANCEL_FLAGS.lock().unwrap();
+        let mut flags = export_cancel_flags();
         flags.insert(operation_id.clone(), cancel_flag.clone());
     }
 
@@ -465,7 +475,7 @@ pub async fn export_files(
 
     // Always clean up the cancel flag
     {
-        let mut flags = EXPORT_CANCEL_FLAGS.lock().unwrap();
+        let mut flags = export_cancel_flags();
         flags.remove(&operation_id);
     }
 
@@ -857,7 +867,7 @@ fn run_export_inner(
 /// Cancel an in-progress export operation
 #[tauri::command]
 pub async fn cancel_export(operation_id: String) -> Result<bool, String> {
-    let flags = EXPORT_CANCEL_FLAGS.lock().unwrap();
+    let flags = export_cancel_flags();
     if let Some(flag) = flags.get(&operation_id) {
         flag.store(true, Ordering::Relaxed);
         info!("Cancel requested for export operation: {}", operation_id);

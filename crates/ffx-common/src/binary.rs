@@ -132,7 +132,7 @@ pub fn read_string(file: &mut File, length: usize) -> Result<String, ContainerEr
     if length == 0 {
         return Ok(String::new());
     }
-    let mut buf = vec![0u8; length];
+    let mut buf = checked_exact_buffer(length, "string")?;
     file.read_exact(&mut buf)
         .map_err(|e| ContainerError::IoError(format!("Failed to read string: {}", e)))?;
 
@@ -171,9 +171,18 @@ pub fn read_bytes(file: &mut File, length: usize) -> Result<Vec<u8>, ContainerEr
     if length == 0 {
         return Ok(Vec::new());
     }
-    let mut buf = vec![0u8; length];
+    let mut buf = checked_exact_buffer(length, "byte buffer")?;
     file.read_exact(&mut buf)
         .map_err(|e| ContainerError::IoError(format!("Failed to read {} bytes: {}", length, e)))?;
+    Ok(buf)
+}
+
+fn checked_exact_buffer(length: usize, context: &str) -> Result<Vec<u8>, ContainerError> {
+    let mut buf = Vec::new();
+    buf.try_reserve_exact(length).map_err(|_| {
+        ContainerError::InvalidFormat(format!("{} allocation too large", context))
+    })?;
+    buf.resize(length, 0);
     Ok(buf)
 }
 
@@ -247,5 +256,16 @@ mod tests {
     fn test_bytes_to_string() {
         assert_eq!(bytes_to_string(b"hello\x00world"), "hello");
         assert_eq!(bytes_to_string(b"no null"), "no null");
+    }
+
+    #[test]
+    fn test_checked_exact_buffer_allows_small_allocation() {
+        let buf = checked_exact_buffer(8, "test").unwrap();
+        assert_eq!(buf.len(), 8);
+    }
+
+    #[test]
+    fn test_checked_exact_buffer_rejects_huge_allocation() {
+        assert!(checked_exact_buffer(usize::MAX, "test").is_err());
     }
 }

@@ -36,6 +36,18 @@ use tracing::debug;
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
 use crate::common::vfs::{DirEntry, FileAttr, VfsError};
 
+fn slice_read_data(data: &[u8], offset: u64, size: usize) -> Vec<u8> {
+    let Some(start) = usize::try_from(offset).ok() else {
+        return Vec::new();
+    };
+    if start >= data.len() {
+        return Vec::new();
+    }
+
+    let end = start.saturating_add(size).min(data.len());
+    data[start..end].to_vec()
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -156,7 +168,9 @@ impl ExFatBootSector {
 
         let bytes_per_sector = 1u32 << bytes_per_sector_shift;
         let bytes_per_cluster = bytes_per_sector << sectors_per_cluster_shift;
-        let volume_size = (cluster_count as u64) * (bytes_per_cluster as u64);
+        let volume_size = u64::from(cluster_count)
+            .checked_mul(u64::from(bytes_per_cluster))
+            .ok_or_else(|| VfsError::Internal("exFAT volume size overflowed u64".to_string()))?;
 
         Ok(ExFatBootSector {
             bytes_per_sector_shift,
@@ -176,10 +190,50 @@ impl ExFatBootSector {
     }
 
     /// Calculate byte offset for a given cluster number
-    fn cluster_offset(&self, cluster: u32) -> u64 {
-        let heap_start = (self.cluster_heap_offset as u64) * (self.bytes_per_sector as u64);
-        heap_start + ((cluster as u64 - 2) * (self.bytes_per_cluster as u64))
+    fn cluster_offset(&self, cluster: u32) -> Result<u64, VfsError> {
+        if cluster < 2 {
+            return Err(VfsError::IoError(
+                "exFAT cluster numbers below 2 are reserved".to_string(),
+            ));
+        }
+
+        let heap_start = (self.cluster_heap_offset as u64)
+            .checked_mul(self.bytes_per_sector as u64)
+            .ok_or_else(|| VfsError::IoError("exFAT heap offset overflowed u64".to_string()))?;
+        let cluster_span = (u64::from(cluster) - 2)
+            .checked_mul(self.bytes_per_cluster as u64)
+            .ok_or_else(|| VfsError::IoError("exFAT cluster span overflowed u64".to_string()))?;
+
+        heap_start
+            .checked_add(cluster_span)
+            .ok_or_else(|| VfsError::IoError("exFAT cluster offset overflowed u64".to_string()))
     }
+}
+
+fn checked_exfat_absolute_offset(base: u64, relative: u64, context: &str) -> Result<u64, VfsError> {
+    base.checked_add(relative)
+        .ok_or_else(|| VfsError::IoError(format!("{} offset overflowed u64", context)))
+}
+
+fn checked_exfat_capacity(capacity: usize, context: &str) -> Result<Vec<u8>, VfsError> {
+    let mut buf = Vec::new();
+    buf.try_reserve_exact(capacity)
+        .map_err(|_| VfsError::IoError(format!("{} capacity too large", context)))?;
+    buf.resize(capacity, 0);
+    Ok(buf)
+}
+
+fn checked_exfat_file_size(size: u64) -> Result<usize, VfsError> {
+    usize::try_from(size)
+        .map_err(|_| VfsError::IoError("exFAT size too large for platform".to_string()))
+}
+
+fn checked_exfat_cluster_number(start_cluster: u32, index: usize) -> Result<u32, VfsError> {
+    let index = u32::try_from(index)
+        .map_err(|_| VfsError::IoError("exFAT cluster index too large".to_string()))?;
+    start_cluster
+        .checked_add(index)
+        .ok_or_else(|| VfsError::IoError("exFAT cluster number overflowed u32".to_string()))
 }
 
 // =============================================================================
@@ -280,8 +334,13 @@ impl ExFatDriver {
 
     /// Read a single cluster's data
     fn read_cluster(&self, cluster: u32) -> Result<Vec<u8>, VfsError> {
-        let cluster_offset = self.offset + self.boot.cluster_offset(cluster);
-        let mut buf = vec![0u8; self.boot.bytes_per_cluster as usize];
+        let cluster_offset = checked_exfat_absolute_offset(
+            self.offset,
+            self.boot.cluster_offset(cluster)?,
+            "exFAT cluster",
+        )?;
+        let cluster_len = checked_exfat_file_size(self.boot.bytes_per_cluster as u64)?;
+        let mut buf = checked_exfat_capacity(cluster_len, "exFAT cluster")?;
         self.device
             .read_at(cluster_offset, &mut buf)
             .map_err(|e| VfsError::IoError(format!("Failed to read cluster {}: {}", cluster, e)))?;
@@ -290,9 +349,19 @@ impl ExFatDriver {
 
     /// Read a FAT entry to find the next cluster in a chain
     fn read_fat_entry(&self, cluster: u32) -> Result<u32, VfsError> {
-        let fat_byte_offset = self.offset
-            + (self.boot.fat_offset as u64) * (self.boot.bytes_per_sector as u64)
-            + (cluster as u64) * 4;
+        let fat_offset = (self.boot.fat_offset as u64)
+            .checked_mul(self.boot.bytes_per_sector as u64)
+            .ok_or_else(|| VfsError::IoError("exFAT FAT offset overflowed u64".to_string()))?;
+        let entry_offset = u64::from(cluster)
+            .checked_mul(4)
+            .ok_or_else(|| VfsError::IoError("exFAT FAT entry offset overflowed u64".to_string()))?;
+        let fat_byte_offset = checked_exfat_absolute_offset(
+            self.offset,
+            fat_offset
+                .checked_add(entry_offset)
+                .ok_or_else(|| VfsError::IoError("exFAT FAT byte offset overflowed u64".to_string()))?,
+            "exFAT FAT entry",
+        )?;
         let mut buf = [0u8; 4];
         self.device
             .read_at(fat_byte_offset, &mut buf)
@@ -308,9 +377,13 @@ impl ExFatDriver {
         start_cluster: u32,
         max_bytes: usize,
     ) -> Result<Vec<u8>, VfsError> {
-        let cluster_offset = partition_offset + boot.cluster_offset(start_cluster);
-        let read_size = max_bytes.min(boot.bytes_per_cluster as usize);
-        let mut buf = vec![0u8; read_size];
+        let cluster_offset = checked_exfat_absolute_offset(
+            partition_offset,
+            boot.cluster_offset(start_cluster)?,
+            "exFAT static cluster",
+        )?;
+        let read_size = max_bytes.min(checked_exfat_file_size(boot.bytes_per_cluster as u64)?);
+        let mut buf = checked_exfat_capacity(read_size, "exFAT static cluster")?;
         device
             .read_at(cluster_offset, &mut buf)
             .map_err(|e| VfsError::IoError(format!("Failed to read cluster: {}", e)))?;
@@ -323,20 +396,21 @@ impl ExFatDriver {
             return Ok(Vec::new());
         }
 
+        let cluster_len = checked_exfat_file_size(self.boot.bytes_per_cluster as u64)?;
         let data_size = if entry.is_directory {
             // For directories, read at least one cluster
-            self.boot.bytes_per_cluster as usize
+            cluster_len
         } else {
-            entry.size as usize
+            checked_exfat_file_size(entry.size)?
         };
 
         if entry.no_fat_chain {
             // Contiguous allocation — read directly
-            let clusters_needed = data_size.div_ceil(self.boot.bytes_per_cluster as usize);
-            let mut result = Vec::with_capacity(data_size);
+            let clusters_needed = data_size.div_ceil(cluster_len);
+            let mut result = checked_exfat_capacity(data_size, "exFAT data")?;
 
             for i in 0..clusters_needed {
-                let cluster = entry.start_cluster + i as u32;
+                let cluster = checked_exfat_cluster_number(entry.start_cluster, i)?;
                 let cluster_data = self.read_cluster(cluster)?;
                 result.extend_from_slice(&cluster_data);
             }
@@ -345,9 +419,9 @@ impl ExFatDriver {
             Ok(result)
         } else {
             // Follow FAT chain
-            let mut result = Vec::with_capacity(data_size);
+            let mut result = checked_exfat_capacity(data_size, "exFAT data")?;
             let mut current_cluster = entry.start_cluster;
-            let max_clusters = data_size.div_ceil(self.boot.bytes_per_cluster as usize);
+            let max_clusters = data_size.div_ceil(cluster_len);
 
             for _ in 0..max_clusters {
                 if !(2..0xFFFFFFF7).contains(&current_cluster) {
@@ -757,12 +831,7 @@ impl FilesystemDriver for ExFatDriver {
         }
 
         let data = self.read_data(&entry)?;
-        let start = offset as usize;
-        if start >= data.len() {
-            return Ok(Vec::new());
-        }
-        let end = (start + size).min(data.len());
-        Ok(data[start..end].to_vec())
+        Ok(slice_read_data(&data, offset, size))
     }
 }
 
@@ -861,9 +930,36 @@ mod tests {
         // Cluster 2 is the first data cluster
         // heap_offset = 32 sectors * 512 bytes = 16384
         // cluster 2 offset = 16384 + (2-2) * 4096 = 16384
-        assert_eq!(boot.cluster_offset(2), 16384);
+        assert_eq!(boot.cluster_offset(2).unwrap(), 16384);
         // cluster 3 offset = 16384 + (3-2) * 4096 = 20480
-        assert_eq!(boot.cluster_offset(3), 20480);
+        assert_eq!(boot.cluster_offset(3).unwrap(), 20480);
+    }
+
+    #[test]
+    fn test_cluster_offset_rejects_reserved_cluster() {
+        let data = create_exfat_boot_sector();
+        let boot = ExFatBootSector::parse(&data).unwrap();
+
+        let err = boot.cluster_offset(1).expect_err("reserved cluster should fail");
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_cluster_offset_rejects_overflow() {
+        let mut data = create_exfat_boot_sector();
+        data[88..92].copy_from_slice(&u32::MAX.to_le_bytes());
+        data[109] = 25 - data[108];
+        let boot = ExFatBootSector::parse(&data).unwrap();
+
+        let err = boot
+            .cluster_offset(u32::MAX)
+            .expect_err("overflowing cluster offset should fail");
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_checked_exfat_capacity_rejects_huge_allocation() {
+        assert!(checked_exfat_capacity(usize::MAX, "test").is_err());
     }
 
     // ==================== Volume Label ====================
@@ -958,5 +1054,20 @@ mod tests {
         assert_eq!(ATTR_HIDDEN, 0x02);
         assert_eq!(ATTR_SYSTEM, 0x04);
         assert_eq!(ATTR_ARCHIVE, 0x20);
+    }
+
+    #[test]
+    fn test_slice_read_data_valid_range() {
+        assert_eq!(slice_read_data(b"abcdef", 2, 3), b"cde");
+    }
+
+    #[test]
+    fn test_slice_read_data_out_of_bounds_returns_empty() {
+        assert!(slice_read_data(b"abcdef", 99, 10).is_empty());
+    }
+
+    #[test]
+    fn test_slice_read_data_huge_size_saturates_to_end() {
+        assert_eq!(slice_read_data(b"abcdef", 4, usize::MAX), b"ef");
     }
 }

@@ -958,12 +958,21 @@ fn read_zip_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>
         .by_index(entry_index)
         .map_err(|e| format!("Failed to read ZIP entry: {}", e))?;
 
-    let mut data = Vec::with_capacity(entry.size() as usize);
+    let mut data = checked_zip_entry_buffer(entry.size())?;
     entry
         .read_to_end(&mut data)
         .map_err(|e| format!("Failed to decompress ZIP entry: {}", e))?;
 
     debug!(path = %entry_path, bytes = data.len(), "Read ZIP entry (native)");
+    Ok(data)
+}
+
+fn checked_zip_entry_buffer(size: u64) -> Result<Vec<u8>, ContainerError> {
+    let capacity = usize::try_from(size)
+        .map_err(|_| ContainerError::InvalidFormat("ZIP entry too large".to_string()))?;
+    let mut data = Vec::new();
+    data.try_reserve_exact(capacity)
+        .map_err(|_| ContainerError::InvalidFormat("ZIP entry allocation too large".to_string()))?;
     Ok(data)
 }
 
@@ -1005,6 +1014,22 @@ fn read_7z_entry_native(
             "Entry not found in 7z: {}",
             entry_path
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checked_zip_entry_buffer_allows_small_capacity() {
+        let data = checked_zip_entry_buffer(16).unwrap();
+        assert!(data.capacity() >= 16);
+    }
+
+    #[test]
+    fn test_checked_zip_entry_buffer_rejects_huge_capacity() {
+        assert!(checked_zip_entry_buffer(u64::MAX).is_err());
     }
 }
 

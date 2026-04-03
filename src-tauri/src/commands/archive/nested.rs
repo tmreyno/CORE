@@ -72,6 +72,19 @@ static NESTED_CONTAINER_CACHE: std::sync::LazyLock<
     ))
 });
 
+fn slice_chunk(data: &[u8], offset: u64, size: u64) -> Vec<u8> {
+    let Some(start) = usize::try_from(offset).ok() else {
+        return Vec::new();
+    };
+    if start >= data.len() {
+        return Vec::new();
+    }
+
+    let requested = usize::try_from(size).unwrap_or(usize::MAX);
+    let end = start.saturating_add(requested).min(data.len());
+    data[start..end].to_vec()
+}
+
 /// Get or create the temp path for a nested container
 pub(crate) fn get_or_create_nested_temp(
     parent_path: &str,
@@ -340,15 +353,7 @@ pub async fn nested_archive_read_entry_chunk(
             total_size
         );
 
-        // Bounds checking
-        if offset >= total_size {
-            return Ok(Vec::new());
-        }
-
-        let start = offset as usize;
-        let end = std::cmp::min(start + size as usize, data.len());
-
-        Ok(data[start..end].to_vec())
+        Ok(slice_chunk(&data, offset, size))
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
@@ -635,4 +640,24 @@ pub async fn nested_container_clear_cache() -> Result<usize, String> {
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_slice_chunk_valid_range() {
+        assert_eq!(slice_chunk(b"abcdef", 1, 3), b"bcd");
+    }
+
+    #[test]
+    fn test_slice_chunk_out_of_bounds_returns_empty() {
+        assert!(slice_chunk(b"abcdef", 20, 4).is_empty());
+    }
+
+    #[test]
+    fn test_slice_chunk_huge_size_saturates_to_end() {
+        assert_eq!(slice_chunk(b"abcdef", 5, u64::MAX), b"f");
+    }
 }

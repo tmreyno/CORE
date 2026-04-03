@@ -1186,10 +1186,9 @@ pub async fn triage_collect(
                     src.display()
                 );
                 a_skipped.fetch_add(1, Ordering::Relaxed);
-                if let Ok(mut details) = shared_category_details.lock() {
-                    if let Some(cat_result) = details.get_mut(category.as_str()) {
-                        cat_result.files_skipped += 1;
-                    }
+                let mut details = lock_mutex_recover(shared_category_details.as_ref());
+                if let Some(cat_result) = details.get_mut(category.as_str()) {
+                    cat_result.files_skipped += 1;
                 }
                 return;
             }
@@ -1265,16 +1264,15 @@ pub async fn triage_collect(
                 Ok(size) => {
                     a_collected.fetch_add(1, Ordering::Relaxed);
                     a_bytes.fetch_add(size, Ordering::Relaxed);
-                    if let Ok(mut details) = shared_category_details.lock() {
-                        if let Some(cat_result) = details.get_mut(category.as_str()) {
-                            cat_result.files_collected += 1;
-                            cat_result.bytes_collected += size;
-                            if cat_result.sample_files.len() < 10 {
-                                if let Some(name) = src.file_name() {
-                                    cat_result
-                                        .sample_files
-                                        .push(name.to_string_lossy().to_string());
-                                }
+                    let mut details = lock_mutex_recover(shared_category_details.as_ref());
+                    if let Some(cat_result) = details.get_mut(category.as_str()) {
+                        cat_result.files_collected += 1;
+                        cat_result.bytes_collected += size;
+                        if cat_result.sample_files.len() < 10 {
+                            if let Some(name) = src.file_name() {
+                                cat_result
+                                    .sample_files
+                                    .push(name.to_string_lossy().to_string());
                             }
                         }
                     }
@@ -1282,10 +1280,9 @@ pub async fn triage_collect(
                 Err(e) => {
                     warn!("Failed to copy {}: {e}", src.display());
                     a_skipped.fetch_add(1, Ordering::Relaxed);
-                    if let Ok(mut details) = shared_category_details.lock() {
-                        if let Some(cat_result) = details.get_mut(category.as_str()) {
-                            cat_result.files_skipped += 1;
-                        }
+                    let mut details = lock_mutex_recover(shared_category_details.as_ref());
+                    if let Some(cat_result) = details.get_mut(category.as_str()) {
+                        cat_result.files_skipped += 1;
                     }
                 }
             }
@@ -1326,13 +1323,10 @@ pub async fn triage_collect(
         let bytes = a_bytes.load(Ordering::Relaxed);
         let skipped = a_skipped.load(Ordering::Relaxed);
         let failed = a_failed.load(Ordering::Relaxed);
-        category_details = Arc::try_unwrap(shared_category_details)
-            .unwrap_or_else(|arc| {
-                let guard = arc.lock().unwrap();
-                Mutex::new(guard.clone())
-            })
-            .into_inner()
-            .unwrap_or_default();
+        category_details = into_inner_recover(
+            Arc::try_unwrap(shared_category_details)
+                .unwrap_or_else(|arc| Mutex::new(lock_mutex_recover(arc.as_ref()).clone())),
+        );
 
         if a_cancelled.load(Ordering::Relaxed) {
             info!("Triage collection cancelled during parallel copy");
@@ -1482,6 +1476,26 @@ pub async fn triage_cancel() -> Result<(), String> {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+fn lock_mutex_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("Triage mutex poisoned, recovering inner state");
+            poisoned.into_inner()
+        }
+    }
+}
+
+fn into_inner_recover<T>(mutex: Mutex<T>) -> T {
+    match mutex.into_inner() {
+        Ok(value) => value,
+        Err(poisoned) => {
+            warn!("Triage mutex poisoned during collection, recovering inner state");
+            poisoned.into_inner()
+        }
+    }
+}
 
 /// Package the staging directory contents into a 7z archive.
 fn package_to_7z(staging_dir: &Path, archive_path: &Path) -> Result<(), String> {
@@ -2047,4 +2061,42 @@ fn redact_match(matched: &str) -> String {
         "*".repeat(len - 2 * show),
         &matched[len - show..]
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{into_inner_recover, lock_mutex_recover};
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn lock_mutex_recover_reads_poisoned_mutex() {
+        let value = Arc::new(Mutex::new(41_u32));
+        let worker_value = Arc::clone(&value);
+
+        let _ = std::thread::spawn(move || {
+            let _guard = worker_value.lock().unwrap();
+            panic!("poison lock");
+        })
+        .join();
+
+        assert!(value.is_poisoned());
+        let guard = lock_mutex_recover(value.as_ref());
+        assert_eq!(*guard, 41);
+    }
+
+    #[test]
+    fn into_inner_recover_returns_poisoned_value() {
+        let value = Arc::new(Mutex::new(7_u32));
+        let worker_value = Arc::clone(&value);
+
+        let _ = std::thread::spawn(move || {
+            let _guard = worker_value.lock().unwrap();
+            panic!("poison lock");
+        })
+        .join();
+
+        assert!(value.is_poisoned());
+        let value = Arc::try_unwrap(value).expect("single owner after join");
+        assert_eq!(into_inner_recover(value), 7);
+    }
 }

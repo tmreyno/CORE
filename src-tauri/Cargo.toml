@@ -1,6 +1,6 @@
 [package]
 name = "core-ffx"
-version = "0.1.86"
+version = "0.1.87"
 description = "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File Explorer"
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
@@ -194,13 +194,6 @@ typst-reports = []  # Enable Typst source file generation (compile with typst CL
 tempfile = "3"  # For creating temporary test files
 uuid = { version = "1.11", features = ["v4"] }  # For generating test operation IDs
 
-[profile.release]
-opt-level = 3           # Maximum optimizations
-lto = "thin"            # Link-time optimization (thin is faster to compile than "fat")
-codegen-units = 1       # Better optimization at the cost of compile time
-strip = false           # Must be disabled — stripping removes __TAURI_BUNDLE_TYPE symbol needed by updater
-panic = "abort"         # Smaller binary, faster panic
-
 [target.'cfg(windows)'.dependencies]
 # NOTE: windows crate removed - not currently used
 # Can be re-added for Windows-specific optimizations if needed
@@ -208,23 +201,6 @@ windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"  # POSIX statvfs for disk space checks (unix only)
-
-# Also optimize dev builds somewhat for better testing performance
-[profile.dev]
-opt-level = 1           # Some optimization for faster dev testing
-
-# Fully optimize ALL dependencies in dev builds — these get cached by sccache
-# and never recompile unless their version/features change. This means ~560
-# crates compile once (optimized) then are served from cache on every build.
-# Only core-ffx itself recompiles at opt-level 1 (fast).
-[profile.dev.package."*"]
-opt-level = 2           # Optimize all dependencies (cached by sccache)
-
-# Windows patch: fix la_ssize_t (i64) vs isize type mismatch in callback signatures
-# and add RelWithDebInfo search path for libarchive2-sys
-[patch.crates-io]
-libarchive2 = { path = "../patches/libarchive2" }
-libarchive2-sys = { path = "../patches/libarchive2-sys" }
 
 [[bench]]
 name = "hash_benchmarks"

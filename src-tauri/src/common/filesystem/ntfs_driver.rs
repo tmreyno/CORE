@@ -8,12 +8,15 @@
 //!
 //! Implements NTFS filesystem access using the ntfs crate.
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{ErrorKind, Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 use super::traits::{FilesystemDriver, FilesystemInfo, FilesystemType, SeekableBlockDevice};
 use crate::common::vfs::{normalize_path, DirEntry, FileAttr, VfsError};
 use ntfs::NtfsReadSeek;
+
+/// Minimum number of boot-sector bytes needed for the NTFS signature and BPB fields we read.
+const NTFS_BOOT_SECTOR_MIN_LEN: usize = 48;
 
 // =============================================================================
 // NTFS Driver
@@ -43,9 +46,14 @@ impl NtfsDriver {
 
         // Read boot sector to get volume info
         let mut boot_sector = vec![0u8; 512];
-        device
+        let bytes_read = device
             .read_at(offset, &mut boot_sector)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
+        if bytes_read < NTFS_BOOT_SECTOR_MIN_LEN {
+            return Err(VfsError::IoError(
+                "NTFS boot sector is truncated".to_string(),
+            ));
+        }
 
         // Verify NTFS signature
         if &boot_sector[3..11] != b"NTFS    " {
@@ -68,7 +76,7 @@ impl NtfsDriver {
             boot_sector[46],
             boot_sector[47],
         ]);
-        let total_size = total_sectors * bytes_per_sector as u64;
+        let total_size = checked_ntfs_total_size(total_sectors, bytes_per_sector)?;
 
         let info = FilesystemInfo {
             fs_type: FilesystemType::Ntfs,
@@ -95,6 +103,12 @@ impl NtfsDriver {
             size: self.size,
         }
     }
+}
+
+fn checked_ntfs_total_size(total_sectors: u64, bytes_per_sector: u32) -> Result<u64, VfsError> {
+    total_sectors
+        .checked_mul(bytes_per_sector as u64)
+        .ok_or_else(|| VfsError::IoError("NTFS total size overflowed u64".to_string()))
 }
 
 impl FilesystemDriver for NtfsDriver {
@@ -243,7 +257,9 @@ impl FilesystemDriver for NtfsDriver {
             return Ok(Vec::new());
         }
 
-        let actual_size = size.min((file_size - offset) as usize);
+        let available = checked_available_bytes(file_size, offset)
+            .ok_or_else(|| VfsError::IoError("NTFS read offset exceeded file size".to_string()))?;
+        let actual_size = clamp_ntfs_read_size(available, size);
         let mut buf = vec![0u8; actual_size];
 
         // Create a reader and read the data
@@ -280,11 +296,26 @@ pub struct NtfsIoWrapper {
 
 impl Read for NtfsIoWrapper {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.position >= self.size {
+            return Ok(0);
+        }
+
+        let absolute_offset = self
+            .offset
+            .checked_add(self.position)
+            .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, "NTFS read offset overflow"))?;
+        let available = checked_available_bytes(self.size, self.position).ok_or_else(|| {
+            std::io::Error::new(ErrorKind::InvalidInput, "NTFS read position exceeded size")
+        })?;
+        let max_read = clamp_ntfs_read_size(available, buf.len());
         let bytes_read = self
             .device
-            .read_at(self.offset + self.position, buf)
+            .read_at(absolute_offset, &mut buf[..max_read])
             .map_err(std::io::Error::other)?;
-        self.position += bytes_read as u64;
+        self.position = self
+            .position
+            .checked_add(bytes_read as u64)
+            .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, "NTFS read position overflow"))?;
         Ok(bytes_read)
     }
 }
@@ -293,20 +324,8 @@ impl Seek for NtfsIoWrapper {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(p) => p,
-            SeekFrom::Current(p) => {
-                if p >= 0 {
-                    self.position.saturating_add(p as u64)
-                } else {
-                    self.position.saturating_sub((-p) as u64)
-                }
-            }
-            SeekFrom::End(p) => {
-                if p >= 0 {
-                    self.size.saturating_add(p as u64)
-                } else {
-                    self.size.saturating_sub((-p) as u64)
-                }
-            }
+            SeekFrom::Current(p) => checked_seek_position(self.position, p)?,
+            SeekFrom::End(p) => checked_seek_position(self.size, p)?,
         };
         self.position = new_pos;
         Ok(new_pos)
@@ -370,6 +389,24 @@ fn find_entry<'n, T: Read + Seek>(
     Ok(current)
 }
 
+fn clamp_ntfs_read_size(available: u64, requested: usize) -> usize {
+    requested.min(usize::try_from(available).unwrap_or(usize::MAX))
+}
+
+fn checked_available_bytes(total_size: u64, offset: u64) -> Option<u64> {
+    total_size.checked_sub(offset)
+}
+
+fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
+    if delta >= 0 {
+        base.checked_add(delta as u64)
+            .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, "NTFS seek overflow"))
+    } else {
+        base.checked_sub(delta.unsigned_abs())
+            .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, "NTFS seek before start"))
+    }
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -377,9 +414,97 @@ fn find_entry<'n, T: Read + Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::traits::{BlockDevice, BlockReader, SeekableBlockDevice};
+    use ffx_errors::ContainerError;
+    use std::io::Cursor;
 
     #[test]
     fn test_ntfs_filesystem_type() {
         assert_eq!(FilesystemType::Ntfs.to_string(), "NTFS");
+    }
+
+    struct MockBlockDevice {
+        data: Vec<u8>,
+    }
+
+    impl BlockDevice for MockBlockDevice {
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            if start >= self.data.len() {
+                return Ok(0);
+            }
+
+            let to_read = buf.len().min(self.data.len() - start);
+            buf[..to_read].copy_from_slice(&self.data[start..start + to_read]);
+            Ok(to_read)
+        }
+
+        fn size(&self) -> u64 {
+            self.data.len() as u64
+        }
+    }
+
+    impl SeekableBlockDevice for MockBlockDevice {
+        fn reader_at(&self, offset: u64) -> Box<dyn BlockReader> {
+            let start = usize::try_from(offset).unwrap_or(self.data.len());
+            Box::new(Cursor::new(self.data[start.min(self.data.len())..].to_vec()))
+        }
+    }
+
+    #[test]
+    fn test_clamp_ntfs_read_size_caps_large_available_length() {
+        assert_eq!(clamp_ntfs_read_size(u64::MAX, 64), 64);
+    }
+
+    #[test]
+    fn test_checked_available_bytes_rejects_underflow() {
+        assert_eq!(checked_available_bytes(8, 4), Some(4));
+        assert_eq!(checked_available_bytes(8, 8), Some(0));
+        assert_eq!(checked_available_bytes(8, 9), None);
+    }
+
+    #[test]
+    fn test_checked_seek_position_rejects_underflow() {
+        let err = checked_seek_position(4, -8).expect_err("seek before start should fail");
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_ntfs_io_wrapper_read_rejects_offset_overflow() {
+        let device: Arc<dyn SeekableBlockDevice> = Arc::new(MockBlockDevice {
+            data: vec![0u8; 16],
+        });
+        let mut io = NtfsIoWrapper {
+            device,
+            offset: u64::MAX,
+            position: 1,
+            size: 16,
+        };
+        let mut buf = [0u8; 4];
+
+        let err = io.read(&mut buf).expect_err("offset overflow should fail");
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_ntfs_driver_new_rejects_short_boot_sector() {
+        let device = Box::new(MockBlockDevice { data: vec![0u8; 16] });
+
+        let err = match NtfsDriver::new(device, 0, 16) {
+            Ok(_) => panic!("short boot sector should fail"),
+            Err(err) => err,
+        };
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_checked_ntfs_total_size_valid() {
+        assert_eq!(checked_ntfs_total_size(8, 512).unwrap(), 4096);
+    }
+
+    #[test]
+    fn test_checked_ntfs_total_size_rejects_overflow() {
+        let err = checked_ntfs_total_size(u64::MAX, 2).expect_err("overflow should fail");
+        assert!(matches!(err, VfsError::IoError(message) if message.contains("overflow")));
     }
 }

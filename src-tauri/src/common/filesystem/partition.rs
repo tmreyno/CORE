@@ -92,6 +92,27 @@ const GPT_SIGNATURE: &[u8; 8] = b"EFI PART";
 const GPT_HEADER_OFFSET: u64 = 512; // LBA 1
 const SECTOR_SIZE: u64 = 512;
 
+fn checked_gpt_entries_size(num_entries: u32, entry_size: u32) -> Option<usize> {
+    let total = u64::from(num_entries).checked_mul(u64::from(entry_size))?;
+    usize::try_from(total).ok()
+}
+
+fn checked_gpt_entry_offset(index: usize, entry_size: usize) -> Option<usize> {
+    index.checked_mul(entry_size)
+}
+
+fn checked_lba_offset(lba: u64) -> Option<u64> {
+    lba.checked_mul(SECTOR_SIZE)
+}
+
+fn checked_partition_range_bytes(start_lba: u64, end_lba: u64) -> Option<(u64, u64)> {
+    let span_lbas = end_lba.checked_sub(start_lba)?.checked_add(1)?;
+    Some((
+        checked_lba_offset(start_lba)?,
+        span_lbas.checked_mul(SECTOR_SIZE)?,
+    ))
+}
+
 // =============================================================================
 // Apple Partition Map (APM) Constants
 // =============================================================================
@@ -267,20 +288,36 @@ fn parse_gpt(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
     let num_partition_entries =
         u32::from_le_bytes([header[80], header[81], header[82], header[83]]);
     let partition_entry_size = u32::from_le_bytes([header[84], header[85], header[86], header[87]]);
+    let partition_entry_size_usize = usize::try_from(partition_entry_size)
+        .map_err(|_| VfsError::Internal("GPT entry size too large".to_string()))?;
+
+    if partition_entry_size_usize < 128 {
+        return Err(VfsError::Internal(format!(
+            "Invalid GPT entry size: {}",
+            partition_entry_size
+        )));
+    }
 
     // Read partition entries
-    let entries_size = (num_partition_entries * partition_entry_size) as usize;
+    let entries_size = checked_gpt_entries_size(num_partition_entries, partition_entry_size)
+        .ok_or_else(|| VfsError::Internal("GPT entry array size overflow".to_string()))?;
     let mut entries_buf = vec![0u8; entries_size];
+    let entries_offset = checked_lba_offset(partition_entry_lba)
+        .ok_or_else(|| VfsError::Internal("GPT entry offset overflow".to_string()))?;
     device
-        .read_at(partition_entry_lba * SECTOR_SIZE, &mut entries_buf)
+        .read_at(entries_offset, &mut entries_buf)
         .map_err(|e| VfsError::IoError(e.to_string()))?;
 
     let mut partitions = Vec::new();
     let mut partition_num = 1u32;
 
     for i in 0..num_partition_entries as usize {
-        let offset = i * partition_entry_size as usize;
-        let entry = &entries_buf[offset..offset + partition_entry_size as usize];
+        let Some(offset) = checked_gpt_entry_offset(i, partition_entry_size_usize) else {
+            break;
+        };
+        let Some(entry) = entries_buf.get(offset..offset + partition_entry_size_usize) else {
+            break;
+        };
 
         // Check if entry is used (type GUID is not all zeros)
         let type_guid = &entry[0..16];
@@ -299,8 +336,9 @@ fn parse_gpt(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
         let name_bytes = &entry[56..128];
         let name = parse_utf16le_name(name_bytes);
 
-        let start_offset = start_lba * SECTOR_SIZE;
-        let size = (end_lba - start_lba + 1) * SECTOR_SIZE;
+        let Some((start_offset, size)) = checked_partition_range_bytes(start_lba, end_lba) else {
+            continue;
+        };
 
         // Detect filesystem type
         let fs_type = detect_partition_filesystem(device, start_offset);
@@ -611,5 +649,18 @@ mod tests {
         // "Test" in UTF-16LE
         let bytes = [0x54, 0x00, 0x65, 0x00, 0x73, 0x00, 0x74, 0x00, 0x00, 0x00];
         assert_eq!(parse_utf16le_name(&bytes), "Test");
+    }
+
+    #[test]
+    fn test_checked_gpt_entries_size_overflow() {
+        let expected = u64::from(u32::MAX)
+            .checked_mul(u64::from(u32::MAX))
+            .and_then(|total| usize::try_from(total).ok());
+        assert_eq!(checked_gpt_entries_size(u32::MAX, u32::MAX), expected);
+    }
+
+    #[test]
+    fn test_checked_partition_range_bytes_rejects_reversed_range() {
+        assert_eq!(checked_partition_range_bytes(10, 9), None);
     }
 }

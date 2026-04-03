@@ -1099,19 +1099,19 @@ const TaskCard: Component<TaskCardProps> = (p) => {
         </span>
         {/* Status badge */}
         <Show when={isPending()}>
-          <span class="text-2xs px-1.5 py-0.5 rounded font-medium bg-bg-secondary text-txt-muted">Pending</span>
+          <span class="badge bg-bg-secondary text-txt-muted">Pending</span>
         </Show>
         <Show when={isRunning()}>
-          <span class="text-2xs px-1.5 py-0.5 rounded font-medium bg-accent/10 text-accent">Running</span>
+          <span class="badge bg-accent/10 text-accent">Running</span>
         </Show>
         <Show when={isCompleted()}>
-          <span class="text-2xs px-1.5 py-0.5 rounded font-medium bg-success/10 text-success">Done</span>
+          <span class="badge bg-success/10 text-success">Done</span>
         </Show>
         <Show when={isFailed()}>
-          <span class="text-2xs px-1.5 py-0.5 rounded font-medium bg-error/10 text-error">Failed</span>
+          <span class="badge bg-error/10 text-error">Failed</span>
         </Show>
         <Show when={isCancelled()}>
-          <span class="text-2xs px-1.5 py-0.5 rounded font-medium bg-warning/10 text-warning">Cancelled</span>
+          <span class="badge bg-warning/10 text-warning">Cancelled</span>
         </Show>
       </div>
 

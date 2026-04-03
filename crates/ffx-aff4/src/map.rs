@@ -249,15 +249,15 @@ impl MapReader {
         };
 
         let entry = &self.entries[idx];
-        let end = entry.mapped_offset + entry.length;
+        let end = entry.mapped_offset.checked_add(entry.length)?;
 
         if virtual_offset >= end {
             return None;
         }
 
-        let delta = virtual_offset - entry.mapped_offset;
+        let delta = virtual_offset.checked_sub(entry.mapped_offset)?;
         let target_urn = self.targets.get(entry.target_id as usize)?;
-        let target_offset = entry.target_offset + delta;
+        let target_offset = entry.target_offset.checked_add(delta)?;
         let available = entry.length - delta;
 
         Some((target_urn, target_offset, available))
@@ -277,7 +277,7 @@ impl MapReader {
     pub fn total_mapped_size(&self) -> u64 {
         self.entries
             .iter()
-            .map(|e| e.mapped_offset + e.length)
+            .map(|e| e.mapped_offset.saturating_add(e.length))
             .max()
             .unwrap_or(0)
     }
@@ -405,5 +405,50 @@ mod tests {
             reader.verify_hashes(Aff4HashAlgorithm::Sha256, &point_hash, &idx_hash);
         assert!(point_ok);
         assert!(idx_ok);
+    }
+
+    #[test]
+    fn test_resolve_returns_none_for_overflowed_range_end() {
+        let reader = MapReader {
+            entries: vec![MapEntry {
+                mapped_offset: u64::MAX - 4,
+                length: 16,
+                target_offset: 0,
+                target_id: 0,
+            }],
+            targets: vec!["aff4://vol/img/00000000".to_string()],
+        };
+
+        assert!(reader.resolve(u64::MAX - 2).is_none());
+    }
+
+    #[test]
+    fn test_resolve_returns_none_for_overflowed_target_offset() {
+        let reader = MapReader {
+            entries: vec![MapEntry {
+                mapped_offset: 0,
+                length: 16,
+                target_offset: u64::MAX - 4,
+                target_id: 0,
+            }],
+            targets: vec!["aff4://vol/img/00000000".to_string()],
+        };
+
+        assert!(reader.resolve(8).is_none());
+    }
+
+    #[test]
+    fn test_total_mapped_size_saturates_on_overflow() {
+        let reader = MapReader {
+            entries: vec![MapEntry {
+                mapped_offset: u64::MAX - 4,
+                length: 16,
+                target_offset: 0,
+                target_id: 0,
+            }],
+            targets: Vec::new(),
+        };
+
+        assert_eq!(reader.total_mapped_size(), u64::MAX);
     }
 }

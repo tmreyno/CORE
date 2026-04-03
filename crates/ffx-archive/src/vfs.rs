@@ -88,6 +88,9 @@ struct ArchiveEntry {
     crc32: Option<u32>,
 }
 
+const ZIP_CENTRAL_DIRECTORY_ENTRY_HEADER_SIZE: usize = 46;
+const ZIP_LOCAL_FILE_HEADER_SIZE: u64 = 30;
+
 impl ArchiveVfs {
     /// Open an archive for virtual filesystem access
     pub fn open(path: &str) -> Result<Self, VfsError> {
@@ -252,7 +255,8 @@ impl ArchiveVfs {
         ]) as u64;
 
         // Read Central Directory
-        let mut cd_buf = vec![0u8; cd_size as usize];
+        checked_central_directory_bounds(cd_offset, cd_size, file_size)?;
+        let mut cd_buf = vec![0u8; checked_central_directory_size(cd_size)?];
         file.seek(SeekFrom::Start(cd_offset))
             .map_err(|e| VfsError::IoError(e.to_string()))?;
         file.read_exact(&mut cd_buf)
@@ -263,7 +267,7 @@ impl ArchiveVfs {
 
         let mut pos = 0usize;
         for _ in 0..entry_count {
-            if pos + 46 > cd_buf.len() {
+            if checked_central_directory_header_end(pos, cd_buf.len()).is_none() {
                 break;
             }
 
@@ -306,11 +310,12 @@ impl ArchiveVfs {
             let _mod_date = u16::from_le_bytes([cd_buf[pos + 14], cd_buf[pos + 15]]);
 
             // Get filename
-            if pos + 46 + filename_len > cd_buf.len() {
+            let Some((filename_start, filename_end)) =
+                checked_central_directory_filename_range(pos, filename_len, cd_buf.len())
+            else {
                 break;
-            }
-            let filename =
-                String::from_utf8_lossy(&cd_buf[pos + 46..pos + 46 + filename_len]).to_string();
+            };
+            let filename = String::from_utf8_lossy(&cd_buf[filename_start..filename_end]).to_string();
 
             // Normalize path
             let is_dir = filename.ends_with('/') || (external_attrs >> 16) & 0x4000 != 0;
@@ -385,7 +390,16 @@ impl ArchiveVfs {
             }
 
             // Move to next entry
-            pos += 46 + filename_len + extra_len + comment_len;
+            let Some(next_pos) = checked_central_directory_next_pos(
+                pos,
+                filename_len,
+                extra_len,
+                comment_len,
+                cd_buf.len(),
+            ) else {
+                break;
+            };
+            pos = next_pos;
         }
 
         Ok(())
@@ -492,11 +506,9 @@ impl ArchiveVfs {
         let data = super::libarchive_read_file(&self.path, entry_path)
             .map_err(|e| VfsError::IoError(format!("Failed to read archive entry: {}", e)))?;
 
-        let start = offset as usize;
-        if start >= data.len() {
+        let Some((start, end)) = bounded_read_range(offset, size, data.len()) else {
             return Ok(Vec::new());
-        }
-        let end = (start + size).min(data.len());
+        };
         Ok(data[start..end].to_vec())
     }
 
@@ -554,8 +566,15 @@ impl ArchiveVfs {
                 u32::from_le_bytes([header[14], header[15], header[16], header[17]]) as u64;
             let uncompressed_size =
                 u32::from_le_bytes([header[18], header[19], header[20], header[21]]) as u64;
-            let filename_len = u16::from_le_bytes([header[22], header[23]]) as usize;
-            let extra_len = u16::from_le_bytes([header[24], header[25]]) as usize;
+            let filename_len = usize::from(u16::from_le_bytes([header[22], header[23]]));
+            let extra_len = usize::from(u16::from_le_bytes([header[24], header[25]]));
+            let next_pos = checked_local_file_entry_end(
+                pos,
+                filename_len,
+                extra_len,
+                compressed_size,
+                file_size,
+            )?;
 
             // Read filename
             let mut filename_buf = vec![0u8; filename_len];
@@ -564,12 +583,15 @@ impl ArchiveVfs {
             let filename = String::from_utf8_lossy(&filename_buf);
 
             // Skip extra field
-            file.seek(SeekFrom::Current(extra_len as i64))
+            file.seek(SeekFrom::Current(i64::try_from(extra_len).map_err(|_| {
+                VfsError::InvalidPath("ZIP extra field too large".to_string())
+            })?))
                 .map_err(|e| VfsError::IoError(e.to_string()))?;
 
             if filename.trim_end_matches('/') == target_name {
                 // Found the file! Read and decompress
-                let mut compressed_data = vec![0u8; compressed_size as usize];
+                let mut compressed_data =
+                    vec![0u8; checked_zip_entry_buffer_len(compressed_size, "compressed data")?];
                 file.read_exact(&mut compressed_data)
                     .map_err(|e| VfsError::IoError(e.to_string()))?;
 
@@ -580,7 +602,10 @@ impl ArchiveVfs {
                     // Deflate
                     use flate2::read::DeflateDecoder;
                     let mut decoder = DeflateDecoder::new(&compressed_data[..]);
-                    let mut decompressed = Vec::with_capacity(uncompressed_size as usize);
+                    let mut decompressed = Vec::with_capacity(checked_zip_entry_buffer_len(
+                        uncompressed_size,
+                        "decompressed data",
+                    )?);
                     decoder
                         .read_to_end(&mut decompressed)
                         .map_err(|e| VfsError::IoError(format!("Decompression failed: {}", e)))?;
@@ -593,16 +618,14 @@ impl ArchiveVfs {
                 };
 
                 // Apply offset and size
-                let start = offset as usize;
-                if start >= data.len() {
+                let Some((start, end)) = bounded_read_range(offset, size, data.len()) else {
                     return Ok(Vec::new());
-                }
-                let end = (start + size).min(data.len());
+                };
                 return Ok(data[start..end].to_vec());
             }
 
             // Move to next entry
-            pos += 30 + filename_len as u64 + extra_len as u64 + compressed_size;
+            pos = next_pos;
         }
 
         Err(VfsError::NotFound(path.to_string()))
@@ -671,6 +694,102 @@ impl VirtualFileSystem for ArchiveVfs {
     }
 }
 
+fn bounded_read_range(offset: u64, size: usize, len: usize) -> Option<(usize, usize)> {
+    let start = usize::try_from(offset).ok()?;
+    if start >= len {
+        return None;
+    }
+
+    let end = start.saturating_add(size).min(len);
+    Some((start, end))
+}
+
+fn checked_central_directory_size(cd_size: u64) -> Result<usize, VfsError> {
+    usize::try_from(cd_size)
+        .map_err(|_| VfsError::InvalidPath("ZIP central directory too large".to_string()))
+}
+
+fn checked_central_directory_bounds(
+    cd_offset: u64,
+    cd_size: u64,
+    file_size: u64,
+) -> Result<(), VfsError> {
+    let cd_end = cd_offset
+        .checked_add(cd_size)
+        .ok_or_else(|| VfsError::InvalidPath("ZIP central directory bounds overflow".to_string()))?;
+
+    if cd_end > file_size {
+        return Err(VfsError::InvalidPath(
+            "ZIP central directory exceeds archive bounds".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn checked_central_directory_header_end(pos: usize, buf_len: usize) -> Option<usize> {
+    pos.checked_add(ZIP_CENTRAL_DIRECTORY_ENTRY_HEADER_SIZE)
+        .filter(|end| *end <= buf_len)
+}
+
+fn checked_central_directory_filename_range(
+    pos: usize,
+    filename_len: usize,
+    buf_len: usize,
+) -> Option<(usize, usize)> {
+    let start = checked_central_directory_header_end(pos, buf_len)?;
+    let end = start.checked_add(filename_len)?;
+    (end <= buf_len).then_some((start, end))
+}
+
+fn checked_central_directory_next_pos(
+    pos: usize,
+    filename_len: usize,
+    extra_len: usize,
+    comment_len: usize,
+    buf_len: usize,
+) -> Option<usize> {
+    let next = pos
+        .checked_add(ZIP_CENTRAL_DIRECTORY_ENTRY_HEADER_SIZE)?
+        .checked_add(filename_len)?
+        .checked_add(extra_len)?
+        .checked_add(comment_len)?;
+    (next <= buf_len).then_some(next)
+}
+
+fn checked_zip_entry_buffer_len(size: u64, context: &str) -> Result<usize, VfsError> {
+    usize::try_from(size)
+        .map_err(|_| VfsError::InvalidPath(format!("ZIP {} too large", context)))
+}
+
+fn checked_local_file_entry_end(
+    pos: u64,
+    filename_len: usize,
+    extra_len: usize,
+    compressed_size: u64,
+    file_size: u64,
+) -> Result<u64, VfsError> {
+    let filename_len = u64::try_from(filename_len)
+        .map_err(|_| VfsError::InvalidPath("ZIP filename too large".to_string()))?;
+    let extra_len = u64::try_from(extra_len)
+        .map_err(|_| VfsError::InvalidPath("ZIP extra field too large".to_string()))?;
+
+    let end = pos
+        .checked_add(ZIP_LOCAL_FILE_HEADER_SIZE)
+        .and_then(|offset| offset.checked_add(filename_len))
+        .and_then(|offset| offset.checked_add(extra_len))
+        .and_then(|offset| offset.checked_add(compressed_size))
+        .ok_or_else(|| VfsError::InvalidPath("ZIP local entry bounds overflow".to_string()))?;
+
+    if end > file_size {
+        return Err(VfsError::InvalidPath(
+            "ZIP local entry exceeds archive bounds".to_string(),
+        ));
+    }
+
+    Ok(end)
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -685,5 +804,46 @@ mod tests {
         assert_eq!(normalize_path("/foo/bar"), "/foo/bar");
         assert_eq!(normalize_path("foo/bar"), "/foo/bar");
         assert_eq!(normalize_path("/foo/bar/"), "/foo/bar");
+    }
+
+    #[test]
+    fn test_bounded_read_range_rejects_offset_past_end() {
+        assert_eq!(bounded_read_range(10, 4, 8), None);
+    }
+
+    #[test]
+    fn test_bounded_read_range_saturates_large_size() {
+        assert_eq!(bounded_read_range(6, usize::MAX, 8), Some((6, 8)));
+    }
+
+    #[test]
+    fn test_checked_central_directory_bounds_rejects_overflow() {
+        assert!(checked_central_directory_bounds(u64::MAX, 1, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn test_checked_central_directory_filename_range_rejects_overflow() {
+        assert_eq!(
+            checked_central_directory_filename_range(usize::MAX, 1, usize::MAX),
+            None
+        );
+    }
+
+    #[test]
+    fn test_checked_central_directory_next_pos_rejects_overflow() {
+        assert_eq!(
+            checked_central_directory_next_pos(usize::MAX, 1, 0, 0, usize::MAX),
+            None
+        );
+    }
+
+    #[test]
+    fn test_checked_local_file_entry_end_rejects_overflow() {
+        assert!(checked_local_file_entry_end(u64::MAX, 1, 0, 0, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn test_checked_local_file_entry_end_rejects_out_of_bounds() {
+        assert!(checked_local_file_entry_end(10, 4, 4, 4, 20).is_err());
     }
 }

@@ -58,7 +58,7 @@ export const SidebarButton: Component<SidebarButtonProps> = (props) => {
       {props.children}
       <Show when={props.badge !== undefined && props.badge !== 0}>
         <span
-          class={`absolute -top-1 -right-1 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 text-2xs leading-tight font-bold rounded-full animate-pulse ${badgeColorClass()}`}
+          class={`absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs leading-none font-bold rounded-full animate-pulse ${badgeColorClass()}`}
         >
           {props.badge}
         </span>

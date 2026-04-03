@@ -29,11 +29,42 @@ pub fn read_file_bytes(path: String, offset: u64, length: usize) -> Result<Vec<u
     file.seek(SeekFrom::Start(offset))
         .map_err(|e| format!("Failed to seek: {}", e))?;
 
-    let read_len = length.min((file_size - offset) as usize);
+    let Some(read_len) = bounded_file_read_len(file_size, offset, length) else {
+        return Ok(Vec::new());
+    };
     let mut buffer = vec![0u8; read_len];
 
     file.read_exact(&mut buffer)
         .map_err(|e| format!("Failed to read: {}", e))?;
 
     Ok(buffer)
+}
+
+fn bounded_file_read_len(file_size: u64, offset: u64, requested_len: usize) -> Option<usize> {
+    let remaining = file_size.checked_sub(offset)?;
+    if remaining == 0 {
+        return None;
+    }
+    let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+    Some(requested_len.min(remaining))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bounded_file_read_len_rejects_eof() {
+        assert_eq!(bounded_file_read_len(10, 10, 4), None);
+    }
+
+    #[test]
+    fn test_bounded_file_read_len_clamps_to_remaining() {
+        assert_eq!(bounded_file_read_len(10, 8, 5), Some(2));
+    }
+
+    #[test]
+    fn test_bounded_file_read_len_handles_large_remaining() {
+        assert_eq!(bounded_file_read_len(u64::MAX, 0, 8), Some(8));
+    }
 }

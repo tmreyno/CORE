@@ -310,16 +310,18 @@ impl MemoryBlockDevice {
 
 impl BlockDevice for MemoryBlockDevice {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
-        let offset = offset as usize;
+        let Some(offset) = usize::try_from(offset).ok() else {
+            return Ok(0);
+        };
 
         if offset >= self.data.len() {
             return Ok(0);
         }
 
-        let available = self.data.len() - offset;
-        let to_read = buf.len().min(available);
+        let end = offset.saturating_add(buf.len()).min(self.data.len());
+        let to_read = end - offset;
 
-        buf[..to_read].copy_from_slice(&self.data[offset..offset + to_read]);
+        buf[..to_read].copy_from_slice(&self.data[offset..end]);
 
         Ok(to_read)
     }
@@ -333,7 +335,7 @@ impl SeekableBlockDevice for MemoryBlockDevice {
     fn reader_at(&self, offset: u64) -> Box<dyn BlockReader> {
         Box::new(MemoryBlockReader {
             data: Arc::clone(&self.data),
-            position: offset as usize,
+            position: usize::try_from(offset).unwrap_or(usize::MAX),
         })
     }
 }
@@ -350,10 +352,10 @@ impl Read for MemoryBlockReader {
             return Ok(0);
         }
 
-        let available = self.data.len() - self.position;
-        let to_read = buf.len().min(available);
+        let end = self.position.saturating_add(buf.len()).min(self.data.len());
+        let to_read = end - self.position;
 
-        buf[..to_read].copy_from_slice(&self.data[self.position..self.position + to_read]);
+        buf[..to_read].copy_from_slice(&self.data[self.position..end]);
         self.position += to_read;
 
         Ok(to_read)
@@ -425,6 +427,16 @@ mod tests {
     }
 
     #[test]
+    fn test_memory_block_device_large_offset_returns_zero() {
+        let data = vec![0, 1, 2];
+        let device = MemoryBlockDevice::new(data);
+
+        let mut buf = [0u8; 4];
+        let read = device.read_at(u64::MAX, &mut buf).unwrap();
+        assert_eq!(read, 0);
+    }
+
+    #[test]
     fn test_memory_block_reader() {
         let data = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let device = MemoryBlockDevice::new(data);
@@ -442,5 +454,16 @@ mod tests {
         reader.seek(SeekFrom::Start(8)).unwrap();
         reader.read_exact(&mut buf[..2]).unwrap();
         assert_eq!(&buf[..2], [8, 9]);
+    }
+
+    #[test]
+    fn test_memory_block_reader_large_start_returns_eof() {
+        let data = vec![0, 1, 2, 3];
+        let device = MemoryBlockDevice::new(data);
+        let mut reader = device.reader_at(u64::MAX);
+
+        let mut buf = [0u8; 2];
+        let read = reader.read(&mut buf).unwrap();
+        assert_eq!(read, 0);
     }
 }

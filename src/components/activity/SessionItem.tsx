@@ -25,7 +25,7 @@ export const SessionItem: Component<SessionItemProps> = (props) => {
         <HiOutlineUser class="w-3.5 h-3.5 text-txt-muted" />
         <span class="text-txt font-medium">{props.session.user}</span>
         <Show when={props.isActive}>
-          <span class="text-2xs px-1.5 py-0.5 bg-success/20 text-success rounded">ACTIVE</span>
+          <span class="badge bg-success/20 text-success">ACTIVE</span>
         </Show>
       </div>
       <div class="flex items-center gap-3 mt-1 text-xs text-txt-muted">

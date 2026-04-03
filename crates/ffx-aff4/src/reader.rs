@@ -169,7 +169,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
             for bevy_idx in 0u32..65536 {
                 let index_path = uri::bevy_index_path(&stream.urn, &volume_urn, bevy_idx);
                 if let Some(index_data) = read_zip_member(&mut archive, &index_path) {
-                    let entries = parse_bevy_index(&index_data);
+                    let entries = parse_bevy_index(&index_data)?;
                     bevy_indexes.insert(index_path, entries);
                 } else {
                     break; // No more bevies for this stream
@@ -251,8 +251,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
             return Ok(0);
         }
 
-        let available = (stream_info.size - offset) as usize;
-        let to_read = std::cmp::min(buf.len(), available);
+        let to_read = clamp_read_len(buf.len(), stream_info.size - offset);
 
         // Resolve through map if available
         if let Some(map) = self.maps.get(stream_urn).cloned() {
@@ -280,7 +279,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
             };
 
             let remaining_in_buf = buf.len() - total_read;
-            let to_read_from_target = std::cmp::min(remaining_in_buf, available as usize);
+            let to_read_from_target = clamp_read_len(remaining_in_buf, available);
 
             // Read from the target stream (bevy) — use the image URN (stream_info.urn)
             // for bevy path lookup, not the map's target_urn (which is a bevy URN
@@ -322,13 +321,22 @@ impl<R: Read + Seek> Aff4Reader<R> {
         offset: u64,
         buf: &mut [u8],
     ) -> Aff4Result<usize> {
-        let chunk_size = stream_info.chunk_size as u64;
-        let chunks_per_segment = stream_info.chunks_per_segment;
+        let (chunk_size, chunks_per_segment) = validate_stream_layout(stream_urn, stream_info)?;
 
         // Determine which bevy and chunk
         let global_chunk_index = offset / chunk_size;
-        let bevy_index = (global_chunk_index / chunks_per_segment as u64) as u32;
-        let chunk_in_bevy = (global_chunk_index % chunks_per_segment as u64) as usize;
+        let bevy_index = u32::try_from(global_chunk_index / chunks_per_segment).map_err(|_| {
+            Aff4Error::InvalidContainer(format!(
+                "Stream {} resolves to a bevy index that exceeds u32",
+                stream_urn
+            ))
+        })?;
+        let chunk_in_bevy = usize::try_from(global_chunk_index % chunks_per_segment).map_err(|_| {
+            Aff4Error::InvalidContainer(format!(
+                "Stream {} resolves to a chunk index that exceeds usize",
+                stream_urn
+            ))
+        })?;
         let offset_in_chunk = (offset % chunk_size) as usize;
 
         // Load bevy index
@@ -338,7 +346,7 @@ impl<R: Read + Seek> Aff4Reader<R> {
         } else {
             let index_data = read_zip_member(&mut self.archive, &index_path)
                 .ok_or_else(|| Aff4Error::MissingMember(index_path.clone()))?;
-            let entries = parse_bevy_index(&index_data);
+            let entries = parse_bevy_index(&index_data)?;
             self.bevy_indexes.insert(index_path, entries.clone());
             entries
         };
@@ -354,8 +362,8 @@ impl<R: Read + Seek> Aff4Reader<R> {
 
         // Extract and decompress the chunk
         let entry = &entries[chunk_in_bevy];
-        let compressed =
-            &bevy_data[entry.offset as usize..(entry.offset as usize + entry.length as usize)];
+        let compressed_range = checked_bevy_data_range(entry, bevy_data.len())?;
+        let compressed = &bevy_data[compressed_range];
 
         let is_stored = entry.length as u64 == chunk_size
             || (entry.length as u64 >= chunk_size
@@ -606,18 +614,88 @@ fn read_zip_member<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> O
     Some(data)
 }
 
+fn clamp_read_len(requested: usize, available: u64) -> usize {
+    requested.min(usize::try_from(available).unwrap_or(usize::MAX))
+}
+
+fn validate_stream_layout(stream_urn: &str, stream_info: &Aff4StreamInfo) -> Aff4Result<(u64, u64)> {
+    let chunk_size = u64::from(stream_info.chunk_size);
+    if chunk_size == 0 {
+        return Err(Aff4Error::InvalidContainer(format!(
+            "Stream {} has chunkSize 0",
+            stream_urn
+        )));
+    }
+
+    let chunks_per_segment = u64::from(stream_info.chunks_per_segment);
+    if chunks_per_segment == 0 {
+        return Err(Aff4Error::InvalidContainer(format!(
+            "Stream {} has chunksPerSegment 0",
+            stream_urn
+        )));
+    }
+
+    Ok((chunk_size, chunks_per_segment))
+}
+
+fn checked_bevy_data_range(
+    entry: &BevyIndexEntry,
+    data_len: usize,
+) -> Aff4Result<std::ops::Range<usize>> {
+    let start = usize::try_from(entry.offset).map_err(|_| Aff4Error::InvalidBevyIndex {
+        offset: entry.offset,
+        reason: "chunk offset exceeds addressable range".to_string(),
+    })?;
+    let end = start
+        .checked_add(entry.length as usize)
+        .ok_or_else(|| Aff4Error::InvalidBevyIndex {
+            offset: entry.offset,
+            reason: format!(
+                "chunk range overflows usize for offset {} and length {}",
+                entry.offset, entry.length
+            ),
+        })?;
+
+    if end > data_len {
+        return Err(Aff4Error::InvalidBevyIndex {
+            offset: entry.offset,
+            reason: format!(
+                "chunk data range {}..{} exceeds bevy data size {}",
+                start, end, data_len
+            ),
+        });
+    }
+
+    Ok(start..end)
+}
+
 /// Parse bevy index data into entries.
-fn parse_bevy_index(data: &[u8]) -> Vec<BevyIndexEntry> {
-    let count = data.len() / BEVY_INDEX_ENTRY_SIZE;
-    let mut entries = Vec::with_capacity(count);
-    for i in 0..count {
-        let start = i * BEVY_INDEX_ENTRY_SIZE;
-        let chunk: [u8; BEVY_INDEX_ENTRY_SIZE] = data[start..start + BEVY_INDEX_ENTRY_SIZE]
-            .try_into()
-            .unwrap();
+fn parse_bevy_index(data: &[u8]) -> Aff4Result<Vec<BevyIndexEntry>> {
+    let mut chunks = data.chunks_exact(BEVY_INDEX_ENTRY_SIZE);
+    if !chunks.remainder().is_empty() {
+        return Err(Aff4Error::InvalidBevyIndex {
+            offset: data.len() as u64,
+            reason: format!(
+                "index size {} is not a multiple of {}",
+                data.len(),
+                BEVY_INDEX_ENTRY_SIZE
+            ),
+        });
+    }
+
+    let mut entries = Vec::with_capacity(data.len() / BEVY_INDEX_ENTRY_SIZE);
+    for (index, chunk) in chunks.by_ref().enumerate() {
+        let start = (index * BEVY_INDEX_ENTRY_SIZE) as u64;
+        let chunk: [u8; BEVY_INDEX_ENTRY_SIZE] = chunk.try_into().map_err(|_| {
+            Aff4Error::InvalidBevyIndex {
+                offset: start,
+                reason: format!("index entry at byte {} has invalid length", start),
+            }
+        })?;
         entries.push(BevyIndexEntry::from_bytes(&chunk));
     }
-    entries
+
+    Ok(entries)
 }
 
 #[cfg(test)]
@@ -625,6 +703,18 @@ mod tests {
     use super::*;
     use crate::writer::Aff4Writer;
     use std::io::Cursor;
+
+    fn test_stream_info() -> Aff4StreamInfo {
+        Aff4StreamInfo {
+            urn: "aff4://test-stream".to_string(),
+            stream_type: "http://aff4.org/Schema#Image".to_string(),
+            size: 1024,
+            compression: Aff4Compression::Stored,
+            chunk_size: 512,
+            chunks_per_segment: 4,
+            hashes: std::collections::HashMap::new(),
+        }
+    }
 
     #[test]
     fn test_parse_version_txt() {
@@ -656,6 +746,32 @@ mod tests {
         let (algo, digest) = parse_rdf_hash(value).unwrap();
         assert_eq!(algo, Aff4HashAlgorithm::Sha256);
         assert_eq!(digest, "abcdef1234567890");
+    }
+
+    #[test]
+    fn test_validate_stream_layout_rejects_zero_chunk_size() {
+        let mut stream = test_stream_info();
+        stream.chunk_size = 0;
+
+        let err = validate_stream_layout(&stream.urn, &stream).unwrap_err();
+        assert!(matches!(err, Aff4Error::InvalidContainer(message) if message.contains("chunkSize 0")));
+    }
+
+    #[test]
+    fn test_parse_bevy_index_rejects_trailing_bytes() {
+        let err = parse_bevy_index(&[0u8; BEVY_INDEX_ENTRY_SIZE + 1]).unwrap_err();
+        assert!(matches!(err, Aff4Error::InvalidBevyIndex { .. }));
+    }
+
+    #[test]
+    fn test_checked_bevy_data_range_rejects_out_of_bounds() {
+        let entry = BevyIndexEntry {
+            offset: 8,
+            length: 16,
+        };
+
+        let err = checked_bevy_data_range(&entry, 12).unwrap_err();
+        assert!(matches!(err, Aff4Error::InvalidBevyIndex { .. }));
     }
 
     #[test]

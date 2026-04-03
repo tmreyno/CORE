@@ -40,10 +40,10 @@ export function TypeFilterBar(props: TypeFilterBarProps): JSX.Element {
   
   // Base classes for buttons
   const buttonBaseClass = () => isCompact()
-    ? "flex items-center gap-0.5 px-1 py-0.5 text-2xs leading-tight rounded transition-colors"
-    : "flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors";
+    ? "flex items-center gap-1 px-1.5 py-1 text-xs leading-none rounded transition-colors"
+    : "flex items-center gap-1 px-2 py-1 text-sm leading-none rounded transition-colors";
   
-  const iconClass = () => isCompact() ? "w-[10px] h-[10px]" : "w-3 h-3";
+  const iconClass = () => isCompact() ? "w-3 h-3" : "w-3.5 h-3.5";
   
   return (
     <Show when={Object.keys(props.containerStats).length > 0}>

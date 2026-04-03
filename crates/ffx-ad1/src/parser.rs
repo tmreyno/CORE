@@ -366,64 +366,80 @@ impl Session {
         let next_item_addr = self
             .read_u64(offset)
             .map_err(|e| format!("Failed to read next_item_addr at 0x{:x}: {}", offset, e))?;
+        let first_child_offset = checked_ad1_offset(offset, ITEM_FIRST_CHILD_OFFSET)
+            .ok_or_else(|| format!("first_child_addr offset overflow at 0x{:x}", offset))?;
         let first_child_addr = self
-            .read_u64(offset + ITEM_FIRST_CHILD_OFFSET)
+            .read_u64(first_child_offset)
             .map_err(|e| {
                 format!(
                     "Failed to read first_child_addr at 0x{:x}: {}",
-                    offset + ITEM_FIRST_CHILD_OFFSET,
+                    first_child_offset,
                     e
                 )
             })?;
+        let first_metadata_offset = checked_ad1_offset(offset, ITEM_FIRST_METADATA_OFFSET)
+            .ok_or_else(|| format!("first_metadata_addr offset overflow at 0x{:x}", offset))?;
         let first_metadata_addr =
-            self.read_u64(offset + ITEM_FIRST_METADATA_OFFSET)
+            self.read_u64(first_metadata_offset)
                 .map_err(|e| {
                     format!(
                         "Failed to read first_metadata_addr at 0x{:x}: {}",
-                        offset + ITEM_FIRST_METADATA_OFFSET,
+                        first_metadata_offset,
                         e
                     )
                 })?;
+        let zlib_metadata_offset = checked_ad1_offset(offset, ITEM_ZLIB_METADATA_OFFSET)
+            .ok_or_else(|| format!("zlib_metadata_addr offset overflow at 0x{:x}", offset))?;
         let zlib_metadata_addr =
-            self.read_u64(offset + ITEM_ZLIB_METADATA_OFFSET)
+            self.read_u64(zlib_metadata_offset)
                 .map_err(|e| {
                     format!(
                         "Failed to read zlib_metadata_addr at 0x{:x}: {}",
-                        offset + ITEM_ZLIB_METADATA_OFFSET,
+                        zlib_metadata_offset,
                         e
                     )
                 })?;
+        let decompressed_size_offset = checked_ad1_offset(offset, ITEM_DECOMPRESSED_SIZE_OFFSET)
+            .ok_or_else(|| format!("decompressed_size offset overflow at 0x{:x}", offset))?;
         let decompressed_size = self
-            .read_u64(offset + ITEM_DECOMPRESSED_SIZE_OFFSET)
+            .read_u64(decompressed_size_offset)
             .map_err(|e| {
                 format!(
                     "Failed to read decompressed_size at 0x{:x}: {}",
-                    offset + ITEM_DECOMPRESSED_SIZE_OFFSET,
+                    decompressed_size_offset,
                     e
                 )
             })?;
-        let item_type = self.read_u32(offset + ITEM_TYPE_OFFSET).map_err(|e| {
+        let item_type_offset = checked_ad1_offset(offset, ITEM_TYPE_OFFSET)
+            .ok_or_else(|| format!("item_type offset overflow at 0x{:x}", offset))?;
+        let item_type = self.read_u32(item_type_offset).map_err(|e| {
             format!(
                 "Failed to read item_type at 0x{:x}: {}",
-                offset + ITEM_TYPE_OFFSET,
+                item_type_offset,
                 e
             )
         })?;
-        let name_length = self
-            .read_u32(offset + ITEM_NAME_LENGTH_OFFSET)
+        let name_length_offset = checked_ad1_offset(offset, ITEM_NAME_LENGTH_OFFSET)
+            .ok_or_else(|| format!("name_length offset overflow at 0x{:x}", offset))?;
+        let name_length_raw = self
+            .read_u32(name_length_offset)
             .map_err(|e| {
                 format!(
                     "Failed to read name_length at 0x{:x}: {}",
-                    offset + ITEM_NAME_LENGTH_OFFSET,
+                    name_length_offset,
                     e
                 )
-            })? as usize;
+            })?;
+        let name_length = checked_ad1_length(name_length_raw)
+            .ok_or_else(|| format!("name_length too large: {}", name_length_raw))?;
+        let name_offset = checked_ad1_offset(offset, ITEM_NAME_OFFSET)
+            .ok_or_else(|| format!("name offset overflow at 0x{:x}", offset))?;
         let name_bytes = self
-            .read_bytes(offset + ITEM_NAME_OFFSET, name_length)
+            .read_bytes(name_offset, name_length)
             .map_err(|e| {
                 format!(
                     "Failed to read name at 0x{:x}: {}",
-                    offset + ITEM_NAME_OFFSET,
+                    name_offset,
                     e
                 )
             })?;
@@ -502,64 +518,80 @@ impl Session {
         let next_item_addr = self
             .read_u64(offset)
             .map_err(|e| format!("Failed to read next_item_addr at 0x{:x}: {}", offset, e))?;
+        let first_child_offset = checked_ad1_offset(offset, ITEM_FIRST_CHILD_OFFSET)
+            .ok_or_else(|| format!("first_child_addr offset overflow at 0x{:x}", offset))?;
         let first_child_addr = self
-            .read_u64(offset + ITEM_FIRST_CHILD_OFFSET)
+            .read_u64(first_child_offset)
             .map_err(|e| {
                 format!(
                     "Failed to read first_child_addr at 0x{:x}: {}",
-                    offset + ITEM_FIRST_CHILD_OFFSET,
+                    first_child_offset,
                     e
                 )
             })?;
+        let first_metadata_offset = checked_ad1_offset(offset, ITEM_FIRST_METADATA_OFFSET)
+            .ok_or_else(|| format!("first_metadata_addr offset overflow at 0x{:x}", offset))?;
         let first_metadata_addr =
-            self.read_u64(offset + ITEM_FIRST_METADATA_OFFSET)
+            self.read_u64(first_metadata_offset)
                 .map_err(|e| {
                     format!(
                         "Failed to read first_metadata_addr at 0x{:x}: {}",
-                        offset + ITEM_FIRST_METADATA_OFFSET,
+                        first_metadata_offset,
                         e
                     )
                 })?;
+        let zlib_metadata_offset = checked_ad1_offset(offset, ITEM_ZLIB_METADATA_OFFSET)
+            .ok_or_else(|| format!("zlib_metadata_addr offset overflow at 0x{:x}", offset))?;
         let zlib_metadata_addr =
-            self.read_u64(offset + ITEM_ZLIB_METADATA_OFFSET)
+            self.read_u64(zlib_metadata_offset)
                 .map_err(|e| {
                     format!(
                         "Failed to read zlib_metadata_addr at 0x{:x}: {}",
-                        offset + ITEM_ZLIB_METADATA_OFFSET,
+                        zlib_metadata_offset,
                         e
                     )
                 })?;
+        let decompressed_size_offset = checked_ad1_offset(offset, ITEM_DECOMPRESSED_SIZE_OFFSET)
+            .ok_or_else(|| format!("decompressed_size offset overflow at 0x{:x}", offset))?;
         let decompressed_size = self
-            .read_u64(offset + ITEM_DECOMPRESSED_SIZE_OFFSET)
+            .read_u64(decompressed_size_offset)
             .map_err(|e| {
                 format!(
                     "Failed to read decompressed_size at 0x{:x}: {}",
-                    offset + ITEM_DECOMPRESSED_SIZE_OFFSET,
+                    decompressed_size_offset,
                     e
                 )
             })?;
-        let item_type = self.read_u32(offset + ITEM_TYPE_OFFSET).map_err(|e| {
+        let item_type_offset = checked_ad1_offset(offset, ITEM_TYPE_OFFSET)
+            .ok_or_else(|| format!("item_type offset overflow at 0x{:x}", offset))?;
+        let item_type = self.read_u32(item_type_offset).map_err(|e| {
             format!(
                 "Failed to read item_type at 0x{:x}: {}",
-                offset + ITEM_TYPE_OFFSET,
+                item_type_offset,
                 e
             )
         })?;
-        let name_length = self
-            .read_u32(offset + ITEM_NAME_LENGTH_OFFSET)
+        let name_length_offset = checked_ad1_offset(offset, ITEM_NAME_LENGTH_OFFSET)
+            .ok_or_else(|| format!("name_length offset overflow at 0x{:x}", offset))?;
+        let name_length_raw = self
+            .read_u32(name_length_offset)
             .map_err(|e| {
                 format!(
                     "Failed to read name_length at 0x{:x}: {}",
-                    offset + ITEM_NAME_LENGTH_OFFSET,
+                    name_length_offset,
                     e
                 )
-            })? as usize;
+            })?;
+        let name_length = checked_ad1_length(name_length_raw)
+            .ok_or_else(|| format!("name_length too large: {}", name_length_raw))?;
+        let name_offset = checked_ad1_offset(offset, ITEM_NAME_OFFSET)
+            .ok_or_else(|| format!("name offset overflow at 0x{:x}", offset))?;
         let name_bytes = self
-            .read_bytes(offset + ITEM_NAME_OFFSET, name_length)
+            .read_bytes(name_offset, name_length)
             .map_err(|e| {
                 format!(
                     "Failed to read name at 0x{:x}: {}",
-                    offset + ITEM_NAME_OFFSET,
+                    name_offset,
                     e
                 )
             })?;
@@ -621,10 +653,21 @@ impl Session {
     /// Read a single metadata entry
     fn read_metadata(&mut self, offset: u64) -> Result<Metadata, ContainerError> {
         let next_metadata_addr = self.read_u64(offset)?;
-        let category = self.read_u32(offset + METADATA_CATEGORY_OFFSET)?;
-        let key = self.read_u32(offset + METADATA_KEY_OFFSET)?;
-        let data_length = self.read_u32(offset + METADATA_DATA_LENGTH_OFFSET)? as usize;
-        let data = self.read_bytes(offset + METADATA_DATA_OFFSET, data_length)?;
+        let category_offset = checked_ad1_offset(offset, METADATA_CATEGORY_OFFSET)
+            .ok_or_else(|| ContainerError::ParseError("AD1 metadata category offset overflow".to_string()))?;
+        let key_offset = checked_ad1_offset(offset, METADATA_KEY_OFFSET)
+            .ok_or_else(|| ContainerError::ParseError("AD1 metadata key offset overflow".to_string()))?;
+        let data_length_offset = checked_ad1_offset(offset, METADATA_DATA_LENGTH_OFFSET)
+            .ok_or_else(|| ContainerError::ParseError("AD1 metadata length offset overflow".to_string()))?;
+        let data_offset = checked_ad1_offset(offset, METADATA_DATA_OFFSET)
+            .ok_or_else(|| ContainerError::ParseError("AD1 metadata data offset overflow".to_string()))?;
+        let category = self.read_u32(category_offset)?;
+        let key = self.read_u32(key_offset)?;
+        let data_length_raw = self.read_u32(data_length_offset)?;
+        let data_length = checked_ad1_length(data_length_raw).ok_or_else(|| {
+            ContainerError::ParseError("AD1 metadata length is larger than memory limits".to_string())
+        })?;
+        let data = self.read_bytes(data_offset, data_length)?;
 
         Ok(Metadata {
             next_metadata_addr,
@@ -763,19 +806,43 @@ impl Session {
         }
 
         let chunk_count = self.read_u64(item.zlib_metadata_addr)?;
-        let mut addresses = Vec::with_capacity(chunk_count as usize + 1);
+        let address_count = chunk_count.checked_add(1).ok_or_else(|| {
+            ContainerError::ParseError(format!(
+                "Item '{}' (id={}) has invalid zlib chunk count: {}",
+                item.name, item.id, chunk_count
+            ))
+        })?;
+        let mut addresses = Vec::with_capacity(usize::try_from(address_count).map_err(|_| {
+            ContainerError::ParseError(format!(
+                "Item '{}' (id={}) has zlib chunk table larger than memory limits",
+                item.name, item.id
+            ))
+        })?);
         for index in 0..=chunk_count {
-            let addr =
-                self.read_u64(item.zlib_metadata_addr + ((index + 1) * ZLIB_CHUNK_ADDR_SIZE))?;
+            let table_addr = Self::checked_zlib_chunk_table_entry_addr(item.zlib_metadata_addr, index)
+                .ok_or_else(|| {
+                    ContainerError::ParseError(format!(
+                        "Item '{}' (id={}) has overflowed zlib chunk table address",
+                        item.name, item.id
+                    ))
+                })?;
+            let addr = self.read_u64(table_addr)?;
             addresses.push(addr);
         }
+
+        let decompressed_size = usize::try_from(item.decompressed_size).map_err(|_| {
+            ContainerError::ParseError(format!(
+                "Item '{}' (id={}) has decompressed size larger than memory limits",
+                item.name, item.id
+            ))
+        })?;
 
         // For small files (< 4 chunks), use sequential decompression
         // For larger files, use parallel decompression
         let data = if chunk_count < 4 {
-            self.decompress_sequential(&addresses, item.decompressed_size as usize)?
+            self.decompress_sequential(&addresses, decompressed_size)?
         } else {
-            self.decompress_parallel(&addresses, item.decompressed_size as usize)?
+            self.decompress_parallel(&addresses, decompressed_size)?
         };
 
         let data = Arc::new(data);
@@ -796,7 +863,7 @@ impl Session {
         for index in 0..chunk_count {
             let start = addresses[index];
             let end = addresses[index + 1];
-            let compressed_len = end.saturating_sub(start) as usize;
+            let compressed_len = Self::checked_compressed_len(start, end)?;
             if compressed_len == 0 {
                 continue;
             }
@@ -806,7 +873,7 @@ impl Session {
             decoder
                 .read_to_end(&mut chunk)
                 .map_err(|e| ContainerError::IoError(format!("Zlib inflate error: {e}")))?;
-            let end_index = (data_index + chunk.len()).min(output.len());
+            let end_index = Self::checked_output_end_index(data_index, chunk.len(), output.len());
             output[data_index..end_index].copy_from_slice(&chunk[..end_index - data_index]);
             data_index = end_index;
         }
@@ -827,7 +894,7 @@ impl Session {
         for index in 0..chunk_count {
             let start = addresses[index];
             let end = addresses[index + 1];
-            let compressed_len = end.saturating_sub(start) as usize;
+            let compressed_len = Self::checked_compressed_len(start, end)?;
             if compressed_len == 0 {
                 continue;
             }
@@ -861,7 +928,7 @@ impl Session {
         sorted_chunks.sort_by_key(|(idx, _)| *idx);
 
         for (_, chunk) in sorted_chunks {
-            let end_index = (data_index + chunk.len()).min(output.len());
+            let end_index = Self::checked_output_end_index(data_index, chunk.len(), output.len());
             output[data_index..end_index].copy_from_slice(&chunk[..end_index - data_index]);
             data_index = end_index;
         }
@@ -899,6 +966,25 @@ impl Session {
             },
         );
         self.cache_order.push_back(item_id);
+    }
+
+    fn checked_zlib_chunk_table_entry_addr(base: u64, index: u64) -> Option<u64> {
+        let slot = index.checked_add(1)?;
+        let offset = slot.checked_mul(ZLIB_CHUNK_ADDR_SIZE)?;
+        base.checked_add(offset)
+    }
+
+    fn checked_compressed_len(start: u64, end: u64) -> Result<usize, ContainerError> {
+        let len = end.checked_sub(start).ok_or_else(|| {
+            ContainerError::ParseError("AD1 zlib chunk addresses are out of order".to_string())
+        })?;
+        usize::try_from(len).map_err(|_| {
+            ContainerError::ParseError("AD1 zlib chunk length is larger than memory limits".to_string())
+        })
+    }
+
+    fn checked_output_end_index(data_index: usize, chunk_len: usize, output_len: usize) -> usize {
+        data_index.saturating_add(chunk_len).min(output_len)
     }
 
     /// Verify item hash with progress callback
@@ -1009,6 +1095,14 @@ impl Session {
         apply_metadata(&item_path, &item.metadata)?;
         Ok(())
     }
+}
+
+fn checked_ad1_offset(offset: u64, field_offset: u64) -> Option<u64> {
+    offset.checked_add(field_offset)
+}
+
+fn checked_ad1_length(length: u32) -> Option<usize> {
+    usize::try_from(length).ok()
 }
 
 // =============================================================================
@@ -1132,5 +1226,31 @@ mod tests {
         assert_eq!(VerifyStatus::Ok, VerifyStatus::Ok);
         assert_ne!(VerifyStatus::Ok, VerifyStatus::Nok);
         assert_ne!(VerifyStatus::Nok, VerifyStatus::Computed);
+    }
+
+    #[test]
+    fn test_checked_ad1_offset_overflow() {
+        assert_eq!(checked_ad1_offset(u64::MAX, 1), None);
+    }
+
+    #[test]
+    fn test_checked_ad1_length_conversion() {
+        assert_eq!(checked_ad1_length(16), Some(16));
+    }
+
+    #[test]
+    fn test_checked_zlib_chunk_table_entry_addr_overflow() {
+        assert_eq!(Session::checked_zlib_chunk_table_entry_addr(u64::MAX, 0), None);
+        assert_eq!(Session::checked_zlib_chunk_table_entry_addr(8, u64::MAX), None);
+    }
+
+    #[test]
+    fn test_checked_compressed_len_rejects_reversed_addresses() {
+        assert!(Session::checked_compressed_len(10, 5).is_err());
+    }
+
+    #[test]
+    fn test_checked_output_end_index_saturates() {
+        assert_eq!(Session::checked_output_end_index(6, usize::MAX, 8), 8);
     }
 }

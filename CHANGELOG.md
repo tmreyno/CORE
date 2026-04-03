@@ -2,6 +2,20 @@
 
 All notable changes to CORE-FFX are documented here. Format follows Keep a Changelog and Semantic Versioning.
 
+## [Unreleased]
+
+## [0.1.87] - 2026-04-03
+
+### Changed
+
+- **Runtime hardening sweep** — Added checked arithmetic and bounded-read guards across shared filesystem, raw, partition, and container parsing paths in both `CORE-1` and `CORE-ACQ`
+- **macOS native linking** — Preferred static libarchive dependencies and aligned workspace Cargo settings for more reliable local and CI builds
+
+### Fixed
+
+- **Viewer parsing safety** — Hardened binary, HTML, PDF, archive extraction, and nested-container read paths against malformed offsets and oversized allocations
+- **Desktop badge readability** — Increased badge and indicator sizing across the UI for clearer counts and statuses
+
 ## [0.1.85] - 2026-04-01
 
 ### Added
@@ -1137,3 +1151,5 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.18]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.18
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0
+[0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.87...HEAD

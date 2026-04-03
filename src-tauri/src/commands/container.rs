@@ -41,6 +41,10 @@ pub fn get_stored_hashes_only(
     containers::get_stored_hashes_only(&inputPath)
 }
 
+fn checked_l01_read_offset(data_offset: u64, offset: u64) -> Option<u64> {
+    data_offset.checked_add(offset)
+}
+
 /// Read a chunk of file content from within a forensic container
 #[tauri::command]
 pub async fn container_read_entry_chunk(
@@ -62,7 +66,6 @@ pub async fn container_read_entry_chunk(
                 .ok_or_else(|| format!("Entry not found in L01: {}", entryPath))?;
             let mut handle = ewf::EwfHandle::open(&containerPath)
                 .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
-            let read_offset = entry.data_offset + offset;
             let max_size = if entry.size > offset {
                 (entry.size - offset) as usize
             } else {
@@ -72,6 +75,8 @@ pub async fn container_read_entry_chunk(
             if actual_size == 0 {
                 return Ok(Vec::new());
             }
+            let read_offset = checked_l01_read_offset(entry.data_offset, offset)
+                .ok_or_else(|| "Invalid L01 chunk offset".to_string())?;
             handle
                 .read_at(read_offset, actual_size)
                 .map_err(|e| format!("Failed to read L01 chunk: {}", e))
@@ -156,10 +161,9 @@ pub async fn container_extract_entry_to_temp(
             // e.g., "/Partition2_NTFS/path/to/ARCHIVE.ZIP::inner/file.mdb"
             // This means: extract ARCHIVE.ZIP from the parent container first,
             // then read inner/file.mdb from the extracted archive.
-            if let Some(sep_pos) = entryPath.find("::") {
-                let nested_archive_path = &entryPath[..sep_pos];
-                let inner_entry_path = &entryPath[sep_pos + 2..];
-
+            if let Some((nested_archive_path, inner_entry_path)) =
+                parse_nested_archive_path(&entryPath)
+            {
                 debug!(
                     "Nested archive extraction: archive='{}', inner='{}'",
                     nested_archive_path, inner_entry_path
@@ -423,7 +427,7 @@ pub(crate) fn classify_extraction_route(
     let is_ad1 = ad1::is_ad1(container_path).unwrap_or(false);
 
     if is_archive_entry {
-        if entry_path.contains("::") {
+        if parse_nested_archive_path(entry_path).is_some() {
             "archive-nested"
         } else if entry_path.starts_with("(Compressed") {
             "archive-compressed"
@@ -445,11 +449,12 @@ pub(crate) fn classify_extraction_route(
 
 /// Parse a nested archive entry path with `::` separator.
 /// Returns `(archive_path, inner_entry_path)`.
-#[cfg(test)]
 pub(crate) fn parse_nested_archive_path(entry_path: &str) -> Option<(&str, &str)> {
-    entry_path
-        .find("::")
-        .map(|pos| (&entry_path[..pos], &entry_path[pos + 2..]))
+    let (archive_path, inner_entry_path) = entry_path.split_once("::")?;
+    if archive_path.is_empty() || inner_entry_path.is_empty() {
+        return None;
+    }
+    Some((archive_path, inner_entry_path))
 }
 
 /// Check if an entry path represents a single-file compressed format.
@@ -546,10 +551,13 @@ mod tests {
     #[test]
     fn test_parse_nested_separator_at_start() {
         let result = parse_nested_archive_path("::file.txt");
-        assert!(result.is_some());
-        let (archive, inner) = result.unwrap();
-        assert_eq!(archive, "");
-        assert_eq!(inner, "file.txt");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_nested_separator_at_end() {
+        let result = parse_nested_archive_path("outer.zip::");
+        assert!(result.is_none());
     }
 
     #[test]
@@ -560,6 +568,16 @@ mod tests {
         let (archive, inner) = result.unwrap();
         assert_eq!(archive, "outer.zip");
         assert_eq!(inner, "middle.zip::inner.txt");
+    }
+
+    #[test]
+    fn test_checked_l01_read_offset_valid() {
+        assert_eq!(checked_l01_read_offset(100, 24), Some(124));
+    }
+
+    #[test]
+    fn test_checked_l01_read_offset_overflow() {
+        assert_eq!(checked_l01_read_offset(u64::MAX, 1), None);
     }
 
     // ==================== is_compressed_synthetic_entry tests ====================
