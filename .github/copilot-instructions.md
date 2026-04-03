@@ -2356,6 +2356,8 @@ Each library's `build.rs` follows a priority chain:
 
 **macOS libarchive linking rule:** `patches/libarchive2-sys/build.rs` must prefer static Homebrew archives (`libb2.a`, `liblzma.a`, `libzstd.a`, `liblz4.a`) when they exist. Homebrew's `liblz4.dylib` install name resolves to `@executable_path/../lib/liblz4.1.dylib`, which causes `cargo run` / `npm run tauri dev` to crash at launch if linked dynamically into `target/debug/core-ffx`.
 
+**macOS release workflow rule:** The release workflow must install Homebrew `libb2` before the macOS Tauri build, even when `patches/libarchive2-sys/prebuilt/macos-universal/libarchive.a` is present. The prebuilt libarchive link still resolves `-lb2`, and the GitHub macOS runner does not provide it by default.
+
 ### Rebuilding Pre-built Libraries
 
 Use the `prebuild-native-deps.yml` workflow to rebuild libraries:

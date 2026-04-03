@@ -4,6 +4,13 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.89] - 2026-04-03
+
+### Fixed
+
+- **Release sync guard** — Deleted the checked-out release tag before any follow-up `git fetch --tags` so the docs-sync branch no longer fails before the push step
+- **macOS release linking** — Installed Homebrew `libb2` in release CI so the prebuilt libarchive path can resolve `-lb2`
+
 ## [0.1.88] - 2026-04-03
 
 ### Fixed
@@ -1158,6 +1165,7 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.18]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.18
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0
+[0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.88...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.89...HEAD
