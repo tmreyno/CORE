@@ -5,7 +5,7 @@
 // =============================================================================
 
 /**
- * UpdateModal — Thin wrapper around @core-suite/components UpdateModal.
+ * UpdateModal — Thin wrapper around @core-suite/components/updater UpdateModal.
  *
  * Provides CORE-FFX-specific config (app name, repo URL, auth token)
  * while preserving the `show`/`onClose`-only props interface expected
@@ -13,7 +13,7 @@
  */
 
 import { Component } from "solid-js";
-import { UpdateModal as SharedUpdateModal, type UpdaterConfig } from "@core-suite/components";
+import { UpdateModal as SharedUpdateModal, type UpdaterConfig } from "@core-suite/components/updater";
 
 interface UpdateModalProps {
   show: boolean;
