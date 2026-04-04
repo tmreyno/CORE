@@ -184,6 +184,13 @@ pub async fn archive_get_metadata(
                     }
                 }
             }
+            "iso" => Ok(ArchiveQuickMetadata {
+                entry_count: None,
+                archive_size,
+                format: "iso".to_string(),
+                encrypted: false,
+                error: None,
+            }),
             _ => Ok(ArchiveQuickMetadata {
                 entry_count: None,
                 archive_size,
@@ -579,6 +586,27 @@ pub async fn archive_get_tree(
                         }])
                     }
                 }
+            }
+            "iso" => {
+                debug!("archive_get_tree: handling ISO format");
+                let entries = archive::libarchive_list_all(&containerPath)
+                    .map_err(|e| e.to_string())?;
+                Ok(entries
+                    .into_iter()
+                    .map(|entry| ArchiveTreeEntry {
+                        path: entry.path,
+                        name: entry.name,
+                        is_dir: entry.is_dir,
+                        size: entry.size,
+                        compressed_size: 0,
+                        crc32: 0,
+                        modified: entry
+                            .mtime
+                            .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                            .unwrap_or_default(),
+                    })
+                            .collect::<Vec<ArchiveTreeEntry>>())
             }
             _ => {
                 // Try ZIP format as fallback (some archives use non-standard extensions)

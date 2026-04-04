@@ -7,21 +7,25 @@
 import { describe, it, expect } from "vitest";
 import {
   isVfsContainer,
+  isVfsTreeContainer,
   isUnsupportedVfsContainer,
   isL01Container,
   isE01Container,
   isAd1Container,
   isArchiveContainer,
   isUfedContainer,
+  isLazyTreeContainer,
   isMemoryDump,
   isMemoryDumpFile,
   isContainerFile,
   getContainerType,
   getContainerCategory,
+  getContainerBrowserMode,
   isNestedContainerFile,
   getNestedContainerType,
   VFS_CONTAINER_TYPES,
   ARCHIVE_CONTAINER_TYPES,
+  LAZY_TREE_CONTAINER_TYPES,
   UFED_CONTAINER_TYPES,
   MEMORY_DUMP_TYPES,
   CONTAINER_EXTENSIONS,
@@ -55,6 +59,12 @@ describe("containerDetection constants", () => {
     expect(UFED_CONTAINER_TYPES).toContain("ufd");
     expect(UFED_CONTAINER_TYPES).toContain("ufdr");
     expect(UFED_CONTAINER_TYPES).toContain("ufdx");
+  });
+
+  it("LAZY_TREE_CONTAINER_TYPES includes logical and UFED formats", () => {
+    expect(LAZY_TREE_CONTAINER_TYPES).toContain("l01");
+    expect(LAZY_TREE_CONTAINER_TYPES).toContain("ufed");
+    expect(LAZY_TREE_CONTAINER_TYPES).toContain("ufdr");
   });
 
   it("MEMORY_DUMP_TYPES has memory dump identifiers", () => {
@@ -115,6 +125,28 @@ describe("isVfsContainer", () => {
     expect(isVfsContainer("E01")).toBe(true);
     expect(isVfsContainer("RAW")).toBe(true);
     expect(isVfsContainer("ISO")).toBe(true);
+  });
+});
+
+// =============================================================================
+// isVfsTreeContainer
+// =============================================================================
+
+describe("isVfsTreeContainer", () => {
+  it("returns true for mounted VFS tree formats", () => {
+    expect(isVfsTreeContainer("e01")).toBe(true);
+    expect(isVfsTreeContainer("raw")).toBe(true);
+    expect(isVfsTreeContainer("dd")).toBe(true);
+  });
+
+  it("returns false for L01 logical evidence routed to the lazy tree", () => {
+    expect(isVfsTreeContainer("l01")).toBe(false);
+    expect(isVfsTreeContainer("lx01")).toBe(false);
+  });
+
+  it("returns false for ISO routed through the archive tree", () => {
+    expect(isVfsTreeContainer("iso")).toBe(false);
+    expect(isVfsTreeContainer("iso 9660")).toBe(false);
   });
 });
 
@@ -217,6 +249,11 @@ describe("isArchiveContainer", () => {
     expect(isArchiveContainer("dmg")).toBe(true);
   });
 
+  it("detects ISO as archive", () => {
+    expect(isArchiveContainer("iso")).toBe(true);
+    expect(isArchiveContainer("ISO")).toBe(true);
+  });
+
   it("is case-insensitive", () => {
     expect(isArchiveContainer("ZIP")).toBe(true);
     expect(isArchiveContainer("RAR")).toBe(true);
@@ -243,6 +280,25 @@ describe("isUfedContainer", () => {
   it("rejects non-UFED types", () => {
     expect(isUfedContainer("ad1")).toBe(false);
     expect(isUfedContainer("e01")).toBe(false);
+  });
+});
+
+// =============================================================================
+// isLazyTreeContainer
+// =============================================================================
+
+describe("isLazyTreeContainer", () => {
+  it("detects L01 and UFED families", () => {
+    expect(isLazyTreeContainer("l01")).toBe(true);
+    expect(isLazyTreeContainer("lx01")).toBe(true);
+    expect(isLazyTreeContainer("ufed")).toBe(true);
+    expect(isLazyTreeContainer("ufdr")).toBe(true);
+  });
+
+  it("rejects non-lazy tree formats", () => {
+    expect(isLazyTreeContainer("e01")).toBe(false);
+    expect(isLazyTreeContainer("zip")).toBe(false);
+    expect(isLazyTreeContainer("ad1")).toBe(false);
   });
 });
 
@@ -371,6 +427,29 @@ describe("getContainerCategory", () => {
 });
 
 // =============================================================================
+// getContainerBrowserMode
+// =============================================================================
+
+describe("getContainerBrowserMode", () => {
+  it("returns 'lazy' for L01 and UFED tree containers", () => {
+    expect(getContainerBrowserMode("l01")).toBe("lazy");
+    expect(getContainerBrowserMode("ufed")).toBe("lazy");
+    expect(getContainerBrowserMode("ufdr")).toBe("lazy");
+  });
+
+  it("returns 'archive' for archive-style containers including ISO and DMG", () => {
+    expect(getContainerBrowserMode("zip")).toBe("archive");
+    expect(getContainerBrowserMode("iso")).toBe("archive");
+    expect(getContainerBrowserMode("dmg")).toBe("archive");
+  });
+
+  it("returns 'vfs' for mounted disk-image formats", () => {
+    expect(getContainerBrowserMode("e01")).toBe("vfs");
+    expect(getContainerBrowserMode("raw")).toBe("vfs");
+  });
+});
+
+// =============================================================================
 // isNestedContainerFile / getNestedContainerType
 // =============================================================================
 
@@ -380,6 +459,7 @@ describe("isNestedContainerFile", () => {
     expect(isNestedContainerFile("nested.e01")).toBe(true);
     expect(isNestedContainerFile("archive.zip")).toBe(true);
     expect(isNestedContainerFile("disk.dmg")).toBe(true);
+    expect(isNestedContainerFile("disk.iso")).toBe(true);
     expect(isNestedContainerFile("phone.ufd")).toBe(true);
   });
 
@@ -394,6 +474,7 @@ describe("getNestedContainerType", () => {
     expect(getNestedContainerType("inner.ad1")).toBe("ad1");
     expect(getNestedContainerType("disk.e01")).toBe("e01");
     expect(getNestedContainerType("archive.zip")).toBe("zip");
+    expect(getNestedContainerType("disk.iso")).toBe("iso");
   });
 
   it("returns null for non-container files", () => {

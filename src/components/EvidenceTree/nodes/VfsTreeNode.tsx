@@ -5,7 +5,7 @@
 // =============================================================================
 
 /**
- * VfsTreeNode - Tree node components for VFS containers (E01, Raw, L01)
+ * VfsTreeNode - Tree node components for VFS containers (E01, Raw)
  * 
  * Renders VFS partition and filesystem entries with expand/collapse.
  * Supports inline expansion of nested containers (ZIP, AD1, etc. inside E01/Raw).

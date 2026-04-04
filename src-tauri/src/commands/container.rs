@@ -12,6 +12,7 @@ use crate::ad1;
 use crate::containers;
 use crate::ewf;
 use crate::raw;
+use crate::ufed;
 
 // =============================================================================
 // V1 Container Commands
@@ -95,6 +96,12 @@ pub async fn container_read_entry_chunk(
                 .map_err(|e| format!("Failed to open raw: {:?}", e))?;
             vfs.read(&entryPath, offset, size)
                 .map_err(|e| format!("Failed to read raw file: {:?}", e))
+        } else if ufed::is_ufed(&containerPath) {
+            use crate::common::vfs::VirtualFileSystem;
+            let vfs = ufed::UfedVfs::open(&containerPath)
+                .map_err(|e| format!("Failed to open UFED: {:?}", e))?;
+            vfs.read(&entryPath, offset, size)
+                .map_err(|e| format!("Failed to read UFED file: {:?}", e))
         } else {
             Err(format!("Unsupported container type for: {}", containerPath))
         }
@@ -152,11 +159,10 @@ pub async fn container_extract_entry_to_temp(
         let is_l01 = ewf::is_l01_file(&containerPath).unwrap_or(false);
         let is_raw = raw::is_raw(&containerPath).unwrap_or(false);
         let is_ad1 = ad1::is_ad1(&containerPath).unwrap_or(false);
+        let is_ufed = ufed::is_ufed(&containerPath);
 
         let data = if isArchiveEntry {
             // Archive entry - use libarchive unified backend
-            use crate::archive;
-
             // Check for nested archive entries: entryPath contains "::" separator
             // e.g., "/Partition2_NTFS/path/to/ARCHIVE.ZIP::inner/file.mdb"
             // This means: extract ARCHIVE.ZIP from the parent container first,
@@ -169,57 +175,16 @@ pub async fn container_extract_entry_to_temp(
                     nested_archive_path, inner_entry_path
                 );
 
-                // Step 1: Extract the archive from the parent container to temp
-                let temp_archive_path =
-                    crate::commands::archive::nested::get_or_create_nested_temp(
-                        &containerPath,
-                        nested_archive_path,
-                    )?;
-
-                // Step 2: Read the inner entry from the extracted archive
-                // Try libarchive first, then native fallback
-                archive::libarchive_read_file(&temp_archive_path, inner_entry_path)
-                    .or_else(|e| {
-                        debug!("libarchive failed for nested entry, trying native: {}", e);
-                        archive::read_entry_native(&temp_archive_path, inner_entry_path)
-                    })
-                    .map_err(|e| {
-                        format!(
-                            "Failed to read nested archive entry '{}': {}",
-                            inner_entry_path, e
-                        )
-                    })?
-            } else if entryPath.starts_with("(Compressed") {
-                // Single-file compressed format (BZ2, GZ, XZ, etc.) with synthetic entry name
-                // The tree shows "(Compressed BZ2 file)" but the actual entry has a different name.
-                // Use libarchive to read the first (only) entry directly.
-                let entries = archive::libarchive_list_all(&containerPath)
-                    .map_err(|e| format!("Failed to list compressed file entries: {}", e))?;
-
-                if let Some(first_entry) = entries.first() {
-                    archive::libarchive_read_file(&containerPath, &first_entry.path)
-                        .or_else(|e| {
-                            debug!("libarchive failed for compressed, trying native: {}", e);
-                            archive::read_entry_native(&containerPath, &first_entry.path)
-                        })
-                        .map_err(|e| format!("Failed to decompress file: {}", e))?
-                } else {
-                    return Err("Compressed file contains no entries".to_string());
-                }
+                crate::commands::archive::nested::read_nested_container_entry(
+                    &containerPath,
+                    nested_archive_path,
+                    inner_entry_path,
+                )?
             } else {
-                // Regular archive entry (containerPath IS the archive)
-                // Try libarchive first, then fall back to native pure-Rust crates.
-                // On Windows without vcpkg, libarchive lacks decompression support
-                // for LZMA, BZ2, XZ, ZSTD — native crates handle those formats.
-                archive::libarchive_read_file(&containerPath, &entryPath)
-                    .or_else(|e| {
-                        debug!(
-                            "libarchive failed for archive entry, trying native fallback: {}",
-                            e
-                        );
-                        archive::read_entry_native(&containerPath, &entryPath)
-                    })
-                    .map_err(|e| format!("Failed to read archive entry: {}", e))?
+                crate::commands::archive::extraction::read_archive_entry_bytes(
+                    &containerPath,
+                    &entryPath,
+                )?
             }
         } else if is_l01 {
             // L01 logical evidence - read file data using ltree offsets
@@ -276,6 +241,35 @@ pub async fn container_extract_entry_to_temp(
             } else {
                 return Err(format!("Unsupported VFS container: {}", containerPath));
             }
+        } else if is_ufed {
+            use crate::common::vfs::VirtualFileSystem;
+
+            let vfs = ufed::UfedVfs::open(&containerPath)
+                .map_err(|e| format!("Failed to open UFED: {:?}", e))?;
+
+            let read_size = if entrySize > 0 {
+                usize::try_from(entrySize)
+                    .map_err(|_| "UFED entry is too large to preview".to_string())?
+            } else if let Ok(size) = vfs.file_size(&entryPath) {
+                usize::try_from(size)
+                    .map_err(|_| "UFED entry is too large to preview".to_string())?
+            } else {
+                let entry_size = ufed::get_tree(&containerPath)
+                    .ok()
+                    .and_then(|entries| {
+                        entries
+                            .into_iter()
+                            .find(|entry| entry.path == entryPath)
+                            .map(|entry| entry.size)
+                    })
+                    .ok_or_else(|| format!("Failed to determine UFED entry size: {}", entryPath))?;
+
+                usize::try_from(entry_size)
+                    .map_err(|_| "UFED entry is too large to preview".to_string())?
+            };
+
+            vfs.read(&entryPath, 0, read_size)
+                .map_err(|e| format!("Failed to read UFED file: {:?}", e))?
         } else if is_ad1 {
             // AD1 entry - prefer address-based read if available
             if let Some(addr) = dataAddr {

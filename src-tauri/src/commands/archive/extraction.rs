@@ -12,6 +12,7 @@
 use tracing::debug;
 
 use crate::archive;
+use crate::common::filesystem::FilesystemDriver;
 
 // =============================================================================
 // Helper Functions (testable without Tauri runtime)
@@ -33,6 +34,92 @@ pub(crate) fn classify_archive_extraction(extension: &str) -> &'static str {
 #[cfg(test)]
 pub(crate) fn needs_synthetic_resolution(entry_path: &str) -> bool {
     entry_path.starts_with("(Compressed")
+}
+
+fn normalize_filesystem_entry_path(entry_path: &str) -> String {
+    if entry_path.starts_with('/') {
+        entry_path.to_string()
+    } else {
+        format!("/{}", entry_path)
+    }
+}
+
+fn read_dmg_entry_bytes(container_path: &str, entry_path: &str) -> Result<Vec<u8>, String> {
+    let dmg = crate::common::filesystem::DmgDriver::open(container_path)
+        .map_err(|e| format!("Failed to open DMG: {}", e))?;
+
+    let hfs_idx = dmg
+        .find_hfs_partition()
+        .ok_or_else(|| "No HFS+ partition found in DMG".to_string())?;
+    let device = dmg
+        .partition_device(hfs_idx)
+        .map_err(|e| format!("Failed to access DMG partition: {}", e))?;
+    let partition_size = device.size();
+    let hfs = crate::common::filesystem::HfsPlusDriver::new(device, 0, partition_size)
+        .map_err(|e| format!("Failed to mount HFS+ filesystem: {}", e))?;
+
+    let normalized_path = normalize_filesystem_entry_path(entry_path);
+    let attr = hfs
+        .getattr(&normalized_path)
+        .map_err(|e| format!("Failed to stat DMG entry '{}': {}", normalized_path, e))?;
+
+    if attr.is_directory {
+        return Err(format!(
+            "Cannot read directory entry from DMG: {}",
+            normalized_path
+        ));
+    }
+
+    let read_size = usize::try_from(attr.size)
+        .map_err(|_| format!("DMG entry is too large to read: {}", normalized_path))?;
+
+    hfs.read(&normalized_path, 0, read_size)
+        .map_err(|e| format!("Failed to read DMG entry '{}': {}", normalized_path, e))
+}
+
+pub(crate) fn read_archive_entry_bytes(
+    container_path: &str,
+    entry_path: &str,
+) -> Result<Vec<u8>, String> {
+    let extension = std::path::Path::new(container_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    if entry_path.starts_with("(Compressed") {
+        let entries = archive::libarchive_list_all(container_path)
+            .map_err(|e| format!("Failed to list compressed file entries: {}", e))?;
+
+        let real_path = entries
+            .first()
+            .map(|entry| entry.path.clone())
+            .ok_or_else(|| "Compressed file contains no entries".to_string())?;
+
+        return archive::libarchive_read_file(container_path, &real_path)
+            .or_else(|e| {
+                debug!(
+                    "libarchive failed for compressed entry, trying native: {}",
+                    e
+                );
+                archive::read_entry_native(container_path, &real_path)
+            })
+            .map_err(|e| format!("Failed to decompress file: {}", e));
+    }
+
+    if extension == "dmg" {
+        return read_dmg_entry_bytes(container_path, entry_path);
+    }
+
+    archive::libarchive_read_file(container_path, entry_path)
+        .or_else(|e| {
+            debug!(
+                "libarchive failed for archive entry, trying native fallback: {}",
+                e
+            );
+            archive::read_entry_native(container_path, entry_path)
+        })
+        .map_err(|e| format!("Failed to read archive entry '{}': {}", entry_path, e))
 }
 
 fn slice_chunk(data: &[u8], offset: u64, size: u64) -> Vec<u8> {
@@ -100,23 +187,11 @@ pub async fn archive_extract_entry(
                     .map_err(|e| e.to_string())?;
                 Ok(output_str)
             }
-            "7z" | "rar" | "r00" | "r01" | "tar" | "tgz" | "gz" | "bz2" | "xz" => {
-                // Use libarchive backend for all non-ZIP formats
-                let data = archive::libarchive_read_file(&containerPath, &entryPath)
-                    .map_err(|e| format!("Failed to extract entry from archive: {}", e))?;
+            _ => {
+                let data = read_archive_entry_bytes(&containerPath, &entryPath)?;
                 std::fs::write(&output_path, &data)
                     .map_err(|e| format!("Failed to write extracted file: {}", e))?;
                 Ok(output_str)
-            }
-            _ => {
-                // Try ZIP as fallback
-                match archive::extract_zip_entry(&containerPath, &entryPath, &output_str) {
-                    Ok(_) => Ok(output_str),
-                    Err(e) => Err(format!(
-                        "Extraction not supported for this archive type: {}",
-                        e
-                    )),
-                }
             }
         }
     })
@@ -146,35 +221,16 @@ pub async fn archive_read_entry_chunk(
         // Note: Most archive formats require sequential decompression,
         // so we read the whole file and slice it. For very large files,
         // consider extracting to temp and memory-mapping.
-        let data = if entryPath.starts_with("(Compressed") {
-            // Single-file compressed format (BZ2, GZ, XZ, etc.) with synthetic entry name.
-            // Read the first (only) entry using its real name from libarchive.
-            let entries = archive::libarchive_list_all(&containerPath)
-                .map_err(|e| format!("Failed to list compressed file entries: {}", e))?;
-            let real_path = entries.first()
-                .map(|e| e.path.clone())
-                .ok_or_else(|| "Compressed file contains no entries".to_string())?;
-            archive::libarchive_read_file(&containerPath, &real_path)
-                .or_else(|e| {
-                    tracing::debug!("libarchive failed for compressed chunk, trying native: {}", e);
-                    archive::read_entry_native(&containerPath, &real_path)
-                })
-                .map_err(|e| format!("Failed to decompress file: {}", e))?
-        } else {
-            // Try libarchive first, then fall back to native pure-Rust crates
-            archive::libarchive_read_file(&containerPath, &entryPath)
-                .or_else(|e| {
-                    // Log available entries for debugging
-                    if let Ok(entries) = archive::libarchive_list_all(&containerPath) {
-                        let paths: Vec<_> = entries.iter().take(10).map(|e| e.path.as_str()).collect();
-                        debug!("archive_read_entry_chunk: Entry '{}' not found. First 10 entries in archive: {:?}",
-                               entryPath, paths);
-                    }
-                    tracing::debug!("libarchive failed for chunk read, trying native: {}", e);
-                    archive::read_entry_native(&containerPath, &entryPath)
-                })
-                .map_err(|e| format!("Failed to read archive entry '{}': {}", entryPath, e))?
-        };
+        let data = read_archive_entry_bytes(&containerPath, &entryPath).inspect_err(|_| {
+            if let Ok(entries) = archive::libarchive_list_all(&containerPath) {
+                let paths: Vec<_> = entries.iter().take(10).map(|entry| entry.path.as_str()).collect();
+                debug!(
+                    "archive_read_entry_chunk: Entry '{}' not found. First 10 entries in archive: {:?}",
+                    entryPath,
+                    paths
+                );
+            }
+        })?;
 
         let total_size = data.len() as u64;
         debug!("archive_read_entry_chunk: Read {} bytes from entry", total_size);

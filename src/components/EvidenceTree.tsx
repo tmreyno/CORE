@@ -6,7 +6,7 @@
 
 /**
  * EvidenceTree - Unified lazy-loading tree for forensic containers
- * Supports: AD1, E01/Raw (VFS), Archives (ZIP/7z/RAR/TAR), UFED
+ * Supports: AD1, E01/Raw (VFS), L01/UFED (lazy trees), Archives (ZIP/7z/RAR/TAR/DMG/ISO)
  * 
  * FULLY MODULARIZED: Uses useEvidenceTree hook and extracted node components
  */
@@ -29,11 +29,7 @@ import {
 } from "./tree";
 import type { DiscoveredFile, ArchiveTreeEntry } from "../types";
 import {
-  isVfsContainer,
-  isL01Container,
-  isAd1Container,
-  isArchiveContainer,
-  isUfedContainer,
+  getContainerBrowserMode,
 } from "./EvidenceTree/containerDetection";
 import { TypeFilterBar } from "./TypeFilterBar";
 
@@ -134,11 +130,13 @@ export function EvidenceTree(props: EvidenceTreeProps) {
     const isExpanded = () => tree.isContainerExpanded(file.path);
     const isLoading = () => tree.isLoading(file.path);
     const containerType = file.container_type.toLowerCase();
-    const isVfs = isVfsContainer(containerType);
-    const isL01 = isL01Container(containerType);
-    const isArchive = isArchiveContainer(containerType);
-    const isUfed = isUfedContainer(containerType);
-    const isAd1 = isAd1Container(containerType);
+    const browserMode = getContainerBrowserMode(containerType);
+    const isVfs = browserMode === "vfs";
+    const isArchive = browserMode === "archive";
+    const isLazyTree = browserMode === "lazy";
+    const isAd1 = browserMode === "ad1";
+    const isUfed = containerType.includes("ufed") || containerType.includes("ufd");
+    const isL01 = containerType.includes("l01") || containerType.includes("lx01") || containerType.includes("lvf");
     
     const mountInfo = () => tree.getVfsMountInfo(file.path);
     const rootChildren = createMemo(() => tree.getAd1RootChildren(file.path));
@@ -266,8 +264,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
             </Show>
             
             <Show when={isVfs && !mountInfo() && !isLoading()}>
-              <Show when={isL01}><TreeEmptyState message="L01 logical evidence container" hint="Logical evidence files (L01) store individual items without a filesystem structure. Use the Info panel to view acquisition details and stored hashes." /></Show>
-              <Show when={!isL01}><TreeEmptyState message={`Format "${file.container_type}" not supported`} hint="VFS mounting failed" /></Show>
+              <TreeEmptyState message={`Format "${file.container_type}" not supported`} hint="VFS mounting failed" />
             </Show>
             
             {/* Archive Container */}
@@ -359,8 +356,8 @@ export function EvidenceTree(props: EvidenceTreeProps) {
               <Show when={archiveRootEntries().length === 0 && !isLoading()}><TreeEmptyState message="Empty archive" /></Show>
             </Show>
 
-            {/* UFED Container */}
-            <Show when={isUfed && hasLazyData()}>
+            {/* Lazy tree containers (UFED, L01) */}
+            <Show when={isLazyTree && hasLazyData()}>
               <For each={lazyRootEntries()}>
                 {(entry) => (
                   <LazyTreeNode
@@ -383,12 +380,37 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                         name: entry.name, 
                         size: entry.size || 0, 
                         isDir: entry.is_dir, 
-                        isVfsEntry: false,
-                        isArchiveEntry: true,
-                        containerType: "ufed",
+                        containerType: isUfed ? "ufed" : "l01",
                       });
                     }}
                     onLoadMore={(cp, pp) => tree.lazy.loadMoreLazyEntries(cp, pp, tree.loading(), () => {})}
+                    isNestedExpanded={(parentPath, nestedPath) => tree.nested.isNestedExpanded(parentPath, nestedPath)}
+                    isNestedLoading={(parentPath, nestedPath) => tree.nested.isNestedLoading(parentPath, nestedPath)}
+                    getNestedEntries={(parentPath, nestedPath) => tree.nested.getNestedRootEntries(parentPath, nestedPath)}
+                    getNestedChildren={(parentPath, nestedPath, entryPath) => tree.nested.getNestedChildren(parentPath, nestedPath, entryPath)}
+                    onToggleNested={async (parentPath, nestedPath) => tree.nested.toggleNestedContainer(parentPath, nestedPath)}
+                    onNestedClick={(parentPath, nestedPath, entry) => {
+                      tree.setSelectedEntryKey(`${parentPath}::nested::${nestedPath}::${entry.path}`);
+                      props.onSelectEntry({
+                        containerPath: parentPath,
+                        entryPath: `${nestedPath}::${entry.path}`,
+                        name: entry.name,
+                        size: entry.size || 0,
+                        isDir: entry.isDir,
+                        isVfsEntry: false,
+                        isArchiveEntry: true,
+                        containerType: entry.nestedType ?? undefined,
+                        metadata: {
+                          archiveFormat: entry.sourceType ?? "Unknown",
+                          totalEntries: 0,
+                          archiveSize: 0,
+                          encrypted: false,
+                          totalFiles: 0,
+                          totalFolders: 0,
+                          entryModified: entry.modified || undefined,
+                        },
+                      });
+                    }}
                   />
                 )}
               </For>
@@ -402,7 +424,9 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                 />
               </Show>
             </Show>
-            <Show when={isUfed && !hasLazyData() && !isLoading()}><TreeEmptyState message="Empty UFED extraction" /></Show>
+            <Show when={isLazyTree && !hasLazyData() && !isLoading()}>
+              <TreeEmptyState message={isL01 ? "Empty L01 logical evidence tree" : "Empty UFED extraction"} />
+            </Show>
             
             {/* AD1 Container */}
             <Show when={isAd1}>

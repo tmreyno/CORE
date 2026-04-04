@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 
 use crate::archive;
 use crate::common::vfs::VirtualFileSystem;
-use crate::{ad1, ewf, raw};
+use crate::{ad1, ewf, raw, ufed};
 
 /// Nested container entry information
 /// Unified type that works for any nested container type (archive, AD1, forensic image)
@@ -85,6 +85,79 @@ fn slice_chunk(data: &[u8], offset: u64, size: u64) -> Vec<u8> {
     data[start..end].to_vec()
 }
 
+fn read_l01_entry_bytes(container_path: &str, entry_path: &str) -> Result<Vec<u8>, String> {
+    let tree = ewf::parse_l01_file_tree(container_path)
+        .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
+    let entry = tree
+        .entry_at_path(entry_path)
+        .ok_or_else(|| format!("Entry not found in L01: {}", entry_path))?;
+
+    if entry.is_directory {
+        return Err(format!(
+            "Cannot read directory entry from L01: {}",
+            entry_path
+        ));
+    }
+
+    let read_size = if entry.size > 0 {
+        entry.size
+    } else {
+        entry.data_size
+    };
+    let read_size = usize::try_from(read_size)
+        .map_err(|_| format!("L01 entry is too large to read: {}", entry_path))?;
+
+    let mut handle = ewf::EwfHandle::open(container_path)
+        .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
+    handle
+        .read_at(entry.data_offset, read_size)
+        .map_err(|e| format!("Failed to read L01 entry '{}': {}", entry_path, e))
+}
+
+fn read_ufed_entry_bytes(container_path: &str, entry_path: &str) -> Result<Vec<u8>, String> {
+    let vfs =
+        ufed::UfedVfs::open(container_path).map_err(|e| format!("Failed to open UFED: {:?}", e))?;
+
+    let read_size = if let Ok(size) = vfs.file_size(entry_path) {
+        usize::try_from(size)
+            .map_err(|_| format!("UFED entry is too large to read: {}", entry_path))?
+    } else {
+        let entry_size = ufed::get_tree(container_path)
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .into_iter()
+                    .find(|entry| entry.path == entry_path)
+                    .map(|entry| entry.size)
+            })
+            .ok_or_else(|| format!("Failed to determine UFED entry size: {}", entry_path))?;
+
+        usize::try_from(entry_size)
+            .map_err(|_| format!("UFED entry is too large to read: {}", entry_path))?
+    };
+
+    vfs.read(entry_path, 0, read_size)
+        .map_err(|e| format!("Failed to read UFED entry '{}': {:?}", entry_path, e))
+}
+
+pub(crate) fn read_nested_container_entry(
+    parent_container_path: &str,
+    nested_container_path: &str,
+    entry_path: &str,
+) -> Result<Vec<u8>, String> {
+    let temp_path = get_or_create_nested_temp(parent_container_path, nested_container_path)?;
+    let nested_type = detect_nested_container_type(nested_container_path)
+        .unwrap_or_else(|| "unknown".to_string());
+
+    match nested_type.as_str() {
+        "ad1" => ad1::read_entry_data(&temp_path, entry_path)
+            .map_err(|e| format!("Failed to read nested AD1 entry '{}': {}", entry_path, e)),
+        "l01" => read_l01_entry_bytes(&temp_path, entry_path),
+        "ufed" | "ufd" | "ufdr" | "ufdx" => read_ufed_entry_bytes(&temp_path, entry_path),
+        _ => crate::commands::archive::extraction::read_archive_entry_bytes(&temp_path, entry_path),
+    }
+}
+
 /// Get or create the temp path for a nested container
 pub(crate) fn get_or_create_nested_temp(
     parent_path: &str,
@@ -129,8 +202,10 @@ pub(crate) fn get_or_create_nested_temp(
     // Extract the nested container based on parent container type
     // First check by file format (more reliable than extension alone)
     let is_ewf = ewf::is_ewf(parent_path).unwrap_or(false);
+    let is_l01 = ewf::is_l01_file(parent_path).unwrap_or(false);
     let is_raw = raw::is_raw(parent_path).unwrap_or(false);
     let is_ad1 = ad1::is_ad1(parent_path).unwrap_or(false);
+    let is_ufed = ufed::is_ufed(parent_path);
 
     let parent_ext = std::path::Path::new(parent_path)
         .extension()
@@ -139,7 +214,7 @@ pub(crate) fn get_or_create_nested_temp(
         .unwrap_or_default();
 
     if is_ewf || is_raw {
-        // VFS parent (E01, Raw, L01) — read the file via VFS and write to temp
+        // VFS parent (E01, Raw) — read the file via VFS and write to temp
         let data = if is_ewf {
             let vfs = ewf::vfs::EwfVfs::open(parent_path)
                 .map_err(|e| format!("Failed to open E01 for nested extraction: {:?}", e))?;
@@ -160,6 +235,14 @@ pub(crate) fn get_or_create_nested_temp(
         };
         std::fs::write(&temp_path, data)
             .map_err(|e| format!("Failed to write extracted nested container: {}", e))?;
+    } else if is_l01 {
+        let data = read_l01_entry_bytes(parent_path, nested_path)?;
+        std::fs::write(&temp_path, data)
+            .map_err(|e| format!("Failed to write extracted nested container: {}", e))?;
+    } else if is_ufed {
+        let data = read_ufed_entry_bytes(parent_path, nested_path)?;
+        std::fs::write(&temp_path, data)
+            .map_err(|e| format!("Failed to write extracted nested container: {}", e))?;
     } else if is_ad1 {
         // AD1 parent — read file data and write to temp
         let data = ad1::read_entry_data(parent_path, nested_path)
@@ -173,46 +256,22 @@ pub(crate) fn get_or_create_nested_temp(
                 archive::extract_zip_entry(parent_path, nested_path, &temp_str)
                     .map_err(|e| e.to_string())?;
             }
-            "7z" => {
-                // Use libarchive for 7z
-                let data = archive::libarchive_read_file(parent_path, nested_path)
-                    .map_err(|e| e.to_string())?;
-                std::fs::write(&temp_path, data)
-                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
-            }
-            "rar" | "r00" | "r01" => {
-                // Use libarchive for RAR
-                let data = archive::libarchive_read_file(parent_path, nested_path)
-                    .map_err(|e| e.to_string())?;
-                std::fs::write(&temp_path, data)
-                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
-            }
-            "tar" | "tgz" | "tar.gz" | "tar.bz2" | "tar.xz" => {
-                // Use libarchive for tar variants
-                let data = archive::libarchive_read_file(parent_path, nested_path)
-                    .map_err(|e| e.to_string())?;
-                std::fs::write(&temp_path, data)
-                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
-            }
             _ => {
-                // Try ZIP as fallback, then libarchive
-                match archive::extract_zip_entry(parent_path, nested_path, &temp_str) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        let data = archive::libarchive_read_file(parent_path, nested_path)
-                            .map_err(|e| {
-                                format!(
-                                    "Failed to extract nested file from parent archive. \
-                             The parent container may use an unsupported archive format \
-                             or the nested entry path may be invalid.\n\
-                             Parent: {}\nNested: {}\nError: {}",
-                                    parent_path, nested_path, e
-                                )
-                            })?;
-                        std::fs::write(&temp_path, data)
-                            .map_err(|e| format!("Failed to write extracted file: {}", e))?;
-                    }
-                }
+                let data = crate::commands::archive::extraction::read_archive_entry_bytes(
+                    parent_path,
+                    nested_path,
+                )
+                .map_err(|e| {
+                    format!(
+                        "Failed to extract nested file from parent container. \
+                         The parent container may use an unsupported format \
+                         or the nested entry path may be invalid.\n\
+                         Parent: {}\nNested: {}\nError: {}",
+                        parent_path, nested_path, e
+                    )
+                })?;
+                std::fs::write(&temp_path, data)
+                    .map_err(|e| format!("Failed to write extracted file: {}", e))?;
             }
         }
     }
@@ -335,17 +394,7 @@ pub async fn nested_archive_read_entry_chunk(
            containerPath, nestedArchivePath, entryPath, offset, size);
 
     tauri::async_runtime::spawn_blocking(move || {
-        // First, extract the nested archive to a temp file (or get from cache)
-        let temp_path = get_or_create_nested_temp(&containerPath, &nestedArchivePath)?;
-
-        debug!(
-            "nested_archive_read_entry_chunk: Using nested archive at {}",
-            temp_path
-        );
-
-        // Now read from the extracted nested archive
-        let data = archive::libarchive_read_file(&temp_path, &entryPath)
-            .map_err(|e| format!("Failed to read nested archive entry '{}': {}", entryPath, e))?;
+        let data = read_nested_container_entry(&containerPath, &nestedArchivePath, &entryPath)?;
 
         let total_size = data.len() as u64;
         debug!(
@@ -526,6 +575,32 @@ pub async fn nested_container_get_tree(
                     .collect(),
                 Err(e) => return Err(format!("Failed to read UFED container: {}", e)),
             },
+            "l01" => match crate::ewf::parse_l01_file_tree(&temp_path) {
+                Ok(tree) => tree
+                    .entries
+                    .into_iter()
+                    .map(|entry| NestedContainerEntry {
+                        path: entry.path.clone(),
+                        name: entry.name.clone(),
+                        is_dir: entry.is_directory,
+                        size: entry.size,
+                        hash: entry.md5_hash.clone().or(entry.sha1_hash.clone()),
+                        modified: if entry.modification_time != 0 {
+                            Some(
+                                chrono::DateTime::from_timestamp(entry.modification_time, 0)
+                                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                                    .unwrap_or_default(),
+                            )
+                        } else {
+                            None
+                        },
+                        source_type: "l01".to_string(),
+                        is_nested_container: is_container_filename(&entry.name),
+                        nested_type: detect_nested_container_type(&entry.name),
+                    })
+                    .collect(),
+                Err(e) => return Err(format!("Failed to read L01 container: {}", e)),
+            },
             _ => {
                 // Try libarchive as universal fallback
                 match archive::libarchive_list_all(&temp_path) {
@@ -604,6 +679,20 @@ pub async fn nested_container_get_info(
                     Err(_) => (0, 0, false),
                 }
             }
+            "ufed" | "ufd" | "ufdr" | "ufdx" => match crate::ufed::get_tree(&temp_path) {
+                Ok(entries) => {
+                    let total: u64 = entries.iter().map(|entry| entry.size).sum();
+                    (entries.len(), total, false)
+                }
+                Err(_) => (0, 0, false),
+            },
+            "l01" => match crate::ewf::parse_l01_file_tree(&temp_path) {
+                Ok(tree) => {
+                    let total: u64 = tree.entries.iter().map(|entry| entry.size).sum();
+                    (tree.entries.len(), total, false)
+                }
+                Err(_) => (0, 0, false),
+            },
             _ => (0, 0, false),
         };
 

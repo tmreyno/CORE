@@ -7,7 +7,7 @@
 /**
  * useEvidenceTree - Master composing hook for EvidenceTree component
  * 
- * Combines all container-specific hooks (AD1, VFS, Archive, Lazy/UFED) into
+ * Combines all container-specific hooks (AD1, VFS, Archive, Lazy/UFED/L01) into
  * a single unified API for the EvidenceTree component.
  */
 
@@ -25,10 +25,9 @@ const log = logger.scope('EvidenceTree');
 import type { LazyTreeEntry, ContainerSummary } from "../../../types/lazy-loading";
 import type { SelectedEntry, TreeExpansionState } from "../types";
 import { 
-  isVfsContainer, 
+  getContainerBrowserMode,
   isAd1Container, 
   isArchiveContainer, 
-  isUfedContainer,
   isUnsupportedVfsContainer,
 } from "../containerDetection";
 
@@ -69,7 +68,7 @@ export interface UseEvidenceTreeReturn {
   getAd1RootChildren: (containerPath: string) => TreeEntry[];
   getAd1ContainerStatus: (containerPath: string) => { isComplete: boolean; statusMessage: string; expectedSegments: number; availableSegments: number; missingSegments: number[] } | undefined;
   
-  // VFS specific (E01, Raw, L01)
+  // VFS specific (E01, Raw)
   vfs: ReturnType<typeof useVfsTree>;
   getVfsMountInfo: (containerPath: string) => VfsMountInfo | null;
   
@@ -181,8 +180,25 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       return;
     }
     
-    if (isVfsContainer(containerType)) {
-      // Mount VFS container (E01, Raw, L01)
+    const browserMode = getContainerBrowserMode(containerType);
+
+    if (browserMode === "lazy") {
+      // UFED and L01 both use the lazy tree backend.
+      setLoadingState(path, true);
+      await lazy.loadLazySummary(path);
+      expanded.add(path);
+      setExpandedContainers(new Set(expanded));
+
+      const rootKey = `${path}::lazy::root`;
+      if (!lazy.lazyChildrenCache().has(rootKey)) {
+        await lazy.loadLazyRootChildren(path, 0, 100);
+      }
+      setLoadingState(path, false);
+      return;
+    }
+
+    if (browserMode === "vfs") {
+      // Mount VFS container (E01, Raw)
       const needsMount = !vfs.vfsMountCache().has(path);
       
       // Set loading BEFORE expanding to prevent "Empty container" flash
@@ -207,19 +223,6 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       
       if (!archive.archiveTreeCache().has(path)) {
         await archive.loadArchiveTree(path);
-      }
-      setLoadingState(path, false);
-      return;
-    } else if (isUfedContainer(containerType)) {
-      // UFED uses lazy loading
-      setLoadingState(path, true);
-      await lazy.loadLazySummary(path);
-      expanded.add(path);
-      setExpandedContainers(new Set(expanded));
-      
-      const rootKey = `${path}::lazy::root`;
-      if (!lazy.lazyChildrenCache().has(rootKey)) {
-        await lazy.loadLazyRootChildren(path, 0, 100);
       }
       setLoadingState(path, false);
       return;
@@ -270,14 +273,15 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     const archiveFiles: typeof files = [];
     const vfsFiles: typeof files = [];
     const ad1Files: typeof files = [];
-    const ufedFiles: typeof files = [];
+    const lazyFiles: typeof files = [];
     
     for (const file of files) {
       const containerType = file.container_type.toLowerCase();
-      if (isArchiveContainer(containerType)) archiveFiles.push(file);
-      else if (isVfsContainer(containerType)) vfsFiles.push(file);
+      const browserMode = getContainerBrowserMode(containerType);
+      if (browserMode === "archive") archiveFiles.push(file);
+      else if (browserMode === "lazy") lazyFiles.push(file);
+      else if (browserMode === "vfs") vfsFiles.push(file);
       else if (isAd1Container(containerType)) ad1Files.push(file);
-      else if (isUfedContainer(containerType)) ufedFiles.push(file);
     }
     
     // Archive containers - expand all directories (synchronous, just sets state)
@@ -297,8 +301,8 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       ...vfsFiles.map(file => vfs.expandAllVfsDirs(file.path)),
       // AD1 containers - expand root directories
       ...ad1Files.map(file => ad1.expandAllAd1Dirs(file.path, loading(), setLoading)),
-      // Lazy/UFED containers - expand root level
-      ...ufedFiles.map(file => lazy.expandAllLazyDirs(file.path)),
+      // Lazy containers (UFED, L01) - expand root level
+      ...lazyFiles.map(file => lazy.expandAllLazyDirs(file.path)),
     ]);
   };
   

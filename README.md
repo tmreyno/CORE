@@ -27,8 +27,9 @@ Built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend), CO
 
 - **Recursive directory scanning** with streaming discovery of forensic containers
 - **Unified evidence tree** with lazy-loaded browsing of AD1, E01, L01, Raw, UFED, and archive contents
-- **Nested container support** — expand archives inside E01 images, ZIPs inside AD1 files, etc.
+- **Nested container support** — expand archives inside E01 images, ZIPs inside AD1 files, and nested containers discovered inside L01 or UFED evidence trees
 - **Virtual filesystem mounting** for raw disk images with partition and filesystem detection (NTFS, APFS, HFS+, ext2/3/4, FAT, exFAT)
+- **Archive-style browsing** for ZIP/7z/RAR/TAR/GZip containers plus ISO and DMG images with the same inline viewer pipeline
 
 ### File Viewing
 
@@ -104,10 +105,10 @@ Built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend), CO
 |--------|------------|--------------|
 | AD1 | `.ad1`, `.ad2`… | Tree browsing, extraction, hash verification |
 | E01/Ex01 | `.E01`, `.Ex01` | Segment verification, VFS, metadata extraction |
-| L01/Lx01 | `.L01`, `.Lx01` | Logical image parsing, VFS |
+| L01/Lx01 | `.L01`, `.Lx01` | Logical tree browsing, extraction, inline viewing |
 | Raw Images | `.dd`, `.raw`, `.img`, `.001` | Direct byte access, VFS mounting, filesystem parsing |
-| UFED | `.ufd`, `.ufdr`, `.ufdx` | Mobile extraction parsing |
-| Archives | `.zip`, `.7z`, `.rar`, `.tar`, `.gz`, `.iso`, `.dmg` | Browsing, metadata, extraction |
+| UFED | `.ufd`, `.ufdr`, `.ufdx` | Mobile extraction tree browsing, extraction, inline viewing |
+| Archives | `.zip`, `.7z`, `.rar`, `.tar`, `.gz`, `.bz2`, `.xz`, `.zst`, `.lz4`, `.iso`, `.dmg` | Browsing, metadata, extraction, inline viewing |
 
 ### File Viewers
 
@@ -125,7 +126,7 @@ Built with **Tauri v2** (Rust backend) and **SolidJS** (TypeScript frontend), CO
 
 Identified during scans with basic metadata but limited deep parsing:
 
-AFF/AFF4, VMDK, VHD, VHDX, QCOW2, ISO, DMG, TAR, GZIP, XZ, BZIP2, ZSTD, LZ4
+AFF/AFF4, VMDK, VHD, VHDX, QCOW2
 
 ---
 

@@ -4,6 +4,23 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.91] - 2026-04-03
+
+### Added
+
+- **Lazy-tree nested container coverage** — Added inline nested container expansion tests and browser-mode regression coverage for L01 and UFED evidence trees
+
+### Changed
+
+- **Container browser routing** — Routed L01 and UFED through the lazy logical tree UI, and routed ISO and DMG through the archive-style tree pipeline for consistent inline viewing
+- **App favicon** — Switched the app icon to the SVG favicon badge and refreshed the badge artwork
+
+### Fixed
+
+- **Top-level preview extraction** — Added UFED preview reads plus shared archive-entry extraction for DMG, ISO, compressed single-file archives, and nested container paths
+- **Nested container reads** — Extended nested extraction and tree listing to L01 and UFED parents instead of limiting nested access to VFS, AD1, and archive parents
+- **Release validation** — Resolved the archive extraction clippy failure in the Windows backend test gate and refreshed the local container smoke-test script for the active evidence path
+
 ## [0.1.90] - 2026-04-03
 
 ### Fixed
@@ -1171,8 +1188,9 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.18]: https://github.com/tmreyno/CORE/compare/v0.1.14...v0.1.18
 [0.1.14]: https://github.com/tmreyno/CORE/compare/v0.1.0...v0.1.14
 [0.1.0]: https://github.com/tmreyno/CORE/releases/tag/v0.1.0
+[0.1.91]: https://github.com/tmreyno/CORE/compare/v0.1.90...v0.1.91
 [0.1.90]: https://github.com/tmreyno/CORE/compare/v0.1.89...v0.1.90
 [0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.90...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.91...HEAD

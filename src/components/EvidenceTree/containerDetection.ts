@@ -11,7 +11,7 @@
  * This consolidates the detection logic that was duplicated in multiple places.
  */
 
-/** Container types that use VFS mounting (disk images) - E01, L01, Raw images, Virtual disks */
+/** Container types that may represent disk images or disk-like evidence. Callers can special-case L01 and ISO before using the VFS tree UI. */
 export const VFS_CONTAINER_TYPES = [
   // EnCase formats
   "e01", "ex01", "ewf", "encase",
@@ -51,6 +51,12 @@ export const ARCHIVE_CONTAINER_TYPES = [
 /** Container types that are UFED */
 export const UFED_CONTAINER_TYPES = ["ufed", "ufd", "ufdr", "ufdx"] as const;
 
+/** Container types that use the lazy tree UI (logical evidence + mobile extractions) */
+export const LAZY_TREE_CONTAINER_TYPES = [
+  ...LOGICAL_EVIDENCE_TYPES,
+  ...UFED_CONTAINER_TYPES,
+] as const;
+
 /** Container types that are memory dumps */
 export const MEMORY_DUMP_TYPES = ["memory", "memdump", "ramdump"] as const;
 
@@ -86,7 +92,7 @@ export const CONTAINER_EXTENSIONS = [
   "aff4",
 ] as const;
 
-/** Check if container type uses VFS mounting (disk images) */
+/** Check if container type is in the disk-image family. UI routing may still special-case L01 and ISO. */
 export const isVfsContainer = (type: string): boolean => {
   const lower = type.toLowerCase();
   return VFS_CONTAINER_TYPES.some(vt => lower.includes(vt));
@@ -129,6 +135,21 @@ export const isUfedContainer = (type: string): boolean => {
   return UFED_CONTAINER_TYPES.some(ut => lower.includes(ut));
 };
 
+/** Check if container type uses the lazy tree UI (L01 and UFED families). */
+export const isLazyTreeContainer = (type: string): boolean => {
+  const lower = type.toLowerCase();
+  return LAZY_TREE_CONTAINER_TYPES.some(lt => lower.includes(lt));
+};
+
+/**
+ * Check if container type should render through the mounted VFS tree UI.
+ * This excludes L01 (lazy logical tree) and ISO (archive-style tree).
+ */
+export const isVfsTreeContainer = (type: string): boolean => {
+  const lower = type.toLowerCase();
+  return isVfsContainer(lower) && !isL01Container(lower) && !lower.includes("iso");
+};
+
 /** Check if container type is a memory dump */
 export const isMemoryDump = (type: string): boolean => {
   const lower = type.toLowerCase();
@@ -161,6 +182,19 @@ export const getContainerCategory = (type: string): "ad1" | "vfs" | "archive" | 
   if (isVfsContainer(type)) return "vfs";
   if (isArchiveContainer(type)) return "archive";
   if (isUfedContainer(type)) return "ufed";
+  return "unknown";
+};
+
+/**
+ * Get the container browser mode used by the evidence tree UI.
+ * This matches the actual tree-routing behavior, not the broader family classification.
+ */
+export const getContainerBrowserMode = (type: string): "ad1" | "vfs" | "archive" | "lazy" | "memory" | "unknown" => {
+  if (isAd1Container(type)) return "ad1";
+  if (isMemoryDump(type)) return "memory";
+  if (isLazyTreeContainer(type)) return "lazy";
+  if (isArchiveContainer(type)) return "archive";
+  if (isVfsTreeContainer(type)) return "vfs";
   return "unknown";
 };
 

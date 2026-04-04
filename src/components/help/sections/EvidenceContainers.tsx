@@ -35,22 +35,22 @@ export const EvidenceContainersContent: Component = () => (
           <tr class="border-b border-border/50">
             <td class="py-2 pr-4 font-medium text-type-l01">L01</td>
             <td class="py-2 pr-4"><code>.L01 .Lx01</code></td>
-            <td class="py-2">EnCase Logical Evidence File — logical file collection in EWF format</td>
+            <td class="py-2">EnCase Logical Evidence File — logical file tree browsing with inline viewers for extracted evidence items</td>
           </tr>
           <tr class="border-b border-border/50">
             <td class="py-2 pr-4 font-medium text-type-ufed">UFED</td>
             <td class="py-2 pr-4"><code>.ufd .ufdr</code></td>
-            <td class="py-2">Cellebrite UFED extraction — mobile device forensic data</td>
+            <td class="py-2">Cellebrite UFED extraction — mobile device evidence tree browsing with inline preview support</td>
           </tr>
           <tr class="border-b border-border/50">
             <td class="py-2 pr-4 font-medium text-type-raw">Raw Images</td>
-            <td class="py-2 pr-4"><code>.dd .raw .img .iso .dmg</code></td>
+            <td class="py-2 pr-4"><code>.dd .raw .img .001</code></td>
             <td class="py-2">Raw disk images — bit-for-bit copies with optional filesystem parsing (NTFS, FAT, HFS+, APFS, ext2/3/4, exFAT)</td>
           </tr>
           <tr class="border-b border-border/50">
             <td class="py-2 pr-4 font-medium text-type-archive">Archives</td>
-            <td class="py-2 pr-4"><code>.zip .7z .tar .gz .rar</code></td>
-            <td class="py-2">Common archive formats — browseable tree with inline extraction and nested container support</td>
+            <td class="py-2 pr-4"><code>.zip .7z .rar .tar .gz .bz2 .xz .zst .lz4 .iso .dmg</code></td>
+            <td class="py-2">Archive and archive-style disk formats — browseable tree with inline extraction, viewers, and nested container support</td>
           </tr>
           <tr>
             <td class="py-2 pr-4 font-medium text-txt-muted">Memory Dumps</td>
@@ -65,7 +65,7 @@ export const EvidenceContainersContent: Component = () => (
       <h4 class="font-semibold text-txt text-sm">How to Use</h4>
       <div class="text-txt-secondary text-sm space-y-1">
         <p><strong>1. Scan for evidence:</strong> Set your evidence directory path in the toolbar and click <strong>Scan</strong>. CORE-FFX recursively discovers all supported containers.</p>
-        <p><strong>2. Browse containers:</strong> Click the expand arrow next to any container in the evidence tree. E01 and raw images show filesystem partitions; AD1 and L01 show logical file trees; archives show their file listing.</p>
+        <p><strong>2. Browse containers:</strong> Click the expand arrow next to any container in the evidence tree. E01 and raw images show filesystem partitions; AD1, L01, and UFED show logical evidence trees; archives, ISO, and DMG files show their internal file listing.</p>
         <p><strong>3. View files:</strong> Click any file within a container to preview it in the center pane. The appropriate viewer is selected automatically.</p>
         <p><strong>4. Type filtering:</strong> Use the type filter buttons above the evidence tree to show only specific container types (e.g., only E01 files or only archives).</p>
       </div>
@@ -74,7 +74,7 @@ export const EvidenceContainersContent: Component = () => (
     <div class="p-3 bg-bg-secondary rounded-lg border border-border/50 text-sm">
       <p class="font-medium text-txt mb-1">Nested Containers</p>
       <p class="text-txt-secondary">
-        CORE-FFX supports containers inside containers — for example, a ZIP archive inside an E01 image, or an AD1 inside a 7z archive.
+        CORE-FFX supports containers inside containers — for example, a ZIP archive inside an E01 image, an AD1 inside a 7z archive, or nested container files discovered inside L01 and UFED trees.
         These can be expanded inline in the evidence tree without manual extraction. Look for the nested container icon next to supported file types within the tree.
       </p>
     </div>

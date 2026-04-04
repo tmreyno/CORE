@@ -55,10 +55,10 @@ A practical reference for CORE-FFX workflows, features, and keyboard shortcuts.
 |--------|------------|--------------|
 | AD1 | `.ad1`, `.ad2`… | Tree browsing, extraction, hash verification |
 | E01/Ex01 | `.E01`, `.Ex01` | Segment verification, VFS mounting, metadata |
-| L01/Lx01 | `.L01`, `.Lx01` | Logical image parsing, VFS |
+| L01/Lx01 | `.L01`, `.Lx01` | Logical tree browsing, extraction, inline viewing |
 | Raw Images | `.dd`, `.raw`, `.img`, `.001` | Direct byte access, VFS with filesystem parsing |
-| UFED | `.ufd`, `.ufdr`, `.ufdx` | Mobile extraction parsing |
-| Archives | `.zip`, `.7z`, `.rar`, `.tar`, `.gz`, `.iso`, `.dmg` | Browsing, metadata, extraction |
+| UFED | `.ufd`, `.ufdr`, `.ufdx` | Mobile extraction tree browsing, extraction, inline viewing |
+| Archives | `.zip`, `.7z`, `.rar`, `.tar`, `.gz`, `.bz2`, `.xz`, `.zst`, `.lz4`, `.iso`, `.dmg` | Browsing, metadata, extraction, inline viewing |
 
 ### Universal File Viewers
 
@@ -73,7 +73,7 @@ A practical reference for CORE-FFX workflows, features, and keyboard shortcuts.
 
 ### Triage-Only Detection
 
-Identified during scans with basic metadata: AFF/AFF4, VMDK, VHD, VHDX, QCOW2, ISO, DMG, TAR, GZIP, XZ, BZIP2, ZSTD, LZ4
+Identified during scans with basic metadata: AFF/AFF4, VMDK, VHD, VHDX, QCOW2
 
 ---
 

@@ -2841,6 +2841,8 @@ When text is selected inside a document viewer and the user right-clicks:
 
 Archive containers (ZIP, 7z, TAR, GZ, RAR, DMG, ISO, etc.) use a **synthesized directory** approach because many archive formats (especially 7z) don't include explicit directory entries in their file listings.
 
+**DMG and ISO are browsed through the archive interface, not the VFS mount flow.** DMG entry reads route through the HFS+ helper in `read_dmg_entry_bytes()`, and ISO tree listing uses the same archive metadata pipeline as ZIP/7z/RAR.
+
 **Critical invariant: `useEvidenceTree.getArchiveRootEntries` MUST delegate to `archive.getArchiveRootEntries(entries)` — NEVER filter entries manually.** The `useArchiveTree.getArchiveRootEntries` calls `synthesizeDirectories()` internally, which creates virtual directory entries from file paths. Without this, archives where all entries are like `folder/file.txt` (no explicit `folder/` entry) will show an **empty tree**.
 
 **Data flow for archive tree expansion:**
@@ -2853,7 +2855,8 @@ Archive containers (ZIP, 7z, TAR, GZ, RAR, DMG, ISO, etc.) use a **synthesized d
 **Data flow for archive entry viewing (center panel):**
 1. User clicks file → creates `SelectedEntry` with `isArchiveEntry: true`
 2. `ContainerEntryViewer` → `useEntrySource.readBytesFromSource()` → invokes `archive_read_entry_chunk` for hex data
-3. Preview mode → `container_extract_entry_to_temp` → `libarchive_read_file` extracts to temp → shows in appropriate viewer
+3. Preview mode → `container_extract_entry_to_temp` → `read_archive_entry_bytes()` extracts to temp → shows in the appropriate viewer
+4. `read_archive_entry_bytes()` resolves synthetic single-file compressed entries, routes DMG reads through HFS+, and falls back from libarchive to native archive readers when needed
 
 **Data flow for archive metadata (right panel):**
 1. `EvidenceTree.tsx` enriches `SelectedEntry.metadata` with `archiveFormat`, `totalEntries`, `totalFiles`, `totalFolders`, `archiveSize`, `encrypted`, `entryCompressedSize`, `entryCrc32`, `entryModified`
@@ -2872,22 +2875,24 @@ Archive containers (ZIP, 7z, TAR, GZ, RAR, DMG, ISO, etc.) use a **synthesized d
 - `src/types/viewerMetadata.ts` — `ArchiveMetadataSection` interface
 - `src-tauri/src/commands/archive/metadata.rs` — `archive_get_metadata`, `archive_get_tree` backend commands
 - `src-tauri/src/commands/archive/extraction.rs` — `archive_extract_entry`, `archive_read_entry_chunk`
+- `src-tauri/src/commands/container.rs` — archive-entry preview extraction routes through `read_archive_entry_bytes()`
 - `src-tauri/src/archive/libarchive_backend.rs` — `LibarchiveHandler` unified backend for all archive formats
 
 **Do NOT:**
 - Bypass `synthesizeDirectories()` when listing archive root entries
 - Add manual path filtering (e.g., `!path.includes('/')`) for archive root entries — use `archive.getArchiveRootEntries()`
 - Assume archive entries always include explicit directory entries
+- Route DMG or ISO through the VFS tree path in `EvidenceTree.tsx` — they are browsed through the archive interface
 - Compute archive chunk slice ends with raw `start + size` arithmetic in `archive_read_entry_chunk` — use checked/saturating slicing because chunk sizes come from IPC and can overflow before the bounds check runs
 - Use `allArchiveEntries()` directly for file/folder counts — use `allSynthesizedEntries()` which includes virtual directories
 
 ---
 
-### Nested Containers Inside All Parent Types (VFS, AD1, Archive)
+### Nested Containers Inside All Parent Types (VFS, AD1, Archive, Lazy Trees)
 
-Nested container support allows container files (ZIP, 7z, AD1, E01, etc.) **inside** other containers to be expanded inline in the evidence tree. This works for **all three parent container types**: VFS (E01/Raw), AD1, and Archive.
+Nested container support allows container files (ZIP, 7z, AD1, E01, etc.) **inside** other containers to be expanded inline in the evidence tree. This works for **all four parent container types**: VFS (E01/Raw), AD1, Archive, and Lazy Tree containers (L01/UFED).
 
-**Critical invariant: All three tree node types — `VfsTreeNode`, `Ad1TreeNode`, and `ArchiveTreeNode` — MUST have nested container detection and expansion support.** Each detects container files via `isNestedContainerFile()`, renders expand icons, and delegates to the `useNestedContainers` hook. Removing nested container props from ANY of these tree nodes will break containers-inside-containers for that parent type.
+**Critical invariant: All four tree node types — `VfsTreeNode`, `Ad1TreeNode`, `ArchiveTreeNode`, and `LazyTreeNode` — MUST have nested container detection and expansion support.** Each detects container files via `isNestedContainerFile()`, renders expand icons, and delegates to the `useNestedContainers` hook. Removing nested container props from ANY of these tree nodes will break containers-inside-containers for that parent type.
 
 **Backend extraction pipeline (`src-tauri/src/commands/archive/nested.rs`):**
 
@@ -2896,7 +2901,9 @@ Nested container support allows container files (ZIP, 7z, AD1, E01, etc.) **insi
 1. **E01 parent** (`ewf::is_ewf()`) → opens `EwfVfs`, reads file via VFS `file_size()` + `read()`, writes to temp
 2. **Raw parent** (`raw::is_raw()`) → opens `RawVfs` (filesystem or raw), reads via VFS, writes to temp
 3. **AD1 parent** (`ad1::is_ad1()`) → uses `ad1::read_entry_data()` to read entry, writes to temp
-4. **Archive parent** (else branch) → matches extension (zip, 7z, rar, tar, etc.) and extracts via `libarchive_read_file()` or `SevenZipHandler`
+4. **L01 parent** (`ewf::is_l01_file()`) → reads the nested container by ltree offset via `EwfHandle.read_at()`, writes to temp
+5. **UFED parent** (`ufed::is_ufed()`) → opens `UfedVfs`, reads file contents, writes to temp
+6. **Archive parent** (else branch) → routes through `read_archive_entry_bytes()` for zip/7z/rar/tar/dmg/iso/compressed archive entries
 
 **Frontend nested container pattern (replicated in all 3 tree nodes):**
 
@@ -2917,32 +2924,34 @@ const isNestedContainer = createMemo(() => !entry.isDir && isNestedContainerFile
 **EvidenceTree.tsx wiring — all three container sections wire `tree.nested.*` methods as props:**
 - VFS section → `PartitionNode` → `VfsTreeNode` (lines ~216)
 - Archive section → `ArchiveTreeNode` (lines ~299)  
+- Lazy section → `LazyTreeNode` (lines ~365)
 - AD1 section → `Ad1TreeNode` (lines ~414)
 
 **Key files:**
 - `src/components/EvidenceTree/nodes/VfsTreeNode.tsx` — VFS tree node with nested container support, includes `VfsNestedEntryNode`
 - `src/components/EvidenceTree/nodes/Ad1TreeNode.tsx` — AD1 tree node with nested container support, includes `Ad1NestedEntryNode`
 - `src/components/EvidenceTree/nodes/ArchiveTreeNode.tsx` — Archive tree node with nested container support, includes `NestedContainerEntryNode`
+- `src/components/EvidenceTree/nodes/LazyTreeNode.tsx` — Lazy tree node with nested container support for L01/UFED trees, includes `LazyNestedEntryNode`
 - `src/components/EvidenceTree/hooks/useNestedContainers.ts` — shared hook managing nested container state, caching, and IPC
 - `src/components/EvidenceTree/containerDetection.ts` — `isNestedContainerFile()`, `getNestedContainerType()`, `NESTED_CONTAINER_EXTENSIONS`
 - `src-tauri/src/commands/archive/nested.rs` — `get_or_create_nested_temp()`, `nested_container_get_tree()`, `nested_archive_read_entry_chunk()`
 - `src-tauri/src/commands/container.rs` — `parse_nested_archive_path()`, nested archive extraction routing, and entry context classification
 
 **Do NOT:**
-- Remove nested container props (`isNestedExpanded`, `onToggleNested`, etc.) from `VfsTreeNode`, `Ad1TreeNode`, or `ArchiveTreeNode`
+- Remove nested container props (`isNestedExpanded`, `onToggleNested`, etc.) from `VfsTreeNode`, `Ad1TreeNode`, `ArchiveTreeNode`, or `LazyTreeNode`
 - Remove nested container props from `PartitionNodeProps` — they must pass through to `VfsTreeNode`
 - Remove the `isNestedContainer` memo or `isNestedContainerFile()` detection from any tree node
-- Remove the E01/Raw/AD1 parent detection in `get_or_create_nested_temp()` — the `is_ewf`/`is_raw`/`is_ad1` checks MUST run before the archive extension match
+- Remove the E01/Raw/AD1/L01/UFED parent detection in `get_or_create_nested_temp()` — the `is_ewf`/`is_raw`/`is_ad1`/`is_l01`/`is_ufed` checks MUST run before the archive extension match
 - Treat malformed nested archive paths with empty outer or inner `::` segments as valid nested extractions in `src-tauri/src/commands/container.rs` — route detection and extraction through `parse_nested_archive_path()` so inputs like `::file.txt` and `outer.zip::` fall back to normal archive handling instead of extracting an empty path component
 - Compute nested archive chunk slice ends with raw `start + size` arithmetic in `nested_archive_read_entry_chunk()` — use checked/saturating slicing so oversized chunk requests degrade safely instead of overflowing
 - Remove `VfsNestedEntryNode` from `VfsTreeNode.tsx` or `Ad1NestedEntryNode` from `Ad1TreeNode.tsx`
-- Skip wiring `tree.nested.*` props when rendering `PartitionNode` or `Ad1TreeNode` in `EvidenceTree.tsx`
+- Skip wiring `tree.nested.*` props when rendering `PartitionNode`, `LazyTreeNode`, or `Ad1TreeNode` in `EvidenceTree.tsx`
 
 ---
 
 ### Viewer-Inside-Container Pipeline
 
-All file viewers (PDF, Office, Spreadsheet, Email, PST, Image, Database, Plist, Binary, Registry, DocumentViewer) work inside forensic containers (E01, AD1, ZIP, TAR, 7z, etc.) through a unified extraction-then-render pipeline. This section documents the critical data flow to prevent regressions.
+All file viewers (PDF, Office, Spreadsheet, Email, PST, Image, Database, Plist, Binary, Registry, DocumentViewer) work inside forensic containers (E01, Raw, L01, AD1, UFED, ZIP, TAR, 7z, DMG, ISO, etc.) through a unified extraction-then-render pipeline. This section documents the critical data flow to prevent regressions.
 
 **End-to-end pipeline (user clicks file in tree → viewer renders):**
 
@@ -2954,8 +2963,10 @@ All file viewers (PDF, Office, Spreadsheet, Email, PST, Image, Database, Plist, 
    - `shouldAttempt = true` (because `canPreview(name) || mode === "auto"`)
    - Calls `handlePreview()` → `setPreviewLoading(true)` → spinner renders
 4. **Extraction** → `handlePreview()` invokes `container_extract_entry_to_temp`:
-   - **Archive** (`isArchiveEntry: true`): `libarchive_read_file()` → temp file
+  - **Archive** (`isArchiveEntry: true`): `read_archive_entry_bytes()` → temp file
    - **VFS** (`isVfsEntry: true` or E01/Raw detected): `EwfVfs.read()` / `RawVfs.read()` with `entrySize` → temp file
+  - **L01** (`ewf::is_l01_file()`): reads file bytes from ltree offsets via `EwfHandle.read_at()` → temp file
+  - **UFED** (`ufed::is_ufed()`): `UfedVfs.read()` with file-size lookup fallback → temp file
    - **AD1** (auto-detected via `is_ad1()`): `ad1::read_entry_data_by_addr()` or `ad1::read_entry_data()` → temp file
    - **Disk file** (`isDiskFile: true` or `containerPath === entryPath`): uses path directly, no extraction
 5. **Content detection** (unknown extensions only): `detect_content_format` with magic-byte analysis → may set `detectedFormat()`
@@ -2990,6 +3001,7 @@ If you add a new viewer type, you MUST add its type guard to `canPreview()` or i
 - `src/hooks/useCenterPaneTabs.ts` — tab management, `openContainerEntry()`
 - `src/hooks/useAppState.ts` — `entryContentViewMode` signal
 - `src-tauri/src/commands/container.rs` — `container_extract_entry_to_temp` backend extraction
+- `src-tauri/src/commands/archive/extraction.rs` — shared archive entry reads, including DMG/ISO archive-style extraction
 - `src-tauri/src/viewer/document/universal.rs` — `UniversalFormat` enum, `from_extension()`, `detect_by_magic()`, `viewer_type()`
 - `src-tauri/src/viewer/document/commands.rs` — `detect_content_format` backend command
 
@@ -2999,6 +3011,8 @@ If you add a new viewer type, you MUST add its type guard to `canPreview()` or i
 - Remove `isPst` from `canPreview()` — PST files need it to trigger auto-preview
 - Change `handleSelectEntry` to set `entryContentViewMode` to anything other than `"auto"` — `"auto"` is the universal trigger
 - Assume `containerPath === entryPath` means "container entry" — it means "disk file" (no extraction needed)
+- Force UFED lazy-tree selections to set `isArchiveEntry: true` in `EvidenceTree.tsx` — UFED top-level viewing relies on backend UFED detection, not archive routing
+- Route L01 back through the VFS tree or VFS extraction path — L01 browsing is lazy-tree based and file reads use ltree offsets
 - Remove the content detection fallback for unknown extensions — it enables magic-byte-based viewer routing
 
 ---
