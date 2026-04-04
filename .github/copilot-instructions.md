@@ -1729,6 +1729,7 @@ interface SearchOptions {
 
 - Remove the FTS5 search in `project_db` — it handles notes/bookmarks/activity_log (different data than Tantivy)
 - Remove `useSearchIndex` from App.tsx — it manages the index lifecycle (open/close/auto-index)
+- Delete a Tantivy index directory by dropping `SearchIndex` alone — `SearchIndex::destroy()` must take the writer out, call `wait_merging_threads()`, then drop the reader/index before removing the directory or macOS CI can fail with `Directory not empty`
 - Use `Index::exists(&Path)` — Tantivy requires `Index::exists(&dyn Directory)` via `MmapDirectory::open()`
 - Use `DirEntry.size` or `DirEntry.modified` in VFS crawlers — `DirEntry` only has `name` and `is_directory`; use `vfs.getattr()` for `FileAttr`
 - Use `archive::is_archive_path()` — the function is `archive::is_archive()` and returns `Result<bool>`

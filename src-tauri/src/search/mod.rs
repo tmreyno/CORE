@@ -18,8 +18,10 @@ pub mod indexer;
 pub mod query;
 
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 use tantivy::directory::MmapDirectory;
 use tantivy::schema::*;
@@ -297,22 +299,45 @@ impl SearchIndex {
     pub fn destroy(self) -> Result<(), String> {
         let path = self.index_path.clone();
 
-        // Drop writer, reader, then the entire SearchIndex (including the
-        // Tantivy Index + MmapDirectory) BEFORE removing files.  Without this,
-        // mmap file handles on macOS can keep the directory non-empty.
-        {
+        // Tantivy keeps merge workers alive behind the IndexWriter. Shut them
+        // down explicitly before dropping mmap-backed handles and deleting the
+        // directory, or macOS can fail with Directory not empty.
+        let writer = {
             let mut writer_guard = self
                 .writer
                 .lock()
                 .map_err(|e| format!("Writer lock poisoned: {}", e))?;
-            *writer_guard = None;
+            writer_guard.take()
+        };
+
+        if let Some(writer) = writer {
+            writer
+                .wait_merging_threads()
+                .map_err(|e| format!("Failed to shut down search index writer: {}", e))?;
         }
+
         drop(self);
 
         if path.exists() {
-            std::fs::remove_dir_all(&path)
-                .map_err(|e| format!("Failed to delete index directory: {}", e))?;
+            let mut last_error = None;
+            for attempt in 0..5 {
+                match std::fs::remove_dir_all(&path) {
+                    Ok(()) => return Ok(()),
+                    Err(error) if error.kind() == ErrorKind::DirectoryNotEmpty && attempt < 4 => {
+                        last_error = Some(error);
+                        std::thread::sleep(Duration::from_millis(50 * (attempt + 1) as u64));
+                    }
+                    Err(error) => {
+                        return Err(format!("Failed to delete index directory: {}", error));
+                    }
+                }
+            }
+
+            if let Some(error) = last_error {
+                return Err(format!("Failed to delete index directory: {}", error));
+            }
         }
+
         Ok(())
     }
 
