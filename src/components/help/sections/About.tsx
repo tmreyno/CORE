@@ -10,6 +10,26 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 /** GitHub repo URL for linking to releases */
 const GITHUB_REPO_URL = "https://github.com/tmreyno/CORE";
+const UPDATE_CHECK_TIMEOUT_MS = 15000;
+
+function checkWithTimeout(headers: Record<string, string>) {
+  return new Promise<Awaited<ReturnType<typeof check>>>((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      reject(new Error("Update check timed out"));
+    }, UPDATE_CHECK_TIMEOUT_MS);
+
+    check({ headers }).then(
+      (result) => {
+        globalThis.clearTimeout(timer);
+        resolve(result);
+      },
+      (error) => {
+        globalThis.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 export const AboutContent: Component = () => {
   const [showLicenses, setShowLicenses] = createSignal(false);
@@ -23,7 +43,7 @@ export const AboutContent: Component = () => {
     try {
       const token = typeof __GITHUB_UPDATE_TOKEN__ === "string" ? __GITHUB_UPDATE_TOKEN__ : "";
       const headers: Record<string, string> = token ? { Authorization: `token ${token}` } : {};
-      const result = await check({ headers });
+      const result = await checkWithTimeout(headers);
       if (result) {
         setLatestVersion(result.version);
         if (result.date) {
