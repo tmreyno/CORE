@@ -6,7 +6,7 @@
 
 //! Hash Performance Benchmarks
 //!
-//! Compares performance of different hash algorithms (MD5, SHA-256, BLAKE3, XXH3)
+//! Compares performance of different hash algorithms (MD5, SHA-1, SHA-256, BLAKE3, XXH3)
 //! across various data sizes.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -32,6 +32,10 @@ fn bench_hash_algorithms(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("md5", size), &data, |b, data| {
             b.iter(|| compute_hash(black_box(data), HashAlgorithm::Md5));
+        });
+
+        group.bench_with_input(BenchmarkId::new("sha1", size), &data, |b, data| {
+            b.iter(|| compute_hash(black_box(data), HashAlgorithm::Sha1));
         });
 
         group.bench_with_input(BenchmarkId::new("sha256", size), &data, |b, data| {
