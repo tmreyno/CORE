@@ -12,10 +12,17 @@
  *   "acquire" – CORE Acquire (evidence acquisition only)
  */
 
-export type AppEdition = "full" | "acquire";
+import {
+  getEditionAppName,
+  getEditionAppShort,
+  resolveAppEdition,
+  type AppEdition,
+} from "@core-suite/types/edition";
+
+export type { AppEdition } from "@core-suite/types/edition";
 
 export const APP_EDITION: AppEdition =
-  (typeof __APP_EDITION__ !== "undefined" ? __APP_EDITION__ : "full") as AppEdition;
+  resolveAppEdition(typeof __APP_EDITION__ !== "undefined" ? __APP_EDITION__ : undefined);
 
 export const isFullEdition = () => APP_EDITION === "full";
 export const isAcquireEdition = () => APP_EDITION === "acquire";
@@ -23,5 +30,5 @@ export const isAcquireEdition = () => APP_EDITION === "acquire";
 /**
  * App display name based on edition.
  */
-export const APP_NAME = isAcquireEdition() ? "CORE Acquisition" : "CORE-FFX";
-export const APP_SHORT = isAcquireEdition() ? "AqX" : "FFX";
+export const APP_NAME = getEditionAppName(APP_EDITION);
+export const APP_SHORT = getEditionAppShort(APP_EDITION);
