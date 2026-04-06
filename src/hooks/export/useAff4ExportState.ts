@@ -43,7 +43,7 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
   // ── Signals ──────────────────────────────────────────────────────────────
 
   const [aff4ImageName, setAff4ImageName] = createSignal("evidence");
-  const [aff4Compression, setAff4Compression] = createSignal("deflate");
+  const [aff4Compression, setAff4Compression] = createSignal("stored");
   const [aff4HashAlgorithms, setAff4HashAlgorithms] = createSignal<string[]>(["sha256"]);
 
   // Case metadata
@@ -225,7 +225,7 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
 
   const resetAff4State = () => {
     setAff4ImageName("evidence");
-    setAff4Compression("deflate");
+    setAff4Compression("stored");
     setAff4HashAlgorithms(["sha256"]);
     setAff4CaseNumber("");
     setAff4EvidenceNumber("");
