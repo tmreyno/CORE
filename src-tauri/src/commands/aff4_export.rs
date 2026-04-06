@@ -207,7 +207,7 @@ pub async fn aff4_create_image(
     // Parse compression
     let compression = match &options.compression {
         Some(c) => parse_compression(c)?,
-        None => Aff4Compression::Deflate,
+        None => Aff4Compression::Stored,
     };
 
     // Parse hash algorithms
