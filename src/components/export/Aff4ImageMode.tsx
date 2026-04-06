@@ -98,10 +98,10 @@ export const Aff4ImageMode: Component<Aff4ImageModeProps> = (props) => {
             value={props.compression()}
             onChange={(e) => props.setCompression(e.currentTarget.value)}
           >
-            <option value="deflate">Deflate (default)</option>
+            <option value="stored">None (Store, default)</option>
+            <option value="deflate">Deflate</option>
             <option value="lz4">LZ4 (fast)</option>
             <option value="snappy">Snappy (fast)</option>
-            <option value="stored">None (Store)</option>
           </select>
         </div>
       </div>
