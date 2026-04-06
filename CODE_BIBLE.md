@@ -35,6 +35,8 @@ CORE-FFX/
 │   └── UI_CONSTANTS_REFERENCE.md
 ├── src/                         # Frontend (SolidJS + TypeScript)
 ├── src-tauri/                   # Backend (Rust + Tauri)
+│   ├── examples/                # Terminal-runnable benchmark and diagnostics examples
+│   │   └── logical_container_benchmark.rs  # Compares 7z Store, AFF4 Stored, and L01 None creation + reopen + output hashing
 ├── libewf-ffi/                  # Safe Rust FFI bindings for libewf 20251220 (EWF read/write)
 └── sevenzip-ffi/                # C library + Rust FFI for 7z archive creation (LZMA SDK 24.09)
 ```

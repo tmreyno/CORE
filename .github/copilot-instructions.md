@@ -1501,6 +1501,7 @@ Help → "Check for Updates…"
 | `src/components/UpdateModal.tsx` | Thin CORE-FFX wrapper that passes updater config into the shared modal |
 | `../core-shared/packages/components/src/updater/UpdateModal.tsx` | Shared modal UI: checking → available → downloading → ready states |
 | `../core-shared/packages/components/src/updater/useUpdater.ts` | Shared updater lifecycle hook (check, download, relaunch, auth headers) |
+| `src/components/help/sections/About.tsx` | About panel version info; uses a timeout-guarded updater check so stalled requests degrade to `unable to check` |
 | `src-tauri/tauri.conf.json` | `plugins.updater` config: endpoint URL + Ed25519 public key (CORE-FFX) |
 | `src-tauri/capabilities/default.json` | `updater:default` + `process:default` permissions |
 | `src-tauri/src/lib.rs` | Plugin registration: `tauri_plugin_updater`, `tauri_plugin_process` |
@@ -1548,6 +1549,8 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 5. **Graceful fallback:** If the token is empty (repo made public, secret not set), the updater works without auth
 6. **Release workflow handling:** Optional release secrets such as `GH_UPDATE_TOKEN`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and `APPLE_API_*` must only be masked or exported when they are non-empty. The workflow must treat whitespace-only placeholders as blank, and it must only export `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_CONTENT`, and `APPLE_API_KEY_PATH` when the full App Store Connect credential set is present.
 
+The shared updater modal does not auto-check while hidden. It starts a timeout-guarded check when the modal opens so a stalled `@tauri-apps/plugin-updater` request cannot leave the UI in `checking` forever. The About panel's direct version check must follow the same timeout-guarded pattern.
+
 ### Do NOT
 
 - Remove `tauri-plugin-process` — required for `relaunch()` after update install
@@ -1562,6 +1565,7 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 - Inline the updater implementation back into `src/components/UpdateModal.tsx` — keep CORE-FFX as a thin config wrapper over the shared updater package
 - Remove the `{ headers }` option from `downloadAndInstall()` in `../core-shared/packages/components/src/updater/useUpdater.ts` — without auth headers on the binary download, private repo updates fail with "signature verification failed"
 - Pass auth headers to `check()` only — BOTH `check()` and `downloadAndInstall()` need them for private repos
+- Re-enable hidden-modal auto-checks or remove the updater timeout guard — a stalled private-repo/auth request can otherwise pin the modal spinner until the app restarts
 
 ---
 
@@ -2011,8 +2015,11 @@ cd src-tauri
 cargo test                           # Run all tests
 cargo test viewer::document::        # Run specific module tests
 cargo test --test test_document_formats -- --nocapture  # Integration tests
+cargo run --example logical_container_benchmark -- --dataset-mib 128  # Compare 7z Store vs AFF4 Stored vs L01 None
 cd ../libewf-ffi && cargo test       # libewf-ffi reader/writer tests (39 total)
 ```
+
+The logical container benchmark example is the reproducible CLI entry point for acquisition-speed comparisons. It creates 7z Store, AFF4 Stored, and L01 None outputs from the same source dataset, reopens them through the real reader stack, and hashes the output files with MD5, SHA-1, SHA-256, and BLAKE3.
 
 ---
 
@@ -3412,6 +3419,12 @@ All export modes default to **no compression** and **2 GB split size**. These de
 | **Hash** | MD5 ✅, SHA1 ❌ | MD5 ✅ | SHA-256 ✅ |
 | **Verify after create** | — | — | ✅ |
 
+**AFF4 speed-first defaults:**
+
+- Frontend default compression is `"stored"`
+- Backend default compression falls back to `Aff4Compression::Stored` when omitted
+- Small logical AFF4 files must honor Stored mode too; do not force deflate for ZIP-segment members when the selected compression is Stored
+
 **NativeExportMode presets** (all use `CompressionLevel.Store`):
 
 | Preset | Split Size | Solid | Notes |
@@ -3524,6 +3537,7 @@ const [pendingRemoveSources, setPendingRemoveSources] = createSignal<string[]>([
 - `src/components/export/ToolsMode.tsx` — archive test/repair/validate UI
 - `src/components/export/MemoryMode.tsx` — live RAM capture UI (info, options, progress, results)
 - `src/components/ExportPanel.tsx` — orchestrator (state, conversion, IPC)
+- `src-tauri/examples/logical_container_benchmark.rs` — terminal-runnable logical container benchmark (7z Store, AFF4 Stored, L01 None + reopen + output hashing)
 - `src/components/acquire/AcquireExportView.tsx` — Acquire edition wrapper (passes `initialMode` + `pendingExportMode` to ExportPanel); wires DriveTreeBrowser's `onAcquireSource` to set `pendingMode` signal
 - `src/components/acquire/AcquireLayout.tsx` — Acquire edition root layout (routes physical/logical to unified panel)
 - `src/hooks/export/useNativeExportState.ts` — native file export + 7z archive handlers with DB tracking
@@ -3580,6 +3594,7 @@ When a directory is selected as a source, `collect_files()` uses `path.parent()`
 
 **Do NOT:**
 - Change default compression from `"none"` / `CompressionLevel.Store` — forensic standard requires bit-for-bit fidelity
+- Reintroduce unconditional deflate for AFF4 small logical files when the selected compression is Stored — the speed-first AFF4 path depends on small ZIP-segment members honoring Stored mode too
 - Change default split size from 2048 MB — this is the FAT32/FTK Imager standard
 - Use raw `<input type="number">` for split/segment sizes — always use `SplitSizeSelector`
 - Pass MB values directly to backend APIs — always multiply by `1024 * 1024` for bytes conversion
