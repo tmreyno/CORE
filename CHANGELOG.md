@@ -4,6 +4,11 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.94] - 2026-04-06
+
+### Changed
+- Nightly release build (patch bump)
+
 ## [0.1.93] - 2026-04-05
 
 ### Changed
