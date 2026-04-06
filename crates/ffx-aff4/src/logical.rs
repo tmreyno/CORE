@@ -331,8 +331,14 @@ fn write_small_file<W: Write + Seek>(
         format!("{}/{}", volume_path, zip_path)
     };
 
+    let zip_compression = if matches!(config.compression, Aff4Compression::Stored) {
+        zip::CompressionMethod::Stored
+    } else {
+        zip::CompressionMethod::Deflated
+    };
+
     let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
+        .compression_method(zip_compression)
         .large_file(true);
 
     zip.start_file(&zip_member, options)
