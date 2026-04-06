@@ -2532,11 +2532,14 @@ Automated scheduled workflow that bumps the patch version and triggers a full re
 | `.github/workflows/tests.yml` | CI tests (cargo test + cargo clippy) |
 | `.github/workflows/performance.yml` | Performance benchmarks |
 
+`tests.yml` must pin `ref: main` on every `actions/checkout` step that pulls `tmreyno/core-shared` as the sibling local dependency. Leaving the ref implicit makes `actions/checkout` query GitHub's default-branch API, which can fail under rate limiting before the frontend/build jobs even start.
+
 ### Do NOT
 
 - Build libewf as a solution-level MSBuild — it produces DLL import libraries. Build individual projects with `/p:ConfigurationType=StaticLibrary`.
 - Skip the `ZLIB_DLL` patching step when building libewf on Windows
 - Remove `TAURI_SIGNING_PRIVATE_KEY` from release.yml — update signing will fail
+- Remove `ref: main` from `tests.yml` `core-shared` checkout steps — the default-branch API lookup can fail under GitHub rate limiting and abort the build before dependency installation
 - Add `check-updates` to project-dependent menu IDs — updates should work without a project
 - Use `workflow_dispatch` for release builds in production — always use tag push (`v*`)
 - Forget to delete the old GitHub Release and tag before re-creating after a failed build

@@ -4,6 +4,11 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.96] - 2026-04-06
+
+### Fixed
+- CI workflow resilience — pinned `tmreyno/core-shared` checkouts to `ref: main` in `tests.yml` so frontend/build jobs no longer rely on GitHub's default-branch API during rate limiting
+
 ## [0.1.95] - 2026-04-06
 
 ### Added
