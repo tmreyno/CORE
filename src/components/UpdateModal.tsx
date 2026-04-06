@@ -5,37 +5,26 @@
 // =============================================================================
 
 /**
- * UpdateModal — Thin wrapper around @core-suite/components/updater UpdateModal.
+ * UpdateModal — Thin wrapper around the shared configured updater modal.
  *
  * Provides CORE-FFX-specific config (app name, repo URL, auth token)
  * while preserving the `show`/`onClose`-only props interface expected
  * by AppSecondaryModals.tsx's lazy import.
  */
 
-import { Component } from "solid-js";
-import { UpdateModal as SharedUpdateModal, type UpdaterConfig } from "@core-suite/components/updater";
+import {
+  createConfiguredUpdateModal,
+  type BasicUpdateModalProps,
+} from "@core-suite/components/updater";
 
-interface UpdateModalProps {
-  show: boolean;
-  onClose: () => void;
-}
+export type UpdateModalProps = BasicUpdateModalProps;
 
-const config: UpdaterConfig = {
+const UpdateModal = createConfiguredUpdateModal({
   appName: "CORE-FFX",
   repoUrl: "https://github.com/tmreyno/CORE",
   authToken: typeof __GITHUB_UPDATE_TOKEN__ === "string" ? __GITHUB_UPDATE_TOKEN__ : "",
   currentVersion: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : undefined,
   defaultBranch: "main",
-};
-
-const UpdateModal: Component<UpdateModalProps> = (props) => {
-  return (
-    <SharedUpdateModal
-      show={props.show}
-      onClose={props.onClose}
-      config={config}
-    />
-  );
-};
+});
 
 export default UpdateModal;
