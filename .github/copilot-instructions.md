@@ -1549,6 +1549,8 @@ While the repo is private, GitHub returns 404 for unauthenticated release asset 
 5. **Graceful fallback:** If the token is empty (repo made public, secret not set), the updater works without auth
 6. **Release workflow handling:** Optional release secrets such as `GH_UPDATE_TOKEN`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and `APPLE_API_*` must only be masked or exported when they are non-empty. The workflow must treat whitespace-only placeholders as blank, and it must only export `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_CONTENT`, and `APPLE_API_KEY_PATH` when the full App Store Connect credential set is present.
 
+`vite.config.ts` must use `loadEnv(mode, process.cwd(), "")` when defining `__GITHUB_UPDATE_TOKEN__`. Reading only `process.env.VITE_GITHUB_UPDATE_TOKEN` does not load repo-local `.env` files during config evaluation, so local builds silently embed an empty updater token and all private-release update checks fail.
+
 The shared updater modal does not auto-check while hidden. It starts a timeout-guarded check when the modal opens so a stalled `@tauri-apps/plugin-updater` request cannot leave the UI in `checking` forever. The About panel's direct version check must follow the same timeout-guarded pattern.
 
 ### Do NOT

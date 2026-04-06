@@ -4,6 +4,17 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.95] - 2026-04-06
+
+### Added
+- Logical container benchmark coverage for comparing 7z, AFF4, and L01 output performance across the real reader stack
+
+### Changed
+- AFF4 acquisition now defaults to Stored compression across the UI and backend for a speed-first capture path, and the updater shell now uses the extracted shared wrappers for update checks, progress tracking, and edition helpers
+
+### Fixed
+- Local release builds now load updater auth env values through Vite config so private-release update checks work consistently outside CI
+
 ## [0.1.94] - 2026-04-06
 
 ### Changed
