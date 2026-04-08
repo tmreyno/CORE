@@ -15,13 +15,12 @@
  *   - Auto-save callback registration
  *   - Welcome modal first-run detection
  *   - Last-session restoration
- *   - Cleanup (preview cache, clipboard, auto-save)
+ *   - Cleanup (clipboard, auto-save)
  *   - Window title & close-confirmation wiring
  */
 
 import { onMount, onCleanup, createSignal, createEffect } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useWindowTitle, useCloseConfirmation } from "./index";
 import { logger } from "../utils/logger";
@@ -60,14 +59,6 @@ export interface UseAppLifecycleDeps {
   getSaveOptions: () => SaveOptions;
   /** Setter for the welcome modal signal */
   setShowWelcomeModal: (show: boolean) => void;
-  /** Menu action callbacks (native menu bar) */
-  menuActions?: {
-    onOpenProject: () => void;
-    onOpenDirectory: () => void;
-    onSave: () => void;
-    onSaveAs: () => void;
-    onCommandPalette: () => void;
-  };
 }
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
@@ -124,7 +115,6 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
   // ── Mount ───────────────────────────────────────────────────────────────
 
   let cleanupSystemStats: (() => void) | undefined;
-  let cleanupMenuListener: (() => void) | undefined;
   const handleResize = () => setWindowWidth(window.innerWidth);
 
   onMount(async () => {
@@ -142,22 +132,6 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
 
     // Window resize handling - makeEventListener auto-cleans up
     makeEventListener(window, "resize", handleResize);
-
-    // Native menu bar event listener
-    if (deps.menuActions) {
-      const actions = deps.menuActions;
-      const unlistenMenu = await listen<string>("menu-action", (event) => {
-        log.debug(`Menu action: ${event.payload}`);
-        switch (event.payload) {
-          case "open_project": actions.onOpenProject(); break;
-          case "open_directory": actions.onOpenDirectory(); break;
-          case "save": actions.onSave(); break;
-          case "save_as": actions.onSaveAs(); break;
-          case "command_palette": actions.onCommandPalette(); break;
-        }
-      });
-      cleanupMenuListener = unlistenMenu;
-    }
 
     // Load workspace profiles (run in parallel) — only in full edition
     const t2 = performance.now();
@@ -202,11 +176,7 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
 
   onCleanup(() => {
     cleanupSystemStats?.();
-    cleanupMenuListener?.();
     projectManager.stopAutoSave();
-
-    // Clean up temporary preview/thumbnail files
-    invoke("cleanup_preview_cache").catch((e: unknown) => log.warn("Failed to cleanup preview cache:", e));
 
     // Clear clipboard on close if preference is set (security feature)
     if (preferences.preferences().clearClipboardOnClose) {

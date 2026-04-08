@@ -734,7 +734,7 @@ pub async fn set_project_menu_state(app: AppHandle, has_project: bool) -> Result
         }
     }
 
-    info!(
+    tracing::debug!(
         has_project = has_project,
         "Updated project-dependent menu state"
     );

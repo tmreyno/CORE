@@ -440,68 +440,86 @@ pub struct CleanupResult {
     pub errors: Vec<String>,
 }
 
-/// Clean up temporary files created by preview extraction and thumbnail generation.
-/// Removes contents of `core-ffx-preview/` and `core-ffx-thumbnails/` in the system temp directory.
-#[tauri::command]
-pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let temp = super::portable::portable_temp_dir();
-        let dirs = ["core-ffx-preview", "core-ffx-thumbnails"];
-        let mut files_removed: u64 = 0;
-        let mut bytes_freed: u64 = 0;
-        let mut errors = Vec::new();
+/// Blocking preview cache cleanup used by backend-owned lifecycle paths.
+pub fn cleanup_preview_cache_blocking() -> CleanupResult {
+    let temp = super::portable::portable_temp_dir();
+    let dirs = [
+        crate::app_paths::PREVIEW_TEMP_DIR_NAME,
+        crate::app_paths::THUMBNAIL_TEMP_DIR_NAME,
+    ];
+    let mut files_removed: u64 = 0;
+    let mut bytes_freed: u64 = 0;
+    let mut errors = Vec::new();
 
-        for dir_name in &dirs {
-            let dir_path = temp.join(dir_name);
-            if !dir_path.exists() {
-                continue;
-            }
-            match std::fs::read_dir(&dir_path) {
-                Ok(entries) => {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        match std::fs::metadata(&path) {
-                            Ok(meta) => {
-                                bytes_freed += meta.len();
-                                if let Err(e) = std::fs::remove_file(&path) {
-                                    errors.push(format!(
-                                        "Failed to remove {}: {}",
-                                        path.display(),
-                                        e
-                                    ));
-                                } else {
-                                    files_removed += 1;
-                                }
-                            }
-                            Err(e) => {
+    for dir_name in &dirs {
+        let dir_path = temp.join(dir_name);
+        if !dir_path.exists() {
+            continue;
+        }
+        match std::fs::read_dir(&dir_path) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    match std::fs::metadata(&path) {
+                        Ok(meta) => {
+                            bytes_freed += meta.len();
+                            if let Err(e) = std::fs::remove_file(&path) {
                                 errors.push(format!(
-                                    "Failed to read metadata for {}: {}",
+                                    "Failed to remove {}: {}",
                                     path.display(),
                                     e
                                 ));
+                            } else {
+                                files_removed += 1;
                             }
+                        }
+                        Err(e) => {
+                            errors.push(format!(
+                                "Failed to read metadata for {}: {}",
+                                path.display(),
+                                e
+                            ));
                         }
                     }
                 }
-                Err(e) => {
-                    errors.push(format!(
-                        "Failed to read directory {}: {}",
-                        dir_path.display(),
-                        e
-                    ));
-                }
+            }
+            Err(e) => {
+                errors.push(format!(
+                    "Failed to read directory {}: {}",
+                    dir_path.display(),
+                    e
+                ));
             }
         }
+    }
 
-        info!(files_removed, bytes_freed, "Preview cache cleanup complete");
-        Ok(CleanupResult {
+    if !errors.is_empty() {
+        tracing::warn!(
             files_removed,
             bytes_freed,
-            errors,
-        })
-    })
+            error_count = errors.len(),
+            "Preview cache cleanup completed with errors"
+        );
+    } else if files_removed > 0 || bytes_freed > 0 {
+        info!(files_removed, bytes_freed, "Preview cache cleanup complete");
+    } else {
+        tracing::debug!("Preview cache cleanup found no files to remove");
+    }
+
+    CleanupResult {
+        files_removed,
+        bytes_freed,
+        errors,
+    }
+}
+
+/// Clean up temporary files created by preview extraction and thumbnail generation.
+/// Removes contents of the app-owned preview and thumbnail temp directories.
+#[tauri::command]
+pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
+    tauri::async_runtime::spawn_blocking(cleanup_preview_cache_blocking)
     .await
-    .map_err(|e| format!("Cleanup task failed: {}", e))?
+    .map_err(|e| format!("Cleanup task failed: {}", e))
 }
 
 /// Write text content to a file on disk.
@@ -1728,14 +1746,37 @@ pub fn get_system_health_report() -> crate::common::health::SystemHealth {
 /// for support/debugging purposes.
 ///
 /// The resulting ZIP contains:
-/// - All audit log files (`ffx-audit.log.*`)
+/// - All audit log files for the current app namespace
 /// - `system-info.txt` with OS, hardware, and app version details
 /// - `app-database.db` copy of the app-level SQLite database (if it exists)
 #[tauri::command]
 pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
+    use chrono::{DateTime, Datelike, Local, Timelike};
     use std::io::Write;
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
+
+    fn zip_datetime_for_system_time(time: std::time::SystemTime) -> Option<zip::DateTime> {
+        let local_time: DateTime<Local> = time.into();
+        zip::DateTime::from_date_and_time(
+            local_time.year().clamp(1980, 2107) as u16,
+            local_time.month() as u8,
+            local_time.day() as u8,
+            local_time.hour() as u8,
+            local_time.minute() as u8,
+            local_time.second() as u8,
+        )
+        .ok()
+    }
+
+    fn zip_options_for_time(modified: Option<std::time::SystemTime>) -> SimpleFileOptions {
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        modified
+            .and_then(zip_datetime_for_system_time)
+            .map(|time| options.last_modified_time(time))
+            .unwrap_or(options)
+    }
 
     let dest = std::path::Path::new(&dest_path);
 
@@ -1748,8 +1789,6 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
     let file =
         std::fs::File::create(dest).map_err(|e| format!("Failed to create ZIP file: {e}"))?;
     let mut zip = ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
     let mut files_added: u32 = 0;
 
     // 1. Collect audit log files
@@ -1758,10 +1797,14 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
             if let Ok(entries) = std::fs::read_dir(&log_dir) {
                 for entry in entries.flatten() {
                     let fname = entry.file_name().to_string_lossy().to_string();
-                    if fname.starts_with("ffx-audit.log") {
+                    if crate::app_paths::is_global_audit_log_filename(&fname) {
                         if let Ok(content) = std::fs::read(entry.path()) {
-                            let zip_name = format!("logs/{fname}");
-                            if zip.start_file(&zip_name, options).is_ok() {
+                            let modified = entry.metadata().ok().and_then(|meta| meta.modified().ok());
+                            let zip_name = format!(
+                                "logs/{}",
+                                crate::app_paths::support_bundle_audit_log_name(&fname)
+                            );
+                            if zip.start_file(&zip_name, zip_options_for_time(modified)).is_ok() {
                                 let _ = zip.write_all(&content);
                                 files_added += 1;
                             }
@@ -1774,23 +1817,26 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
 
     // 2. System info manifest
     let sys_info = build_system_info_text();
-    if zip.start_file("system-info.txt", options).is_ok() {
+    if zip
+        .start_file(
+            "system-info.txt",
+            zip_options_for_time(Some(std::time::SystemTime::now())),
+        )
+        .is_ok()
+    {
         let _ = zip.write_all(sys_info.as_bytes());
         files_added += 1;
     }
 
     // 3. App database copy (read-only snapshot)
-    let db_path = if let Some(config) = crate::commands::portable::get_config() {
-        std::path::PathBuf::from(&config.config_dir).join("ffx.db")
-    } else {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("com.ffxcheck.app")
-            .join("ffx.db")
-    };
+    let db_path = crate::app_paths::global_db_path();
     if db_path.exists() {
         if let Ok(content) = std::fs::read(&db_path) {
-            if zip.start_file("app-database.db", options).is_ok() {
+            let modified = db_path.metadata().ok().and_then(|meta| meta.modified().ok());
+            if zip
+                .start_file("app-database.db", zip_options_for_time(modified))
+                .is_ok()
+            {
                 let _ = zip.write_all(&content);
                 files_added += 1;
             }

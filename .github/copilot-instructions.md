@@ -2,6 +2,8 @@
 
 CORE-FFX is a forensic file explorer built with **Tauri v2 (Rust backend) + SolidJS (TypeScript frontend)**. It handles forensic evidence containers (AD1, E01, UFED, etc.) with strict read-only operations.
 
+Frontend observability wrappers live in `src/utils/logger.ts`, `src/utils/telemetry.ts`, and `src/utils/performance.ts`, but the reusable implementation now lives in `@core-suite/logging` and `@core-suite/logging/performance`. Keep the CORE-FFX files thin and only use them for FFX-specific audit storage keys or bootstrap behavior.
+
 ---
 
 ## Critical Invariants
@@ -10,6 +12,7 @@ CORE-FFX is a forensic file explorer built with **Tauri v2 (Rust backend) + Soli
 - **Path traversal sanitization** - always use `common/` utilities for file paths
 - **Hash verification** - prefer stored hashes when available; emit progress events for long operations
 - **Library name is `ffx_check_lib`** - use this for test imports: `use ffx_check_lib::module::*`
+- **CORE-FFX owns its runtime namespaces** - non-portable app state must live under `com.core-ffx.desktop`, `core-ffx/logs`, and `core-ffx-*` temp dirs. Global audit logs and support bundles should keep FFX-owned names such as `ffx-audit.YYYY-MM-DD.log` and `core-ffx-logs-YYYY-MM-DD.zip`. Do not reuse legacy `com.ffxcheck.app` or CORE-ACQ runtime paths in CORE.
 
 ---
 
@@ -853,6 +856,7 @@ import { useMenuActions } from "./hooks";
 
 // Called in App.tsx — bridges native menu bar events to frontend handlers.
 // Listens for "menu-action" events emitted by menu.rs → handle_menu_event().
+// This is the only frontend listener for native menu events.
 useMenuActions({
   onOpenProject: () => handleLoadProject(),
   onOpenDirectory: handleOpenDirectory,
@@ -870,12 +874,8 @@ useMenuActions({
 
 **Project-dependent menu state:** Many menu items start disabled and are enabled when a project is loaded. App.tsx syncs this automatically:
 ```tsx
-createEffect(on(
-  () => !!projectManager.hasProject(),
-  (hasProject) => {
-    invoke("set_project_menu_state", { hasProject }).catch(() => {});
-  }
-));
+invoke("set_project_menu_state", { hasProject: true }).catch(() => {});  // create/load
+invoke("set_project_menu_state", { hasProject: false }).catch(() => {}); // clear/close
 ```
 
 ### useFileManager
@@ -1265,12 +1265,16 @@ Extracted from App.tsx to keep the root component focused on composition. Handle
 - Auto-save callback registration
 - Welcome modal first-run detection
 - Last-session restoration (guarded by `!projectManager.hasProject()`)
-- Cleanup (preview cache, clipboard clear, auto-save)
+- Cleanup (clipboard clear, auto-save)
+- Preview-cache cleanup is backend-owned during deferred startup so frontend reload/unmount does not invoke `cleanup_preview_cache`
 - Window title and close-confirmation wiring
 
 The `isCompact()` signal is derived from `windowWidth() < 900` and is passed to layout components for responsive behavior.
 
 **Key file:** `src/hooks/useAppLifecycle.ts`
+
+**Do NOT:**
+- Add a second `menu-action` listener in `useAppLifecycle` or elsewhere in App.tsx — `useMenuActions` is the single frontend bridge for native menu events
 
 ### FDA Advisory (macOS Full Disk Access)
 
@@ -1448,7 +1452,7 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 
 **Event flow:** `menu.rs` → `handle_menu_event()` → `emit_to_focused_window(app, "menu-action")` → frontend `useMenuActions` hook dispatches to handlers.
 
-**Project-dependent items:** `set_project_menu_state` Tauri command enables/disables ~28 menu items based on whether a project is loaded. Called via `createEffect` in App.tsx.
+**Project-dependent items:** `set_project_menu_state` Tauri command enables/disables ~28 menu items based on whether a project is loaded. It is invoked from the actual project transition points in `useProjectIO.ts` (`createProject`, `loadProject`, `clearProject`) rather than from a reactive App.tsx effect.
 
 **Multi-window:** `new_window` command creates additional windows with `WebviewWindowBuilder`. `get_window_labels` lists open windows. `create_new_window_from_app()` is a public function used by the `lib.rs` Reopen handler to create windows from `&AppHandle` (unlike `new_window` which takes `tauri::Window`).
 

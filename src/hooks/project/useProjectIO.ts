@@ -494,10 +494,13 @@ export function createProjectIO(
       proj.owner_name = ownerName;
     }
 
-    setters.setProject(proj);
-    setters.setProjectPath(null); // Not saved yet
-    setters.setCurrentSessionId(proj.current_session_id || null);
-    setters.setModified(true);
+    batch(() => {
+      setters.setProject(proj);
+      setters.setProjectPath(null); // Not saved yet
+      setters.setCurrentSessionId(proj.current_session_id || null);
+      setters.setModified(true);
+    });
+    invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
     log.debug(`createProject: Project created, modified=true, name=${proj.name}`);
 
     // Start auto-save if enabled
@@ -765,6 +768,7 @@ export function createProjectIO(
           setters.setModified(false);
           setters.setError(null);
         });
+        invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
         log.info(`loadProject: batch signal setters took ${(performance.now() - t0).toFixed(1)}ms`);
 
         // Start a new session for this user
@@ -823,11 +827,14 @@ export function createProjectIO(
     invoke("project_db_close").catch(() => {
       // Ignore errors — DB may not have been opened
     });
-    setters.setProject(null);
-    setters.setProjectPath(null);
-    setters.setModified(false);
-    setters.setError(null);
-    setters.setCurrentSessionId(null);
+    batch(() => {
+      setters.setProject(null);
+      setters.setProjectPath(null);
+      setters.setModified(false);
+      setters.setError(null);
+      setters.setCurrentSessionId(null);
+    });
+    invoke("set_project_menu_state", { hasProject: false }).catch(() => {});
   };
 
   return {

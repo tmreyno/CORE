@@ -722,13 +722,6 @@ function App() {
     preferences,
     getSaveOptions,
     setShowWelcomeModal,
-    menuActions: {
-      onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
-      onOpenDirectory: handleOpenDirectory,
-      onSave: handleSaveProject,
-      onSaveAs: handleSaveProjectAs,
-      onCommandPalette: () => setShowCommandPalette(true),
-    },
   });
   log.debug(`Lifecycle hook ready (+${(performance.now() - t0).toFixed(1)}ms)`);
 
@@ -818,13 +811,13 @@ function App() {
   });
   log.info(`App component initialization complete (+${(performance.now() - t0).toFixed(1)}ms)`);
 
-  // Sync native menu enabled state with project lifecycle
+  // Defer portable mode check until a project is loaded
   createEffect(on(
     () => !!projectManager.hasProject(),
-    (hasProject) => {
-      invoke("set_project_menu_state", { hasProject }).catch(() => {});
-      // Defer portable mode check until a project is loaded
-      if (hasProject) portableMode.check();
+    (hasProject, prevHasProject) => {
+      if (hasProject && !prevHasProject) {
+        portableMode.check();
+      }
     }
   ));
 

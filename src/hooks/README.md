@@ -235,7 +235,8 @@ Manages the App component's mount/cleanup lifecycle. Extracted from App.tsx to k
 - Welcome modal first-run detection
 - Last-session restoration (full edition only)
 - Window title and close-confirmation wiring
-- Cleanup: preview cache, clipboard clear, auto-save stop
+- Cleanup: clipboard clear, auto-save stop
+- Preview-cache cleanup is backend-owned during deferred startup so frontend reload/unmount does not invoke `cleanup_preview_cache`
 
 ```tsx
 import { useAppLifecycle } from "./hooks/useAppLifecycle";

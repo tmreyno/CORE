@@ -93,6 +93,7 @@
 
 // --- Always available (shared by all flavors) ---
 pub mod ad1; // AccessData Logical Image (FTK)
+pub mod app_paths; // App-owned runtime storage and temp path constants
 pub mod archive; // Archive formats (7z, ZIP, RAR, etc.) - READ ONLY
 pub mod commands; // Tauri command handlers (organized by feature)
 pub mod common; // Shared utilities (hash, binary, segments)
@@ -182,6 +183,10 @@ fn deferred_init(app_handle: tauri::AppHandle, run_start: std::time::Instant) {
 
     // Detect portable mode (must complete before database init — determines DB path)
     commands::portable::init_portable_mode();
+
+    // Clean stale preview/temp artifacts once per backend process start.
+    // This avoids frontend reload/HMR teardown repeatedly invoking cache cleanup.
+    let _ = commands::system::cleanup_preview_cache_blocking();
 
     // Register archive operations bridge for UFED ZIP container support
     ufed::init_archive_bridge();

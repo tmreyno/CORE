@@ -240,7 +240,7 @@ pub fn read_project_audit_logs(
 /// - File output (daily rotation, JSON format) for global audit trail
 /// - Project-scoped file output (active only when a project is open)
 ///
-/// Global audit logs: `<data_local_dir>/core-ffx/logs/ffx-audit.YYYY-MM-DD.log`
+/// Global audit logs: `<app-local data>/<app log dir>/logs/<audit basename>.YYYY-MM-DD.log`
 /// Project audit logs: `<project_dir>/logs/ffx-project-audit.YYYY-MM-DD.log`
 pub fn init() {
     // Build filter from environment or use defaults
@@ -263,22 +263,28 @@ pub fn init() {
 
     // File layer - daily-rotating JSON audit log (global, always-on)
     // Best-effort: if we can't determine the log dir, skip file logging
-    let file_layer = audit_log_dir().ok().map(|log_dir| {
+    let file_layer = audit_log_dir().ok().and_then(|log_dir| {
         // Ensure the log directory exists
         let _ = std::fs::create_dir_all(&log_dir);
 
-        let file_appender = tracing_appender::rolling::daily(&log_dir, "ffx-audit.log");
+        tracing_appender::rolling::RollingFileAppender::builder()
+            .rotation(tracing_appender::rolling::Rotation::DAILY)
+            .filename_prefix(crate::app_paths::AUDIT_LOG_BASENAME)
+            .filename_suffix(crate::app_paths::AUDIT_LOG_SUFFIX)
+            .build(&log_dir)
+            .ok()
+            .map(|file_appender| {
+                // File filter: info+ for audit trail (no debug/trace noise in files)
+                let file_filter = EnvFilter::new("ffx_check=info,ffx_check_lib=info");
 
-        // File filter: info+ for audit trail (no debug/trace noise in files)
-        let file_filter = EnvFilter::new("ffx_check=info,ffx_check_lib=info");
-
-        fmt::layer()
-            .with_target(true)
-            .with_thread_ids(false)
-            .with_ansi(false) // No ANSI colors in log files
-            .json() // Structured JSON for machine parsing
-            .with_writer(file_appender)
-            .with_filter(file_filter)
+                fmt::layer()
+                    .with_target(true)
+                    .with_thread_ids(false)
+                    .with_ansi(false) // No ANSI colors in log files
+                    .json() // Structured JSON for machine parsing
+                    .with_writer(file_appender)
+                    .with_filter(file_filter)
+            })
     });
 
     // Project-scoped layer - writes to project directory when a project is open.
@@ -337,18 +343,9 @@ pub fn is_trace_enabled() -> bool {
 
 /// Get the platform-specific audit log directory.
 ///
-/// Returns `<data_local_dir>/core-ffx/logs`:
-/// - macOS: `~/Library/Application Support/core-ffx/logs`
-/// - Linux: `~/.local/share/core-ffx/logs`
-/// - Windows: `{FOLDERID_LocalAppData}/core-ffx/logs`
+/// Returns the app-owned audit log directory for the current edition.
 pub fn audit_log_dir() -> Result<PathBuf, String> {
-    // In portable mode, use the portable log directory
-    if let Some(config) = crate::commands::portable::get_config() {
-        return Ok(PathBuf::from(&config.log_dir));
-    }
-    dirs::data_local_dir()
-        .map(|base| base.join("core-ffx").join("logs"))
-        .ok_or_else(|| "Could not determine local data directory".to_string())
+    Ok(crate::app_paths::global_audit_log_dir())
 }
 
 /// Read recent audit log entries from the log directory.
@@ -366,12 +363,7 @@ pub fn read_audit_logs(max_lines: usize) -> Result<Vec<String>, String> {
     let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
         .map_err(|e| format!("Failed to read log directory: {e}"))?
         .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("ffx-audit.log")
-        })
+        .filter(|entry| crate::app_paths::is_global_audit_log_filename(&entry.file_name().to_string_lossy()))
         .map(|entry| entry.path())
         .collect();
 
@@ -418,7 +410,10 @@ mod tests {
     #[test]
     fn test_audit_log_dir() {
         let dir = audit_log_dir().unwrap();
-        assert!(dir.to_string_lossy().contains("core-ffx"));
+        assert!(
+            dir.to_string_lossy()
+                .contains(crate::app_paths::AUDIT_LOG_DIR_NAME)
+        );
         assert!(dir.to_string_lossy().contains("logs"));
     }
 
@@ -447,11 +442,11 @@ mod tests {
 
         // Create fake log files
         fs::write(
-            log_dir.join("ffx-audit.log.2025-01-01"),
+            log_dir.join(crate::app_paths::audit_log_filename_for_date("2025-01-01")),
             "{\"level\":\"INFO\",\"message\":\"old entry 1\"}\n{\"level\":\"INFO\",\"message\":\"old entry 2\"}\n",
         ).unwrap();
         fs::write(
-            log_dir.join("ffx-audit.log.2025-01-02"),
+            log_dir.join(crate::app_paths::audit_log_filename_for_date("2025-01-02")),
             "{\"level\":\"INFO\",\"message\":\"new entry 1\"}\n{\"level\":\"WARN\",\"message\":\"new entry 2\"}\n",
         ).unwrap();
         // Non-matching file should be ignored
@@ -461,7 +456,7 @@ mod tests {
         let mut log_files: Vec<_> = fs::read_dir(log_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().starts_with("ffx-audit.log"))
+            .filter(|e| crate::app_paths::is_global_audit_log_filename(&e.file_name().to_string_lossy()))
             .map(|e| e.path())
             .collect();
         log_files.sort_by(|a, b| b.cmp(a));
@@ -507,11 +502,17 @@ mod tests {
         for i in 0..50 {
             content.push_str(&format!("{{\"line\":{i}}}\n"));
         }
-        fs::write(log_dir.join("ffx-audit.log.2025-06-01"), &content).unwrap();
+        fs::write(
+            log_dir.join(crate::app_paths::audit_log_filename_for_date("2025-06-01")),
+            &content,
+        ).unwrap();
 
         // Simulate read with limit
         let max_lines = 10;
-        let read_content = fs::read_to_string(log_dir.join("ffx-audit.log.2025-06-01")).unwrap();
+        let read_content = fs::read_to_string(
+            log_dir.join(crate::app_paths::audit_log_filename_for_date("2025-06-01")),
+        )
+        .unwrap();
         let mut file_lines: Vec<String> = read_content
             .lines()
             .filter(|l| !l.trim().is_empty())

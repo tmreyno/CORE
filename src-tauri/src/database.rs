@@ -16,7 +16,7 @@
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Database connection wrapper for thread-safe access
 pub struct Database {
@@ -586,18 +586,73 @@ use std::sync::OnceLock;
 
 static DB: OnceLock<Database> = OnceLock::new();
 
+fn migrate_legacy_global_db_if_needed(db_path: &Path) {
+    if crate::commands::portable::get_config().is_some() {
+        return;
+    }
+
+    let legacy_db_path = crate::app_paths::legacy_shared_db_path();
+    if legacy_db_path == db_path || db_path.exists() || !legacy_db_path.exists() {
+        return;
+    }
+
+    if let Some(parent) = db_path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            tracing::warn!(
+                path = %parent.display(),
+                %error,
+                "Failed to create app data directory for database migration"
+            );
+            return;
+        }
+    }
+
+    let mut migrated_any = false;
+    for suffix in ["", "-wal", "-shm"] {
+        let source_path = if suffix.is_empty() {
+            legacy_db_path.clone()
+        } else {
+            crate::app_paths::sqlite_sidecar_path(&legacy_db_path, suffix)
+        };
+
+        if !source_path.exists() {
+            continue;
+        }
+
+        let target_path = if suffix.is_empty() {
+            db_path.to_path_buf()
+        } else {
+            crate::app_paths::sqlite_sidecar_path(db_path, suffix)
+        };
+
+        if let Err(error) = std::fs::copy(&source_path, &target_path) {
+            tracing::warn!(
+                from = %source_path.display(),
+                to = %target_path.display(),
+                %error,
+                "Failed to migrate legacy global database file"
+            );
+            return;
+        }
+
+        migrated_any = true;
+    }
+
+    if migrated_any {
+        tracing::info!(
+            from = %legacy_db_path.display(),
+            to = %db_path.display(),
+            "Migrated legacy shared app database into CORE-FFX namespace"
+        );
+    }
+}
+
 /// Get the global database instance, initializing if needed
 pub fn get_db() -> &'static Database {
     DB.get_or_init(|| {
-        // In portable mode, store the app database alongside the executable
-        let app_data_dir = if let Some(config) = crate::commands::portable::get_config() {
-            PathBuf::from(&config.config_dir)
-        } else {
-            dirs::data_local_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("com.ffxcheck.app")
-        };
-        let db_path = app_data_dir.join("ffx.db");
+        let db_path = crate::app_paths::global_db_path();
+
+        migrate_legacy_global_db_if_needed(&db_path);
 
         tracing::info!("Initializing database at: {:?}", db_path);
 
