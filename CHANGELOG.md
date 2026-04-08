@@ -4,6 +4,11 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.98] - 2026-04-07
+
+### Changed
+- Shared toast system adoption — Replaced the duplicated local toast implementation with a thin wrapper over the shared `@core-suite/components` toast provider while keeping notification preference checks local
+
 ## [0.1.97] - 2026-04-07
 
 ### Changed
