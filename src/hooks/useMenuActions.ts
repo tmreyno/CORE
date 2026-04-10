@@ -27,6 +27,8 @@ export interface UseMenuActionsDeps {
   onSaveProject: () => void;
   /** Save the current project to a new location */
   onSaveProjectAs: () => void;
+  /** Close the current project */
+  onCloseProject: () => void;
   /** Toggle left sidebar collapsed state */
   onToggleSidebar: () => void;
   /** Toggle right panel collapsed state */
@@ -158,6 +160,9 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
           break;
         case "save-project-as":
           deps.onSaveProjectAs();
+          break;
+        case "close-project":
+          deps.onCloseProject();
           break;
         case "toggle-sidebar":
           deps.onToggleSidebar();

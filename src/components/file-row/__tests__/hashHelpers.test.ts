@@ -183,12 +183,12 @@ describe("hasVerifiedMatch", () => {
     expect(hasVerifiedMatch(info, history)).toBe(false);
   });
 
-  it("returns true when two history entries match each other", () => {
+  it("returns false when only two history entries match each other", () => {
     const history = [
       { algorithm: "MD5", hash: "abc123" },
       { algorithm: "MD5", hash: "ABC123" },
     ] as HashHistoryEntry[];
-    expect(hasVerifiedMatch(undefined, history)).toBe(true);
+    expect(hasVerifiedMatch(undefined, history)).toBe(false);
   });
 
   it("returns false when history entries have different algorithms", () => {

@@ -7,6 +7,7 @@
 import { Show, For, Component, Accessor } from "solid-js";
 import { HiOutlineDocumentDuplicate } from "../icons";
 import type { HashHistoryEntry } from "../../types";
+import { formatHashDate } from "../../utils";
 
 interface HashHistoryProps {
   hashHistory: HashHistoryEntry[];
@@ -28,25 +29,33 @@ export const HashHistory: Component<HashHistoryProps> = (props) => {
               const entryDate = entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp);
               // Check if this is the epoch fallback (no real date available)
               const hasValidDate = entryDate.getTime() > 0;
+              const isHistoryMatch = entry.comparison_source === "history";
               
               // Format short date (e.g., "Jan 16, 2026")
               const shortDateStr = hasValidDate 
-                ? entryDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                ? formatHashDate(entryDate.toISOString())
                 : "Container";
+
+              const statusLabel =
+                entry.verified === true
+                  ? "Verified ✓"
+                  : entry.verified === false
+                    ? "MISMATCH ✗"
+                    : isHistoryMatch
+                      ? "Repeat match"
+                      : undefined;
               
               // Build detailed tooltip
               const tooltipParts = [
                 `Algorithm: ${entry.algorithm}`,
                 `Hash: ${entry.hash}`,
-                `Source: ${isStored ? "Stored in container" : isVerified ? "Verified copy" : "Computed"}`,
+                `Source: ${isStored ? "Stored in container" : isVerified ? "Verified copy" : isHistoryMatch ? "Computed (repeat match)" : "Computed"}`,
               ];
               if (hasValidDate) {
                 tooltipParts.push(`Date: ${entryDate.toLocaleString()}`);
               }
-              if (entry.verified === true) {
-                tooltipParts.push("Status: Verified ✓");
-              } else if (entry.verified === false) {
-                tooltipParts.push("Status: MISMATCH ✗");
+              if (statusLabel) {
+                tooltipParts.push(`Status: ${statusLabel}`);
               }
               if (entry.verified_against) {
                 tooltipParts.push(`Compared against: ${entry.verified_against.substring(0, 16)}...`);
@@ -75,9 +84,11 @@ export const HashHistory: Component<HashHistoryProps> = (props) => {
                       ? 'text-amber-400' 
                       : isVerified 
                         ? 'text-green-400' 
+                        : isHistoryMatch
+                          ? 'text-accent'
                         : 'text-txt-muted'
                   }`}>
-                    {isStored ? 'stored' : isVerified ? 'verified' : entry.source}
+                    {isStored ? 'stored' : isVerified ? 'verified' : isHistoryMatch ? 'repeat' : entry.source}
                   </span>
                   <code class="text-txt-secondary font-mono truncate flex-1">{entry.hash}</code>
                   <Show when={entry.verified === true}>
@@ -88,6 +99,9 @@ export const HashHistory: Component<HashHistoryProps> = (props) => {
                   </Show>
                   <Show when={entry.verified === false}>
                     <span class="text-red-400 font-bold" title="Hash mismatch!">✗</span>
+                  </Show>
+                  <Show when={isHistoryMatch}>
+                    <span class="text-accent font-semibold" title="Matches previous computation">↺</span>
                   </Show>
                   <button 
                     class="text-txt-muted hover:text-txt-tertiary p-0.5 flex items-center" 

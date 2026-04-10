@@ -54,7 +54,17 @@ export interface UseHashComputationDeps {
   fileHashMap: Accessor<Map<string, FileHashInfo>>;
   setFileHashMap: Setter<Map<string, FileHashInfo>>;
   hashHistory: Accessor<Map<string, HashHistoryEntry[]>>;
-  recordHashToHistory: (file: DiscoveredFile, algorithm: string, hash: string, verified?: boolean, verifiedAgainst?: string) => void;
+  recordHashToHistory: (
+    file: DiscoveredFile,
+    algorithm: string,
+    hash: string,
+    options?: {
+      computedAt?: string;
+      verified?: boolean | null;
+      verifiedAgainst?: string;
+      comparisonSource?: "stored" | "history";
+    },
+  ) => void;
 }
 
 // ─── Batch Progress Types ───────────────────────────────────────────────────
@@ -140,8 +150,10 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     filePath: string,
     algorithm: string,
     hash: string,
+    computedAt: string,
     verified: boolean | null,
     verifiedAgainst: string | undefined,
+    comparisonSource: "stored" | "history" | undefined,
   ): Promise<void> => {
     const hashRecordId = generateId();
     try {
@@ -151,17 +163,17 @@ export function useHashComputation(deps: UseHashComputationDeps) {
           fileId: filePath,
           algorithm,
           hashValue: hash,
-          computedAt: new Date().toISOString(),
+          computedAt,
           source: "computed",
         },
       });
 
-      if (verified !== null && verifiedAgainst) {
+      if (comparisonSource === "stored" && verified !== null && verifiedAgainst) {
         await invoke("project_db_insert_verification", {
           v: {
             id: generateId(),
             hashId: hashRecordId,
-            verifiedAt: new Date().toISOString(),
+            verifiedAt: computedAt,
             result: verified ? "match" : "mismatch",
             expectedHash: verifiedAgainst,
             actualHash: hash,
@@ -186,24 +198,41 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     hash: string,
     algorithm: string,
     file: DiscoveredFile | undefined,
-  ): { verified: boolean | null; verifiedAgainst: string | undefined } => {
+  ): {
+    computedAt: string;
+    verified: boolean | null;
+    verifiedAgainst: string | undefined;
+    comparisonSource: "stored" | "history" | undefined;
+  } => {
     const info = fileInfoMap().get(filePath);
     const storedHashes = collectStoredHashes(filePath, info);
     const history = hashHistory().get(filePath) ?? [];
-    const { verified, verifiedAgainst } = determineVerification(hash, algorithm, storedHashes, history);
+    const computedAt = new Date().toISOString();
+    const { verified, verifiedAgainst, comparisonSource } = determineVerification(hash, algorithm, storedHashes, history);
 
     // Update hash map
     const hashMap = new Map(fileHashMap());
-    hashMap.set(filePath, { algorithm, hash, verified });
+    hashMap.set(filePath, {
+      algorithm,
+      hash,
+      verified,
+      computedAt,
+      verifiedAgainst,
+      comparisonSource,
+    });
     setFileHashMap(hashMap);
 
     updateFileStatus(filePath, "hashed", 100);
 
     if (file) {
-      recordHashToHistory(file, algorithm, hash, verified ?? undefined, verifiedAgainst);
+      recordHashToHistory(file, algorithm, hash, {
+        computedAt,
+        verified,
+        verifiedAgainst,
+        comparisonSource,
+      });
     }
 
-    // Audit log + DB persistence (fire-and-forget for batch)
     logAuditAction("hash_computed", {
       file: filePath,
       filename: file?.filename ?? getBasename(filePath) ?? filePath,
@@ -211,10 +240,15 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       hash,
       verified,
       verifiedAgainst,
+      comparisonSource,
     });
-    persistHashToDb(filePath, algorithm, hash, verified, verifiedAgainst);
 
-    return { verified, verifiedAgainst };
+    return {
+      computedAt,
+      verified,
+      verifiedAgainst,
+      comparisonSource,
+    };
   };
 
   // ── hashSingleFile ────────────────────────────────────────────────────
@@ -258,14 +292,37 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       console.warn(`[HASH-DIAG] hashContainer returned: hash=${hash?.substring(0, 16)}...`);
 
       // Verify, persist, and record using shared handler
-      const { verified, verifiedAgainst } = handleHashCompleted(file.path, hash, algorithm.toUpperCase(), file);
-      console.warn(`[HASH-DIAG] handleHashCompleted done: verified=${verified}, verifiedAgainst=${verifiedAgainst}`);
+      const { computedAt, verified, verifiedAgainst, comparisonSource } = handleHashCompleted(
+        file.path,
+        hash,
+        algorithm.toUpperCase(),
+        file,
+      );
+      console.warn(`[HASH-DIAG] handleHashCompleted done: verified=${verified}, verifiedAgainst=${verifiedAgainst}, comparisonSource=${comparisonSource}`);
 
       log.debug(`Hash complete: ${algorithm}=${hash.substring(0, 16)}... verified=${verified}`);
-      setOk(`Hash computed: ${algorithm.toUpperCase()} ${hash.substring(0, 16)}…${verified === true ? " ✓ Verified" : verified === false ? " ✗ MISMATCH" : ""}`);
+      setOk(
+        `Hash computed: ${algorithm.toUpperCase()} ${hash.substring(0, 16)}…${
+          verified === true
+            ? " ✓ Verified"
+            : verified === false
+              ? " ✗ MISMATCH"
+              : comparisonSource === "history"
+                ? " Repeat match"
+                : ""
+        }`,
+      );
 
       // Write-through: await DB persistence for single-file (forensic integrity)
-      await persistHashToDb(file.path, algorithm.toUpperCase(), hash, verified, verifiedAgainst);
+      await persistHashToDb(
+        file.path,
+        algorithm.toUpperCase(),
+        hash,
+        computedAt,
+        verified,
+        verifiedAgainst,
+        comparisonSource,
+      );
 
       // Copy to clipboard if preference enabled
       if (getPreference("copyHashToClipboard")) {
@@ -359,8 +416,6 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
     // Track completed files for immediate UI updates
     let completedCount = 0;
-    let verifiedCount = 0;
-    let failedCount = 0;
 
     // Throttle status bar updates — at most once per 250ms to avoid UI jank
     let _lastStatusUpdate = 0;
@@ -444,11 +499,19 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         const file = files.find((f) => f.path === path);
         console.warn(`[HASH-DIAG] batch completed: path=${path}, hash=${hash.substring(0, 16)}..., algo=${algorithm}, fileFound=${!!file}, container_type=${file?.container_type}`);
 
-        // Use shared completion handler (verify + persist + audit)
-        const { verified } = handleHashCompleted(path, hash, algorithm, file);
+        // Use shared completion handler (verify + audit)
+        const { computedAt, verified, verifiedAgainst, comparisonSource } = handleHashCompleted(path, hash, algorithm, file);
 
-        if (verified === true) verifiedCount++;
-        else if (verified === false) failedCount++;
+        void persistHashToDb(
+          path,
+          algorithm,
+          hash,
+          computedAt,
+          verified,
+          verifiedAgainst,
+          comparisonSource,
+        );
+
         completedCount++;
         activeFilePercents.delete(path);
         terminatedFiles.add(path);
@@ -511,6 +574,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
       let verifiedCountFinal = 0;
       let failedCountFinal = 0;
       let noStoredCount = 0;
+      let repeatMatchCountFinal = 0;
 
       // Safety net: mark any files that never received a terminal event
       // as errors. This handles spawn_blocking panics, JoinErrors, and
@@ -530,15 +594,17 @@ export function useHashComputation(deps: UseHashComputationDeps) {
           completed++;
           if (hash.verified === true) verifiedCountFinal++;
           else if (hash.verified === false) failedCountFinal++;
+          else if (hash.comparisonSource === "history") repeatMatchCountFinal++;
           else noStoredCount++;
         }
       }
 
       let statusMsg = `Hashed ${completed}/${files.length} files`;
-      if (verifiedCountFinal > 0 || failedCountFinal > 0) {
+      if (verifiedCountFinal > 0 || failedCountFinal > 0 || repeatMatchCountFinal > 0) {
         const parts: string[] = [];
         if (verifiedCountFinal > 0) parts.push(`✓ ${verifiedCountFinal} verified`);
         if (failedCountFinal > 0) parts.push(`✗ ${failedCountFinal} FAILED`);
+        if (repeatMatchCountFinal > 0) parts.push(`${repeatMatchCountFinal} repeat match`);
         if (noStoredCount > 0) parts.push(`${noStoredCount} no stored hash`);
         statusMsg += ` • ${parts.join(", ")}`;
       }

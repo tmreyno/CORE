@@ -41,8 +41,14 @@ pub fn project_db_integrity_check(window: tauri::Window) -> Result<Vec<String>, 
 
 /// Force WAL checkpoint (flush write-ahead log to main DB file).
 #[tauri::command]
-pub fn project_db_wal_checkpoint(window: tauri::Window) -> Result<(i64, i64), String> {
-    with_project_db(window.label(), |db| db.wal_checkpoint())
+pub fn project_db_wal_checkpoint(
+    window: tauri::Window,
+    mode: Option<String>,
+) -> Result<(i64, i64), String> {
+    with_project_db(window.label(), |db| match mode.as_deref() {
+        Some("passive") => db.wal_checkpoint_passive(),
+        _ => db.wal_checkpoint(),
+    })
 }
 
 /// Create a backup copy of the project database.

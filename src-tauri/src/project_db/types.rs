@@ -667,6 +667,18 @@ pub struct ActivityQuery {
 /// Project database statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectDbWalCheckpointStatus {
+    pub mode: String,
+    pub busy_readers: i64,
+    pub log_pages: i64,
+    pub checkpointed_pages: i64,
+    pub blocked: bool,
+    pub completed_at: String,
+}
+
+/// Project database statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectDbStats {
     pub total_activities: i64,
     pub total_sessions: i64,
@@ -692,5 +704,8 @@ pub struct ProjectDbStats {
     pub total_coc_amendments: i64,
     pub total_coc_audit_entries: i64,
     pub db_size_bytes: u64,
+    pub wal_exists: bool,
+    pub wal_size_bytes: u64,
+    pub last_wal_checkpoint: Option<ProjectDbWalCheckpointStatus>,
     pub schema_version: u32,
 }

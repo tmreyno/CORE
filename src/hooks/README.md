@@ -138,7 +138,10 @@ dbSync.insertActivity(entry);
 dbSync.upsertEvidenceFile(file);
 dbSync.insertHash(hash);
 dbSync.setUiState(key, value);
+await dbSync.flushPendingWrites();
 ```
+
+`flushPendingWrites()` is used by the project close workflow to wait for queued fire-and-forget `.ffxdb` writes before `project_db_close` runs.
 
 ### useProjectDbRead
 
@@ -176,9 +179,10 @@ import { useMenuActions } from "./hooks";
 useMenuActions({
   onOpenProject: () => handleLoadProject(),
   onSaveProject: handleSaveProject,
+  onCloseProject: () => void handleCloseProject(),
   onToggleSidebar: () => setLeftCollapsed((prev) => !prev),
   onNewProject: () => setShowProjectWizard(true),
-  // ... 32 more handlers (see UseMenuActionsDeps interface)
+  // ... 33 more handlers (see UseMenuActionsDeps interface)
 });
 ```
 
@@ -232,6 +236,7 @@ Manages the App component's mount/cleanup lifecycle. Extracted from App.tsx to k
 - Window width tracking + compact-mode detection (`< 900px`)
 - Workspace profile loading (full edition only)
 - Auto-save callback registration
+- Periodic passive WAL checkpoint while a project is open
 - Welcome modal first-run detection
 - Last-session restoration (full edition only)
 - Window title and close-confirmation wiring
@@ -577,7 +582,7 @@ hooks/
 ├── useAppState.ts            # Global app state
 ├── useAppActions.ts          # App-wide actions
 ├── useAppHandlers.ts         # App-level event handlers
-├── useAppLifecycle.ts        # Mount/cleanup lifecycle (system stats, resize, session restore)
+├── useAppLifecycle.ts        # Mount/cleanup lifecycle (system stats, resize, session restore, passive WAL checkpoint)
 ├── useMenuActions.ts         # Native menu bar event bridge
 ├── useSearchIndex.ts         # Tantivy search index lifecycle
 ├── useWorkspaceMode.ts       # Workspace mode / feature module management

@@ -159,7 +159,7 @@ export async function seedDatabaseFromProject(project: FFXProject): Promise<void
             hashId: hashRecordId,
             verifiedAt: hash.computed_at ?? new Date().toISOString(),
             result: hash.verified ? "match" : "mismatch",
-            expectedHash: hash.hash,
+            expectedHash: hash.verified_against ?? hash.hash,
             actualHash: hash.hash,
           });
         }

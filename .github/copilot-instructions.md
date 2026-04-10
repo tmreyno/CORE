@@ -953,6 +953,9 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Frontend tracks terminal events (`"completed"` / `"error"`) per file; after `invoke` returns, any files missing terminal events are marked as errors (safety net)
 - Frontend uses shared helpers `handleHashCompleted()` (verify + audit + persist) and `persistHashToDb()` (DB write) for both single-file and batch completion paths — no code duplication between the two modes
 - `collectStoredHashes()` and `determineVerification()` in `hashUtils.ts` are the single source of truth for stored hash collection and verification logic
+- `determineVerification()` must only set `verified` when a stored/container/companion hash exists for the same algorithm. If a newly computed hash only matches prior local history, it returns `verified: null`, `comparisonSource: "history"`, and `verifiedAgainst` for context — the UI renders this as a repeat match, not forensic verification.
+- `FileHashInfo` and cached `computed_hashes` entries preserve `computedAt`, `verifiedAgainst`, and `comparisonSource` so the frontend can show computed dates, stored reference dates, and repeat-match state after reload.
+- `useProjectIO` hash-history serialization must preserve both matches and mismatches by checking `entry.verified !== undefined` instead of truthiness; otherwise mismatch results disappear on save/load.
 - `hashSelectedFiles` ensures all files have `evidence_files` records in `.ffxdb` (via `dbSync.upsertEvidenceFile`) **before** invoking `batch_hash` — this prevents `FOREIGN KEY constraint failed` errors when `persistHashToDb` inserts into the `hashes` table (which has FK `file_id → evidence_files(id)`)
 - `hashSelectedFiles` does **NOT** fire parallel `loadFileInfo` calls — each `loadFileInfo` invokes `logical_info` which opens and parses the full container (E01 segment discovery, header parsing). Firing many of these in parallel on USB saturates Tauri's thread pool and I/O, blocking `batch_hash` from starting for minutes with zero UI feedback
 - `restoreDiscoveredFiles` in `useFileManager` upserts all restored files to `.ffxdb` — the seed in `useProjectDbRead` only runs when `totalEvidenceFiles === 0`, so restored files would be missing from `.ffxdb` if even one file already existed
@@ -967,6 +970,7 @@ Note: Hash verification is handled by the backend (`e01_v3_verify`, `raw_verify`
 - Remove the `progressFlushTimer` cleanup in the `finally` block of `hashSelectedFiles` — dangling timers and unflushed progress will result
 - Change the progress poll interval back to 500ms — 250ms provides noticeably smoother progress for fast containers
 - Duplicate the stored hash collection or verification logic inline — use `collectStoredHashes()` and `determineVerification()` from `hashUtils.ts`
+- Treat history-vs-history matches as `verified` in badges, row helpers, or detail panels — only stored/container/companion comparisons count as verification; history-only matches must remain `comparisonSource: "history"`
 - Add new container type branches to `batch_hash` routing — use the 3-arm pattern (EWF / AD1 / raw fallback)
 - Replace per-drive semaphores with a single global semaphore — this loses cross-drive parallelism (e.g., USB + internal SSD should hash independently)
 - Change `StorageClass::Removable` concurrency above 2 — removable media (especially USB HDDs) thrash severely with high concurrency
@@ -1312,16 +1316,25 @@ The FDA check runs as a deferred startup check (after 500ms). If the app lacks F
 
 | Trigger | Where | Mechanism |
 |---------|-------|-----------|
+| **Project DB open** | `ProjectDatabase::open()` | Sets `wal_autocheckpoint=256` pages, `journal_size_limit=8 MiB`, and truncates an existing WAL larger than 32 KB |
+| **Active session** | `useAppLifecycle()` | Runs `project_db_wal_checkpoint` with `mode="passive"` every 60 seconds while a project is open |
 | **Project save** | `useProjectIO.saveProject()` | Calls `project_db_wal_checkpoint` after successful `.cffx` save (fire-and-forget) |
 | **Project close** | `project_db_close` (Rust backend) | `PRAGMA wal_checkpoint(TRUNCATE)` before dropping the connection |
-| **SQLite auto** | SQLite internal | Checkpoints automatically when WAL reaches ~1000 pages |
+| **SQLite auto** | SQLite internal | Auto-checkpoints every 256 pages (about 1 MiB at 4 KB pages) unless active readers pin the WAL |
 
-**Manual checkpoint:** `invoke("project_db_wal_checkpoint")` returns `(log_size, frames_checkpointed)`.
+**Manual checkpoint:** `invoke("project_db_wal_checkpoint")` returns `(log_size, frames_checkpointed)`. Pass `mode: "passive"` for a non-blocking active-session checkpoint, or omit it for the default `TRUNCATE` checkpoint.
+
+A non-empty `.ffxdb-wal` during active use is still normal. Long-lived readers, another open window, or an external SQLite tool can pin WAL frames and prevent `TRUNCATE` from fully resetting the file even when checkpoints run. The Rust checkpoint helper logs this blocked state when the checkpoint reports `busy > 0` or leaves pages uncheckpointed.
+
+`project_db_get_stats` now includes current WAL size and the last checkpoint result so the dashboard can surface whether the WAL is clear, pending, or blocked by active readers.
 
 **Do NOT:**
 - Remove the checkpoint from `project_db_close` — external volumes need WAL flushed before eject
+- Remove the periodic passive checkpoint from `useAppLifecycle()` — long-lived sessions should not rely only on save/close to fold WAL frames
 - Make the save-time checkpoint blocking (`await`) — it's fire-and-forget to avoid slowing saves
 - Remove `project_db_wal_checkpoint` from `lib.rs` registration — it's called by the frontend
+- Remove `wal_autocheckpoint` or `journal_size_limit` from `ProjectDatabase::open()` — they are the active-use guardrails that keep WAL growth bounded when readers are not pinning frames
+- Treat a non-empty `.ffxdb-wal` during active use as a bug by itself — check for pinned readers or another open process before assuming the checkpoint path is broken
 
 ### Multi-Window Project Database Isolation
 
@@ -1363,11 +1376,37 @@ Window "main-17199…"  → (no entry — no project open in this window)
 | `src-tauri/src/lib.rs` | `on_window_event(Destroyed)` → `cleanup_window_project_db()` safety net; `.build().run()` for macOS keep-alive |
 
 **Window lifecycle cleanup:**
-- Frontend close: `clearProject()` → `invoke("project_db_close")` (normal path)
+- Frontend close: `clearProject({ onProgress })` flushes activity, awaits `dbSync.flushPendingWrites()`, checkpoints WAL, then `invoke("project_db_close")` (normal path)
 - Backend safety net: `on_window_event(WindowEvent::Destroyed)` → `cleanup_window_project_db(label)` in `lib.rs` — checkpoints WAL and removes the DB entry if the frontend didn't close it (force-quit, crash)
+
+### Project Close Workflow
+
+Project teardown is an explicit async workflow coordinated by `useProjectIO.clearProject()` and surfaced in `App.tsx` through `ProjectCloseModal`.
+
+**Close sequence:**
+1. Persist `.cffx` state when needed before teardown begins
+2. Finalize session/activity state via `useActivityLog.flushActivity()`
+3. Drain pending fire-and-forget `.ffxdb` writes via `dbSync.flushPendingWrites()`
+4. Run `project_db_wal_checkpoint` so eligible WAL frames fold into the main DB
+5. Call `project_db_close` and clear project/UI state
+
+**UI/entry points:**
+- `App.tsx` owns `closeCurrentProject(reason)` and renders `src/components/project/ProjectCloseModal.tsx`
+- File menu and command palette both expose **Close Project** and route to the same workflow
+- Project switching (`loadProject`) and replacement (`createProject`) reuse the same close path instead of tearing down state ad hoc
+
+**Key files:**
+- `src/hooks/project/useProjectIO.ts` — ordered `clearProject()` workflow
+- `src/hooks/project/useProjectDbSync.ts` — pending invoke tracking + `flushPendingWrites()`
+- `src/hooks/project/useActivityLog.ts` — `flushActivity()` before close
+- `src/components/project/ProjectCloseModal.tsx` — step-by-step modal UI
+- `src/App.tsx` — close orchestration + modal state
 
 **Do NOT:**
 - Change `PROJECT_DBS` back to a global singleton (`OnceLock<Mutex<Option<…>>>`) — multiple windows need independent databases
+- Call `project_db_close` directly from random UI code — route close through `clearProject()`
+- Start a new/open project flow over an active project without awaiting the close workflow
+- Remove `flushPendingWrites()` from the close path — queued `.ffxdb` sync calls would be lost during teardown
 - Remove `window: tauri::Window` from any project_db command — the window label is required for DB lookup
 - Add `window: tauri::Window` to non-project_db commands unless they also need per-window state
 - Use a fixed window label like `"main"` — dynamically created windows get unique labels like `main-{timestamp}`
@@ -1443,7 +1482,7 @@ The native menu bar is built in `src-tauri/src/menu.rs` and registered via `.men
 | Submenu | Key Items | Platform |
 |---------|-----------|----------|
 | **CORE-FFX** (app) | About, Hide, Quit | macOS only |
-| **File** | New Project, New Window, Open Project, Open Directory, Save, Save As, Acquire & Export, Scan Evidence, Close Tab/All, Toggle Auto-Save | All |
+| **File** | New Project, New Window, Open Project, Open Directory, Save, Save As, Close Project, Acquire & Export, Scan Evidence, Close Tab/All, Toggle Auto-Save | All |
 | **Edit** | Undo, Redo, Cut, Copy, Paste, Select All, Select All Evidence | All |
 | **View** | Toggle Sidebar, Toggle Right Panel, Toggle Quick Actions, Dashboard, Evidence, Case Docs, Processed DBs, Activity, Bookmarks, Info/Hex/Text Views, Cycle Theme, Fullscreen | All |
 | **Tools** | Generate Report, Evidence Collection, Search, Hash (All/Selected/Active), Deduplication, Load All Info, Clean Cache, Merge Projects, Import Acquisitions, Settings, Performance | All |

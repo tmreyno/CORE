@@ -386,7 +386,11 @@ export function determineVerification(
   algorithm: string,
   storedHashes: StoredHashEntry[],
   history: { source: string; hash: string; algorithm: string }[],
-): { verified: boolean | null; verifiedAgainst: string | undefined } {
+): {
+  verified: boolean | null;
+  verifiedAgainst: string | undefined;
+  comparisonSource: "stored" | "history" | undefined;
+} {
   // Check against stored hashes first (container/companion)
   // Step 1: Find a stored hash for the SAME algorithm (regardless of value)
   const storedForAlgorithm = storedHashes.find((stored) =>
@@ -399,19 +403,28 @@ export function determineVerification(
     return {
       verified: valuesMatch,
       verifiedAgainst: storedForAlgorithm.hash,
+      comparisonSource: "stored",
     };
   }
 
-  // Check hash history for self-verification (previously computed matches)
+  // History matches are useful context, but they are not stored-hash verification.
   const matchingHistory = history.find(
     (h) => algorithmsMatch(h.algorithm, algorithm) && h.hash.toLowerCase() === computedHash.toLowerCase(),
   );
 
   if (matchingHistory) {
-    return { verified: true, verifiedAgainst: matchingHistory.hash };
+    return {
+      verified: null,
+      verifiedAgainst: matchingHistory.hash,
+      comparisonSource: "history",
+    };
   }
 
-  return { verified: null, verifiedAgainst: undefined };
+  return {
+    verified: null,
+    verifiedAgainst: undefined,
+    comparisonSource: undefined,
+  };
 }
 
 // =============================================================================

@@ -11,7 +11,7 @@
 
 import type { ContainerInfo, StoredHash } from "../../types";
 import type { InfoField } from "./types";
-import { formatOffsetLabel } from "../../utils";
+import { formatOffsetLabel, formatHashDate } from "../../utils";
 import { getBasename } from "../../utils/pathUtils";
 
 export function normalizeContainerFields(
@@ -309,8 +309,9 @@ export function normalizeContainerFields(
         sh.verified === true ? " ✓" : sh.verified === false ? " ✗" : "";
       // Show filename if available (UFED has per-file hashes)
       const filenameLabel = sh.filename ? ` (${sh.filename})` : "";
+      const timestampLabel = sh.timestamp ? ` • ${formatHashDate(sh.timestamp)}` : "";
       fields.push({
-        label: `${sourceLabel} ${algo}${verifyIcon}${filenameLabel}`,
+        label: `${sourceLabel} ${algo}${verifyIcon}${filenameLabel}${timestampLabel}`,
         value: hash,
         type: "hash",
       });

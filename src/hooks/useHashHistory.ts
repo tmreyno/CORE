@@ -247,8 +247,12 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
     file: DiscoveredFile,
     algorithm: string,
     hash: string,
-    verified?: boolean,
-    verifiedAgainst?: string,
+    options?: {
+      computedAt?: string;
+      verified?: boolean | null;
+      verifiedAgainst?: string;
+      comparisonSource?: "stored" | "history";
+    },
   ) => {
     if (!hash || hash.trim().length === 0) {
       log.warn(`recordHashToHistory: Skipping entry with empty hash for ${file.path}`);
@@ -264,20 +268,33 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
         entry.source === "stored" &&
         entry.algorithm.toUpperCase() === algorithm.toUpperCase() &&
         entry.hash.toLowerCase() === hash.toLowerCase() &&
-        verified === true
+        options?.verified === true &&
+        options?.comparisonSource === "stored"
       ) {
-        return { ...entry, verified: true, verified_against: hash };
+        return {
+          ...entry,
+          verified: true,
+          verified_against: hash,
+          comparison_source: "stored",
+        };
       }
       return entry;
     });
 
+    const timestamp = options?.computedAt ? new Date(options.computedAt) : new Date();
+    const isStoredVerification =
+      options?.comparisonSource === "stored" &&
+      options?.verified !== undefined &&
+      options?.verified !== null;
+
     const newEntry: HashHistoryEntry = {
       algorithm,
       hash,
-      timestamp: new Date(),
-      source: verified !== undefined ? "verified" : "computed",
-      verified,
-      verified_against: verifiedAgainst,
+      timestamp,
+      source: isStoredVerification ? "verified" : "computed",
+      verified: isStoredVerification ? options?.verified ?? undefined : undefined,
+      verified_against: options?.verifiedAgainst,
+      comparison_source: options?.comparisonSource,
     };
     history.set(file.path, [...updatedHistory, newEntry]);
     setHashHistory(history);
@@ -287,7 +304,17 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
 
   /** Restore hash history from a loaded project. */
   const restoreHashHistory = (
-    projectHashHistory: Record<string, Array<{ algorithm: string; hash_value: string; computed_at: string; source?: string }>>,
+    projectHashHistory: Record<string, Array<{
+      algorithm: string;
+      hash_value: string;
+      computed_at: string;
+      source?: string;
+      verification?: {
+        result: "match" | "mismatch" | "pending";
+        verified_against: string;
+        verified_at: string;
+      };
+    }>>,
   ) => {
     const history = new Map<string, HashHistoryEntry[]>();
 
@@ -309,6 +336,14 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
           hash: h.hash_value,
           timestamp,
           source: (h.source as "computed" | "stored" | "verified") || "computed",
+          verified:
+            h.verification?.result === "match"
+              ? true
+              : h.verification?.result === "mismatch"
+                ? false
+                : undefined,
+          verified_against: h.verification?.verified_against,
+          comparison_source: h.verification ? "stored" : undefined,
         };
       });
       history.set(filePath, entries);
@@ -321,7 +356,16 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
   // ── restoreFileHashMap ────────────────────────────────────────────────
 
   /** Restore computed hashes from a loaded project's evidence cache. */
-  const restoreFileHashMap = (cachedHashes: Record<string, { algorithm: string; hash: string; verified?: boolean | null }>) => {
+  const restoreFileHashMap = (
+    cachedHashes: Record<string, {
+      algorithm: string;
+      hash: string;
+      verified?: boolean | null;
+      computed_at?: string;
+      verified_against?: string;
+      comparison_source?: "stored" | "history";
+    }>,
+  ) => {
     if (!cachedHashes || Object.keys(cachedHashes).length === 0) return;
 
     const map = new Map<string, FileHashInfo>();
@@ -330,6 +374,9 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
         algorithm: hashInfo.algorithm,
         hash: hashInfo.hash,
         verified: hashInfo.verified,
+        computedAt: hashInfo.computed_at,
+        verifiedAgainst: hashInfo.verified_against,
+        comparisonSource: hashInfo.comparison_source,
       });
     }
     setFileHashMap(map);
@@ -401,6 +448,20 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
       }
     }
 
+    // L01 container hashes
+    if (plainInfo.l01?.stored_hashes) {
+      const containerDate = plainInfo.l01.acquiry_date;
+      for (const h of plainInfo.l01.stored_hashes) {
+        allHashes.push({
+          algorithm: h.algorithm || "",
+          hash: h.hash || "",
+          verified: h.verified ?? null,
+          timestamp: h.timestamp || containerDate || null,
+          source: h.source || "container",
+        });
+      }
+    }
+
     // UFED container hashes
     if (plainInfo.ufed?.stored_hashes) {
       const containerDate = plainInfo.ufed.extraction_info?.start_time;
@@ -412,6 +473,27 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
           timestamp: containerDate || null,
           source: "container",
           filename: h.filename || null,
+        });
+      }
+    }
+
+    // AD1 companion hashes
+    if (plainInfo.ad1?.companion_log) {
+      const containerDate = plainInfo.ad1.companion_log.acquisition_date;
+      const ad1Hashes = [
+        ["MD5", plainInfo.ad1.companion_log.md5_hash],
+        ["SHA-1", plainInfo.ad1.companion_log.sha1_hash],
+        ["SHA-256", plainInfo.ad1.companion_log.sha256_hash],
+      ] as const;
+
+      for (const [algorithm, hash] of ad1Hashes) {
+        if (!hash) continue;
+        allHashes.push({
+          algorithm,
+          hash,
+          verified: null,
+          timestamp: containerDate || null,
+          source: "companion",
         });
       }
     }

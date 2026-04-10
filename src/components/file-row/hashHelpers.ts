@@ -7,6 +7,7 @@
 import type { ContainerInfo, HashHistoryEntry } from "../../types";
 import type { FileStatus, FileHashInfo } from "../../hooks";
 import { formatBytes } from "../../utils";
+import { compareHashes } from "../../hooks/hashUtils";
 import type { HashState } from "./types";
 
 /** Check if container is incomplete (missing segments) */
@@ -39,7 +40,15 @@ export function buildSizeLabel(
 
 /** Get stored hash count from all sources */
 export function getStoredHashCount(fileInfo: ContainerInfo | undefined): number {
-  return (fileInfo?.e01?.stored_hashes?.length ?? 0) + (fileInfo?.companion_log?.stored_hashes?.length ?? 0);
+  return (
+    (fileInfo?.e01?.stored_hashes?.length ?? 0) +
+    (fileInfo?.l01?.stored_hashes?.length ?? 0) +
+    (fileInfo?.ufed?.stored_hashes?.length ?? 0) +
+    (fileInfo?.companion_log?.stored_hashes?.length ?? 0) +
+    (fileInfo?.ad1?.companion_log?.md5_hash ? 1 : 0) +
+    (fileInfo?.ad1?.companion_log?.sha1_hash ? 1 : 0) +
+    (fileInfo?.ad1?.companion_log?.sha256_hash ? 1 : 0)
+  );
 }
 
 /** Total hash count (stored + computed + history) */
@@ -58,29 +67,20 @@ export function hasVerifiedMatch(
 ): boolean {
   const storedHashes = [
     ...(fileInfo?.e01?.stored_hashes ?? []),
+    ...(fileInfo?.l01?.stored_hashes ?? []),
     ...(fileInfo?.ufed?.stored_hashes ?? []),
     ...(fileInfo?.companion_log?.stored_hashes ?? []),
+    ...(fileInfo?.ad1?.companion_log?.md5_hash ? [{ algorithm: "MD5", hash: fileInfo.ad1.companion_log.md5_hash }] : []),
+    ...(fileInfo?.ad1?.companion_log?.sha1_hash ? [{ algorithm: "SHA-1", hash: fileInfo.ad1.companion_log.sha1_hash }] : []),
+    ...(fileInfo?.ad1?.companion_log?.sha256_hash ? [{ algorithm: "SHA-256", hash: fileInfo.ad1.companion_log.sha256_hash }] : []),
   ];
   const history = hashHistory ?? [];
 
   for (const stored of storedHashes) {
     const match = history.find(
-      (h) =>
-        h.algorithm.toLowerCase() === stored.algorithm.toLowerCase() &&
-        h.hash.toLowerCase() === stored.hash.toLowerCase()
+      (h) => compareHashes(h.hash, stored.hash, h.algorithm, stored.algorithm)
     );
     if (match) return true;
-  }
-
-  for (let i = 0; i < history.length; i++) {
-    for (let j = i + 1; j < history.length; j++) {
-      if (
-        history[i].algorithm.toLowerCase() === history[j].algorithm.toLowerCase() &&
-        history[i].hash.toLowerCase() === history[j].hash.toLowerCase()
-      ) {
-        return true;
-      }
-    }
   }
 
   return false;

@@ -28,38 +28,31 @@ export function createActivityLogger(
 ): ActivityLogger {
   // Batch pending log entries to reduce state updates
   let pendingEntries: ActivityLogEntry[] = [];
-  
-  // Flush batched entries to project state
-  const flushEntries = debounce(() => {
+
+  const flushPendingEntries = () => {
     const proj = signals.project();
-    log.debug(`flushEntries called, pendingEntries=${pendingEntries.length}, hasProject=${!!proj}, loading=${signals.loading()}`);
+    log.debug(`flushPendingEntries called, pendingEntries=${pendingEntries.length}, hasProject=${!!proj}, loading=${signals.loading()}`);
     if (!proj || pendingEntries.length === 0) return;
-    
-    // Don't flush during project loading - entries will be discarded
-    // The loaded project already has its own activity log
+
     if (signals.loading()) {
       log.debug("Skipping flush during project load");
       pendingEntries = [];
       return;
     }
-    
+
     const limit = proj.activity_log_limit || 1000;
-    let log_entries = [...pendingEntries, ...proj.activity_log];
-    if (log_entries.length > limit) {
-      log_entries = log_entries.slice(0, limit);
+    let logEntries = [...pendingEntries, ...proj.activity_log];
+    if (logEntries.length > limit) {
+      logEntries = logEntries.slice(0, limit);
     }
-    
-    log.debug(`Updating project with ${log_entries.length} log entries (no markModified — entries already in .ffxdb)`);
-    setters.setProject({ ...proj, activity_log: log_entries } as FFXProject);
-    // NOTE: Do NOT call markModified() here. Activity entries are already
-    // persisted to the .ffxdb file immediately via dbSync.insertActivity().
-    // Calling markModified would re-dirty the project right after autosave
-    // clears the flag, creating an infinite save→dirty→save loop.
-    // The in-memory activity_log update is for UI display only; the .cffx
-    // file will naturally include the latest log on the next real save
-    // triggered by a user action (bookmark, note, hash, setting change, etc.).
+
+    log.debug(`Updating project with ${logEntries.length} log entries (no markModified — entries already in .ffxdb)`);
+    setters.setProject({ ...proj, activity_log: logEntries } as FFXProject);
     pendingEntries = [];
-  }, 500); // Batch entries over 500ms window
+  };
+  
+  // Flush batched entries to project state
+  const flushEntries = debounce(flushPendingEntries, 500); // Batch entries over 500ms window
 
   const logActivity = (
     category: ActivityCategory,
@@ -90,5 +83,8 @@ export function createActivityLogger(
     flushEntries();
   };
 
-  return { logActivity };
+  return {
+    logActivity,
+    flushActivity: flushPendingEntries,
+  };
 }

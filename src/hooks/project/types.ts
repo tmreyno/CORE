@@ -120,6 +120,36 @@ export interface ActivityLogger {
     filePath?: string,
     details?: Record<string, unknown>
   ) => void;
+  flushActivity: () => void;
+}
+
+export type ProjectCloseProgressStep =
+  | "end-session"
+  | "flush-db-sync"
+  | "checkpoint-db"
+  | "close-db"
+  | "clear-state";
+
+export type ProjectCloseProgressStatus =
+  | "running"
+  | "completed"
+  | "warning"
+  | "failed";
+
+export interface ProjectCloseProgressUpdate {
+  step: ProjectCloseProgressStep;
+  status: ProjectCloseProgressStatus;
+  detail?: string;
+}
+
+export interface ClearProjectOptions {
+  onProgress?: (update: ProjectCloseProgressUpdate) => void;
+}
+
+export interface ProjectCloseResult {
+  success: boolean;
+  flushTimedOut?: boolean;
+  error?: string;
 }
 
 /** Bookmark management interface */
@@ -160,7 +190,7 @@ export interface ProjectIO {
   saveProject: (options: BuildProjectOptions, customPath?: string) => Promise<ProjectSaveResult>;
   saveProjectAs: (options: BuildProjectOptions) => Promise<ProjectSaveResult>;
   loadProject: (customPath?: string) => Promise<{ project: FFXProject | null; error?: string; warnings?: string[] }>;
-  clearProject: () => void;
+  clearProject: (options?: ClearProjectOptions) => Promise<ProjectCloseResult>;
 }
 
 /** Processed database interface */

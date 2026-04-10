@@ -11,6 +11,9 @@ use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 use tracing::info;
 
+const PROJECT_DB_WAL_AUTOCHECKPOINT_PAGES: i64 = 256;
+const PROJECT_DB_WAL_SIZE_LIMIT_BYTES: i64 = 8 * 1024 * 1024;
+
 /// Per-project SQLite database for forensic activity persistence.
 ///
 /// Unlike the global `ffx.db` (which tracks app-level sessions), this database
@@ -18,6 +21,7 @@ use tracing::info;
 pub struct ProjectDatabase {
     pub(crate) conn: Mutex<Connection>,
     pub(crate) path: PathBuf,
+    pub(crate) last_wal_checkpoint: Mutex<Option<super::types::ProjectDbWalCheckpointStatus>>,
 }
 
 impl ProjectDatabase {
@@ -36,11 +40,19 @@ impl ProjectDatabase {
         let conn = Connection::open(db_path)?;
         info!("  DB Connection::open took {:?}", t0.elapsed());
 
-        // Enable WAL mode for better concurrent read performance
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-        // Enable foreign keys
-        conn.execute_batch("PRAGMA foreign_keys=ON;")?;
-        info!("  DB pragmas took {:?} total", t0.elapsed());
+        // Keep WAL mode for concurrent reads, but checkpoint more aggressively
+        // during active use and cap how much WAL SQLite retains after resets.
+        conn.execute_batch(&format!(
+            "PRAGMA journal_mode=WAL;\nPRAGMA foreign_keys=ON;\nPRAGMA wal_autocheckpoint={};\nPRAGMA journal_size_limit={};",
+            PROJECT_DB_WAL_AUTOCHECKPOINT_PAGES,
+            PROJECT_DB_WAL_SIZE_LIMIT_BYTES,
+        ))?;
+        info!(
+            "  DB pragmas took {:?} total (wal_autocheckpoint={} pages, journal_size_limit={} bytes)",
+            t0.elapsed(),
+            PROJECT_DB_WAL_AUTOCHECKPOINT_PAGES,
+            PROJECT_DB_WAL_SIZE_LIMIT_BYTES,
+        );
 
         // If an existing WAL file is large, checkpoint it now.
         // This replays WAL pages into the main DB and truncates the WAL file,
@@ -61,6 +73,7 @@ impl ProjectDatabase {
         let db = Self {
             conn: Mutex::new(conn),
             path: db_path.to_path_buf(),
+            last_wal_checkpoint: Mutex::new(None),
         };
 
         // Skip the expensive init_schema() DDL batch for existing databases.

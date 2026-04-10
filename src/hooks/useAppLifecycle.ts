@@ -30,6 +30,7 @@ import type { useProject } from "./project";
 import type { buildSaveOptions } from "./project/projectHelpers";
 
 const log = logger.scope("AppLifecycle");
+const ACTIVE_SESSION_WAL_CHECKPOINT_MS = 60_000;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
   // Window width signal for compact-mode detection
   const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
   const isCompact = () => windowWidth() < 900;
+  let activeWalCheckpointTimer: ReturnType<typeof setInterval> | null = null;
 
   // ── Debug Effect ────────────────────────────────────────────────────────
 
@@ -110,6 +112,25 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
     },
     dialogTitle: "Save Project?",
     dialogMessage: "You have unsaved changes. Would you like to save before closing?",
+  });
+
+  createEffect(() => {
+    const hasProject = !!projectManager.hasProject();
+
+    if (activeWalCheckpointTimer) {
+      clearInterval(activeWalCheckpointTimer);
+      activeWalCheckpointTimer = null;
+    }
+
+    if (!hasProject) {
+      return;
+    }
+
+    activeWalCheckpointTimer = setInterval(() => {
+      invoke("project_db_wal_checkpoint", { mode: "passive" }).catch((e) => {
+        log.debug(`Periodic passive WAL checkpoint skipped (non-fatal): ${e}`);
+      });
+    }, ACTIVE_SESSION_WAL_CHECKPOINT_MS);
   });
 
   // ── Mount ───────────────────────────────────────────────────────────────
@@ -177,6 +198,11 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
   onCleanup(() => {
     cleanupSystemStats?.();
     projectManager.stopAutoSave();
+
+    if (activeWalCheckpointTimer) {
+      clearInterval(activeWalCheckpointTimer);
+      activeWalCheckpointTimer = null;
+    }
 
     // Clear clipboard on close if preference is set (security feature)
     if (preferences.preferences().clearClipboardOnClose) {

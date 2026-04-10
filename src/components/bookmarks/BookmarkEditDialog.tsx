@@ -34,7 +34,7 @@ export const BookmarkEditDialog: Component<BookmarkEditDialogProps> = (props) =>
 
   return (
     <div
-      class="fixed inset-0 z-modal-backdrop flex items-center justify-center"
+      class="fixed inset-0 z-modal-backdrop bg-black/60 backdrop-blur-sm flex items-center justify-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) props.onCancel();
       }}

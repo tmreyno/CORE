@@ -137,21 +137,7 @@ CORE-FFX provides the following major subsystems. Each is fully implemented and 
 | [`SECURITY.md`](../SECURITY.md) | Security policy |
 | [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md) | Third-party license attributions |
 
-## Archive
-
-Historical documentation from completed features, migrations, and fixes is organized in [`archive/`](archive/):
-
-| Folder | Content |
-| ------ | ------- |
-| [`phases/`](archive/phases/) | Performance optimization phases 4-16 |
-| [`2026-01-ad1-v2/`](archive/2026-01-ad1-v2/) | AD1 V2 parser migration (13 docs) |
-| [`2026-01-implementation/`](archive/2026-01-implementation/) | Implementation summaries, code fixes, refactoring plans |
-| [`2026-01-project-management/`](archive/2026-01-project-management/) | Project management system docs |
-| [`2026-01-testing/`](archive/2026-01-testing/) | Test plans and results |
-| [`2026-02-fixes/`](archive/2026-02-fixes/) | DMG and VFS bug fix documentation |
-| [`consolidation/`](archive/consolidation/) | Code consolidation and migration summaries |
-| [`hash-system/`](archive/hash-system/) | Hash system modernization docs |
-| [`sevenzip/`](archive/sevenzip/) | 7-Zip integration status docs |
+Historical implementation notes are no longer part of the active docs set. Use git history if you need older planning or migration details.
 
 ---
 

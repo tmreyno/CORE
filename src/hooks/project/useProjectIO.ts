@@ -47,10 +47,12 @@ import {
 import { getAppVersion } from "./useProjectState";
 import type {
   BuildProjectOptions,
+  ClearProjectOptions,
   ProjectStateSignals,
   ProjectStateSetters,
   ActivityLogger,
   ProjectIO,
+  ProjectCloseResult,
 } from "./types";
 
 /**
@@ -96,6 +98,7 @@ export function createProjectIO(
       sessionId,
       durationSeconds: sessions.find(s => s.session_id === sessionId)?.duration_seconds,
     });
+    logger.flushActivity();
   };
 
   /**
@@ -251,11 +254,14 @@ export function createProjectIO(
           algorithm: entry.algorithm || 'UNKNOWN',
           hash_value: entry.hash, // Already validated above
           computed_at: timestampStr,
-          verification: entry.verified && entry.verified_against ? {
-            result: "match" as const,
-            verified_against: entry.verified_against,
-            verified_at: timestampStr,
-          } : undefined,
+          verification:
+            entry.verified !== undefined && entry.verified_against
+              ? {
+                  result: entry.verified ? ("match" as const) : ("mismatch" as const),
+                  verified_against: entry.verified_against,
+                  verified_at: timestampStr,
+                }
+              : undefined,
         };
       });
     });
@@ -341,7 +347,9 @@ export function createProjectIO(
           algorithm: hashInfo.algorithm,
           hash: hashInfo.hash,
           verified: hashInfo.verified,
-          computed_at: now,
+          computed_at: hashInfo.computedAt || now,
+          verified_against: hashInfo.verifiedAgainst,
+          comparison_source: hashInfo.comparisonSource,
         };
       });
 
@@ -820,21 +828,83 @@ export function createProjectIO(
   /**
    * Clear current project
    */
-  const clearProject = () => {
-    endCurrentSession();
-    autoSave.stopAutoSave();
-    // Close the per-project database (.ffxdb) if open
-    invoke("project_db_close").catch(() => {
-      // Ignore errors — DB may not have been opened
-    });
-    batch(() => {
-      setters.setProject(null);
-      setters.setProjectPath(null);
-      setters.setModified(false);
-      setters.setError(null);
-      setters.setCurrentSessionId(null);
-    });
-    invoke("set_project_menu_state", { hasProject: false }).catch(() => {});
+  const clearProject = async (
+    options: ClearProjectOptions = {},
+  ): Promise<ProjectCloseResult> => {
+    const emitProgress = (
+      step: "end-session" | "flush-db-sync" | "checkpoint-db" | "close-db" | "clear-state",
+      status: "running" | "completed" | "warning" | "failed",
+      detail?: string,
+    ) => {
+      options.onProgress?.({ step, status, detail });
+    };
+
+    try {
+      emitProgress("end-session", "running", "Finalizing the active examiner session.");
+      endCurrentSession();
+      emitProgress("end-session", "completed", "Session history captured for the project close.");
+
+      autoSave.stopAutoSave();
+
+      emitProgress("flush-db-sync", "running", "Waiting for pending .ffxdb writes to finish.");
+      const flushResult = await dbSync.flushPendingWrites();
+      if (flushResult.timedOut) {
+        emitProgress(
+          "flush-db-sync",
+          "warning",
+          `${flushResult.pendingCount} background write${flushResult.pendingCount === 1 ? "" : "s"} still pending when close continued.`,
+        );
+      } else {
+        emitProgress("flush-db-sync", "completed", "All pending .ffxdb writes completed.");
+      }
+
+      emitProgress("checkpoint-db", "running", "Checkpointing the project database WAL.");
+      try {
+        await invoke("project_db_wal_checkpoint");
+        emitProgress("checkpoint-db", "completed", "Project database checkpoint completed.");
+      } catch (err) {
+        emitProgress(
+          "checkpoint-db",
+          "warning",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      emitProgress("close-db", "running", "Closing the project database connection.");
+      try {
+        await invoke("project_db_close");
+        emitProgress("close-db", "completed", "Project database closed.");
+      } catch (err) {
+        emitProgress(
+          "close-db",
+          "warning",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      emitProgress("clear-state", "running", "Clearing in-memory project state and UI bindings.");
+      batch(() => {
+        setters.setProject(null);
+        setters.setProjectPath(null);
+        setters.setModified(false);
+        setters.setError(null);
+        setters.setCurrentSessionId(null);
+      });
+      await invoke("set_project_menu_state", { hasProject: false }).catch(() => {});
+      emitProgress("clear-state", "completed", "Project state cleared.");
+
+      return {
+        success: true,
+        flushTimedOut: flushResult.timedOut,
+      };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      emitProgress("clear-state", "failed", errorMsg);
+      return {
+        success: false,
+        error: errorMsg,
+      };
+    }
   };
 
   return {

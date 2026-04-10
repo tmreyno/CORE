@@ -87,8 +87,8 @@ export function useProject() {
   const markModified = createMarkModified(signals, setters);
 
   // Create activity logger (needed by other managers)
-  const { logActivity } = createActivityLogger(signals, setters, markModified);
-  const logger = { logActivity };
+  const { logActivity, flushActivity } = createActivityLogger(signals, setters, markModified);
+  const logger = { logActivity, flushActivity };
 
   // Create auto-save manager
   const autoSaveManager = createAutoSaveManager(signals, setters);

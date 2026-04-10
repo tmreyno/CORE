@@ -58,6 +58,15 @@ import type { ProcessedDatabase } from "../../types/processed";
 
 const log = logger.scope("DbSync");
 
+const pendingInvokes = new Set<Promise<unknown>>();
+
+function trackPendingInvoke<T>(promise: Promise<T>): void {
+  pendingInvokes.add(promise);
+  promise.finally(() => {
+    pendingInvokes.delete(promise);
+  });
+}
+
 // =============================================================================
 // Internal: fire-and-forget invoke wrapper
 // =============================================================================
@@ -67,9 +76,38 @@ const log = logger.scope("DbSync");
  * Logs errors but never throws — the .cffx is still the primary store.
  */
 function syncInvoke<T>(cmd: string, args: Record<string, unknown>): void {
-  invoke<T>(cmd, args).catch((err) => {
+  const request = invoke<T>(cmd, args).catch((err) => {
     log.warn(`DbSync: ${cmd} failed (non-fatal):`, err);
   });
+  trackPendingInvoke(request);
+}
+
+async function flushPendingWrites(timeoutMs = 5_000): Promise<{
+  timedOut: boolean;
+  pendingCount: number;
+}> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (pendingInvokes.size > 0) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      return {
+        timedOut: true,
+        pendingCount: pendingInvokes.size,
+      };
+    }
+
+    const snapshot = Array.from(pendingInvokes);
+    await Promise.race([
+      Promise.allSettled(snapshot),
+      new Promise((resolve) => setTimeout(resolve, remainingMs)),
+    ]);
+  }
+
+  return {
+    timedOut: false,
+    pendingCount: 0,
+  };
 }
 
 // =============================================================================
@@ -480,6 +518,8 @@ function syncUpdateExport(record: DbExportRecord): void {
 // =============================================================================
 
 export const dbSync = {
+  flushPendingWrites,
+
   // Bookmarks
   upsertBookmark: syncUpsertBookmark,
   deleteBookmark: syncDeleteBookmark,

@@ -4,11 +4,12 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show, Component, Accessor } from "solid-js";
+import { Show, For, Component, Accessor, createMemo } from "solid-js";
 import { HiOutlineLockClosed, HiOutlineDocumentDuplicate, HiOutlineCheck, HiOutlineExclamationTriangle } from "../icons";
 import { CoreProgressBar } from "@core-suite/icons";
 import type { FileHashInfo } from "../../types/hash";
 import type { StoredHash, HashAlgorithm } from "../../types";
+import { formatHashDate } from "../../utils";
 
 interface HashDisplayProps {
   fileHash: FileHashInfo | undefined;
@@ -19,6 +20,17 @@ interface HashDisplayProps {
 }
 
 export const HashDisplay: Component<HashDisplayProps> = (props) => {
+  const matchingStoredHashes = createMemo(() => {
+    const algorithm = props.fileHash?.algorithm?.toLowerCase();
+    if (!algorithm) return [];
+    return props.storedHashes.filter((stored) => stored.algorithm.toLowerCase() === algorithm);
+  });
+
+  const computedAt = createMemo(() => {
+    const timestamp = props.fileHash?.computedAt;
+    return timestamp ? formatHashDate(timestamp) : "";
+  });
+
   return (
     <>
       {/* Hash progress */}
@@ -84,10 +96,7 @@ export const HashDisplay: Component<HashDisplayProps> = (props) => {
             {props.fileHash!.hash}
           </code>
           
-          <Show when={
-            props.fileHash!.verified === true && 
-            props.storedHashes.some(sh => sh.algorithm.toLowerCase() === props.fileHash!.algorithm.toLowerCase())
-          }>
+          <Show when={props.fileHash!.verified === true}>
             <div class="mt-2 text-xs text-green-400 flex items-center gap-1">
               <span class="relative inline-flex">
                 <span>✓</span>
@@ -97,22 +106,41 @@ export const HashDisplay: Component<HashDisplayProps> = (props) => {
             </div>
           </Show>
           
-          <Show when={
-            props.fileHash!.verified === true && 
-            !props.storedHashes.some(sh => sh.algorithm.toLowerCase() === props.fileHash!.algorithm.toLowerCase())
-          }>
-            <div class="mt-2 text-xs text-green-400 flex items-center gap-1">
-              <span class="relative inline-flex">
-                <span>✓</span>
-                <span class="absolute left-[3px]">✓</span>
-              </span>
-              <span class="ml-1">Hash matches previous computation (self-verified)</span>
+          <Show when={props.fileHash!.comparisonSource === "history"}>
+            <div class="mt-2 text-xs text-accent flex items-center gap-1">
+              <HiOutlineCheck class="w-3 h-3" />
+              <span class="ml-1">Hash matches a previous computation in local history</span>
             </div>
           </Show>
           
           <Show when={props.fileHash!.verified === false}>
             <div class="mt-2 text-xs text-red-400 flex items-center gap-1">
               <HiOutlineExclamationTriangle class="w-3 h-3" /> Computed hash does NOT match stored hash!
+            </div>
+          </Show>
+
+          <Show when={computedAt()}>
+            <div class="mt-2 text-xs text-txt-muted">Computed: {computedAt()}</div>
+          </Show>
+
+          <Show when={matchingStoredHashes().length > 0}>
+            <div class="mt-3 border-t border-border/50 pt-2">
+              <div class="mb-1 text-2xs uppercase tracking-wider text-txt-muted">Stored Reference</div>
+              <div class="flex flex-col gap-1">
+                <For each={matchingStoredHashes()}>
+                  {(stored) => (
+                    <div class="text-xs">
+                      <div class="font-mono text-txt-secondary break-all">{stored.hash}</div>
+                      <div class="text-txt-muted">
+                        {(stored.source || "container").toUpperCase()}
+                        <Show when={stored.timestamp}>
+                          <span> • {formatHashDate(stored.timestamp!)}</span>
+                        </Show>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
             </div>
           </Show>
           

@@ -35,6 +35,17 @@ const log = logger.scope("ProjectDashboard");
 export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
   const [dbStats, setDbStats] = createSignal<ProjectDbStats | null>(null);
 
+  const walHealthLabel = createMemo(() => {
+    const stats = dbStats();
+    if (!stats) return "—";
+    const checkpoint = stats.lastWalCheckpoint;
+    if (!checkpoint) return stats.walExists ? "pending" : "clear";
+    if (checkpoint.blocked) {
+      return checkpoint.busyReaders > 0 ? `blocked (${checkpoint.busyReaders} busy)` : "blocked";
+    }
+    return checkpoint.mode;
+  });
+
   // Try to load db stats (non-blocking)
   onMount(async () => {
     try {
@@ -229,7 +240,22 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
                   <span class="text-txt-muted">COC Items</span>
                   <span class="text-txt">{stats().totalCocItems}</span>
                 </div>
+                <div class="flex justify-between px-2 py-1 bg-bg-secondary rounded">
+                  <span class="text-txt-muted">WAL</span>
+                  <span class="text-txt">{stats().walExists ? formatBytes(stats().walSizeBytes) : "clear"}</span>
+                </div>
+                <div class="flex justify-between px-2 py-1 bg-bg-secondary rounded">
+                  <span class="text-txt-muted">Checkpoint</span>
+                  <span class="text-txt">{walHealthLabel()}</span>
+                </div>
               </div>
+              <Show when={stats().lastWalCheckpoint}>
+                {(checkpoint) => (
+                  <div class="px-2 py-1.5 bg-bg-secondary rounded text-2xs text-txt-muted">
+                    Last {checkpoint().mode} checkpoint · {checkpoint().checkpointedPages}/{checkpoint().logPages} pages · {new Date(checkpoint().completedAt).toLocaleTimeString()}
+                  </div>
+                )}
+              </Show>
             </div>
           )}
         </Show>

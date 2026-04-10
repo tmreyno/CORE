@@ -44,8 +44,12 @@ export function hasVerifiedMatch(
 ): boolean {
   const storedHashes = [
     ...(containerInfo?.e01?.stored_hashes ?? []),
+    ...(containerInfo?.l01?.stored_hashes ?? []),
     ...(containerInfo?.ufed?.stored_hashes ?? []),
     ...(containerInfo?.companion_log?.stored_hashes ?? []),
+    ...(containerInfo?.ad1?.companion_log?.md5_hash ? [{ algorithm: "MD5", hash: containerInfo.ad1.companion_log.md5_hash }] : []),
+    ...(containerInfo?.ad1?.companion_log?.sha1_hash ? [{ algorithm: "SHA-1", hash: containerInfo.ad1.companion_log.sha1_hash }] : []),
+    ...(containerInfo?.ad1?.companion_log?.sha256_hash ? [{ algorithm: "SHA-256", hash: containerInfo.ad1.companion_log.sha256_hash }] : []),
   ];
   const history = hashHistory ?? [];
 
@@ -57,22 +61,6 @@ export function hasVerifiedMatch(
     if (match) return true;
   }
 
-  // Check if any history entries match each other (same algorithm, same hash, different times)
-  for (let i = 0; i < history.length; i++) {
-    for (let j = i + 1; j < history.length; j++) {
-      if (
-        compareHashes(
-          history[i].hash,
-          history[j].hash,
-          history[i].algorithm,
-          history[j].algorithm,
-        )
-      ) {
-        return true;
-      }
-    }
-  }
-
   return false;
 }
 
@@ -80,7 +68,12 @@ export function hasVerifiedMatch(
 export function getStoredHashCount(containerInfo?: ContainerInfo | null): number {
   return (
     (containerInfo?.e01?.stored_hashes?.length ?? 0) +
-    (containerInfo?.companion_log?.stored_hashes?.length ?? 0)
+    (containerInfo?.l01?.stored_hashes?.length ?? 0) +
+    (containerInfo?.ufed?.stored_hashes?.length ?? 0) +
+    (containerInfo?.companion_log?.stored_hashes?.length ?? 0) +
+    (containerInfo?.ad1?.companion_log?.md5_hash ? 1 : 0) +
+    (containerInfo?.ad1?.companion_log?.sha1_hash ? 1 : 0) +
+    (containerInfo?.ad1?.companion_log?.sha256_hash ? 1 : 0)
   );
 }
 

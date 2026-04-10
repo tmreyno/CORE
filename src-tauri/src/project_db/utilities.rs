@@ -10,6 +10,30 @@
 use super::database::ProjectDatabase;
 use super::types::*;
 use rusqlite::Result as SqlResult;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{info, warn};
+
+#[derive(Clone, Copy)]
+enum WalCheckpointMode {
+    Passive,
+    Truncate,
+}
+
+impl WalCheckpointMode {
+    fn pragma_name(self) -> &'static str {
+        match self {
+            Self::Passive => "PASSIVE",
+            Self::Truncate => "TRUNCATE",
+        }
+    }
+
+    fn log_label(self) -> &'static str {
+        match self {
+            Self::Passive => "passive",
+            Self::Truncate => "truncate",
+        }
+    }
+}
 
 impl ProjectDatabase {
     // ========================================================================
@@ -26,11 +50,63 @@ impl ProjectDatabase {
 
     /// Force a WAL checkpoint (flush WAL to main DB file)
     pub fn wal_checkpoint(&self) -> SqlResult<(i64, i64)> {
+        self.wal_checkpoint_with_mode(WalCheckpointMode::Truncate)
+    }
+
+    /// Run a non-blocking WAL checkpoint suitable for active sessions.
+    pub fn wal_checkpoint_passive(&self) -> SqlResult<(i64, i64)> {
+        self.wal_checkpoint_with_mode(WalCheckpointMode::Passive)
+    }
+
+    fn wal_checkpoint_with_mode(&self, mode: WalCheckpointMode) -> SqlResult<(i64, i64)> {
         let conn = self.conn.lock();
-        let (log_size, frames_checkpointed): (i64, i64) =
-            conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
-                Ok((row.get(1)?, row.get(2)?))
-            })?;
+        let (busy, log_size, frames_checkpointed): (i64, i64, i64) =
+            conn.query_row(
+                &format!("PRAGMA wal_checkpoint({})", mode.pragma_name()),
+                [],
+                |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                },
+            )?;
+        drop(conn);
+
+        let blocked = busy > 0 || frames_checkpointed < log_size;
+        let completed_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0))
+            .ok()
+            .flatten()
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+        *self.last_wal_checkpoint.lock() = Some(ProjectDbWalCheckpointStatus {
+            mode: mode.log_label().to_string(),
+            busy_readers: busy,
+            log_pages: log_size,
+            checkpointed_pages: frames_checkpointed,
+            blocked,
+            completed_at,
+        });
+
+        if blocked {
+            warn!(
+                db_path = %self.path.display(),
+                mode = mode.log_label(),
+                busy,
+                log_pages = log_size,
+                checkpointed_pages = frames_checkpointed,
+                "WAL checkpoint could not fully truncate; active readers may still be pinning frames"
+            );
+        } else {
+            info!(
+                db_path = %self.path.display(),
+                mode = mode.log_label(),
+                log_pages = log_size,
+                checkpointed_pages = frames_checkpointed,
+                "WAL checkpoint completed"
+            );
+        }
+
         Ok((log_size, frames_checkpointed))
     }
 
@@ -65,6 +141,10 @@ impl ProjectDatabase {
         };
 
         let db_size = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
+        let wal_path = self.path.with_extension("ffxdb-wal");
+        let wal_size = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
+        let wal_exists = wal_path.exists();
+        let last_wal_checkpoint = self.last_wal_checkpoint.lock().clone();
 
         Ok(ProjectDbStats {
             total_activities: count("activity_log")?,
@@ -91,6 +171,9 @@ impl ProjectDatabase {
             total_coc_amendments: count("coc_amendments")?,
             total_coc_audit_entries: count("coc_audit_log")?,
             db_size_bytes: db_size,
+            wal_exists,
+            wal_size_bytes: wal_size,
+            last_wal_checkpoint,
             schema_version: SCHEMA_VERSION,
         })
     }

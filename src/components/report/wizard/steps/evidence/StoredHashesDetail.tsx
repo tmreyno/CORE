@@ -11,41 +11,59 @@
 import { Show, For } from "solid-js";
 import { HiOutlineFingerPrint, HiOutlineShieldCheck } from "../../../../icons";
 import type { ContainerInfo } from "../../../../../types/containerInfo";
+import { formatHashDate } from "../../../../../utils";
 
 export function StoredHashesDetail(props: { info: ContainerInfo | undefined }) {
   const storedHashes = () => {
     const ci = props.info;
     if (!ci) return [];
 
-    const hashes: { algorithm: string; hash: string; verified?: boolean | null; source: string }[] = [];
+    const hashes: { algorithm: string; hash: string; verified?: boolean | null; source: string; timestamp?: string | null }[] = [];
 
     // EWF stored hashes
     const ewf = ci.e01 || ci.l01;
     if (ewf?.stored_hashes) {
       for (const sh of ewf.stored_hashes) {
-        hashes.push({ algorithm: sh.algorithm, hash: sh.hash, verified: sh.verified, source: "EWF" });
+        hashes.push({
+          algorithm: sh.algorithm,
+          hash: sh.hash,
+          verified: sh.verified,
+          source: "EWF",
+          timestamp: sh.timestamp ?? ewf.acquiry_date ?? null,
+        });
       }
     }
 
     // Companion log hashes
     if (ci.companion_log?.stored_hashes) {
       for (const sh of ci.companion_log.stored_hashes) {
-        hashes.push({ algorithm: sh.algorithm, hash: sh.hash, verified: sh.verified, source: "Log" });
+        hashes.push({
+          algorithm: sh.algorithm,
+          hash: sh.hash,
+          verified: sh.verified,
+          source: "Log",
+          timestamp: sh.timestamp ?? ci.companion_log.verification_finished ?? ci.companion_log.acquisition_finished ?? null,
+        });
       }
     }
 
     // AD1 companion log hashes
     const ad1Log = ci.ad1?.companion_log;
     if (ad1Log) {
-      if (ad1Log.md5_hash) hashes.push({ algorithm: "MD5", hash: ad1Log.md5_hash, source: "AD1 Log" });
-      if (ad1Log.sha1_hash) hashes.push({ algorithm: "SHA-1", hash: ad1Log.sha1_hash, source: "AD1 Log" });
-      if (ad1Log.sha256_hash) hashes.push({ algorithm: "SHA-256", hash: ad1Log.sha256_hash, source: "AD1 Log" });
+      if (ad1Log.md5_hash) hashes.push({ algorithm: "MD5", hash: ad1Log.md5_hash, source: "AD1 Log", timestamp: ad1Log.acquisition_date ?? null });
+      if (ad1Log.sha1_hash) hashes.push({ algorithm: "SHA-1", hash: ad1Log.sha1_hash, source: "AD1 Log", timestamp: ad1Log.acquisition_date ?? null });
+      if (ad1Log.sha256_hash) hashes.push({ algorithm: "SHA-256", hash: ad1Log.sha256_hash, source: "AD1 Log", timestamp: ad1Log.acquisition_date ?? null });
     }
 
     // UFED stored hashes
     if (ci.ufed?.stored_hashes) {
       for (const sh of ci.ufed.stored_hashes) {
-        hashes.push({ algorithm: sh.algorithm, hash: sh.hash, source: "UFED" });
+        hashes.push({
+          algorithm: sh.algorithm,
+          hash: sh.hash,
+          source: "UFED",
+          timestamp: ci.ufed.extraction_info?.start_time ?? null,
+        });
       }
     }
 
@@ -74,6 +92,9 @@ export function StoredHashesDetail(props: { info: ContainerInfo | undefined }) {
                   <span class="min-w-[50px] text-txt/50">{h.algorithm}</span>
                 </span>
                 <span class="font-mono text-txt/70 break-all">{h.hash}</span>
+                <Show when={h.timestamp}>
+                  <span class="text-txt/40 text-2xs shrink-0">{formatHashDate(h.timestamp!)}</span>
+                </Show>
                 <span class="text-txt/30 text-2xs ml-auto shrink-0">{h.source}</span>
               </div>
             )}

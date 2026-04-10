@@ -106,7 +106,25 @@ pub fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<Strin
 
     // Store keyed by the calling window's label
     let mut guard = PROJECT_DBS.lock();
-    guard.insert(label, db);
+    if let Some(old_db) = guard.insert(label.clone(), db) {
+        match old_db.wal_checkpoint() {
+            Ok((log_size, frames)) => {
+                info!(
+                    window = %label,
+                    "Previous project DB checkpointed before replacement: {} log pages, {} frames checkpointed",
+                    log_size,
+                    frames
+                );
+            }
+            Err(e) => {
+                warn!(
+                    window = %label,
+                    "Previous project DB checkpoint before replacement failed (non-fatal): {}",
+                    e
+                );
+            }
+        }
+    }
 
     Ok(db_path_str)
 }

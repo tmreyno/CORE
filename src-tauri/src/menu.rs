@@ -117,6 +117,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::
                 true,
                 Some("CmdOrCtrl+Shift+S"),
             )?)
+            .item(&MenuItem::with_id(
+                app,
+                "close-project",
+                "Close Project",
+                true,
+                None::<&str>,
+            )?)
             .separator()
             .item(&MenuItem::with_id(
                 app,
@@ -515,6 +522,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         Some("save-project")
     } else if id == "save-project-as" {
         Some("save-project-as")
+    } else if id == "close-project" {
+        Some("close-project")
     } else if id == "toggle-sidebar" {
         Some("toggle-sidebar")
     } else if id == "toggle-right-panel" {
@@ -684,6 +693,7 @@ pub async fn get_window_labels(app: AppHandle) -> Result<Vec<String>, String> {
 const PROJECT_DEPENDENT_IDS: &[&str] = &[
     "save-project",
     "save-project-as",
+    "close-project",
     "export",
     "scan-evidence",
     "close-all-tabs",

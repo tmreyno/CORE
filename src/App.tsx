@@ -10,6 +10,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, useSearchIndex, useWorkspaceMode, TAB_MODULE_MAP, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useAppHandlers } from "./hooks/useAppHandlers";
+import { confirmUnsavedChanges } from "./hooks/useCloseConfirmation";
 import { useDualPanelResize } from "./hooks/usePanelResize";
 import { Toolbar, StatusBar, DetailPanel, ProgressModal, ContainerEntryViewer, useToast, pathToBreadcrumbs, createContextMenu, useTour, DEFAULT_TOUR_STEPS, useDragDrop, Sidebar, AppModals, RightPanel, CenterPane, LeftPanelContent, ExportPanel } from "./components";
 import { LoadingOverlay } from "./components/ui";
@@ -33,6 +34,7 @@ import { usePortableMode } from "./hooks/usePortableMode";
 import { useAcquisitionSession } from "./hooks/acquire/useAcquisitionSession";
 import type { AcquisitionSessionWriter } from "./hooks/acquire/useAcquisitionRunner";
 import StartSessionDialog from "./components/acquire/StartSessionDialog";
+import { ProjectCloseModal, type ProjectCloseModalStep, type ProjectCloseModalStepStatus } from "./components/project/ProjectCloseModal";
 import "./App.css";
 
 // Dev-only: Performance test runner (available in console as window.__runPerfTests)
@@ -49,6 +51,23 @@ const log = logger.scope("App");
 const ProcessedDetailPanel = lazy(() => import("./components/ProcessedDetailPanel").then(m => ({ default: m.ProcessedDetailPanel })));
 const EvidenceCollectionPanel = lazy(() => import("./components/EvidenceCollectionPanel").then(m => ({ default: m.EvidenceCollectionPanel })));
 const EvidenceCollectionListPanel = lazy(() => import("./components/EvidenceCollectionListPanel").then(m => ({ default: m.EvidenceCollectionListPanel })));
+
+type CloseWorkflowReason = "close-project" | "switch-project" | "new-project" | "window-close";
+type ProjectCloseUiStepId =
+  | "save-project"
+  | "end-session"
+  | "flush-db-sync"
+  | "checkpoint-db"
+  | "close-db"
+  | "clear-state";
+
+interface ProjectCloseModalState {
+  show: boolean;
+  title: string;
+  message: string;
+  error: string | null;
+  steps: ProjectCloseModalStep[];
+}
 
 // AcquireLayout is eagerly imported (not lazy) because it is the primary view
 // in the Acquire edition and is always needed on initial render. Lazy-loading it
@@ -151,6 +170,118 @@ function App() {
   
   // Search: initial query from text selection in viewers
   const [searchInitialQuery, setSearchInitialQuery] = createSignal<string | undefined>(undefined);
+
+  const buildProjectCloseSteps = (includeSaveStep: boolean): ProjectCloseModalStep[] => {
+    const steps: ProjectCloseModalStep[] = [];
+
+    if (includeSaveStep) {
+      steps.push({
+        id: "save-project",
+        label: "Save project file",
+        detail: "Writing the latest .cffx project snapshot to disk.",
+        status: "pending",
+      });
+    }
+
+    return steps.concat([
+      {
+        id: "end-session",
+        label: "Finalize session",
+        detail: "Closing the active session and capturing the final activity state.",
+        status: "pending",
+      },
+      {
+        id: "flush-db-sync",
+        label: "Drain database writes",
+        detail: "Waiting for queued .ffxdb writes to finish.",
+        status: "pending",
+      },
+      {
+        id: "checkpoint-db",
+        label: "Checkpoint project database",
+        detail: "Folding WAL data back into the main .ffxdb file.",
+        status: "pending",
+      },
+      {
+        id: "close-db",
+        label: "Close project database",
+        detail: "Closing the project database connection for this window.",
+        status: "pending",
+      },
+      {
+        id: "clear-state",
+        label: "Clear project state",
+        detail: "Resetting project-specific UI and in-memory state.",
+        status: "pending",
+      },
+    ]);
+  };
+
+  const [projectCloseModal, setProjectCloseModal] = createSignal<ProjectCloseModalState>({
+    show: false,
+    title: "",
+    message: "",
+    error: null,
+    steps: [],
+  });
+
+  const updateProjectCloseStep = (
+    id: ProjectCloseUiStepId,
+    status: ProjectCloseModalStepStatus,
+    detail?: string,
+  ) => {
+    setProjectCloseModal((current) => ({
+      ...current,
+      steps: current.steps.map((step) =>
+        step.id === id
+          ? {
+              ...step,
+              status,
+              detail: detail ?? step.detail,
+            }
+          : step,
+      ),
+    }));
+  };
+
+  const startProjectCloseModal = (
+    reason: CloseWorkflowReason,
+    includeSaveStep: boolean,
+  ) => {
+    const title = reason === "window-close"
+      ? "Saving Before Close"
+      : reason === "switch-project"
+        ? "Closing Current Project"
+        : reason === "new-project"
+          ? "Preparing New Project"
+          : "Closing Project";
+
+    const message = reason === "window-close"
+      ? "Finalizing project state before the window closes."
+      : reason === "switch-project"
+        ? "Saving and closing the current project before loading the selected project."
+        : reason === "new-project"
+          ? "Saving and closing the current project before creating the new project."
+          : "Saving and closing the current project. The steps below reflect exactly what is being finalized.";
+
+    setProjectCloseModal({
+      show: true,
+      title,
+      message,
+      error: null,
+      steps: buildProjectCloseSteps(includeSaveStep),
+    });
+  };
+
+  const finishProjectCloseModal = () => {
+    setProjectCloseModal({
+      show: false,
+      title: "",
+      message: "",
+      error: null,
+      steps: [],
+    });
+  };
   
   // Acquire edition state
   const [acquireView, setAcquireView] = createSignal<AcquireView>("dashboard");
@@ -585,18 +716,117 @@ function App() {
   
   // Destructure for convenience
   const { getSaveOptions, handleSaveProject: _handleSaveProject, handleSaveProjectAs: _handleSaveProjectAs, handleLoadProject: _handleLoadProject, handleOpenDirectory, handleProjectSetupComplete: _handleProjectSetupComplete } = projectActions;
+
+  const closeCurrentProject = async (reason: CloseWorkflowReason): Promise<boolean> => {
+    if (!projectManager.hasProject()) {
+      return true;
+    }
+
+    const hasUnsavedChanges = projectManager.modified();
+    let shouldSave = false;
+
+    if (hasUnsavedChanges) {
+      const decision = await confirmUnsavedChanges({
+        title: "Save Project Before Closing?",
+        message: "The current project has unsaved changes. Save it before closing or switching projects?",
+      });
+
+      shouldSave = decision === "save";
+    }
+
+    startProjectCloseModal(reason, hasUnsavedChanges);
+
+    try {
+      if (hasUnsavedChanges) {
+        if (shouldSave) {
+          updateProjectCloseStep("save-project", "running", "Saving the latest .cffx project snapshot.");
+
+          const saveOptions = getSaveOptions();
+          if (!saveOptions) {
+            updateProjectCloseStep("save-project", "failed", "The current project could not be serialized for save.");
+            setProjectCloseModal((current) => ({
+              ...current,
+              error: "Project close stopped because the current project could not be prepared for saving.",
+            }));
+            return false;
+          }
+
+          const saveResult = await projectManager.saveProject(
+            saveOptions,
+            projectManager.projectPath() || undefined,
+          );
+
+          if (!saveResult.success) {
+            const saveError = saveResult.error || "Project save failed.";
+            updateProjectCloseStep("save-project", "failed", saveError);
+            setProjectCloseModal((current) => ({
+              ...current,
+              error: saveError === "Save cancelled"
+                ? "Project close was cancelled because the save dialog was cancelled."
+                : saveError,
+            }));
+            return false;
+          }
+
+          updateProjectCloseStep("save-project", "completed", `Saved to ${getBasename(saveResult.path || projectManager.projectPath() || "project.cffx")}.`);
+        } else {
+          updateProjectCloseStep("save-project", "skipped", "Unsaved .cffx changes were discarded before closing the project.");
+        }
+      }
+
+      const closeResult = await projectManager.clearProject({
+        onProgress: ({ step, status, detail }) => {
+          updateProjectCloseStep(step as ProjectCloseUiStepId, status, detail);
+        },
+      });
+
+      if (!closeResult.success) {
+        setProjectCloseModal((current) => ({
+          ...current,
+          error: closeResult.error || "Project close failed.",
+        }));
+        return false;
+      }
+
+      if (closeResult.flushTimedOut) {
+        toast.warning(
+          "Project Closed With Pending Writes",
+          "Background project DB writes were still finishing when the project close completed.",
+        );
+      } else if (reason === "close-project") {
+        toast.success("Project Closed", "The current project was saved and closed.");
+      }
+
+      finishProjectCloseModal();
+      return true;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setProjectCloseModal((current) => ({
+        ...current,
+        error: errorMsg,
+      }));
+      return false;
+    }
+  };
   
   // Loading-wrapped versions of slow project operations
-  const handleLoadProject = (path?: string) =>
-    globalLoading.run("Loading project…", () => _handleLoadProject(path));
+  const handleLoadProject = async (path?: string) => {
+    const canProceed = await closeCurrentProject("switch-project");
+    if (!canProceed) return;
+    await globalLoading.run("Loading project…", () => _handleLoadProject(path));
+  };
   const handleSaveProject = () =>
     globalLoading.run("Saving project…", () => _handleSaveProject());
   const handleSaveProjectAs = () =>
     globalLoading.run("Saving project…", () => _handleSaveProjectAs());
-  const handleProjectSetupComplete = (locations: import("./components").ProjectLocations) =>
-    globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+  const handleProjectSetupComplete = async (locations: import("./components").ProjectLocations) => {
+    const canProceed = await closeCurrentProject("new-project");
+    if (!canProceed) return;
+    await globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+  };
   const handleScanEvidence = () =>
     globalLoading.run("Scanning for evidence…", () => fileManager.scanForFiles());
+  const handleCloseProject = () => closeCurrentProject("close-project");
   
   // ===========================================================================
   // App Handlers — location selection & quick actions (extracted to useAppHandlers)
@@ -684,6 +914,7 @@ function App() {
     onOpenEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
     onOpenDirectory: handleOpenDirectory,
     onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
+    onCloseProject: () => { void handleCloseProject(); },
     onOpenHelp: () => centerPaneTabs.openHelpTab(),
     onOpenExport: () => openExportWithDrives(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
@@ -733,6 +964,7 @@ function App() {
     onOpenDirectory: handleOpenDirectory,
     onSaveProject: handleSaveProject,
     onSaveProjectAs: handleSaveProjectAs,
+    onCloseProject: () => { void handleCloseProject(); },
     onToggleSidebar: () => setLeftCollapsed((prev) => !prev),
     onToggleRightPanel: () => setRightCollapsed((prev) => !prev),
     onKeyboardShortcuts: () => setShowShortcutsModal(true),
@@ -1598,6 +1830,15 @@ function App() {
         current={fileManager.loadProgress().current}
         total={fileManager.loadProgress().total}
         onCancel={fileManager.cancelLoading}
+      />
+
+      <ProjectCloseModal
+        show={projectCloseModal().show}
+        title={projectCloseModal().title}
+        message={projectCloseModal().message}
+        steps={projectCloseModal().steps}
+        error={projectCloseModal().error}
+        onDismiss={projectCloseModal().error ? finishProjectCloseModal : undefined}
       />
 
       {/* Global Loading Indicator */}

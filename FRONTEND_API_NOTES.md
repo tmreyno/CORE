@@ -329,7 +329,7 @@ pm.caseName()                  // Accessor<string | null> — from FFXProject.ca
 pm.checkProjectExists(dirPath)   // Check for .cffx file
 pm.getDefaultProjectPath(dir)    // Suggest project path
 pm.createProject(path, name, caseNumber?, caseName?)  // Create new .cffx project
-pm.clearProject()                // Close current project
+pm.clearProject({ onProgress })  // Promise<ProjectCloseResult> — close current project with progress updates
 
 // === Save/Load ===
 pm.saveProject(options)          // Save to current path
@@ -357,6 +357,11 @@ pm.addRecentSearch(query)
 
 // === Processed Databases ===
 pm.updateProcessedDbIntegrity(...)  // Update processed DB integrity state
+
+// === Close Workflow ===
+// clearProject() flushes activity entries, drains queued .ffxdb writes,
+// checkpoints WAL, closes the project DB, and only then clears frontend state.
+// App.tsx surfaces these steps through ProjectCloseModal.
 
 // === Auto-save ===
 pm.setAutoSaveEnabled(enabled)
@@ -560,7 +565,10 @@ dbSync.insertVerification(verification);   // Hash verification record
 dbSync.insertReport(report);              // Report record
 dbSync.upsertSavedSearch(search);          // Saved search
 dbSync.setUiState(key, value);             // UI state persistence
+await dbSync.flushPendingWrites();         // Await queued fire-and-forget writes
 ```
+
+`flushPendingWrites()` is the close-path guardrail. `useProjectIO.clearProject()` calls it before `project_db_close` so queued write-through sync work cannot be dropped during project teardown.
 
 ### useProjectDbRead (Seed .ffxdb from .cffx)
 

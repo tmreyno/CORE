@@ -63,6 +63,8 @@ export interface CommandPaletteConfig {
   onOpenDirectory?: () => void;
   /** Unified open project handler (shows file picker for .cffx) */
   onOpenProject?: () => void;
+  /** Close the current project */
+  onCloseProject?: () => void;
   /** Open help / user guide tab */
   onOpenHelp?: () => void;
   /** Open export panel as tab */
@@ -111,6 +113,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     onOpenEvidenceCollectionList,
     onOpenDirectory,
     onOpenProject,
+    onCloseProject,
     onOpenHelp,
     onOpenExport,
     onToggleQuickActions,
@@ -166,6 +169,13 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     },
     // Project-dependent actions — only shown when a project is open
     ...(projectOpen() ? [
+    {
+      id: "close-project",
+      label: "Close Project",
+      icon: <HiOutlineXMark class="w-4 h-4" />,
+      category: "File",
+      onSelect: () => onCloseProject?.(),
+    },
     {
       id: "import-acquisitions",
       label: "Import Acquisitions",

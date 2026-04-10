@@ -67,6 +67,7 @@ components/
 |   |-- helpers.ts              # Icon/label/formatting utilities
 |   |-- types.ts                # Type definitions + NOTE_PRIORITIES
 |-- project/
+|   |-- ProjectCloseModal.tsx  # Close-project status modal (save, drain, checkpoint, close)
 |   |-- UserConfirmModal.tsx    # Profile confirmation on project open/create
 |-- report/
 |   |-- ReportWizard.tsx        # Report wizard UI
@@ -315,6 +316,7 @@ In the Acquire routed export flow, `ExportPanelComponent` should hide its own tr
 
 - \`StatusBar\` - Status bar with system stats, progress items, quick actions
 - \`ProgressModal\` - Global progress modal
+- \`ProjectCloseModal\` - Step-by-step project close status modal for save/drain/checkpoint/close
 - \`Toast\` - Toast notification system
 - \`Skeleton\` - Loading skeleton components
 
