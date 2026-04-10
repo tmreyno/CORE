@@ -129,8 +129,8 @@ pub async fn container_extract_entry_to_temp(
         use std::io::Write;
 
         // Create temp directory for extracted files
-        let temp_dir = super::portable::portable_temp_dir()
-            .join(crate::app_paths::PREVIEW_TEMP_DIR_NAME);
+        let temp_dir =
+            super::portable::portable_temp_dir().join(crate::app_paths::PREVIEW_TEMP_DIR_NAME);
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 

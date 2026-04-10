@@ -263,7 +263,7 @@ export function useHashHistory(deps: UseHashHistoryDeps) {
     const existingHistory = history.get(file.path) ?? [];
 
     // If this computed hash matches a stored hash, update the stored entry
-    const updatedHistory = existingHistory.map((entry) => {
+    const updatedHistory: HashHistoryEntry[] = existingHistory.map((entry): HashHistoryEntry => {
       if (
         entry.source === "stored" &&
         entry.algorithm.toUpperCase() === algorithm.toUpperCase() &&

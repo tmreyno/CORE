@@ -464,11 +464,7 @@ pub fn cleanup_preview_cache_blocking() -> CleanupResult {
                         Ok(meta) => {
                             bytes_freed += meta.len();
                             if let Err(e) = std::fs::remove_file(&path) {
-                                errors.push(format!(
-                                    "Failed to remove {}: {}",
-                                    path.display(),
-                                    e
-                                ));
+                                errors.push(format!("Failed to remove {}: {}", path.display(), e));
                             } else {
                                 files_removed += 1;
                             }
@@ -518,8 +514,8 @@ pub fn cleanup_preview_cache_blocking() -> CleanupResult {
 #[tauri::command]
 pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
     tauri::async_runtime::spawn_blocking(cleanup_preview_cache_blocking)
-    .await
-    .map_err(|e| format!("Cleanup task failed: {}", e))
+        .await
+        .map_err(|e| format!("Cleanup task failed: {}", e))
 }
 
 /// Write text content to a file on disk.
@@ -1799,12 +1795,16 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
                     let fname = entry.file_name().to_string_lossy().to_string();
                     if crate::app_paths::is_global_audit_log_filename(&fname) {
                         if let Ok(content) = std::fs::read(entry.path()) {
-                            let modified = entry.metadata().ok().and_then(|meta| meta.modified().ok());
+                            let modified =
+                                entry.metadata().ok().and_then(|meta| meta.modified().ok());
                             let zip_name = format!(
                                 "logs/{}",
                                 crate::app_paths::support_bundle_audit_log_name(&fname)
                             );
-                            if zip.start_file(&zip_name, zip_options_for_time(modified)).is_ok() {
+                            if zip
+                                .start_file(&zip_name, zip_options_for_time(modified))
+                                .is_ok()
+                            {
                                 let _ = zip.write_all(&content);
                                 files_added += 1;
                             }
@@ -1832,7 +1832,10 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
     let db_path = crate::app_paths::global_db_path();
     if db_path.exists() {
         if let Ok(content) = std::fs::read(&db_path) {
-            let modified = db_path.metadata().ok().and_then(|meta| meta.modified().ok());
+            let modified = db_path
+                .metadata()
+                .ok()
+                .and_then(|meta| meta.modified().ok());
             if zip
                 .start_file("app-database.db", zip_options_for_time(modified))
                 .is_ok()

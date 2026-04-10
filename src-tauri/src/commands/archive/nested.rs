@@ -177,8 +177,8 @@ pub(crate) fn get_or_create_nested_temp(
     }
 
     // Extract to temp
-    let temp_dir = crate::commands::portable::portable_temp_dir()
-        .join(crate::app_paths::NESTED_TEMP_DIR_NAME);
+    let temp_dir =
+        crate::commands::portable::portable_temp_dir().join(crate::app_paths::NESTED_TEMP_DIR_NAME);
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 

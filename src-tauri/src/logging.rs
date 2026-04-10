@@ -363,7 +363,9 @@ pub fn read_audit_logs(max_lines: usize) -> Result<Vec<String>, String> {
     let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
         .map_err(|e| format!("Failed to read log directory: {e}"))?
         .filter_map(|entry| entry.ok())
-        .filter(|entry| crate::app_paths::is_global_audit_log_filename(&entry.file_name().to_string_lossy()))
+        .filter(|entry| {
+            crate::app_paths::is_global_audit_log_filename(&entry.file_name().to_string_lossy())
+        })
         .map(|entry| entry.path())
         .collect();
 
@@ -410,10 +412,9 @@ mod tests {
     #[test]
     fn test_audit_log_dir() {
         let dir = audit_log_dir().unwrap();
-        assert!(
-            dir.to_string_lossy()
-                .contains(crate::app_paths::AUDIT_LOG_DIR_NAME)
-        );
+        assert!(dir
+            .to_string_lossy()
+            .contains(crate::app_paths::AUDIT_LOG_DIR_NAME));
         assert!(dir.to_string_lossy().contains("logs"));
     }
 
@@ -456,7 +457,9 @@ mod tests {
         let mut log_files: Vec<_> = fs::read_dir(log_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| crate::app_paths::is_global_audit_log_filename(&e.file_name().to_string_lossy()))
+            .filter(|e| {
+                crate::app_paths::is_global_audit_log_filename(&e.file_name().to_string_lossy())
+            })
             .map(|e| e.path())
             .collect();
         log_files.sort_by(|a, b| b.cmp(a));
@@ -505,7 +508,8 @@ mod tests {
         fs::write(
             log_dir.join(crate::app_paths::audit_log_filename_for_date("2025-06-01")),
             &content,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Simulate read with limit
         let max_lines = 10;

@@ -60,14 +60,11 @@ impl ProjectDatabase {
 
     fn wal_checkpoint_with_mode(&self, mode: WalCheckpointMode) -> SqlResult<(i64, i64)> {
         let conn = self.conn.lock();
-        let (busy, log_size, frames_checkpointed): (i64, i64, i64) =
-            conn.query_row(
-                &format!("PRAGMA wal_checkpoint({})", mode.pragma_name()),
-                [],
-                |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                },
-            )?;
+        let (busy, log_size, frames_checkpointed): (i64, i64, i64) = conn.query_row(
+            &format!("PRAGMA wal_checkpoint({})", mode.pragma_name()),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
         drop(conn);
 
         let blocked = busy > 0 || frames_checkpointed < log_size;

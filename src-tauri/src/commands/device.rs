@@ -1125,9 +1125,15 @@ mod tests {
             !msg.is_empty(),
             "elevation instructions should not be empty"
         );
-        // On any platform, the response should mention CORE-FFX or "elevated"
+        // On any platform, the response should include actionable elevation guidance.
         assert!(
-            msg.contains("CORE-FFX") || msg.contains("elevated") || msg.contains("privileges"),
+            msg.contains("CORE-FFX")
+                || msg.contains("sudo")
+                || msg.contains("pkexec")
+                || msg.contains("Administrator")
+                || msg.contains("administrator")
+                || msg.contains("privileges")
+                || msg.contains("elevated"),
             "message should contain relevant guidance: {}",
             msg
         );

@@ -266,6 +266,7 @@ export type HashHistoryEntry = {
   source: "computed" | "stored" | "verified";
   verified?: boolean;
   verified_against?: string;
+  comparison_source?: "stored" | "history";
 };
 
 // --- Companion Log Types ---

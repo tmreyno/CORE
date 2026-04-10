@@ -82,7 +82,14 @@ export interface BuildProjectOptions {
   evidenceCache?: {
     discoveredFiles: DiscoveredFile[];
     fileInfoMap: Map<string, ContainerInfo>;
-    fileHashMap: Map<string, { algorithm: string; hash: string; verified?: boolean | null }>;
+    fileHashMap: Map<string, {
+      algorithm: string;
+      hash: string;
+      verified?: boolean | null;
+      computedAt?: string;
+      verifiedAgainst?: string;
+      comparisonSource?: "stored" | "history";
+    }>;
   };
   /** Processed databases cache with AXIOM data */
   processedDbCache?: {

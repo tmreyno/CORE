@@ -85,7 +85,10 @@ describe("createSearchHistoryManager", () => {
 
   beforeEach(() => {
     markModified = vi.fn<() => void>();
-    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
+    logger = {
+      logActivity: vi.fn<ActivityLogger["logActivity"]>(),
+      flushActivity: vi.fn<ActivityLogger["flushActivity"]>(),
+    };
   });
 
   it("adds a recent search to the project", () => {
@@ -197,7 +200,10 @@ describe("createProcessedDbManager", () => {
 
   beforeEach(() => {
     markModified = vi.fn<() => void>();
-    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
+    logger = {
+      logActivity: vi.fn<ActivityLogger["logActivity"]>(),
+      flushActivity: vi.fn<ActivityLogger["flushActivity"]>(),
+    };
   });
 
   it("updates processed database integrity", () => {
@@ -288,7 +294,10 @@ describe("createProjectLocationsManager", () => {
 
   beforeEach(() => {
     markModified = vi.fn<() => void>();
-    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
+    logger = {
+      logActivity: vi.fn<ActivityLogger["logActivity"]>(),
+      flushActivity: vi.fn<ActivityLogger["flushActivity"]>(),
+    };
   });
 
   it("updates project locations", () => {

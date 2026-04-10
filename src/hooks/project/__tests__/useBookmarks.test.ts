@@ -78,7 +78,10 @@ describe("createBookmarkManager", () => {
 
   beforeEach(() => {
     markModified = vi.fn<() => void>();
-    logger = { logActivity: vi.fn<ActivityLogger["logActivity"]>() };
+    logger = {
+      logActivity: vi.fn<ActivityLogger["logActivity"]>(),
+      flushActivity: vi.fn<ActivityLogger["flushActivity"]>(),
+    };
   });
 
   // -------------------------------------------------------------------------
