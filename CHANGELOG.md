@@ -4,6 +4,13 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.102] - 2026-04-10
+
+### Changed
+- Project close workflow now drains pending writes, checkpoints the project database WAL, and shows step-by-step close progress in the desktop UI
+- Hash history state now preserves comparison metadata and distinguishes stored verification from repeat history matches
+- Repository maintenance pruned archived docs and synced the release lockfile metadata
+
 ## [0.1.101] - 2026-04-10
 
 ### Changed
