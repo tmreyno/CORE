@@ -311,13 +311,15 @@ fn checked_chunk_address_capacity(chunk_count: u64) -> Result<usize, Ad1Error> {
 }
 
 fn checked_decompressed_capacity(size: u64) -> Result<usize, Ad1Error> {
-    usize::try_from(size)
-        .map_err(|_| Ad1Error::InvalidFormat("AD1 decompressed size exceeds memory limits".to_string()))
+    usize::try_from(size).map_err(|_| {
+        Ad1Error::InvalidFormat("AD1 decompressed size exceeds memory limits".to_string())
+    })
 }
 
 fn checked_chunk_span(start: u64, end: u64) -> Result<u64, Ad1Error> {
-    end.checked_sub(start)
-        .ok_or_else(|| Ad1Error::InvalidFormat("AD1 zlib chunk addresses are out of order".to_string()))
+    end.checked_sub(start).ok_or_else(|| {
+        Ad1Error::InvalidFormat("AD1 zlib chunk addresses are out of order".to_string())
+    })
 }
 
 /// Get metadata for a specific item by address (on-demand loading)
@@ -1040,7 +1042,9 @@ mod tests {
         assert_eq!(checked_decompressed_capacity(u64::MAX).unwrap(), usize::MAX);
 
         #[cfg(not(target_pointer_width = "64"))]
-        assert!(checked_decompressed_capacity((usize::MAX as u64).checked_add(1).unwrap()).is_err());
+        assert!(
+            checked_decompressed_capacity((usize::MAX as u64).checked_add(1).unwrap()).is_err()
+        );
     }
 
     #[test]

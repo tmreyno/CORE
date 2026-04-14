@@ -542,27 +542,32 @@ impl SessionV2 {
         );
 
         let first_child_addr = self.read_u64_at(
-            checked_ad1_offset(offset, ITEM_FIRST_CHILD_ADDR)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Item first-child offset overflow".to_string()))?,
+            checked_ad1_offset(offset, ITEM_FIRST_CHILD_ADDR).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Item first-child offset overflow".to_string())
+            })?,
         )?;
         let first_metadata_addr = self.read_u64_at(
-            checked_ad1_offset(offset, ITEM_FIRST_METADATA_ADDR)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Item first-metadata offset overflow".to_string()))?,
+            checked_ad1_offset(offset, ITEM_FIRST_METADATA_ADDR).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Item first-metadata offset overflow".to_string())
+            })?,
         )?;
         let zlib_metadata_addr = self.read_u64_at(
-            checked_ad1_offset(offset, ITEM_ZLIB_METADATA_ADDR)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Item zlib-metadata offset overflow".to_string()))?,
+            checked_ad1_offset(offset, ITEM_ZLIB_METADATA_ADDR).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Item zlib-metadata offset overflow".to_string())
+            })?,
         )?;
         let decompressed_size = self.read_u64_at(
-            checked_ad1_offset(offset, ITEM_DECOMPRESSED_SIZE)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Item decompressed-size offset overflow".to_string()))?,
+            checked_ad1_offset(offset, ITEM_DECOMPRESSED_SIZE).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Item decompressed-size offset overflow".to_string())
+            })?,
         )?;
-        let item_type = self.read_u32_at(
-            checked_ad1_offset(offset, ITEM_TYPE)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Item type offset overflow".to_string()))?,
-        )?;
-        let name_length_offset = checked_ad1_offset(offset, ITEM_NAME_LENGTH)
-            .ok_or_else(|| Ad1Error::InvalidFormat("Item name-length offset overflow".to_string()))?;
+        let item_type = self
+            .read_u32_at(checked_ad1_offset(offset, ITEM_TYPE).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Item type offset overflow".to_string())
+            })?)?;
+        let name_length_offset = checked_ad1_offset(offset, ITEM_NAME_LENGTH).ok_or_else(|| {
+            Ad1Error::InvalidFormat("Item name-length offset overflow".to_string())
+        })?;
         let name_length = self.read_u32_at(name_length_offset)?;
         let name_offset = checked_ad1_offset(offset, ITEM_NAME)
             .ok_or_else(|| Ad1Error::InvalidFormat("Item name offset overflow".to_string()))?;
@@ -581,7 +586,9 @@ impl SessionV2 {
 
         // Read parent folder address
         let parent_folder_offset = checked_ad1_offset(name_offset, u64::from(name_length))
-            .ok_or_else(|| Ad1Error::InvalidFormat("Item parent-folder offset overflow".to_string()))?;
+            .ok_or_else(|| {
+                Ad1Error::InvalidFormat("Item parent-folder offset overflow".to_string())
+            })?;
         let parent_folder = self.read_u64_at(parent_folder_offset)?;
 
         Ok(ItemHeader {
@@ -636,21 +643,23 @@ impl SessionV2 {
         }
 
         let next_metadata_addr = self.read_u64_at(
-            checked_ad1_offset(offset, METADATA_NEXT_ADDR)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata next-address offset overflow".to_string()))?,
+            checked_ad1_offset(offset, METADATA_NEXT_ADDR).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Metadata next-address offset overflow".to_string())
+            })?,
         )?;
         let category = self.read_u32_at(
-            checked_ad1_offset(offset, METADATA_CATEGORY)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata category offset overflow".to_string()))?,
+            checked_ad1_offset(offset, METADATA_CATEGORY).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Metadata category offset overflow".to_string())
+            })?,
         )?;
-        let key = self.read_u32_at(
-            checked_ad1_offset(offset, METADATA_KEY)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata key offset overflow".to_string()))?,
-        )?;
-        let data_length = self.read_u32_at(
-            checked_ad1_offset(offset, METADATA_DATA_LENGTH)
-                .ok_or_else(|| Ad1Error::InvalidFormat("Metadata length offset overflow".to_string()))?,
-        )?;
+        let key =
+            self.read_u32_at(checked_ad1_offset(offset, METADATA_KEY).ok_or_else(|| {
+                Ad1Error::InvalidFormat("Metadata key offset overflow".to_string())
+            })?)?;
+        let data_length =
+            self.read_u32_at(checked_ad1_offset(offset, METADATA_DATA_LENGTH).ok_or_else(
+                || Ad1Error::InvalidFormat("Metadata length offset overflow".to_string()),
+            )?)?;
         let data_offset = checked_ad1_offset(offset, METADATA_DATA)
             .ok_or_else(|| Ad1Error::InvalidFormat("Metadata data offset overflow".to_string()))?;
 

@@ -300,10 +300,9 @@ impl Read for NtfsIoWrapper {
             return Ok(0);
         }
 
-        let absolute_offset = self
-            .offset
-            .checked_add(self.position)
-            .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, "NTFS read offset overflow"))?;
+        let absolute_offset = self.offset.checked_add(self.position).ok_or_else(|| {
+            std::io::Error::new(ErrorKind::InvalidInput, "NTFS read offset overflow")
+        })?;
         let available = checked_available_bytes(self.size, self.position).ok_or_else(|| {
             std::io::Error::new(ErrorKind::InvalidInput, "NTFS read position exceeded size")
         })?;
@@ -315,7 +314,9 @@ impl Read for NtfsIoWrapper {
         self.position = self
             .position
             .checked_add(bytes_read as u64)
-            .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, "NTFS read position overflow"))?;
+            .ok_or_else(|| {
+                std::io::Error::new(ErrorKind::InvalidInput, "NTFS read position overflow")
+            })?;
         Ok(bytes_read)
     }
 }
@@ -413,8 +414,8 @@ fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::traits::{BlockDevice, BlockReader, SeekableBlockDevice};
+    use super::*;
     use ffx_errors::ContainerError;
     use std::io::Cursor;
 
@@ -447,7 +448,9 @@ mod tests {
     impl SeekableBlockDevice for MockBlockDevice {
         fn reader_at(&self, offset: u64) -> Box<dyn BlockReader> {
             let start = usize::try_from(offset).unwrap_or(self.data.len());
-            Box::new(Cursor::new(self.data[start.min(self.data.len())..].to_vec()))
+            Box::new(Cursor::new(
+                self.data[start.min(self.data.len())..].to_vec(),
+            ))
         }
     }
 
@@ -488,7 +491,9 @@ mod tests {
 
     #[test]
     fn test_ntfs_driver_new_rejects_short_boot_sector() {
-        let device = Box::new(MockBlockDevice { data: vec![0u8; 16] });
+        let device = Box::new(MockBlockDevice {
+            data: vec![0u8; 16],
+        });
 
         let err = match NtfsDriver::new(device, 0, 16) {
             Ok(_) => panic!("short boot sector should fail"),

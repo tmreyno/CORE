@@ -71,9 +71,11 @@ impl FatDriver {
             && &boot_sector[82..90] == b"FAT32   "
         {
             FilesystemType::Fat32
-        } else if boot_sector.len() >= FAT12_16_SIGNATURE_END && &boot_sector[54..62] == b"FAT16   " {
+        } else if boot_sector.len() >= FAT12_16_SIGNATURE_END && &boot_sector[54..62] == b"FAT16   "
+        {
             FilesystemType::Fat16
-        } else if boot_sector.len() >= FAT12_16_SIGNATURE_END && &boot_sector[54..62] == b"FAT12   " {
+        } else if boot_sector.len() >= FAT12_16_SIGNATURE_END && &boot_sector[54..62] == b"FAT12   "
+        {
             FilesystemType::Fat12
         } else if boot_sector.len() < FAT12_16_SIGNATURE_END {
             return Err(VfsError::IoError(format!(
@@ -311,8 +313,10 @@ struct FatIoWrapper {
 
 impl Read for FatIoWrapper {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let absolute_offset = checked_fat_absolute_offset(self.offset, self.position)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "FAT read offset overflow"))?;
+        let absolute_offset =
+            checked_fat_absolute_offset(self.offset, self.position).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "FAT read offset overflow")
+            })?;
         let bytes_read = self
             .device
             .read_at(absolute_offset, buf)
@@ -466,7 +470,13 @@ mod tests {
 
     #[test]
     fn test_fat_new_rejects_short_boot_sector() {
-        let result = FatDriver::new(Box::new(TestDevice { data: vec![0u8; 13] }), 0, 13);
+        let result = FatDriver::new(
+            Box::new(TestDevice {
+                data: vec![0u8; 13],
+            }),
+            0,
+            13,
+        );
         assert!(matches!(result, Err(VfsError::IoError(message)) if message.contains("too short")));
     }
 
@@ -479,7 +489,9 @@ mod tests {
             0,
             64,
         );
-        assert!(matches!(result, Err(VfsError::IoError(message)) if message.contains("FAT32 signature")));
+        assert!(
+            matches!(result, Err(VfsError::IoError(message)) if message.contains("FAT32 signature"))
+        );
     }
 
     #[test]

@@ -362,7 +362,10 @@ FORMATTING:
                 } else {
                     format!("status {}: {}", status, body.trim())
                 };
-                return Err(ReportError::AiError(format!("Ollama API error: {}", detail)));
+                return Err(ReportError::AiError(format!(
+                    "Ollama API error: {}",
+                    detail
+                )));
             }
 
             let body: OllamaGenerateResponse = response
@@ -379,8 +382,8 @@ FORMATTING:
 
             Ok(text)
         }
-            .await
-            .map_err(|e| ReportError::AiError(e.to_string()));
+        .await
+        .map_err(|e| ReportError::AiError(e.to_string()));
 
         // Audit: Log the response
         log_ai_response(
@@ -400,11 +403,7 @@ FORMATTING:
         api_key: Option<&str>,
         prompt: &str,
     ) -> ReportResult<String> {
-        use async_openai::{
-            config::OpenAIConfig,
-            types::responses::CreateResponseArgs,
-            Client,
-        };
+        use async_openai::{config::OpenAIConfig, types::responses::CreateResponseArgs, Client};
 
         // Security: Log usage (but NEVER log the API key!)
         log_ai_interaction("openai", model, "narrative", prompt.len());
@@ -473,11 +472,7 @@ FORMATTING:
         api_key: Option<&str>,
         prompt: &str,
     ) -> ReportResult<String> {
-        use async_openai::{
-            config::AzureConfig,
-            types::responses::CreateResponseArgs,
-            Client,
-        };
+        use async_openai::{config::AzureConfig, types::responses::CreateResponseArgs, Client};
 
         // Security: Log usage (but NEVER log the API key!)
         log_ai_interaction("azure_openai", deployment, "narrative", prompt.len());

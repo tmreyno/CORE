@@ -315,7 +315,9 @@ impl LibarchiveHandler {
             let raw_path = entry.pathname().unwrap_or_default();
             // Normalize archive path: forward slashes, strip leading/trailing slashes
             let normalized_path = raw_path.replace('\\', "/");
-            let normalized_path = normalized_path.trim_start_matches('/').trim_end_matches('/');
+            let normalized_path = normalized_path
+                .trim_start_matches('/')
+                .trim_end_matches('/');
 
             if normalized_path == search_path {
                 if entry.file_type() == FileType::Directory {

@@ -958,8 +958,10 @@ impl HfsPlusDriver {
             return Ok(Vec::new());
         }
 
-        let actual_size = bounded_hfsplus_read_len(fork.logical_size, offset, size)
-            .ok_or_else(|| VfsError::IoError("HFS+ fork read offset exceeded logical size".into()))?;
+        let actual_size =
+            bounded_hfsplus_read_len(fork.logical_size, offset, size).ok_or_else(|| {
+                VfsError::IoError("HFS+ fork read offset exceeded logical size".into())
+            })?;
         let mut result = vec![0u8; actual_size];
         let mut bytes_read = 0usize;
         let mut current_offset = offset;
@@ -1002,9 +1004,10 @@ impl HfsPlusDriver {
                 )?;
 
                 // How much to read from this extent
-                let available_in_extent = extent_size.checked_sub(extent_offset).ok_or_else(|| {
-                    VfsError::IoError("HFS+ extent offset exceeded extent size".into())
-                })?;
+                let available_in_extent =
+                    extent_size.checked_sub(extent_offset).ok_or_else(|| {
+                        VfsError::IoError("HFS+ extent offset exceeded extent size".into())
+                    })?;
                 let to_read = (actual_size - bytes_read).min(available_in_extent as usize);
 
                 self.device

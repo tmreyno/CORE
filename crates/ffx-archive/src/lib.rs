@@ -932,8 +932,7 @@ pub fn read_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>
 
 /// Read a single entry from a ZIP archive using the `zip` crate.
 fn read_zip_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
-    let file =
-        File::open(archive_path).map_err(|e| format!("Failed to open ZIP: {}", e))?;
+    let file = File::open(archive_path).map_err(|e| format!("Failed to open ZIP: {}", e))?;
     let mut archive =
         ::zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP: {}", e))?;
 
@@ -950,9 +949,7 @@ fn read_zip_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>
                 })
                 .unwrap_or(false)
         })
-        .ok_or_else(|| {
-            ContainerError::from(format!("Entry not found in ZIP: {}", entry_path))
-        })?;
+        .ok_or_else(|| ContainerError::from(format!("Entry not found in ZIP: {}", entry_path)))?;
 
     let mut entry = archive
         .by_index(entry_index)
@@ -977,14 +974,10 @@ fn checked_zip_entry_buffer(size: u64) -> Result<Vec<u8>, ContainerError> {
 }
 
 /// Read a single entry from a 7z archive using sevenz-rust.
-fn read_7z_entry_native(
-    archive_path: &str,
-    entry_path: &str,
-) -> Result<Vec<u8>, ContainerError> {
+fn read_7z_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
     use sevenz_rust::{Password, SevenZReader};
 
-    let file =
-        File::open(archive_path).map_err(|e| format!("Failed to open 7z: {}", e))?;
+    let file = File::open(archive_path).map_err(|e| format!("Failed to open 7z: {}", e))?;
     let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
 
     let mut archive = SevenZReader::new(file, file_size, Password::empty())
@@ -1039,8 +1032,7 @@ fn read_tar_entry_native(
     entry_path: &str,
     compression: &str,
 ) -> Result<Vec<u8>, ContainerError> {
-    let file =
-        File::open(archive_path).map_err(|e| format!("Failed to open TAR: {}", e))?;
+    let file = File::open(archive_path).map_err(|e| format!("Failed to open TAR: {}", e))?;
     let reader = BufReader::new(file);
 
     match compression {
@@ -1077,8 +1069,7 @@ fn read_from_tar<R: Read>(reader: R, entry_path: &str) -> Result<Vec<u8>, Contai
         .entries()
         .map_err(|e| format!("Failed to list TAR entries: {}", e))?
     {
-        let mut entry =
-            entry_result.map_err(|e| format!("Failed to read TAR entry: {}", e))?;
+        let mut entry = entry_result.map_err(|e| format!("Failed to read TAR entry: {}", e))?;
         let path = entry
             .path()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -1110,8 +1101,8 @@ fn read_compressed_stream(
     archive_path: &str,
     compression: &str,
 ) -> Result<Vec<u8>, ContainerError> {
-    let file = File::open(archive_path)
-        .map_err(|e| format!("Failed to open {}: {}", archive_path, e))?;
+    let file =
+        File::open(archive_path).map_err(|e| format!("Failed to open {}: {}", archive_path, e))?;
     let reader = BufReader::new(file);
     let mut data = Vec::new();
 

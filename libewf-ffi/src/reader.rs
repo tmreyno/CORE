@@ -916,18 +916,14 @@ impl EwfReader {
     ///
     /// # Returns
     /// The computed hash as a lowercase hex string.
-    pub fn verify_media_hash<F>(
-        &self,
-        algorithm: &str,
-        mut progress_callback: F,
-    ) -> Result<String>
+    pub fn verify_media_hash<F>(&self, algorithm: &str, mut progress_callback: F) -> Result<String>
     where
         F: FnMut(u64, u64),
     {
+        use digest::Digest;
         use md5::Md5;
         use sha1::Sha1;
         use sha2::Sha256;
-        use digest::Digest;
 
         let total = self.media_size;
         if total == 0 {

@@ -70,7 +70,10 @@ fn push_block(blocks: &mut Vec<TextBlock>, current_lines: &mut Vec<String>) {
     }
 
     let lines = std::mem::take(current_lines);
-    let bullet_items: Vec<String> = lines.iter().filter_map(|line| strip_list_prefix(line)).collect();
+    let bullet_items: Vec<String> = lines
+        .iter()
+        .filter_map(|line| strip_list_prefix(line))
+        .collect();
 
     if bullet_items.len() == lines.len() {
         blocks.push(TextBlock::BulletList(bullet_items));
@@ -93,7 +96,11 @@ fn strip_list_prefix(line: &str) -> Option<String> {
         end += 1;
     }
 
-    if end > 0 && end + 1 < bytes.len() && (bytes[end] == b'.' || bytes[end] == b')') && bytes[end + 1] == b' ' {
+    if end > 0
+        && end + 1 < bytes.len()
+        && (bytes[end] == b'.' || bytes[end] == b')')
+        && bytes[end + 1] == b' '
+    {
         return Some(line[end + 2..].trim().to_string());
     }
 

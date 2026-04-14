@@ -10,9 +10,9 @@ use super::{with_project_db, with_project_db_result};
 use crate::project::FFXProject;
 use crate::project_db::{
     DbCocItem, DbCollectedItem, DbEvidenceCollection, DbEvidenceDataAlternative,
-    EvidenceCollectionPackageImportSummary,
-    ImportedEvidenceCollectionPackage, ImportedEvidenceCollectionPackageCocItem,
-    ImportedEvidenceCollectionPackageCollection, ProjectDatabase,
+    EvidenceCollectionPackageImportSummary, ImportedEvidenceCollectionPackage,
+    ImportedEvidenceCollectionPackageCocItem, ImportedEvidenceCollectionPackageCollection,
+    ProjectDatabase,
 };
 use core_types::evidence_collection_contract::EVIDENCE_COLLECTION_PACKAGE_VERSION;
 use core_types::mobile::{
@@ -28,13 +28,16 @@ where
     TSrc: Serialize,
     TDst: DeserializeOwned,
 {
-    let json = serde_json::to_value(value)
-        .map_err(|e| format!("Failed to serialize {}: {}", label, e))?;
+    let json =
+        serde_json::to_value(value).map_err(|e| format!("Failed to serialize {}: {}", label, e))?;
     serde_json::from_value(json)
         .map_err(|e| format!("Failed to convert {} to shared type: {}", label, e))
 }
 
-fn fallback_mobile_project(db: &ProjectDatabase, collection: &DbEvidenceCollection) -> MobileProject {
+fn fallback_mobile_project(
+    db: &ProjectDatabase,
+    collection: &DbEvidenceCollection,
+) -> MobileProject {
     let file_stem = db
         .path()
         .file_stem()
@@ -217,10 +220,18 @@ fn build_evidence_collection_package(
 ) -> Result<MobileEvidenceCollectionPackage, String> {
     let collection = db
         .get_evidence_collection_by_id(collection_id)
-        .map_err(|e| format!("Failed to load evidence collection {}: {}", collection_id, e))?;
-    let items = db
-        .get_collected_items(collection_id)
-        .map_err(|e| format!("Failed to load collected items for {}: {}", collection_id, e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to load evidence collection {}: {}",
+                collection_id, e
+            )
+        })?;
+    let items = db.get_collected_items(collection_id).map_err(|e| {
+        format!(
+            "Failed to load collected items for {}: {}",
+            collection_id, e
+        )
+    })?;
 
     Ok(MobileEvidenceCollectionPackage {
         export_version: EVIDENCE_COLLECTION_PACKAGE_VERSION.to_string(),
@@ -679,8 +690,14 @@ mod tests {
             .iter()
             .find(|item| item.get("itemNumber").and_then(Value::as_str) == Some("ITEM-002"))
             .expect("dropped-link item");
-        assert_eq!(dropped_item.get("cocItemId").map(Value::is_null), Some(true));
-        assert_eq!(dropped_item.get("evidenceFileId").map(Value::is_null), Some(true));
+        assert_eq!(
+            dropped_item.get("cocItemId").map(Value::is_null),
+            Some(true)
+        );
+        assert_eq!(
+            dropped_item.get("evidenceFileId").map(Value::is_null),
+            Some(true)
+        );
 
         let coc_json = &json["cocItems"][0];
         assert!(coc_json.get("item").is_none());
@@ -692,7 +709,9 @@ mod tests {
         assert_eq!(coc_json["amendments"].as_array().map(Vec::len), Some(1));
         assert_eq!(coc_json["auditLog"].as_array().map(Vec::len), Some(1));
         assert_eq!(
-            coc_json["auditLog"][0].get("action").and_then(Value::as_str),
+            coc_json["auditLog"][0]
+                .get("action")
+                .and_then(Value::as_str),
             Some("imported")
         );
     }

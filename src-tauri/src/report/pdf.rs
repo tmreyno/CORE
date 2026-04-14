@@ -471,7 +471,9 @@ impl PdfGenerator {
 
             table
                 .row()
-                .element(Text::new(record.timestamp.format("%Y-%m-%d %H:%M").to_string()))
+                .element(Text::new(
+                    record.timestamp.format("%Y-%m-%d %H:%M").to_string(),
+                ))
                 .element(Text::new(&record.evidence_id))
                 .element(Text::new(&record.released_by))
                 .element(Text::new(&record.received_by))

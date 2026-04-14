@@ -186,7 +186,10 @@ fn checked_seek_target(base: u64, delta: i64) -> std::io::Result<u64> {
 
 fn checked_segment_end(cumulative: u64, size: u64) -> std::io::Result<u64> {
     cumulative.checked_add(size).ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "7z segment bounds overflow")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "7z segment bounds overflow",
+        )
     })
 }
 

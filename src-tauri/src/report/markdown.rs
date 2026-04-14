@@ -798,10 +798,7 @@ impl MarkdownGenerator {
 
             if let Some(ref signed_date) = signature.signed_date {
                 if !signed_date.trim().is_empty() {
-                    md.push_str(&format!(
-                        "**Signed:** {}  \n",
-                        Self::escape_md(signed_date)
-                    ));
+                    md.push_str(&format!("**Signed:** {}  \n", Self::escape_md(signed_date)));
                 }
             }
 

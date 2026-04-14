@@ -331,12 +331,13 @@ impl<R: Read + Seek> Aff4Reader<R> {
                 stream_urn
             ))
         })?;
-        let chunk_in_bevy = usize::try_from(global_chunk_index % chunks_per_segment).map_err(|_| {
-            Aff4Error::InvalidContainer(format!(
-                "Stream {} resolves to a chunk index that exceeds usize",
-                stream_urn
-            ))
-        })?;
+        let chunk_in_bevy =
+            usize::try_from(global_chunk_index % chunks_per_segment).map_err(|_| {
+                Aff4Error::InvalidContainer(format!(
+                    "Stream {} resolves to a chunk index that exceeds usize",
+                    stream_urn
+                ))
+            })?;
         let offset_in_chunk = (offset % chunk_size) as usize;
 
         // Load bevy index
@@ -618,7 +619,10 @@ fn clamp_read_len(requested: usize, available: u64) -> usize {
     requested.min(usize::try_from(available).unwrap_or(usize::MAX))
 }
 
-fn validate_stream_layout(stream_urn: &str, stream_info: &Aff4StreamInfo) -> Aff4Result<(u64, u64)> {
+fn validate_stream_layout(
+    stream_urn: &str,
+    stream_info: &Aff4StreamInfo,
+) -> Aff4Result<(u64, u64)> {
     let chunk_size = u64::from(stream_info.chunk_size);
     if chunk_size == 0 {
         return Err(Aff4Error::InvalidContainer(format!(
@@ -646,15 +650,16 @@ fn checked_bevy_data_range(
         offset: entry.offset,
         reason: "chunk offset exceeds addressable range".to_string(),
     })?;
-    let end = start
-        .checked_add(entry.length as usize)
-        .ok_or_else(|| Aff4Error::InvalidBevyIndex {
-            offset: entry.offset,
-            reason: format!(
-                "chunk range overflows usize for offset {} and length {}",
-                entry.offset, entry.length
-            ),
-        })?;
+    let end =
+        start
+            .checked_add(entry.length as usize)
+            .ok_or_else(|| Aff4Error::InvalidBevyIndex {
+                offset: entry.offset,
+                reason: format!(
+                    "chunk range overflows usize for offset {} and length {}",
+                    entry.offset, entry.length
+                ),
+            })?;
 
     if end > data_len {
         return Err(Aff4Error::InvalidBevyIndex {
@@ -686,12 +691,11 @@ fn parse_bevy_index(data: &[u8]) -> Aff4Result<Vec<BevyIndexEntry>> {
     let mut entries = Vec::with_capacity(data.len() / BEVY_INDEX_ENTRY_SIZE);
     for (index, chunk) in chunks.by_ref().enumerate() {
         let start = (index * BEVY_INDEX_ENTRY_SIZE) as u64;
-        let chunk: [u8; BEVY_INDEX_ENTRY_SIZE] = chunk.try_into().map_err(|_| {
-            Aff4Error::InvalidBevyIndex {
+        let chunk: [u8; BEVY_INDEX_ENTRY_SIZE] =
+            chunk.try_into().map_err(|_| Aff4Error::InvalidBevyIndex {
                 offset: start,
                 reason: format!("index entry at byte {} has invalid length", start),
-            }
-        })?;
+            })?;
         entries.push(BevyIndexEntry::from_bytes(&chunk));
     }
 
@@ -754,7 +758,9 @@ mod tests {
         stream.chunk_size = 0;
 
         let err = validate_stream_layout(&stream.urn, &stream).unwrap_err();
-        assert!(matches!(err, Aff4Error::InvalidContainer(message) if message.contains("chunkSize 0")));
+        assert!(
+            matches!(err, Aff4Error::InvalidContainer(message) if message.contains("chunkSize 0"))
+        );
     }
 
     #[test]

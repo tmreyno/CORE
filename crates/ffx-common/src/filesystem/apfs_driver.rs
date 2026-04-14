@@ -84,8 +84,7 @@ fn bounded_apfs_read_len(start: u64, end: u64) -> Result<usize, VfsError> {
         .checked_sub(start)
         .ok_or_else(|| VfsError::Internal("APFS read range underflow".into()))?;
 
-    usize::try_from(length)
-        .map_err(|_| VfsError::Internal("APFS read range too large".into()))
+    usize::try_from(length).map_err(|_| VfsError::Internal("APFS read range too large".into()))
 }
 
 fn checked_apfs_extent_end(logical_offset: u64, extent_length: u64) -> Result<u64, VfsError> {
@@ -101,9 +100,13 @@ fn checked_apfs_physical_offset(
     read_start_in_extent: u64,
 ) -> Result<u64, VfsError> {
     base_offset
-        .checked_add(extent_phys_block.checked_mul(block_size as u64).ok_or_else(|| {
-            VfsError::Internal("APFS extent physical block offset overflow".into())
-        })?)
+        .checked_add(
+            extent_phys_block
+                .checked_mul(block_size as u64)
+                .ok_or_else(|| {
+                    VfsError::Internal("APFS extent physical block offset overflow".into())
+                })?,
+        )
         .and_then(|offset| offset.checked_add(read_start_in_extent))
         .ok_or_else(|| VfsError::Internal("APFS physical read offset overflow".into()))
 }
@@ -820,11 +823,9 @@ impl ApfsDriver {
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
             if is_leaf {
-                let Some(val_offset) = checked_value_offset(
-                    self.block_size as usize,
-                    kvloc.val_offset,
-                    kvloc.val_len,
-                ) else {
+                let Some(val_offset) =
+                    checked_value_offset(self.block_size as usize, kvloc.val_offset, kvloc.val_len)
+                else {
                     continue;
                 };
 
@@ -836,11 +837,9 @@ impl ApfsDriver {
                 }
             } else {
                 // Index node - traverse children that might contain our parent
-                let Some(val_offset) = checked_value_offset(
-                    self.block_size as usize,
-                    kvloc.val_offset,
-                    kvloc.val_len,
-                ) else {
+                let Some(val_offset) =
+                    checked_value_offset(self.block_size as usize, kvloc.val_offset, kvloc.val_len)
+                else {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
@@ -931,11 +930,9 @@ impl ApfsDriver {
                     return self.parse_inode_value(&node_buf[val_offset..]);
                 }
             } else {
-                let Some(val_offset) = checked_value_offset(
-                    self.block_size as usize,
-                    kvloc.val_offset,
-                    kvloc.val_len,
-                ) else {
+                let Some(val_offset) =
+                    checked_value_offset(self.block_size as usize, kvloc.val_offset, kvloc.val_len)
+                else {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
@@ -1033,11 +1030,9 @@ impl ApfsDriver {
                     }
                 }
             } else {
-                let Some(val_offset) = checked_value_offset(
-                    self.block_size as usize,
-                    kvloc.val_offset,
-                    kvloc.val_len,
-                ) else {
+                let Some(val_offset) =
+                    checked_value_offset(self.block_size as usize, kvloc.val_offset, kvloc.val_len)
+                else {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
@@ -1211,16 +1206,17 @@ impl FilesystemDriver for ApfsDriver {
             let read_start_in_extent = offset.saturating_sub(extent_logical_offset);
             let read_end_in_extent = std::cmp::min(
                 extent_length,
-                read_end.checked_sub(extent_logical_offset).ok_or_else(|| {
-                    VfsError::Internal("APFS extent overlap underflow".into())
-                })?,
+                read_end
+                    .checked_sub(extent_logical_offset)
+                    .ok_or_else(|| VfsError::Internal("APFS extent overlap underflow".into()))?,
             );
 
             if read_end_in_extent <= read_start_in_extent {
                 continue;
             }
 
-            let bytes_from_extent = bounded_apfs_read_len(read_start_in_extent, read_end_in_extent)?;
+            let bytes_from_extent =
+                bounded_apfs_read_len(read_start_in_extent, read_end_in_extent)?;
             if bytes_from_extent == 0 {
                 continue;
             }
@@ -1349,11 +1345,9 @@ impl ApfsDriver {
                 }
             } else {
                 // Internal node - recurse into child
-                let Some(val_offset) = checked_value_offset(
-                    self.block_size as usize,
-                    kvloc.val_offset,
-                    kvloc.val_len,
-                ) else {
+                let Some(val_offset) =
+                    checked_value_offset(self.block_size as usize, kvloc.val_offset, kvloc.val_len)
+                else {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
@@ -1415,8 +1409,8 @@ mod tests {
 
     #[test]
     fn test_bounded_apfs_read_len_rejects_underflow() {
-        let err = bounded_apfs_read_len(10, 9)
-            .expect_err("APFS read range underflow should be rejected");
+        let err =
+            bounded_apfs_read_len(10, 9).expect_err("APFS read range underflow should be rejected");
 
         assert!(matches!(err, VfsError::Internal(_)));
     }

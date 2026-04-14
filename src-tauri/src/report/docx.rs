@@ -560,8 +560,13 @@ impl DocxGenerator {
     fn add_notes_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Additional Notes");
 
-        if let Some(notes) = report.notes.as_deref().filter(|notes| !notes.trim().is_empty()) {
-            self.add_rich_text(docx, notes).add_paragraph(Paragraph::new())
+        if let Some(notes) = report
+            .notes
+            .as_deref()
+            .filter(|notes| !notes.trim().is_empty())
+        {
+            self.add_rich_text(docx, notes)
+                .add_paragraph(Paragraph::new())
         } else {
             docx
         }

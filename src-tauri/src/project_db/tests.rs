@@ -643,7 +643,10 @@ fn test_import_evidence_collection_package_remaps_links_and_preserves_valid_refe
     assert_ne!(imported_coc.id, "coc-src-1");
     assert_eq!(imported_coc.case_number, "CASE-IMPORT-1");
     assert_eq!(imported_coc.status, "locked");
-    assert_eq!(imported_coc.evidence_file_id.as_deref(), Some("ev-existing"));
+    assert_eq!(
+        imported_coc.evidence_file_id.as_deref(),
+        Some("ev-existing")
+    );
 
     let items = db.get_collected_items(&imported_collection.id).unwrap();
     assert_eq!(items.len(), 2);
@@ -653,8 +656,14 @@ fn test_import_evidence_collection_package_remaps_links_and_preserves_valid_refe
         .find(|item| item.item_number == "ITEM-001")
         .expect("expected preserved linked item");
     assert_ne!(preserved_item.id, "item-src-1");
-    assert_eq!(preserved_item.coc_item_id.as_deref(), Some(imported_coc.id.as_str()));
-    assert_eq!(preserved_item.evidence_file_id.as_deref(), Some("ev-existing"));
+    assert_eq!(
+        preserved_item.coc_item_id.as_deref(),
+        Some(imported_coc.id.as_str())
+    );
+    assert_eq!(
+        preserved_item.evidence_file_id.as_deref(),
+        Some("ev-existing")
+    );
 
     let dropped_item = items
         .iter()
@@ -678,6 +687,9 @@ fn test_import_evidence_collection_package_remaps_links_and_preserves_valid_refe
 
     let audit_log = db.get_coc_audit_log(Some(&imported_coc.id)).unwrap();
     assert_eq!(audit_log.len(), 1);
-    assert_eq!(audit_log[0].coc_item_id.as_deref(), Some(imported_coc.id.as_str()));
+    assert_eq!(
+        audit_log[0].coc_item_id.as_deref(),
+        Some(imported_coc.id.as_str())
+    );
     assert_eq!(audit_log[0].action, "imported");
 }

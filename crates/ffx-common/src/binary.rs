@@ -179,9 +179,8 @@ pub fn read_bytes(file: &mut File, length: usize) -> Result<Vec<u8>, ContainerEr
 
 fn checked_exact_buffer(length: usize, context: &str) -> Result<Vec<u8>, ContainerError> {
     let mut buf = Vec::new();
-    buf.try_reserve_exact(length).map_err(|_| {
-        ContainerError::InvalidFormat(format!("{} allocation too large", context))
-    })?;
+    buf.try_reserve_exact(length)
+        .map_err(|_| ContainerError::InvalidFormat(format!("{} allocation too large", context)))?;
     buf.resize(length, 0);
     Ok(buf)
 }

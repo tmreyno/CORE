@@ -47,7 +47,11 @@ fn non_empty_or(value: &str, fallback: &str) -> String {
 }
 
 fn optional_non_empty_or(value: &Option<String>, fallback: &str) -> Option<String> {
-    match value.as_deref().map(str::trim).filter(|entry| !entry.is_empty()) {
+    match value
+        .as_deref()
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
         Some(entry) => Some(entry.to_string()),
         None if fallback.trim().is_empty() => None,
         None => Some(fallback.to_string()),
@@ -496,10 +500,14 @@ impl ProjectDatabase {
                 let mut item = entry.item.clone();
                 item.id = mapped_coc_id.clone();
                 item.case_number = non_empty_or(&item.case_number, &package.source_case_number);
-                item.coc_number =
-                    non_empty_or(&item.coc_number, &default_import_label("COC", &mapped_coc_id));
-                item.evidence_id =
-                    non_empty_or(&item.evidence_id, &default_import_label("EVID", &mapped_coc_id));
+                item.coc_number = non_empty_or(
+                    &item.coc_number,
+                    &default_import_label("COC", &mapped_coc_id),
+                );
+                item.evidence_id = non_empty_or(
+                    &item.evidence_id,
+                    &default_import_label("EVID", &mapped_coc_id),
+                );
                 item.description = non_empty_or(&item.description, "Imported evidence item");
                 item.item_type = non_empty_or(&item.item_type, "Evidence");
                 item.case_title =
@@ -595,12 +603,15 @@ impl ProjectDatabase {
                 collection.collection_date = non_empty_or(&collection.collection_date, &now);
                 collection.collection_location =
                     non_empty_or(&collection.collection_location, "Imported package");
-                collection.collecting_officer =
-                    non_empty_or(&collection.collecting_officer, &package.source_examiner_name);
+                collection.collecting_officer = non_empty_or(
+                    &collection.collecting_officer,
+                    &package.source_examiner_name,
+                );
                 collection.authorization =
                     non_empty_or(&collection.authorization, "Imported package");
                 collection.created_at = non_empty_or(&collection.created_at, &now);
-                collection.modified_at = non_empty_or(&collection.modified_at, &collection.created_at);
+                collection.modified_at =
+                    non_empty_or(&collection.modified_at, &collection.created_at);
                 collection.status = normalize_collection_status(&collection.status);
                 collection.item_count = 0;
 
@@ -611,11 +622,8 @@ impl ProjectDatabase {
                     let mut item = item_entry.clone();
                     item.id = choose_import_id(&item.id, &mut existing_item_ids);
                     item.collection_id = collection.id.clone();
-                    item.coc_item_id = remap_coc_link(
-                        &item.coc_item_id,
-                        &coc_id_map,
-                        &mut dropped_coc_links,
-                    );
+                    item.coc_item_id =
+                        remap_coc_link(&item.coc_item_id, &coc_id_map, &mut dropped_coc_links);
                     item.evidence_file_id = resolve_evidence_file_link(
                         &item.evidence_file_id,
                         &existing_evidence_file_ids,

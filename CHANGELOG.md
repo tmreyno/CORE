@@ -4,6 +4,12 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.108] - 2026-04-14
+
+### Fixed
+- CI workflow setup now checks out `core-shared` for backend Rust jobs as well, so path-based shared crates resolve before rustfmt, clippy, and backend test steps run
+- Follow-up cleanup removed a stale evidence collection type import and normalized workspace rustfmt output so the restored backend checks stay green
+
 ## [0.1.107] - 2026-04-14
 
 ### Changed

@@ -339,7 +339,8 @@ impl ZipIndex {
             else {
                 break;
             };
-            let filename = String::from_utf8_lossy(&cd_buf[filename_start..filename_end]).to_string();
+            let filename =
+                String::from_utf8_lossy(&cd_buf[filename_start..filename_end]).to_string();
             let is_directory = filename.ends_with('/');
             let normalized_path = filename.trim_end_matches('/').to_string();
 

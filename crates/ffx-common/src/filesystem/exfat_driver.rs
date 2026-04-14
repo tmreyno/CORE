@@ -337,14 +337,14 @@ impl ExFatDriver {
         let fat_offset = (self.boot.fat_offset as u64)
             .checked_mul(self.boot.bytes_per_sector as u64)
             .ok_or_else(|| VfsError::IoError("exFAT FAT offset overflowed u64".to_string()))?;
-        let entry_offset = u64::from(cluster)
-            .checked_mul(4)
-            .ok_or_else(|| VfsError::IoError("exFAT FAT entry offset overflowed u64".to_string()))?;
+        let entry_offset = u64::from(cluster).checked_mul(4).ok_or_else(|| {
+            VfsError::IoError("exFAT FAT entry offset overflowed u64".to_string())
+        })?;
         let fat_byte_offset = checked_exfat_absolute_offset(
             self.offset,
-            fat_offset
-                .checked_add(entry_offset)
-                .ok_or_else(|| VfsError::IoError("exFAT FAT byte offset overflowed u64".to_string()))?,
+            fat_offset.checked_add(entry_offset).ok_or_else(|| {
+                VfsError::IoError("exFAT FAT byte offset overflowed u64".to_string())
+            })?,
             "exFAT FAT entry",
         )?;
         let mut buf = [0u8; 4];
@@ -929,7 +929,9 @@ mod tests {
     fn test_cluster_offset_rejects_reserved_cluster() {
         let data = create_exfat_boot_sector();
         let boot = ExFatBootSector::parse(&data).unwrap();
-        let err = boot.cluster_offset(1).expect_err("reserved cluster should fail");
+        let err = boot
+            .cluster_offset(1)
+            .expect_err("reserved cluster should fail");
         assert!(matches!(err, VfsError::IoError(message) if message.contains("reserved")));
     }
 

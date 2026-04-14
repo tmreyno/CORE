@@ -11,8 +11,8 @@
 use parking_lot::Mutex;
 use tauri::State;
 
-use core_types::evidence_collection_contract::EVIDENCE_COLLECTION_PACKAGE_VERSION;
 use core_types::evidence::{DbCollectedItem, DbEvidenceCollection};
+use core_types::evidence_collection_contract::EVIDENCE_COLLECTION_PACKAGE_VERSION;
 use core_types::mobile::{
     MobileEvidenceCollectionPackage, MobileEvidenceCollectionPackageCollection, MobileProject,
 };

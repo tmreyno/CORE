@@ -315,7 +315,8 @@ impl ArchiveVfs {
             else {
                 break;
             };
-            let filename = String::from_utf8_lossy(&cd_buf[filename_start..filename_end]).to_string();
+            let filename =
+                String::from_utf8_lossy(&cd_buf[filename_start..filename_end]).to_string();
 
             // Normalize path
             let is_dir = filename.ends_with('/') || (external_attrs >> 16) & 0x4000 != 0;
@@ -583,10 +584,10 @@ impl ArchiveVfs {
             let filename = String::from_utf8_lossy(&filename_buf);
 
             // Skip extra field
-            file.seek(SeekFrom::Current(i64::try_from(extra_len).map_err(|_| {
-                VfsError::InvalidPath("ZIP extra field too large".to_string())
-            })?))
-                .map_err(|e| VfsError::IoError(e.to_string()))?;
+            file.seek(SeekFrom::Current(i64::try_from(extra_len).map_err(
+                |_| VfsError::InvalidPath("ZIP extra field too large".to_string()),
+            )?))
+            .map_err(|e| VfsError::IoError(e.to_string()))?;
 
             if filename.trim_end_matches('/') == target_name {
                 // Found the file! Read and decompress
@@ -714,9 +715,9 @@ fn checked_central_directory_bounds(
     cd_size: u64,
     file_size: u64,
 ) -> Result<(), VfsError> {
-    let cd_end = cd_offset
-        .checked_add(cd_size)
-        .ok_or_else(|| VfsError::InvalidPath("ZIP central directory bounds overflow".to_string()))?;
+    let cd_end = cd_offset.checked_add(cd_size).ok_or_else(|| {
+        VfsError::InvalidPath("ZIP central directory bounds overflow".to_string())
+    })?;
 
     if cd_end > file_size {
         return Err(VfsError::InvalidPath(
@@ -758,8 +759,7 @@ fn checked_central_directory_next_pos(
 }
 
 fn checked_zip_entry_buffer_len(size: u64, context: &str) -> Result<usize, VfsError> {
-    usize::try_from(size)
-        .map_err(|_| VfsError::InvalidPath(format!("ZIP {} too large", context)))
+    usize::try_from(size).map_err(|_| VfsError::InvalidPath(format!("ZIP {} too large", context)))
 }
 
 fn checked_local_file_entry_end(

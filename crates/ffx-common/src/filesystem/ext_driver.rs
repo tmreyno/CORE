@@ -440,9 +440,7 @@ impl ExtDriver {
                 u64::from(bgd_block)
                     .checked_mul(u64::from(block_size))
                     .ok_or_else(|| {
-                        VfsError::Internal(
-                            "Invalid ext block group descriptor offset".to_string(),
-                        )
+                        VfsError::Internal("Invalid ext block group descriptor offset".to_string())
                     })?,
             )
             .ok_or_else(|| {
@@ -588,18 +586,16 @@ impl ExtDriver {
                 // Sparse block (hole) - fill with zeros
                 // Already zeroed in result
                 bytes_read += bytes_to_read;
-                current_offset = current_offset.checked_add(bytes_to_read as u64).ok_or_else(|| {
-                    VfsError::IoError("EXT sparse read offset overflow".to_string())
-                })?;
+                current_offset = current_offset
+                    .checked_add(bytes_to_read as u64)
+                    .ok_or_else(|| {
+                        VfsError::IoError("EXT sparse read offset overflow".to_string())
+                    })?;
                 continue;
             }
 
-            let block_offset = checked_ext_block_offset(
-                self.offset,
-                block_num,
-                self.block_size,
-                offset_in_block,
-            )?;
+            let block_offset =
+                checked_ext_block_offset(self.offset, block_num, self.block_size, offset_in_block)?;
             self.device
                 .read_at(
                     block_offset,
@@ -608,9 +604,9 @@ impl ExtDriver {
                 .map_err(|e| VfsError::IoError(e.to_string()))?;
 
             bytes_read += bytes_to_read;
-            current_offset = current_offset.checked_add(bytes_to_read as u64).ok_or_else(|| {
-                VfsError::IoError("EXT read offset overflow".to_string())
-            })?;
+            current_offset = current_offset
+                .checked_add(bytes_to_read as u64)
+                .ok_or_else(|| VfsError::IoError("EXT read offset overflow".to_string()))?;
         }
 
         Ok(result)
@@ -932,9 +928,9 @@ fn parse_group_descriptors(
         )));
     }
 
-    let table_len = num_groups.checked_mul(desc_size).ok_or_else(|| {
-        VfsError::Internal("Invalid ext group descriptor table size".to_string())
-    })?;
+    let table_len = num_groups
+        .checked_mul(desc_size)
+        .ok_or_else(|| VfsError::Internal("Invalid ext group descriptor table size".to_string()))?;
     if data.len() < table_len {
         return Err(VfsError::IoError(
             "Short read for ext group descriptor table".to_string(),
@@ -943,12 +939,12 @@ fn parse_group_descriptors(
 
     let mut descs = checked_ext_group_desc_capacity(num_groups)?;
     for i in 0..num_groups {
-        let start = i.checked_mul(desc_size).ok_or_else(|| {
-            VfsError::Internal("Invalid ext group descriptor offset".to_string())
-        })?;
-        let end = start.checked_add(desc_size).ok_or_else(|| {
-            VfsError::Internal("Invalid ext group descriptor offset".to_string())
-        })?;
+        let start = i
+            .checked_mul(desc_size)
+            .ok_or_else(|| VfsError::Internal("Invalid ext group descriptor offset".to_string()))?;
+        let end = start
+            .checked_add(desc_size)
+            .ok_or_else(|| VfsError::Internal("Invalid ext group descriptor offset".to_string()))?;
         let d = data.get(start..end).ok_or_else(|| {
             VfsError::IoError("Short read for ext group descriptor table".to_string())
         })?;
@@ -993,8 +989,8 @@ fn parse_group_descriptors(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::traits::{BlockDevice, BlockReader, SeekableBlockDevice};
+    use super::*;
     use ffx_errors::ContainerError;
     use std::io::Cursor;
 
@@ -1027,7 +1023,9 @@ mod tests {
     impl SeekableBlockDevice for MockBlockDevice {
         fn reader_at(&self, offset: u64) -> Box<dyn BlockReader> {
             let start = usize::try_from(offset).unwrap_or(self.data.len());
-            Box::new(Cursor::new(self.data[start.min(self.data.len())..].to_vec()))
+            Box::new(Cursor::new(
+                self.data[start.min(self.data.len())..].to_vec(),
+            ))
         }
     }
 

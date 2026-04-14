@@ -441,7 +441,10 @@ fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
         })
     } else {
         base.checked_sub(delta.unsigned_abs()).ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, "raw VFS seek before start")
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "raw VFS seek before start",
+            )
         })
     }
 }
