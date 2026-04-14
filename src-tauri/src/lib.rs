@@ -488,6 +488,8 @@ fn run_full(context: tauri::Context) {
             commands::project_db_get_evidence_collections,
             commands::project_db_delete_evidence_collection,
             commands::project_db_get_evidence_collection_by_id,
+            commands::project_db_export_evidence_collection_package,
+            commands::project_db_import_evidence_collection_package,
             commands::project_db_update_evidence_collection_status,
             // Project database — collected items
             commands::project_db_upsert_collected_item,
@@ -872,6 +874,8 @@ pub fn run_acquire(context: tauri::Context) {
             commands::project_db_get_evidence_collections,
             commands::project_db_delete_evidence_collection,
             commands::project_db_get_evidence_collection_by_id,
+            commands::project_db_export_evidence_collection_package,
+            commands::project_db_import_evidence_collection_package,
             commands::project_db_update_evidence_collection_status,
             // Project database — collected items
             commands::project_db_upsert_collected_item,

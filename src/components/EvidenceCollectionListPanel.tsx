@@ -34,11 +34,13 @@ import {
 import {
   loadAllEvidenceCollections,
   deleteEvidenceCollection,
+  importEvidenceCollectionPackage,
 } from "./report/wizard/cocDbSync";
 import { printDocument } from "./document/documentHelpers";
 import type { EvidenceExportFormat } from "./report/wizard/cocDbSync";
 import type { DbEvidenceCollection, DbCollectedItem } from "../types/projectDb";
 import { logger } from "../utils/logger";
+import { useToast } from "./Toast";
 
 const log = logger.scope("EvidenceCollectionListPanel");
 
@@ -108,12 +110,14 @@ function StatusBadge(props: { status: string }) {
 }
 
 export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelProps> = (props) => {
+  const toast = useToast();
   const [collections, setCollections] = createSignal<DbEvidenceCollection[]>([]);
   const [collectedItemsMap, setCollectedItemsMap] = createSignal<Record<string, DbCollectedItem[]>>({});
   const [loading, setLoading] = createSignal(true);
   const [deletingId, setDeletingId] = createSignal<string | null>(null);
   const [exportMenuId, setExportMenuId] = createSignal<string | null>(null);
   const [searchQuery, setSearchQuery] = createSignal("");
+  const [importing, setImporting] = createSignal(false);
 
   // Filtered collections
   const filteredCollections = createMemo(() => {
@@ -178,6 +182,56 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
     }
   };
 
+  const handleImport = async () => {
+    if (importing()) return;
+
+    setImporting(true);
+    try {
+      const summary = await importEvidenceCollectionPackage();
+      if (!summary) return;
+
+      await refresh();
+
+      const imported = [
+        `${summary.importedCollections} ${summary.importedCollections === 1 ? "collection" : "collections"}`,
+        `${summary.importedItems} ${summary.importedItems === 1 ? "item" : "items"}`,
+      ];
+      if (summary.importedCocItems > 0) {
+        imported.push(
+          `${summary.importedCocItems} linked ${summary.importedCocItems === 1 ? "COC record" : "COC records"}`,
+        );
+      }
+
+      const warnings: string[] = [];
+      if (summary.droppedEvidenceFileLinks > 0) {
+        warnings.push(
+          `${summary.droppedEvidenceFileLinks} evidence ${summary.droppedEvidenceFileLinks === 1 ? "link was" : "links were"} skipped`,
+        );
+      }
+      if (summary.droppedCocLinks > 0) {
+        warnings.push(
+          `${summary.droppedCocLinks} collected-item ${summary.droppedCocLinks === 1 ? "COC link was" : "COC links were"} skipped`,
+        );
+      }
+
+      const source = summary.sourceCaseNumber
+        ? `${summary.sourceApp} (${summary.sourceCaseNumber})`
+        : summary.sourceApp;
+      const message = `${imported.join(", ")} imported from ${source}.`;
+
+      toast.success(
+        "Package Imported",
+        warnings.length > 0 ? `${message} ${warnings.join(". ")}.` : message,
+      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error("Failed to import evidence collection package:", e);
+      toast.error("Import Failed", message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   /** Build printable HTML summary of all visible collections */
   const handlePrintAll = () => {
     const items = filteredCollections();
@@ -225,6 +279,10 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
             onClick={handlePrintAll}
           >
             <HiOutlinePrinter class="w-4 h-4" />
+          </button>
+          <button class="btn btn-secondary" onClick={handleImport} disabled={importing()}>
+            <HiOutlineArchiveBoxArrowDown class="w-4 h-4" />
+            {importing() ? "Importing..." : "Import Package"}
           </button>
           <button class="btn btn-primary" onClick={() => props.onNewCollection()}>
             <HiOutlinePlus class="w-4 h-4" />
@@ -363,11 +421,12 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
                               <HiOutlineChevronDown class="w-3 h-3" />
                             </button>
                             <Show when={exportMenuId() === col.id}>
-                              <div class="absolute right-0 top-full mt-1 bg-bg-panel border border-border rounded-lg shadow-lg py-1 z-dropdown min-w-[160px]">
+                              <div class="absolute right-0 top-full mt-1 bg-bg-panel border border-border rounded-lg shadow-lg py-1 z-dropdown min-w-[220px]">
                                 <button class="w-full text-left px-3 py-1.5 text-sm hover:bg-bg-hover" onClick={() => handleExport(col, 'pdf')}>PDF Document</button>
                                 <button class="w-full text-left px-3 py-1.5 text-sm hover:bg-bg-hover" onClick={() => handleExport(col, 'xlsx')}>Excel Spreadsheet</button>
                                 <button class="w-full text-left px-3 py-1.5 text-sm hover:bg-bg-hover" onClick={() => handleExport(col, 'csv')}>CSV File</button>
                                 <button class="w-full text-left px-3 py-1.5 text-sm hover:bg-bg-hover" onClick={() => handleExport(col, 'html')}>HTML Report</button>
+                                <button class="w-full text-left px-3 py-1.5 text-sm hover:bg-bg-hover" onClick={() => handleExport(col, 'json')}>Evidence Collection Package</button>
                               </div>
                             </Show>
                           </div>

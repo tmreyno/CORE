@@ -52,3 +52,13 @@ export type {
   FtsSearchResult,
   ProjectDbStats,
 } from "@core-suite/types";
+
+export interface EvidenceCollectionPackageImportSummary {
+  sourceApp: string;
+  sourceCaseNumber: string;
+  importedCollections: number;
+  importedItems: number;
+  importedCocItems: number;
+  droppedEvidenceFileLinks: number;
+  droppedCocLinks: number;
+}

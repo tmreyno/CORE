@@ -217,7 +217,7 @@ src-tauri/src/
 │   ├── types.rs                 # Database record types
 │   ├── bookmarks.rs             # Bookmarks and notes CRUD
 │   ├── forensic.rs              # COC items, amendments, audit log
-│   ├── collections.rs           # Evidence collections and collected items
+│   ├── collections.rs           # Evidence collections, collected items, canonical package import/export
 │   ├── evidence.rs              # Evidence files and hashes
 │   ├── activity.rs              # Activity log and sessions
 │   ├── search.rs                # Saved/recent searches, FTS
@@ -253,7 +253,7 @@ src-tauri/src/
 │   ├── database.rs              # SQLite persistence
 │   ├── project.rs               # Project file handling
 │   ├── project_advanced.rs      # Advanced project features
-│   ├── project_db/              # Per-project .ffxdb commands (80+ IPC)
+│   ├── project_db/              # Per-project .ffxdb commands (80+ IPC, including package export)
 │   │   ├── mod.rs, bookmarks.rs, forensic.rs, collections.rs
 │   │   ├── evidence.rs, activity.rs, search.rs, processed.rs
 │   │   └── utilities.rs, workflow.rs

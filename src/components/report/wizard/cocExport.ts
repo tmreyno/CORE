@@ -5,17 +5,18 @@
 // =============================================================================
 
 /**
- * Export functions for evidence collections.
+ * Export and portable package import functions for evidence collections.
  *
- * Supports PDF (via generate_report command), CSV, XLSX, and HTML
- * (via export_evidence_collection command).
+ * Supports PDF (via generate_report command), CSV, XLSX, HTML, and JSON
+ * plus canonical JSON package import/export.
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { logger } from "../../../utils/logger";
 import type { ForensicReport } from "../types";
 import { loadEvidenceCollectionById } from "./cocPersistence";
+import type { EvidenceCollectionPackageImportSummary } from "../../../types/projectDb";
 
 const log = logger.scope("CocExport");
 
@@ -99,13 +100,14 @@ export async function exportEvidenceCollectionPdf(
 }
 
 /** Supported evidence collection export formats */
-export type EvidenceExportFormat = "pdf" | "csv" | "xlsx" | "html";
+export type EvidenceExportFormat = "pdf" | "csv" | "xlsx" | "html" | "json";
 
 const FORMAT_LABELS: Record<EvidenceExportFormat, { name: string; extension: string }> = {
   pdf: { name: "PDF Document", extension: "pdf" },
   csv: { name: "CSV Spreadsheet", extension: "csv" },
   xlsx: { name: "Excel Spreadsheet", extension: "xlsx" },
   html: { name: "HTML Report", extension: "html" },
+  json: { name: "Evidence Collection Package", extension: "json" },
 };
 
 /**
@@ -138,6 +140,19 @@ export async function exportEvidenceCollection(
     });
     if (!path) return null;
 
+    if (format === "json") {
+      const outputPath = await invoke<string>(
+        "project_db_export_evidence_collection_package",
+        {
+          collectionId,
+          outputPath: path,
+        },
+      );
+
+      log.info("Evidence collection package exported:", outputPath);
+      return outputPath;
+    }
+
     const outputPath = await invoke<string>("export_evidence_collection", {
       data,
       caseNumber: caseNumber || "",
@@ -150,5 +165,36 @@ export async function exportEvidenceCollection(
   } catch (e) {
     log.error(`Failed to export evidence collection as ${format}:`, e);
     return null;
+  }
+}
+
+/**
+ * Import a portable evidence collection package into the current project.
+ *
+ * @returns Import summary on success, `null` if cancelled.
+ */
+export async function importEvidenceCollectionPackage(): Promise<EvidenceCollectionPackageImportSummary | null> {
+  try {
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      title: "Select evidence collection package",
+      filters: [{ name: "Evidence Collection Package", extensions: ["json"] }],
+    });
+
+    if (!selected || Array.isArray(selected)) {
+      return null;
+    }
+
+    const summary = await invoke<EvidenceCollectionPackageImportSummary>(
+      "project_db_import_evidence_collection_package",
+      { inputPath: selected },
+    );
+
+    log.info("Evidence collection package imported:", summary);
+    return summary;
+  } catch (e) {
+    log.error("Failed to import evidence collection package:", e);
+    throw e;
   }
 }

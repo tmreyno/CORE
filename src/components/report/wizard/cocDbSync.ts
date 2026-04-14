@@ -10,7 +10,7 @@
  * Split into:
  *   - cocConverters.ts  — type conversion (wizard ↔ DB)
  *   - cocPersistence.ts — DB load/save/delete operations (awaitable invoke)
- *   - cocExport.ts      — export functions (PDF, CSV, XLSX, HTML)
+ *   - cocExport.ts      — export functions and package import/export helpers
  *
  * All downstream consumers can continue importing from this file.
  */
@@ -43,5 +43,6 @@ export {
 export {
   exportEvidenceCollectionPdf,
   exportEvidenceCollection,
+  importEvidenceCollectionPackage,
 } from "./cocExport";
 export type { EvidenceExportFormat } from "./cocExport";

@@ -72,7 +72,10 @@ CORE-FFX uses **Cargo feature flags** to produce separate binaries for different
 | `mod-search` | tantivy | Full-text search engine + file deduplication |
 | `mod-reports` | genpdf, docx-rs, tera | Forensic report generation (PDF, DOCX, HTML) |
 | `mod-processed` | (none — code only) | Processed DB parsers (AXIOM, Cellebrite, Autopsy) |
-| `ai-assistant` | langchain-rust, async-openai, reqwest, url | AI-powered report narrative generation |
+| `ai-assistant` | async-openai, reqwest, url | AI-powered report narrative generation |
+
+Report narrative generation should prefer OpenAI GPT-5 as the default writing model when the AI assistant feature is enabled. The frontend may pass a typed key from the report wizard, but it must also allow the backend to rely on an existing `OPENAI_API_KEY` environment variable instead of enforcing a frontend-only hard block.
+The report wizard persists the selected AI provider/model in `ffx-preferences`, but typed API keys remain session-only and must not be stored in preferences.
 
 ### Custom Edition Examples
 
@@ -639,7 +642,8 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 | File | Purpose |
 |------|---------|
 | `src/components/EvidenceCollectionPanel.tsx` | Tab-based form (schema-driven, no WizardContext) |
-| `src/components/EvidenceCollectionListPanel.tsx` | Browse/list all evidence collections |
+| `src/components/EvidenceCollectionListPanel.tsx` | Browse/list all evidence collections; user-facing package import/export entry point |
+| `src/components/report/wizard/cocExport.ts` | Save-dialog helper for PDF/XLSX/CSV/HTML export plus canonical JSON package import/export |
 | `src/components/LinkedDataTree.tsx` | Reusable tree: `LinkedDataNode` type + `LinkedDataTree` component |
 | `src/components/LinkedDataPanel.tsx` | Right-panel wrapper with Linked Data & Summary tabs |
 | `src/templates/forms/evidence_collection.json` | JSON schema template (v1.3.0 — 3 sections, reordered forensic workflow, `evidence_container` field, conditional `show_when` device fields) |
@@ -647,12 +651,30 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 | `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
 | `src/components/evidence-collection/evidenceAutoFill.ts` | Maps container metadata (E01/AD1/UFED/L01) to ~30 form fields; includes L01 source metadata enrichment, stored intake hashes, examiner names, acquisition duration, AD1 filesystem/OS info |
 | `src/components/evidence-collection/formDataConversion.ts` | Bidirectional `EvidenceCollectionData` ↔ `FormData` conversion (all ~30 fields + photo_refs) |
+| `src-tauri/src/report/commands.rs` | Backend evidence collection report/export commands for PDF/XLSX/CSV/HTML and legacy form-driven JSON export |
+| `src-tauri/src/commands/project_db/collections.rs` | Canonical `.ffxdb`-driven package import/export via `project_db_export_evidence_collection_package` and `project_db_import_evidence_collection_package` |
 
 ### Entry Points
 
 - **Sidebar**: Right-click report button → "Evidence Collection…" context menu item → opens tab via `centerPaneTabs.openEvidenceCollection()`
 - **Command Palette**: `Cmd+K` → "Evidence Collection" or "Evidence Collection List"
 - **App.tsx**: `centerPaneTabs.openEvidenceCollection(id?, readOnly?)` or `centerPaneTabs.openEvidenceCollectionList()`
+- **Collection list header**: `EvidenceCollectionListPanel.tsx` exposes `Import Package` for portable JSON package import and the export dropdown for PDF/XLSX/CSV/HTML/JSON export
+
+### Evidence Collection Export Formats
+
+- `EvidenceCollectionListPanel.tsx` export dropdown is the user-facing entry point for collection export.
+- Supported formats are `pdf`, `xlsx`, `csv`, `html`, and `json`.
+- The list-panel `json` path calls `project_db_export_evidence_collection_package`, which builds the canonical portable evidence collection package defined in `core-shared/crates/core-types/src/mobile.rs` as `MobileEvidenceCollectionPackage` from persisted `.ffxdb` rows plus current `.cffx` project metadata.
+- Do NOT route list-panel `json` export back through `export_evidence_collection` in `src-tauri/src/report/commands.rs` — that path is form-driven and can drop desktop-only links such as `coc_item_id` and `evidence_file_id`.
+
+### Evidence Collection Package Import
+
+- `EvidenceCollectionListPanel.tsx` `Import Package` button is the user-facing entry point for portable collection-package import.
+- The list-panel import path calls `project_db_import_evidence_collection_package`, which reads `MobileEvidenceCollectionPackage` JSON from disk and imports collections, collected items, and linked COC bundles transactionally into the current `.ffxdb`.
+- Imported linked COC records receive fresh local IDs; collected-item `coc_item_id` links are remapped to those new local IDs during import.
+- Imported `evidence_file_id` links are preserved only when the referenced evidence-file ID already exists in the current `.ffxdb`; otherwise the link is dropped and reported back to the frontend import summary.
+- Do NOT reimplement package import as a frontend loop over form-only persistence when `project_db_import_evidence_collection_package` already exists — the backend command owns transactional remapping and FK-safe link preservation.
 
 ### Linked Data Tree — Right Panel
 
@@ -740,6 +762,7 @@ When an evidence collection panel loads AND container metadata is available (`di
 - Remove the auto-enrichment `createEffect` from `EvidenceCollectionPanel.tsx` — it fills empty form fields from container metadata when evidence files are available
 - Make container metadata auto-fill manual-only again (button-click required) — the `createEffect` ensures forms are always enriched when container info is available
 - Remove `enrichExistingItemsFromEvidence()` or `ENRICHABLE_FIELDS` from `evidenceAutoFill.ts` — they power the silent enrichment of existing collections
+- Reintroduce a repo-local evidence collection package schema in `cocExport.ts` or `src-tauri/src/report/commands.rs` — the JSON export must stay aligned with `core-types::mobile::MobileEvidenceCollectionPackage`
 
 ---
 
@@ -1654,7 +1677,7 @@ Commands are organized in `src-tauri/src/commands/`:
 | `dedup.rs` | File deduplication analysis | `dedup_analyze`, `dedup_enrich_hashes`, `dedup_export_csv` |
 | `segment_verify.rs` | Post-acquisition segment verification | `hash_container_segments` |
 | `portable.rs` | Portable mode detection & path management | `portable_get_status`, `portable_ensure_dirs` |
-| `project_db/` | Per-window .ffxdb (119 cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_batch_upsert_evidence_files`, `project_db_search_fts`, `project_db_get_activity_log` |
+| `project_db/` | Per-window .ffxdb (120+ cmds) — modular directory with `mod.rs`, `activity.rs`, `bookmarks.rs`, `collections.rs`, `evidence.rs`, `forensic.rs`, `processed.rs`, `search.rs`, `utilities.rs`, `workflow.rs`. **All commands receive `window: tauri::Window` (auto-injected by Tauri)** to resolve the per-window database. | `project_db_open`, `project_db_close` (checkpoints WAL), `project_db_wal_checkpoint`, `project_db_get_stats`, `project_db_upsert_bookmark`, `project_db_batch_upsert_evidence_files`, `project_db_export_evidence_collection_package`, `project_db_import_evidence_collection_package`, `project_db_search_fts`, `project_db_get_activity_log` |
 
 **Processed database parsers** (`src-tauri/src/processed/`):
 
@@ -2038,7 +2061,7 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/l01Export.ts` (L01ExportOptions, L01ExportProgress, L01ExportResult) | `src-tauri/src/commands/l01_export.rs`, `src-tauri/src/l01_writer/types.rs` |
 | `src/api/drives.ts` (DriveInfo, MountResult) | `src-tauri/src/commands/system.rs` |
 | `src/api/device.ts` (PrivilegeInfo, PhysicalDisk, DeviceReadProgress) | `src-tauri/src/commands/device.rs` |
-| `src/components/report/types.ts` (COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db/types.rs` (DbCocItem) |
+| `src/components/report/types.ts` (wrapper over `@core-suite/types/forensic-report`; COCItem: status, locked_at, locked_by) | `src-tauri/src/project_db/types.rs` (DbCocItem) |
 | `src/api/projectMerge.ts` (MergeExclusions, ProjectMergeSummary, MergeDataCategory) | `src-tauri/src/project/merge_types.rs` |
 | `src/api/search.ts` (SearchOptions, SearchHit, SearchResults, IndexProgress, IndexStats) | `src-tauri/src/search/query.rs`, `src-tauri/src/search/indexer.rs`, `src-tauri/src/search/mod.rs` |
 | `src/api/dedup.ts` (DedupOptions, DedupResults, DuplicateGroup, DuplicateFile, DuplicateMatchType, DedupStats) | `src-tauri/src/dedup/types.rs`, `src-tauri/src/dedup/mod.rs` |
@@ -2052,6 +2075,31 @@ Keep TypeScript and Rust types synchronized:
 | `src/api/fda.ts` (FullDiskAccessStatus) | `src-tauri/src/commands/system.rs` (`check_full_disk_access`, `open_full_disk_access_settings`) |
 
 ---
+
+## Report Rendering
+
+The report subsystem (`src-tauri/src/report/`) has two separate flows:
+
+- **Standard forensic reports** use `ReportGenerator` in `mod.rs` and render through `html.rs`, `markdown.rs`, `pdf.rs`, or `docx.rs`
+- **Specialized PDF forms** use `pdf_coc_form7.rs` and `pdf_evidence_collection.rs` when `report_type` is `chain_of_custody` or `evidence_collection`
+
+**Preview/export invariant:** `commands.rs` `preview_report` must use the canonical `HtmlGenerator` output via `ReportGenerator::render_preview_html()`. Do not route the default wizard preview back through `template_engine.render_html()` or preview and exported HTML will drift apart.
+
+**Narrative formatting invariant:** `format_helpers.rs` is the shared normalization layer for freeform narrative text (summary, scope, methodology, conclusions, notes, appendix content, signature notes). Use it for multi-paragraph and bullet-list handling instead of raw newline replacement in individual renderers.
+
+**Section coverage invariant:** When data is present, the standard HTML/Markdown/PDF/DOCX renderers should all cover the same major sections: Case Information, Executive Summary, Scope, Methodology, Evidence, Evidence Collection, Chain of Custody, Findings, Timeline, Hash Verification, Tools, Conclusions, Additional Notes, Appendices, and Approvals/Signatures. Layouts can differ, but section coverage should stay aligned.
+
+**Canonical TypeScript contract:** `src/components/report/types.ts` is a compatibility wrapper over `@core-suite/types/forensic-report`. Add new canonical report fields in the shared package first so CORE-FFX and CORE-ACQ stay aligned.
+
+**Standard package export:** The report wizard export step can save a portable `.forensic-report.json` package containing a `ForensicReportPackage` (`schema_version`, `source`, `report`, optional overrides). This package is the handoff format for CORE-RPT customization. Keep the wizard-side package writer aligned with the shared `@core-suite/types/forensic-report` contract rather than introducing a second local package schema. Shared schema/version constants and standard `.forensic-report.json` filename builders belong in that shared package layer, not in CORE-FFX-local helpers.
+
+**Do NOT:**
+- Remove `format_helpers.rs` from the standard renderers and fall back to raw newline-to-`<br>` or single-paragraph dumps for narrative sections
+- Re-route `preview_report` through `template.rs` for the default report wizard flow
+- Merge the standard PDF renderer with `pdf_coc_form7.rs` or `pdf_evidence_collection.rs` — the form layouts are intentionally separate
+- Add a new narrative section to only one standard renderer — keep HTML, Markdown, PDF, and DOCX coverage aligned
+- Recreate the canonical `ForensicReport` type locally in CORE-FFX — extend `@core-suite/types/forensic-report` and keep the local wrapper thin
+- Change the exported standard package structure in the wizard without updating CORE-RPT's package reader/editor flow — the package JSON is the cross-app contract now
 
 ## Testing
 

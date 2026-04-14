@@ -8,7 +8,322 @@
 
 use super::database::ProjectDatabase;
 use super::types::*;
-use rusqlite::{params, Result as SqlResult};
+use rusqlite::{params, Connection, Result as SqlResult};
+use std::collections::{HashMap, HashSet};
+
+fn load_id_set(conn: &Connection, sql: &str) -> SqlResult<HashSet<String>> {
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut ids = HashSet::new();
+    for row in rows {
+        ids.insert(row?);
+    }
+    Ok(ids)
+}
+
+fn choose_import_id(original_id: &str, used_ids: &mut HashSet<String>) -> String {
+    let trimmed = original_id.trim();
+    if !trimmed.is_empty() {
+        let candidate = trimmed.to_string();
+        if used_ids.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+
+    loop {
+        let candidate = uuid::Uuid::new_v4().to_string();
+        if used_ids.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+}
+
+fn non_empty_or(value: &str, fallback: &str) -> String {
+    if value.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn optional_non_empty_or(value: &Option<String>, fallback: &str) -> Option<String> {
+    match value.as_deref().map(str::trim).filter(|entry| !entry.is_empty()) {
+        Some(entry) => Some(entry.to_string()),
+        None if fallback.trim().is_empty() => None,
+        None => Some(fallback.to_string()),
+    }
+}
+
+fn default_import_label(prefix: &str, id: &str) -> String {
+    let short_id = id.get(..8).unwrap_or(id);
+    format!("{}-{}", prefix, short_id)
+}
+
+fn normalize_collection_status(status: &str) -> String {
+    match status.trim() {
+        "complete" => "complete".to_string(),
+        "locked" => "locked".to_string(),
+        _ => "draft".to_string(),
+    }
+}
+
+fn normalize_coc_status(status: &str) -> String {
+    match status.trim() {
+        "locked" => "locked".to_string(),
+        "voided" => "voided".to_string(),
+        _ => "draft".to_string(),
+    }
+}
+
+fn resolve_evidence_file_link(
+    evidence_file_id: &Option<String>,
+    existing_evidence_file_ids: &HashSet<String>,
+    dropped_links: &mut i64,
+) -> Option<String> {
+    match evidence_file_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(value) if existing_evidence_file_ids.contains(value) => Some(value.to_string()),
+        Some(_) => {
+            *dropped_links += 1;
+            None
+        }
+        None => None,
+    }
+}
+
+fn remap_coc_link(
+    coc_item_id: &Option<String>,
+    coc_id_map: &HashMap<String, String>,
+    dropped_links: &mut i64,
+) -> Option<String> {
+    match coc_item_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(value) => match coc_id_map.get(value) {
+            Some(mapped_id) => Some(mapped_id.clone()),
+            None => {
+                *dropped_links += 1;
+                None
+            }
+        },
+        None => None,
+    }
+}
+
+fn insert_evidence_collection_row(conn: &Connection, col: &DbEvidenceCollection) -> SqlResult<()> {
+    conn.execute(
+        "INSERT INTO evidence_collections (id, case_number, collection_date, collection_location, collecting_officer, authorization, authorization_date, authorizing_authority, witnesses_json, documentation_notes, conditions, status, created_at, modified_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        params![
+            col.id,
+            col.case_number,
+            col.collection_date,
+            col.collection_location,
+            col.collecting_officer,
+            col.authorization,
+            col.authorization_date,
+            col.authorizing_authority,
+            col.witnesses_json,
+            col.documentation_notes,
+            col.conditions,
+            col.status,
+            col.created_at,
+            col.modified_at,
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_collected_item_row(conn: &Connection, item: &DbCollectedItem) -> SqlResult<()> {
+    conn.execute(
+        "INSERT INTO collected_items (
+            id, collection_id, coc_item_id, evidence_file_id, item_number, description,
+            found_location, item_type, make, model, serial_number, condition, packaging,
+            photo_refs_json, notes,
+            item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
+            device_type, device_type_other, storage_interface, storage_interface_other,
+            brand, color, imei, other_identifiers,
+            building, room, location_other,
+            image_format, image_format_other, acquisition_method, acquisition_method_other,
+            storage_notes
+         )
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
+                 ?31, ?32, ?33, ?34, ?35)",
+        params![
+            item.id,
+            item.collection_id,
+            item.coc_item_id,
+            item.evidence_file_id,
+            item.item_number,
+            item.description,
+            item.found_location,
+            item.item_type,
+            item.make,
+            item.model,
+            item.serial_number,
+            item.condition,
+            item.packaging,
+            item.photo_refs_json,
+            item.notes,
+            item.item_collection_datetime,
+            item.item_system_datetime,
+            item.item_collecting_officer,
+            item.item_authorization,
+            item.device_type,
+            item.device_type_other,
+            item.storage_interface,
+            item.storage_interface_other,
+            item.brand,
+            item.color,
+            item.imei,
+            item.other_identifiers,
+            item.building,
+            item.room,
+            item.location_other,
+            item.image_format,
+            item.image_format_other,
+            item.acquisition_method,
+            item.acquisition_method_other,
+            item.storage_notes,
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_coc_item_row(conn: &Connection, item: &DbCocItem) -> SqlResult<()> {
+    conn.execute(
+        "INSERT INTO coc_items (
+            id, coc_number, evidence_file_id, case_number, evidence_id, description, item_type,
+            case_title, office, owner_name, owner_address, owner_phone, source,
+            other_contact_name, other_contact_relation, other_contact_phone,
+            collection_method, collection_method_other,
+            make, model, serial_number, capacity, condition,
+            acquisition_date, entered_custody_date, submitted_by, collected_date, received_by,
+            received_location, storage_location, reason_submitted, intake_hashes_json, notes,
+            disposition, disposition_by, returned_to, destruction_date, disposition_date, disposition_notes,
+            created_at, modified_at, status, locked_at, locked_by
+         ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+            ?8, ?9, ?10, ?11, ?12, ?13,
+            ?14, ?15, ?16,
+            ?17, ?18,
+            ?19, ?20, ?21, ?22, ?23,
+            ?24, ?25, ?26, ?27, ?28,
+            ?29, ?30, ?31, ?32, ?33,
+            ?34, ?35, ?36, ?37, ?38, ?39,
+            ?40, ?41, ?42, ?43, ?44
+         )",
+        params![
+            item.id,
+            item.coc_number,
+            item.evidence_file_id,
+            item.case_number,
+            item.evidence_id,
+            item.description,
+            item.item_type,
+            item.case_title,
+            item.office,
+            item.owner_name,
+            item.owner_address,
+            item.owner_phone,
+            item.source,
+            item.other_contact_name,
+            item.other_contact_relation,
+            item.other_contact_phone,
+            item.collection_method,
+            item.collection_method_other,
+            item.make,
+            item.model,
+            item.serial_number,
+            item.capacity,
+            item.condition,
+            item.acquisition_date,
+            item.entered_custody_date,
+            item.submitted_by,
+            item.collected_date,
+            item.received_by,
+            item.received_location,
+            item.storage_location,
+            item.reason_submitted,
+            item.intake_hashes_json,
+            item.notes,
+            item.disposition,
+            item.disposition_by,
+            item.returned_to,
+            item.destruction_date,
+            item.disposition_date,
+            item.disposition_notes,
+            item.created_at,
+            item.modified_at,
+            item.status,
+            item.locked_at,
+            item.locked_by,
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_coc_transfer_row(conn: &Connection, transfer: &DbCocTransfer) -> SqlResult<()> {
+    conn.execute(
+        "INSERT INTO coc_transfers (id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            transfer.id,
+            transfer.coc_item_id,
+            transfer.timestamp,
+            transfer.released_by,
+            transfer.received_by,
+            transfer.purpose,
+            transfer.location,
+            transfer.storage_location,
+            transfer.storage_date,
+            transfer.method,
+            transfer.notes,
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_coc_amendment_row(conn: &Connection, amendment: &DbCocAmendment) -> SqlResult<()> {
+    conn.execute(
+        "INSERT INTO coc_amendments (id, coc_item_id, field_name, old_value, new_value, amended_by_initials, amended_at, reason)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            amendment.id,
+            amendment.coc_item_id,
+            amendment.field_name,
+            amendment.old_value,
+            amendment.new_value,
+            amendment.amended_by_initials,
+            amendment.amended_at,
+            amendment.reason,
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_coc_audit_row(conn: &Connection, audit: &DbCocAuditEntry) -> SqlResult<()> {
+    conn.execute(
+        "INSERT INTO coc_audit_log (id, coc_item_id, action, performed_by, performed_at, summary, details_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            audit.id,
+            audit.coc_item_id,
+            audit.action,
+            audit.performed_by,
+            audit.performed_at,
+            audit.summary,
+            audit.details_json,
+        ],
+    )?;
+    Ok(())
+}
 
 impl ProjectDatabase {
     // ========================================================================
@@ -144,6 +459,203 @@ impl ProjectDatabase {
             params![id],
         )?;
         Ok(())
+    }
+
+    /// Import a portable evidence collection package into the current project.
+    pub fn import_evidence_collection_package(
+        &self,
+        package: &ImportedEvidenceCollectionPackage,
+    ) -> SqlResult<EvidenceCollectionPackageImportSummary> {
+        let conn = self.conn.lock();
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let result = (|| -> SqlResult<EvidenceCollectionPackageImportSummary> {
+            let mut existing_collection_ids =
+                load_id_set(&conn, "SELECT id FROM evidence_collections")?;
+            let mut existing_item_ids = load_id_set(&conn, "SELECT id FROM collected_items")?;
+            let existing_evidence_file_ids = load_id_set(&conn, "SELECT id FROM evidence_files")?;
+
+            let mut coc_id_map = HashMap::with_capacity(package.coc_items.len());
+            for entry in &package.coc_items {
+                coc_id_map.insert(entry.item.id.clone(), uuid::Uuid::new_v4().to_string());
+            }
+
+            let mut imported_collections = 0i64;
+            let mut imported_items = 0i64;
+            let mut imported_coc_items = 0i64;
+            let mut dropped_evidence_file_links = 0i64;
+            let mut dropped_coc_links = 0i64;
+
+            for entry in &package.coc_items {
+                let mapped_coc_id = coc_id_map
+                    .get(&entry.item.id)
+                    .cloned()
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+                let mut item = entry.item.clone();
+                item.id = mapped_coc_id.clone();
+                item.case_number = non_empty_or(&item.case_number, &package.source_case_number);
+                item.coc_number =
+                    non_empty_or(&item.coc_number, &default_import_label("COC", &mapped_coc_id));
+                item.evidence_id =
+                    non_empty_or(&item.evidence_id, &default_import_label("EVID", &mapped_coc_id));
+                item.description = non_empty_or(&item.description, "Imported evidence item");
+                item.item_type = non_empty_or(&item.item_type, "Evidence");
+                item.case_title =
+                    optional_non_empty_or(&item.case_title, &package.source_case_title);
+                item.submitted_by = non_empty_or(&item.submitted_by, &package.source_examiner_name);
+                item.received_by = non_empty_or(&item.received_by, &item.submitted_by);
+                item.condition = non_empty_or(&item.condition, "Unknown");
+                item.created_at = non_empty_or(&item.created_at, &now);
+                item.modified_at = non_empty_or(&item.modified_at, &item.created_at);
+                item.acquisition_date = non_empty_or(&item.acquisition_date, &item.created_at);
+                item.entered_custody_date =
+                    non_empty_or(&item.entered_custody_date, &item.acquisition_date);
+                item.status = normalize_coc_status(&item.status);
+                item.evidence_file_id = resolve_evidence_file_link(
+                    &item.evidence_file_id,
+                    &existing_evidence_file_ids,
+                    &mut dropped_evidence_file_links,
+                );
+
+                insert_coc_item_row(&conn, &item)?;
+
+                for transfer_entry in &entry.transfers {
+                    let mut transfer = transfer_entry.clone();
+                    transfer.id = uuid::Uuid::new_v4().to_string();
+                    transfer.coc_item_id = mapped_coc_id.clone();
+                    transfer.timestamp = non_empty_or(&transfer.timestamp, &item.modified_at);
+                    transfer.released_by = non_empty_or(&transfer.released_by, &item.submitted_by);
+                    transfer.received_by = non_empty_or(&transfer.received_by, &item.received_by);
+                    transfer.purpose = non_empty_or(&transfer.purpose, "Imported transfer");
+                    insert_coc_transfer_row(&conn, &transfer)?;
+                }
+
+                for amendment_entry in &entry.amendments {
+                    let mut amendment = amendment_entry.clone();
+                    amendment.id = uuid::Uuid::new_v4().to_string();
+                    amendment.coc_item_id = mapped_coc_id.clone();
+                    amendment.field_name = non_empty_or(&amendment.field_name, "notes");
+                    amendment.old_value = amendment.old_value.trim().to_string();
+                    amendment.new_value = amendment.new_value.trim().to_string();
+                    amendment.amended_by_initials =
+                        non_empty_or(&amendment.amended_by_initials, "IMP");
+                    amendment.amended_at = non_empty_or(&amendment.amended_at, &item.modified_at);
+                    insert_coc_amendment_row(&conn, &amendment)?;
+                }
+
+                if entry.audit_log.is_empty() {
+                    let audit = DbCocAuditEntry {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        coc_item_id: Some(mapped_coc_id.clone()),
+                        action: "imported".to_string(),
+                        performed_by: item.submitted_by.clone(),
+                        performed_at: now.clone(),
+                        summary: format!(
+                            "Imported from {} evidence collection package",
+                            package.source_app
+                        ),
+                        details_json: Some(
+                            serde_json::json!({
+                                "sourceCaseNumber": package.source_case_number,
+                                "originalCocItemId": entry.item.id,
+                            })
+                            .to_string(),
+                        ),
+                    };
+                    insert_coc_audit_row(&conn, &audit)?;
+                } else {
+                    for audit_entry in &entry.audit_log {
+                        let mut audit = audit_entry.clone();
+                        audit.id = uuid::Uuid::new_v4().to_string();
+                        audit.coc_item_id = Some(mapped_coc_id.clone());
+                        audit.action = non_empty_or(&audit.action, "imported");
+                        audit.performed_by = non_empty_or(&audit.performed_by, &item.submitted_by);
+                        audit.performed_at = non_empty_or(&audit.performed_at, &item.modified_at);
+                        audit.summary = non_empty_or(
+                            &audit.summary,
+                            &format!(
+                                "Imported from {} evidence collection package",
+                                package.source_app
+                            ),
+                        );
+                        insert_coc_audit_row(&conn, &audit)?;
+                    }
+                }
+
+                imported_coc_items += 1;
+            }
+
+            for collection_entry in &package.collections {
+                let mut collection = collection_entry.collection.clone();
+                collection.id = choose_import_id(&collection.id, &mut existing_collection_ids);
+                collection.case_number =
+                    non_empty_or(&collection.case_number, &package.source_case_number);
+                collection.collection_date = non_empty_or(&collection.collection_date, &now);
+                collection.collection_location =
+                    non_empty_or(&collection.collection_location, "Imported package");
+                collection.collecting_officer =
+                    non_empty_or(&collection.collecting_officer, &package.source_examiner_name);
+                collection.authorization =
+                    non_empty_or(&collection.authorization, "Imported package");
+                collection.created_at = non_empty_or(&collection.created_at, &now);
+                collection.modified_at = non_empty_or(&collection.modified_at, &collection.created_at);
+                collection.status = normalize_collection_status(&collection.status);
+                collection.item_count = 0;
+
+                insert_evidence_collection_row(&conn, &collection)?;
+                imported_collections += 1;
+
+                for (index, item_entry) in collection_entry.items.iter().enumerate() {
+                    let mut item = item_entry.clone();
+                    item.id = choose_import_id(&item.id, &mut existing_item_ids);
+                    item.collection_id = collection.id.clone();
+                    item.coc_item_id = remap_coc_link(
+                        &item.coc_item_id,
+                        &coc_id_map,
+                        &mut dropped_coc_links,
+                    );
+                    item.evidence_file_id = resolve_evidence_file_link(
+                        &item.evidence_file_id,
+                        &existing_evidence_file_ids,
+                        &mut dropped_evidence_file_links,
+                    );
+                    item.item_number =
+                        non_empty_or(&item.item_number, &format!("ITEM-{:03}", index + 1));
+                    item.description = non_empty_or(&item.description, "Imported item");
+                    item.found_location =
+                        non_empty_or(&item.found_location, &collection.collection_location);
+                    item.item_type = non_empty_or(&item.item_type, "Evidence");
+                    item.condition = non_empty_or(&item.condition, "Unknown");
+                    item.packaging = non_empty_or(&item.packaging, "Unknown");
+
+                    insert_collected_item_row(&conn, &item)?;
+                    imported_items += 1;
+                }
+            }
+
+            Ok(EvidenceCollectionPackageImportSummary {
+                source_app: package.source_app.clone(),
+                source_case_number: package.source_case_number.clone(),
+                imported_collections,
+                imported_items,
+                imported_coc_items,
+                dropped_evidence_file_links,
+                dropped_coc_links,
+            })
+        })();
+
+        match result {
+            Ok(summary) => {
+                conn.execute_batch("COMMIT")?;
+                Ok(summary)
+            }
+            Err(error) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
     }
 
     // ========================================================================

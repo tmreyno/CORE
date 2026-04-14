@@ -616,6 +616,46 @@ pub struct DbEvidenceDataAlternative {
     pub resolution_note: Option<String>,
 }
 
+/// Internal import container for a portable evidence collection package.
+#[derive(Debug, Clone)]
+pub struct ImportedEvidenceCollectionPackage {
+    pub source_app: String,
+    pub source_case_number: String,
+    pub source_case_title: String,
+    pub source_examiner_name: String,
+    pub collections: Vec<ImportedEvidenceCollectionPackageCollection>,
+    pub coc_items: Vec<ImportedEvidenceCollectionPackageCocItem>,
+}
+
+/// Internal import container for one collection plus its items.
+#[derive(Debug, Clone)]
+pub struct ImportedEvidenceCollectionPackageCollection {
+    pub collection: DbEvidenceCollection,
+    pub items: Vec<DbCollectedItem>,
+}
+
+/// Internal import container for one linked COC item bundle.
+#[derive(Debug, Clone)]
+pub struct ImportedEvidenceCollectionPackageCocItem {
+    pub item: DbCocItem,
+    pub transfers: Vec<DbCocTransfer>,
+    pub amendments: Vec<DbCocAmendment>,
+    pub audit_log: Vec<DbCocAuditEntry>,
+}
+
+/// Result summary for portable evidence collection package imports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceCollectionPackageImportSummary {
+    pub source_app: String,
+    pub source_case_number: String,
+    pub imported_collections: i64,
+    pub imported_items: i64,
+    pub imported_coc_items: i64,
+    pub dropped_evidence_file_links: i64,
+    pub dropped_coc_links: i64,
+}
+
 /// Annotation (hex/document viewer highlight)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

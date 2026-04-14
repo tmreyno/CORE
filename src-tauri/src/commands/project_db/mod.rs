@@ -62,6 +62,19 @@ where
     }
 }
 
+/// Helper: execute a closure with the project database for a specific window
+/// when the closure needs to return a custom `Result<T, String>`.
+pub(super) fn with_project_db_result<F, T>(window_label: &str, f: F) -> Result<T, String>
+where
+    F: FnOnce(&ProjectDatabase) -> Result<T, String>,
+{
+    let guard = PROJECT_DBS.lock();
+    match guard.get(window_label) {
+        Some(db) => f(db),
+        None => Err("No project database is open. Open or create a project first.".to_string()),
+    }
+}
+
 // =============================================================================
 // Lifecycle Commands
 // =============================================================================
