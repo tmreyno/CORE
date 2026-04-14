@@ -435,7 +435,7 @@ export function COCItemRow(props: COCItemRowProps) {
               />
             </div>
             <div class="form-group">
-              <label class="label">Received By</label>
+              <label class="label">Taken Into Custody By</label>
               <input
                 class="input-sm"
                 value={props.item.received_by}
@@ -533,7 +533,7 @@ export function COCItemRow(props: COCItemRowProps) {
                           <input class="input-xs" value={transfer.released_by} onInput={(e) => props.onUpdateTransfer(transfer.id, "released_by", e.currentTarget.value)} />
                         </div>
                         <div class="form-group">
-                          <label class="label text-xs">Received By</label>
+                          <label class="label text-xs">Taken Into Custody By</label>
                           <input class="input-xs" value={transfer.received_by} onInput={(e) => props.onUpdateTransfer(transfer.id, "received_by", e.currentTarget.value)} />
                         </div>
                         <div class="form-group">

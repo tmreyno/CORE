@@ -251,7 +251,7 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
         </tr>`,
       )
       .join("");
-    const html = `<!DOCTYPE html><html><head><title>Evidence Collections</title><style>body{font-family:system-ui,sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th{background:#f5f5f5;text-align:left}@media print{body{margin:0}}</style></head><body><h2>Evidence Collections${props.projectName ? ` — ${esc(props.projectName)}` : ""}</h2><p style="font-size:13px;color:#666;">Printed: ${new Date().toLocaleString()} | ${items.length} collection(s)</p><table><thead><tr><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Status</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Date</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Officer</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Case #</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Authorization</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Items</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Created</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    const html = `<!DOCTYPE html><html><head><title>Evidence Collections</title><style>body{font-family:system-ui,sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th{background:#f5f5f5;text-align:left}@media print{body{margin:0}}</style></head><body><h2>Evidence Collections${props.projectName ? ` — ${esc(props.projectName)}` : ""}</h2><p style="font-size:13px;color:#666;">Printed: ${new Date().toLocaleString()} | ${items.length} collection(s)</p><table><thead><tr><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Status</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Date</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Collector / Examiner</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Case #</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Authority / Reason</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Items</th><th style="border:1px solid #ccc;padding:4px 8px;font-size:12px;">Created</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
     printDocument(html);
   };
 
@@ -297,7 +297,7 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
           <HiOutlineMagnifyingGlass class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-txt-muted" />
           <input
             type="text"
-            placeholder="Search by officer, case #, status, date…"
+            placeholder="Search by collector, case #, status, date…"
             value={searchQuery()}
             onInput={(e) => setSearchQuery(e.currentTarget.value)}
             class="input-sm w-full pl-8"
@@ -367,7 +367,7 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
                         </div>
 
                         <Show when={col.authorization}>
-                          <p class="text-xs text-txt-muted mt-1 truncate">Auth: {col.authorization}</p>
+                          <p class="text-xs text-txt-muted mt-1 truncate">Authority / Reason: {col.authorization}</p>
                         </Show>
 
                         {/* Collected items (evidence containers) */}

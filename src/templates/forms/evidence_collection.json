@@ -2,14 +2,14 @@
   "id": "evidence_collection",
   "name": "Evidence Collection",
   "version": "1.3.0",
-  "description": "Documentation of evidence collection including identification, location, device details, and forensic container metadata for each collected item. Device identifiers, forensic image details, and acquisition metadata are automatically populated from evidence container headers.",
+  "description": "Documentation of physical evidence recovery and digital evidence acquisition, including where an item was found or received, why it was lawfully taken, item identity, and any linked forensic image or export metadata.",
   "icon": "📦",
   "report_types": ["evidence_collection", "forensic_examination"],
   "effective_date": "2025-01-01",
   "sections": [
     {
       "id": "collection_header",
-      "title": "Collection Details",
+      "title": "Collection Context",
       "icon": "📦",
       "layout": { "columns": 3 },
       "fields": [
@@ -22,26 +22,26 @@
         },
         {
           "id": "collecting_officer",
-          "label": "Collecting Officer/Examiner",
+          "label": "Collector / Examiner",
           "type": "text",
           "validation": { "required": true },
           "auto_fill": { "source": "examiner", "path": "name" }
         },
         {
           "id": "authorizing_authority",
-          "label": "Authorizing Authority",
+          "label": "Approving Authority",
           "type": "text",
           "placeholder": "e.g., Judge J. Williams"
         },
         {
           "id": "authorization",
-          "label": "Authorization (Warrant/Consent)",
+          "label": "Authority / Reason for Collection",
           "type": "text",
-          "placeholder": "e.g., SW 2026-1234"
+          "placeholder": "e.g., Search warrant, consent, subpoena, interview turn-in"
         },
         {
           "id": "authorization_date",
-          "label": "Authorization Date",
+          "label": "Authority Date",
           "type": "date"
         },
         {
@@ -49,7 +49,7 @@
           "label": "Witnesses",
           "type": "comma_list",
           "placeholder": "e.g., Officer A, Officer B",
-          "help": "Names separated by commas"
+          "help": "People who saw the recovery, receipt, or handoff"
         }
       ]
     },
@@ -78,11 +78,11 @@
         },
         {
           "id": "evidence_file_id",
-          "label": "Evidence Container",
+          "label": "Linked Evidence File / Container",
           "type": "text",
           "placeholder": "Linked forensic container or archive",
           "col_span": 2,
-          "help": "Auto-populated with the forensic container path (E01, AD1, L01, UFDR, etc.)"
+          "help": "Desktop link to a forensic image, archive, or export when one exists"
         },
 
         { "id": "_heading_description", "label": "Evidence Description & Packaging", "type": "heading", "icon": "📋", "col_span": 3 },
@@ -114,7 +114,7 @@
           "help": "Photo IDs documenting this item"
         },
 
-        { "id": "_heading_location", "label": "Collection Location", "type": "heading", "icon": "📍", "col_span": 3 },
+        { "id": "_heading_location", "label": "Where Found / Received", "type": "heading", "icon": "📍", "col_span": 3 },
         {
           "id": "building",
           "label": "Building / Address",
@@ -238,14 +238,14 @@
           "show_when": { "field": "form_factor", "op": "eq", "value": "other" }
         },
 
-        { "id": "_heading_forensic", "label": "Forensic Container Details", "type": "heading", "icon": "🔬", "col_span": 3 },
+        { "id": "_heading_forensic", "label": "Digital Acquisition Details", "type": "heading", "icon": "🔬", "col_span": 3 },
         {
           "id": "image_format",
-          "label": "Image Format",
+          "label": "Image / Export Format",
           "type": "select",
           "options_ref": "image_format_options",
           "other_field": "image_format_other",
-          "help": "Auto-populated from container type (E01, AD1, L01, etc.)"
+          "help": "Auto-populated when the item was collected as a digital acquisition or forensic container"
         },
         {
           "id": "image_format_other",
@@ -256,12 +256,12 @@
         },
         {
           "id": "acquisition_method",
-          "label": "Acquisition Method",
+          "label": "Digital Acquisition Method",
           "type": "select",
           "options_ref": "acquisition_methods",
           "other_field": "acquisition_method_other",
           "options_filter": { "field": "device_type", "filter_map": "device_to_acquisition_method" },
-          "help": "Auto-populated from AD1/UFED extraction metadata"
+          "help": "Auto-populated from acquisition or container metadata when available"
         },
         {
           "id": "acquisition_method_other",
@@ -272,7 +272,7 @@
         },
         {
           "id": "item_collection_datetime",
-          "label": "Acquisition Date/Time",
+          "label": "Acquired / Collected Date/Time",
           "type": "datetime",
           "help": "Auto-populated from E01 acquiry_date or UFED extraction start time"
         },
@@ -291,16 +291,16 @@
         },
         {
           "id": "item_authorization",
-          "label": "Item-Specific Authorization",
+          "label": "Item-Specific Authority / Reason",
           "type": "text",
-          "placeholder": "Only if different from collection header authorization"
+          "placeholder": "Only if different from the collection header authority / reason"
         },
         {
           "id": "storage_notes",
-          "label": "Container / Acquisition Notes",
+          "label": "Acquisition Summary / Notes",
           "type": "textarea",
           "rows": 2,
-          "placeholder": "Image size, hash values, acquisition tool info...",
+          "placeholder": "Image size, hashes, tool info, intake notes...",
           "col_span": 3,
           "help": "Auto-populated with image size, compression, tool info from container metadata"
         },

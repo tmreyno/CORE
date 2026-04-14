@@ -5,11 +5,12 @@
 // =============================================================================
 
 import type { LinkedDataNode } from "../LinkedDataTree";
+import type { CollectionStatus } from "@core-suite/types/evidence-collection-contract";
 import type { DiscoveredFile, ContainerInfo } from "../../types";
 import type { DriveInfo } from "../../api/drives";
 import type { SystemStats } from "../../hooks";
 
-export type CollectionStatus = "draft" | "complete" | "locked";
+export type { CollectionStatus } from "@core-suite/types/evidence-collection-contract";
 
 export interface EvidenceCollectionPanelProps {
   caseNumber?: string;

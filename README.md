@@ -1,8 +1,8 @@
+# CORE-FFX
+
 <p align="center">
   <img src="docs/assets/card.png" alt="CORE-FFX — Case Organization & Reporting Ecosystem" width="100%" />
 </p>
-
-# CORE-FFX
 
 **CORE** — **C**ase **O**rganization & **R**eporting **E**cosystem  
 **FFX** — **F**orensic **F**ile e**X**plorer

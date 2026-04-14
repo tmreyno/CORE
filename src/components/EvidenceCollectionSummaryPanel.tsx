@@ -337,13 +337,13 @@ function CollectionSection(props: {
         <div class="px-3 pb-2 flex flex-col gap-2">
           {/* Collection metadata */}
           <div class="flex flex-col gap-0.5 text-xs">
-            <OptionalMetadataRow label="Officer" value={col().collectingOfficer} />
-            <OptionalMetadataRow label="Location" value={col().collectionLocation} />
-            <OptionalMetadataRow label="Authorization" value={col().authorization} />
-            <OptionalMetadataRow label="Auth. Date" value={formatDate(col().authorizationDate)} />
-            <OptionalMetadataRow label="Authority" value={col().authorizingAuthority} />
-            <OptionalMetadataRow label="Conditions" value={col().conditions} />
-            <OptionalMetadataRow label="Notes" value={col().documentationNotes} />
+            <OptionalMetadataRow label="Collector / Examiner" value={col().collectingOfficer} />
+            <OptionalMetadataRow label="Where Found / Received" value={col().collectionLocation} />
+            <OptionalMetadataRow label="Authority / Reason" value={col().authorization} />
+            <OptionalMetadataRow label="Authority Date" value={formatDate(col().authorizationDate)} />
+            <OptionalMetadataRow label="Approving Authority" value={col().authorizingAuthority} />
+            <OptionalMetadataRow label="Scene / Handling" value={col().conditions} />
+            <OptionalMetadataRow label="Scene / Intake Notes" value={col().documentationNotes} />
           </div>
 
           {/* Collected items */}
@@ -406,18 +406,18 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
           {/* Forensic info */}
           <Show when={item().imageFormat || item().acquisitionMethod}>
             <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
-              Forensic Acquisition
+              Digital Acquisition
             </div>
-            <OptionalMetadataRow label="Format" value={item().imageFormat} />
-            <OptionalMetadataRow label="Method" value={item().acquisitionMethod} />
+            <OptionalMetadataRow label="Image / Export Format" value={item().imageFormat} />
+            <OptionalMetadataRow label="Digital Method" value={item().acquisitionMethod} />
           </Show>
 
           {/* Location & condition */}
           <Show when={item().foundLocation || item().condition || item().packaging}>
             <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
-              Collection Details
+              Collection Context
             </div>
-            <OptionalMetadataRow label="Found" value={item().foundLocation} />
+            <OptionalMetadataRow label="Where Found / Received" value={item().foundLocation} />
             <OptionalMetadataRow label="Condition" value={item().condition} />
             <OptionalMetadataRow label="Packaging" value={item().packaging} />
           </Show>
@@ -431,7 +431,7 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
               <p class="text-xs text-txt-secondary whitespace-pre-wrap pl-2">{item().notes}</p>
             </Show>
             <Show when={item().storageNotes}>
-              <OptionalMetadataRow label="Storage" value={item().storageNotes} />
+              <OptionalMetadataRow label="Storage / Handling" value={item().storageNotes} />
             </Show>
           </Show>
         </div>
@@ -462,7 +462,7 @@ function buildTextDocument(
   const lines: string[] = [];
   lines.push("=" .repeat(72));
   lines.push("EVIDENCE COLLECTION SUMMARY");
-  lines.push(`Evidence Container: ${filename}`);
+  lines.push(`Linked Evidence File / Container: ${filename}`);
   lines.push(`Generated: ${new Date().toLocaleString()}`);
   lines.push("=".repeat(72));
   lines.push("");
@@ -472,13 +472,13 @@ function buildTextDocument(
     lines.push(`COLLECTION: ${col.caseNumber || "(no case number)"}`);
     lines.push("-".repeat(72));
     if (col.collectionDate) lines.push(`  Date:          ${col.collectionDate}`);
-    if (col.collectingOfficer) lines.push(`  Officer:       ${col.collectingOfficer}`);
-    if (col.collectionLocation) lines.push(`  Location:      ${col.collectionLocation}`);
-    if (col.authorization) lines.push(`  Authorization: ${col.authorization}`);
-    if (col.authorizationDate) lines.push(`  Auth. Date:    ${col.authorizationDate}`);
-    if (col.authorizingAuthority) lines.push(`  Authority:     ${col.authorizingAuthority}`);
-    if (col.conditions) lines.push(`  Conditions:    ${col.conditions}`);
-    if (col.documentationNotes) lines.push(`  Notes:         ${col.documentationNotes}`);
+    if (col.collectingOfficer) lines.push(`  Collector / Examiner: ${col.collectingOfficer}`);
+    if (col.collectionLocation) lines.push(`  Where Found / Received: ${col.collectionLocation}`);
+    if (col.authorization) lines.push(`  Authority / Reason: ${col.authorization}`);
+    if (col.authorizationDate) lines.push(`  Authority Date: ${col.authorizationDate}`);
+    if (col.authorizingAuthority) lines.push(`  Approving Authority: ${col.authorizingAuthority}`);
+    if (col.conditions) lines.push(`  Scene / Handling: ${col.conditions}`);
+    if (col.documentationNotes) lines.push(`  Scene / Intake Notes: ${col.documentationNotes}`);
     lines.push(`  Status:        ${col.status || "draft"}`);
     lines.push("");
 
@@ -495,13 +495,13 @@ function buildTextDocument(
         if (item.serialNumber) lines.push(`      Serial #:      ${item.serialNumber}`);
         if (item.imei) lines.push(`      IMEI:          ${item.imei}`);
         if (item.deviceType) lines.push(`      Device Type:   ${item.deviceType}`);
-        if (item.imageFormat) lines.push(`      Image Format:  ${item.imageFormat}`);
-        if (item.acquisitionMethod) lines.push(`      Acq. Method:   ${item.acquisitionMethod}`);
-        if (item.foundLocation) lines.push(`      Found At:      ${item.foundLocation}`);
+        if (item.imageFormat) lines.push(`      Image / Export Format: ${item.imageFormat}`);
+        if (item.acquisitionMethod) lines.push(`      Digital Acquisition Method: ${item.acquisitionMethod}`);
+        if (item.foundLocation) lines.push(`      Where Found / Received: ${item.foundLocation}`);
         if (item.condition) lines.push(`      Condition:     ${item.condition}`);
         if (item.packaging) lines.push(`      Packaging:     ${item.packaging}`);
         if (item.notes) lines.push(`      Notes:         ${item.notes}`);
-        if (item.storageNotes) lines.push(`      Storage:       ${item.storageNotes}`);
+        if (item.storageNotes) lines.push(`      Storage / Handling: ${item.storageNotes}`);
         lines.push("");
       }
     }
@@ -547,11 +547,11 @@ function buildHtmlDocument(
           <h3>Collection: ${esc(col.caseNumber || "(no case number)")}</h3>
           <table class="meta">
             <tr><td class="label">Date</td><td>${esc(col.collectionDate || "—")}</td></tr>
-            <tr><td class="label">Officer</td><td>${esc(col.collectingOfficer || "—")}</td></tr>
-            <tr><td class="label">Location</td><td>${esc(col.collectionLocation || "—")}</td></tr>
-            <tr><td class="label">Authorization</td><td>${esc(col.authorization || "—")}</td></tr>
-            ${col.authorizingAuthority ? `<tr><td class="label">Authority</td><td>${esc(col.authorizingAuthority)}</td></tr>` : ""}
-            ${col.conditions ? `<tr><td class="label">Conditions</td><td>${esc(col.conditions)}</td></tr>` : ""}
+            <tr><td class="label">Collector / Examiner</td><td>${esc(col.collectingOfficer || "—")}</td></tr>
+            <tr><td class="label">Where Found / Received</td><td>${esc(col.collectionLocation || "—")}</td></tr>
+            <tr><td class="label">Authority / Reason</td><td>${esc(col.authorization || "—")}</td></tr>
+            ${col.authorizingAuthority ? `<tr><td class="label">Approving Authority</td><td>${esc(col.authorizingAuthority)}</td></tr>` : ""}
+            ${col.conditions ? `<tr><td class="label">Scene / Handling</td><td>${esc(col.conditions)}</td></tr>` : ""}
             <tr><td class="label">Status</td><td>${esc(col.status || "draft")}</td></tr>
           </table>
           ${
@@ -561,7 +561,7 @@ function buildHtmlDocument(
                 <table class="items">
                   <thead><tr>
                     <th>#</th><th>Description</th><th>Type</th><th>Device</th>
-                    <th>Serial #</th><th>Format</th><th>Method</th><th>Condition</th><th>Notes</th>
+                    <th>Serial #</th><th>Image / Export Format</th><th>Digital Method</th><th>Condition</th><th>Notes</th>
                   </tr></thead>
                   <tbody>${itemRows(itemsByCol.get(col.id) ?? [])}</tbody>
                 </table>`
@@ -596,7 +596,7 @@ function buildHtmlDocument(
 <body>
   <h2>Evidence Collection Summary</h2>
   <div class="subtitle">
-    Evidence Container: ${esc(filename)}<br>
+    Linked Evidence File / Container: ${esc(filename)}<br>
     Generated: ${new Date().toLocaleString()}
   </div>
   ${collectionSections}
@@ -615,9 +615,9 @@ const CSV_COLUMNS = [
   "Collection ID",
   "Case Number",
   "Collection Date",
-  "Collecting Officer",
-  "Collection Location",
-  "Authorization",
+  "Collector / Examiner",
+  "Where Found / Received",
+  "Authority / Reason",
   "Status",
   "Item Number",
   "Description",
@@ -628,13 +628,13 @@ const CSV_COLUMNS = [
   "Model",
   "Serial Number",
   "IMEI",
-  "Image Format",
-  "Acquisition Method",
-  "Found Location",
+  "Image / Export Format",
+  "Digital Acquisition Method",
+  "Item Where Found / Received",
   "Condition",
   "Packaging",
   "Notes",
-  "Storage Notes",
+  "Storage / Handling Notes",
   "Evidence File ID",
 ];
 

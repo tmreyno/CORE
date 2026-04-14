@@ -455,7 +455,7 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
                 <OptionalMetadataRow label="Type" value={m().itemType} />
                 <OptionalMetadataRow label="Condition" value={m().condition} />
                 <OptionalMetadataRow label="Packaging" value={m().packaging} />
-                <OptionalMetadataRow label="Found Location" value={m().foundLocation} />
+                <OptionalMetadataRow label="Where Found / Received" value={m().foundLocation} />
               </CollapsibleGroup>
               <Show when={m().notes}>
                 <CollapsibleGroup title="Notes">
@@ -468,9 +468,9 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
             <Show when={props.node.type === "coc"}>
               <CollapsibleGroup title="Chain of Custody">
                 <OptionalMetadataRow label="Status" value={m().cocStatus} />
-                <OptionalMetadataRow label="Submitted By" value={m().submittedBy} />
-                <OptionalMetadataRow label="Received By" value={m().receivedBy} />
-                <OptionalMetadataRow label="Collection Method" value={m().collectionMethod} />
+                <OptionalMetadataRow label="Released / Submitted By" value={m().submittedBy} />
+                <OptionalMetadataRow label="Taken Into Custody By" value={m().receivedBy} />
+                <OptionalMetadataRow label="How Item Was Obtained" value={m().collectionMethod} />
                 <OptionalMetadataRow label="Storage Location" value={m().storageLocation} />
                 <OptionalMetadataRow label="Acquisition Date" value={formatDate(m().acquisitionDate)} />
               </CollapsibleGroup>
@@ -487,9 +487,9 @@ function NodeDetailView(props: { node: LinkedDataNode }) {
             <Show when={props.node.type === "collection"}>
               <CollapsibleGroup title="Collection Event">
                 <OptionalMetadataRow label="Date" value={formatDate(m().collectionDate)} />
-                <OptionalMetadataRow label="Location" value={m().collectionLocation} />
-                <OptionalMetadataRow label="Officer" value={m().collectingOfficer} />
-                <OptionalMetadataRow label="Authorization" value={m().authorization} />
+                <OptionalMetadataRow label="Where Found / Received" value={m().collectionLocation} />
+                <OptionalMetadataRow label="Collector / Examiner" value={m().collectingOfficer} />
+                <OptionalMetadataRow label="Authority / Reason" value={m().authorization} />
                 <OptionalMetadataRow label="Status" value={m().status} />
               </CollapsibleGroup>
             </Show>

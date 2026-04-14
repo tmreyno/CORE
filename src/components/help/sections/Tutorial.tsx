@@ -378,10 +378,10 @@ export const TutorialContent: Component = () => (
           <li>A schema-driven form opens as a center pane tab. Fill in:
             <ul class="ml-4 list-disc mt-1 space-y-0.5">
               <li><strong>Case Number:</strong> 2026-0042</li>
-              <li><strong>Collecting Officer:</strong> Det. Sarah Chen, Badge #4451</li>
+              <li><strong>Collector / Examiner:</strong> Det. Sarah Chen, Badge #4451</li>
               <li><strong>Collection Date:</strong> 2026-02-15</li>
-              <li><strong>Authorization:</strong> Search Warrant #SW-2026-0042-A, signed by Judge M. Thompson</li>
-              <li><strong>Location:</strong> Meridian Financial Group, 1200 Commerce Blvd, Suite 400</li>
+              <li><strong>Authority / Reason:</strong> Search Warrant #SW-2026-0042-A, signed by Judge M. Thompson</li>
+              <li><strong>Where Found / Received:</strong> Meridian Financial Group, 1200 Commerce Blvd, Suite 400</li>
             </ul>
           </li>
           <li>Under <strong>Collected Items</strong>, add each evidence item with its description, serial number, and condition</li>
@@ -405,11 +405,11 @@ export const TutorialContent: Component = () => (
           <li>Navigate to the <strong>Chain of Custody</strong> section</li>
           <li>Click <strong>Add COC Item</strong> for each evidence transfer:
             <ul class="ml-4 list-disc mt-1 space-y-0.5">
-              <li><strong>Item 1:</strong> EV-001 Laptop received from Det. Chen by Lab Tech A. Martinez on 2026-02-16</li>
-              <li><strong>Item 2:</strong> EV-002 USB received from Det. Chen by Lab Tech A. Martinez on 2026-02-16</li>
+              <li><strong>Item 1:</strong> EV-001 Laptop taken into custody from Det. Chen by Lab Tech A. Martinez on 2026-02-16</li>
+              <li><strong>Item 2:</strong> EV-002 USB taken into custody from Det. Chen by Lab Tech A. Martinez on 2026-02-16</li>
             </ul>
           </li>
-          <li>Fill in COC number, description, submitted by, received by, date/time, and location</li>
+          <li>Fill in COC number, description, released or submitted by, taken into custody by, date/time, and intake location</li>
           <li>Each record starts in <span class="badge badge-success">Draft</span> status</li>
         </ol>
       </Action>
@@ -594,7 +594,7 @@ export const TutorialContent: Component = () => (
         </label>
         <label class="flex items-start gap-2 text-txt-secondary">
           <span class="text-accent mt-0.5">☐</span>
-          <span>Complete evidence collection form with authorization details</span>
+          <span>Complete evidence collection form with authority or reason details</span>
         </label>
         <label class="flex items-start gap-2 text-txt-secondary">
           <span class="text-accent mt-0.5">☐</span>

@@ -4,6 +4,12 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.107] - 2026-04-14
+
+### Changed
+- Evidence collection form language now uses clearer intake terminology for authority, linked evidence files, and digital acquisition details so desktop users can distinguish physical collection context from forensic acquisition context more easily
+- Evidence collection summaries, exports, conflict labels, and help/tutorial content now use the same intake-first wording so desktop review screens and onboarding match the updated collection forms
+
 ## [0.1.106] - 2026-04-14
 
 ### Changed

@@ -59,7 +59,7 @@ export const ChainOfCustodyContent: Component = () => (
       <div class="text-txt-secondary text-sm space-y-1 ml-1">
         <p><strong>1.</strong> Open the Report Wizard → navigate to the <strong>Chain of Custody</strong> section.</p>
         <p><strong>2.</strong> Click <strong>Add COC Item</strong> for each evidence transfer.</p>
-        <p><strong>3.</strong> Fill in: COC number, case #, evidence description, submitted by, received by, date/time, location.</p>
+        <p><strong>3.</strong> Fill in: COC number, case #, evidence description, released or submitted by, taken into custody by, date/time, and intake location.</p>
         <p><strong>4.</strong> Verify all details, then click <strong>Lock</strong> to finalize the record.</p>
         <p><strong>5.</strong> If a correction is needed on a locked record, click <strong>Amend</strong> — you must enter your initials and a written reason.</p>
         <p><strong>6.</strong> To invalidate a record, use <strong>Void</strong> — requires initials and reason. The record remains for audit purposes.</p>

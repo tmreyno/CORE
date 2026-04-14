@@ -27,8 +27,9 @@ export const EvidenceCollectionContent: Component = () => (
       <div class="p-3 bg-bg-secondary rounded-lg border border-border/50">
         <div class="font-medium text-txt text-sm">Schema-Driven Forms</div>
         <p class="text-xs text-txt-muted mt-1">
-          Collection forms are rendered from JSON schema templates. Fields include location, 
-          date/time, authorization, collected items, and examiner details.
+          Collection forms are rendered from JSON schema templates. Fields include where an item was
+          found or received, collection date/time, authority or reason, collected items, and
+          collector or examiner details.
           Changes are auto-saved to the project database. Custom templates can define additional fields 
           specific to your agency or workflow.
         </p>
@@ -47,9 +48,9 @@ export const EvidenceCollectionContent: Component = () => (
       <h4 class="font-semibold text-txt text-sm">How to Document a Collection</h4>
       <div class="text-txt-secondary text-sm space-y-1 ml-1">
         <p><strong>1.</strong> Open Evidence Collection via the command palette (<Kbd keys="Cmd+K" muted />) or sidebar context menu.</p>
-        <p><strong>2.</strong> Fill in the case number, collection date, location, and authorization details.</p>
+        <p><strong>2.</strong> Fill in the case number, collection date, where the item was found or received, and the authority or reason.</p>
         <p><strong>3.</strong> Add each collected item — describe the device, serial number, and condition.</p>
-        <p><strong>4.</strong> Assign the collecting officer and any witnesses.</p>
+        <p><strong>4.</strong> Assign the collector or examiner and any witnesses.</p>
         <p><strong>5.</strong> Save — the form auto-saves, but you can also press <Kbd keys="Cmd+S" muted /> to force a project save.</p>
         <p><strong>6.</strong> Review the linked data tree in the right panel to verify relationships.</p>
       </div>

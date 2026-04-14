@@ -14,6 +14,7 @@ use crate::project_db::{
     ImportedEvidenceCollectionPackage, ImportedEvidenceCollectionPackageCocItem,
     ImportedEvidenceCollectionPackageCollection, ProjectDatabase,
 };
+use core_types::evidence_collection_contract::EVIDENCE_COLLECTION_PACKAGE_VERSION;
 use core_types::mobile::{
     MobileEvidenceCollectionPackage, MobileEvidenceCollectionPackageCocItem,
     MobileEvidenceCollectionPackageCollection, MobileProject,
@@ -209,6 +210,31 @@ fn convert_import_package(
     })
 }
 
+fn build_evidence_collection_package(
+    db: &ProjectDatabase,
+    collection_id: &str,
+    source_app: &str,
+) -> Result<MobileEvidenceCollectionPackage, String> {
+    let collection = db
+        .get_evidence_collection_by_id(collection_id)
+        .map_err(|e| format!("Failed to load evidence collection {}: {}", collection_id, e))?;
+    let items = db
+        .get_collected_items(collection_id)
+        .map_err(|e| format!("Failed to load collected items for {}: {}", collection_id, e))?;
+
+    Ok(MobileEvidenceCollectionPackage {
+        export_version: EVIDENCE_COLLECTION_PACKAGE_VERSION.to_string(),
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        source_app: source_app.to_string(),
+        project: load_mobile_project(db, &collection),
+        collections: vec![MobileEvidenceCollectionPackageCollection {
+            collection: convert_shared_type(&collection, "evidence collection")?,
+            items: convert_shared_type(&items, "collected items")?,
+        }],
+        coc_items: build_linked_coc_items(db, &items)?,
+    })
+}
+
 // =============================================================================
 // Evidence Collection Commands
 // =============================================================================
@@ -259,24 +285,7 @@ pub fn project_db_export_evidence_collection_package(
     output_path: String,
 ) -> Result<String, String> {
     with_project_db_result(window.label(), |db| {
-        let collection = db
-            .get_evidence_collection_by_id(&collection_id)
-            .map_err(|e| format!("Failed to load evidence collection {}: {}", collection_id, e))?;
-        let items = db
-            .get_collected_items(&collection_id)
-            .map_err(|e| format!("Failed to load collected items for {}: {}", collection_id, e))?;
-
-        let package = MobileEvidenceCollectionPackage {
-            export_version: "1.0".to_string(),
-            exported_at: chrono::Utc::now().to_rfc3339(),
-            source_app: "CORE-FFX".to_string(),
-            project: load_mobile_project(db, &collection),
-            collections: vec![MobileEvidenceCollectionPackageCollection {
-                collection: convert_shared_type(&collection, "evidence collection")?,
-                items: convert_shared_type(&items, "collected items")?,
-            }],
-            coc_items: build_linked_coc_items(db, &items)?,
-        };
+        let package = build_evidence_collection_package(db, &collection_id, "CORE-FFX")?;
 
         let json = serde_json::to_string_pretty(&package)
             .map_err(|e| format!("Failed to serialize evidence collection package: {}", e))?;
@@ -410,4 +419,281 @@ pub fn project_db_delete_evidence_data_alternatives_for_item(
     with_project_db(window.label(), |db| {
         db.delete_evidence_data_alternatives_for_item(&collected_item_id)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project_db::{
+        DbCocAmendment, DbCocTransfer, DbEvidenceFile, ImportedEvidenceCollectionPackageCocItem,
+        ImportedEvidenceCollectionPackageCollection,
+    };
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    fn create_test_db() -> (TempDir, ProjectDatabase) {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.ffxdb");
+        let db = ProjectDatabase::open(&db_path).expect("Failed to create test DB");
+        (temp_dir, db)
+    }
+
+    fn make_import_package() -> ImportedEvidenceCollectionPackage {
+        ImportedEvidenceCollectionPackage {
+            source_app: "CORE-EVD".to_string(),
+            source_case_number: "CASE-IMPORT-1".to_string(),
+            source_case_title: "Imported Package Case".to_string(),
+            source_examiner_name: "Examiner Import".to_string(),
+            collections: vec![ImportedEvidenceCollectionPackageCollection {
+                collection: DbEvidenceCollection {
+                    id: "collection-src-1".to_string(),
+                    case_number: String::new(),
+                    collection_date: "2026-04-14".to_string(),
+                    collection_location: "Scene A".to_string(),
+                    collecting_officer: "Officer Import".to_string(),
+                    authorization: "Consent".to_string(),
+                    authorization_date: None,
+                    authorizing_authority: None,
+                    witnesses_json: None,
+                    documentation_notes: None,
+                    conditions: None,
+                    status: "complete".to_string(),
+                    created_at: "2026-04-14T10:00:00Z".to_string(),
+                    modified_at: "2026-04-14T10:00:00Z".to_string(),
+                    item_count: 0,
+                },
+                items: vec![
+                    DbCollectedItem {
+                        id: "item-src-1".to_string(),
+                        collection_id: "collection-src-1".to_string(),
+                        coc_item_id: Some("coc-src-1".to_string()),
+                        evidence_file_id: Some("ev-existing".to_string()),
+                        item_number: "ITEM-001".to_string(),
+                        description: "Imported iPhone".to_string(),
+                        found_location: "Desk".to_string(),
+                        item_type: "Phone".to_string(),
+                        make: None,
+                        model: None,
+                        serial_number: None,
+                        condition: "Good".to_string(),
+                        packaging: "Bag".to_string(),
+                        photo_refs_json: None,
+                        notes: None,
+                        item_collection_datetime: None,
+                        item_system_datetime: None,
+                        item_collecting_officer: None,
+                        item_authorization: None,
+                        device_type: None,
+                        device_type_other: None,
+                        storage_interface: None,
+                        storage_interface_other: None,
+                        brand: None,
+                        color: None,
+                        imei: None,
+                        other_identifiers: None,
+                        building: None,
+                        room: None,
+                        location_other: None,
+                        image_format: None,
+                        image_format_other: None,
+                        acquisition_method: None,
+                        acquisition_method_other: None,
+                        storage_notes: None,
+                    },
+                    DbCollectedItem {
+                        id: "item-src-2".to_string(),
+                        collection_id: "collection-src-1".to_string(),
+                        coc_item_id: Some("coc-missing".to_string()),
+                        evidence_file_id: Some("ev-missing".to_string()),
+                        item_number: "ITEM-002".to_string(),
+                        description: String::new(),
+                        found_location: String::new(),
+                        item_type: String::new(),
+                        make: None,
+                        model: None,
+                        serial_number: None,
+                        condition: String::new(),
+                        packaging: String::new(),
+                        photo_refs_json: None,
+                        notes: None,
+                        item_collection_datetime: None,
+                        item_system_datetime: None,
+                        item_collecting_officer: None,
+                        item_authorization: None,
+                        device_type: None,
+                        device_type_other: None,
+                        storage_interface: None,
+                        storage_interface_other: None,
+                        brand: None,
+                        color: None,
+                        imei: None,
+                        other_identifiers: None,
+                        building: None,
+                        room: None,
+                        location_other: None,
+                        image_format: None,
+                        image_format_other: None,
+                        acquisition_method: None,
+                        acquisition_method_other: None,
+                        storage_notes: None,
+                    },
+                ],
+            }],
+            coc_items: vec![ImportedEvidenceCollectionPackageCocItem {
+                item: DbCocItem {
+                    id: "coc-src-1".to_string(),
+                    coc_number: "COC-001".to_string(),
+                    evidence_file_id: Some("ev-existing".to_string()),
+                    case_number: String::new(),
+                    evidence_id: "EVID-001".to_string(),
+                    description: "Imported phone custody".to_string(),
+                    item_type: "Device".to_string(),
+                    case_title: None,
+                    office: None,
+                    owner_name: None,
+                    owner_address: None,
+                    owner_phone: None,
+                    source: None,
+                    other_contact_name: None,
+                    other_contact_relation: None,
+                    other_contact_phone: None,
+                    collection_method: None,
+                    collection_method_other: None,
+                    make: None,
+                    model: None,
+                    serial_number: None,
+                    capacity: None,
+                    condition: "Good".to_string(),
+                    acquisition_date: "2026-04-14T10:00:00Z".to_string(),
+                    entered_custody_date: "2026-04-14T10:05:00Z".to_string(),
+                    submitted_by: "Examiner Import".to_string(),
+                    collected_date: None,
+                    received_by: "Evidence Room".to_string(),
+                    received_location: None,
+                    storage_location: None,
+                    reason_submitted: None,
+                    intake_hashes_json: None,
+                    notes: Some("Imported note".to_string()),
+                    disposition: None,
+                    disposition_by: None,
+                    returned_to: None,
+                    destruction_date: None,
+                    disposition_date: None,
+                    disposition_notes: None,
+                    created_at: "2026-04-14T10:00:00Z".to_string(),
+                    modified_at: "2026-04-14T10:05:00Z".to_string(),
+                    status: "locked".to_string(),
+                    locked_at: Some("2026-04-14T10:05:00Z".to_string()),
+                    locked_by: Some("EX".to_string()),
+                },
+                transfers: vec![DbCocTransfer {
+                    id: "transfer-src-1".to_string(),
+                    coc_item_id: "coc-src-1".to_string(),
+                    timestamp: "2026-04-14T10:06:00Z".to_string(),
+                    released_by: "Examiner Import".to_string(),
+                    received_by: "Evidence Room".to_string(),
+                    purpose: "Storage".to_string(),
+                    location: Some("Locker A".to_string()),
+                    storage_location: Some("Shelf 7".to_string()),
+                    storage_date: Some("2026-04-14".to_string()),
+                    method: Some("Hand-delivered".to_string()),
+                    notes: None,
+                }],
+                amendments: vec![DbCocAmendment {
+                    id: "amendment-src-1".to_string(),
+                    coc_item_id: "coc-src-1".to_string(),
+                    field_name: "description".to_string(),
+                    old_value: "Phone".to_string(),
+                    new_value: "Imported phone custody".to_string(),
+                    amended_by_initials: "EX".to_string(),
+                    amended_at: "2026-04-14T10:07:00Z".to_string(),
+                    reason: Some("Clarified wording".to_string()),
+                }],
+                audit_log: Vec::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn build_evidence_collection_package_preserves_flattened_export_shape_after_import() {
+        let (_dir, db) = create_test_db();
+
+        db.upsert_evidence_file(&DbEvidenceFile {
+            id: "ev-existing".to_string(),
+            path: "/case/evidence/phone.E01".to_string(),
+            filename: "phone.E01".to_string(),
+            container_type: "e01".to_string(),
+            total_size: 1_024,
+            segment_count: 1,
+            discovered_at: "2026-04-14T09:55:00Z".to_string(),
+            created: None,
+            modified: None,
+        })
+        .unwrap();
+
+        db.import_evidence_collection_package(&make_import_package())
+            .unwrap();
+
+        let collection = db
+            .get_evidence_collections(None)
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.collection_location == "Scene A")
+            .expect("expected imported collection");
+
+        let package = build_evidence_collection_package(&db, &collection.id, "CORE-FFX").unwrap();
+        assert_eq!(package.export_version, EVIDENCE_COLLECTION_PACKAGE_VERSION);
+        assert_eq!(package.source_app, "CORE-FFX");
+        assert_eq!(package.project.case_number, "CASE-IMPORT-1");
+        assert_eq!(package.collections.len(), 1);
+        assert_eq!(package.collections[0].items.len(), 2);
+        assert_eq!(package.coc_items.len(), 1);
+
+        let json = serde_json::to_value(&package).unwrap();
+        let collection_json = &json["collections"][0];
+        assert!(collection_json.get("collection").is_none());
+        assert_eq!(
+            collection_json.get("caseNumber").and_then(Value::as_str),
+            Some("CASE-IMPORT-1")
+        );
+
+        let items = collection_json["items"].as_array().expect("items array");
+        assert_eq!(items.len(), 2);
+        let preserved_item = items
+            .iter()
+            .find(|item| item.get("itemNumber").and_then(Value::as_str) == Some("ITEM-001"))
+            .expect("preserved item");
+        assert_eq!(
+            preserved_item.get("evidenceFileId").and_then(Value::as_str),
+            Some("ev-existing")
+        );
+        assert_ne!(
+            preserved_item
+                .get("cocItemId")
+                .and_then(Value::as_str)
+                .expect("remapped coc id"),
+            "coc-src-1"
+        );
+
+        let dropped_item = items
+            .iter()
+            .find(|item| item.get("itemNumber").and_then(Value::as_str) == Some("ITEM-002"))
+            .expect("dropped-link item");
+        assert_eq!(dropped_item.get("cocItemId").map(Value::is_null), Some(true));
+        assert_eq!(dropped_item.get("evidenceFileId").map(Value::is_null), Some(true));
+
+        let coc_json = &json["cocItems"][0];
+        assert!(coc_json.get("item").is_none());
+        assert_eq!(
+            coc_json.get("cocNumber").and_then(Value::as_str),
+            Some("COC-001")
+        );
+        assert_eq!(coc_json["transfers"].as_array().map(Vec::len), Some(1));
+        assert_eq!(coc_json["amendments"].as_array().map(Vec::len), Some(1));
+        assert_eq!(coc_json["auditLog"].as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            coc_json["auditLog"][0].get("action").and_then(Value::as_str),
+            Some("imported")
+        );
+    }
 }

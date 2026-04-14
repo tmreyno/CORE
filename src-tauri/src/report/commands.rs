@@ -11,6 +11,7 @@
 use parking_lot::Mutex;
 use tauri::State;
 
+use core_types::evidence_collection_contract::EVIDENCE_COLLECTION_PACKAGE_VERSION;
 use core_types::evidence::{DbCollectedItem, DbEvidenceCollection};
 use core_types::mobile::{
     MobileEvidenceCollectionPackage, MobileEvidenceCollectionPackageCollection, MobileProject,
@@ -677,7 +678,7 @@ fn build_evidence_collection_package(
         .collect::<Result<Vec<_>, String>>()?;
 
     Ok(MobileEvidenceCollectionPackage {
-        export_version: "1.0".to_string(),
+        export_version: EVIDENCE_COLLECTION_PACKAGE_VERSION.to_string(),
         exported_at: timestamp.clone(),
         source_app: source_app.to_string(),
         project: MobileProject {
