@@ -4,6 +4,11 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.109] - 2026-04-14
+
+### Fixed
+- Desktop CI builds now align the frontend Tauri dialog plugin with the resolved Rust plugin minor version so cross-platform `tauri build` checks no longer fail on package mismatch detection
+
 ## [0.1.108] - 2026-04-14
 
 ### Fixed
