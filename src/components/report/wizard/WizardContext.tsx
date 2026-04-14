@@ -127,6 +127,7 @@ export interface WizardContextType {
   exporting: Accessor<boolean>;
   exportError: Accessor<string | null>;
   exportReport: () => Promise<void>;
+  exportStandardPackage: () => Promise<void>;
 
   // Signatures
   examinerSignature: Accessor<string>;
@@ -287,6 +288,7 @@ export function WizardProvider(providerProps: WizardProviderProps) {
     exporting: state.exporting,
     exportError: state.exportError,
     exportReport: actions.exportReport,
+    exportStandardPackage: actions.exportStandardPackage,
 
     // Signatures
     examinerSignature: state.examinerSignature,

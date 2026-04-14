@@ -34,7 +34,7 @@
 23. [image 0.25 — Image Processing](#image-025)
 24. [pdf-extract 0.7.12 — PDF Text Extraction](#pdf-extract-0712)
 25. [csv 1.3 — CSV/TSV Parsing](#csv-13)
-26. [langchain-rust 4.6 + async-openai 0.29 — AI Integration](#langchain-rust-46--async-openai-029)
+26. [async-openai 0.34 + reqwest 0.12](#async-openai-034--reqwest-012)
 27. [Internal Types — Gotchas & Corrections](#internal-types)
 28. [libewf-ffi — EWF Forensic Image Read/Write](#libewf-ffi)
 
@@ -2432,106 +2432,102 @@ record.iter() -> Iter<'_>                 // Iterator over &str fields
 
 ---
 
-## langchain-rust 4.6 + async-openai 0.29
+## async-openai 0.34 + reqwest 0.12
 
-**Used in:** `report/ai.rs` (503 lines, behind `ai-assistant` feature flag)
-**Purpose:** AI-powered report narrative generation via Ollama (local) or OpenAI (cloud)
+**Used in:** `report/ai.rs` (behind `ai-assistant` feature flag)
+**Purpose:** AI-powered report narrative generation via Ollama (local HTTP) or OpenAI/Azure OpenAI via the Responses API
 
-> ⚠️ These are **optional dependencies** — gated behind `features = ["ai-assistant"]` (enabled by default in dev).
+> ⚠️ These are **optional dependencies** — gated behind `features = ["ai-assistant"]`.
 
-### langchain-rust — Ollama Client
-
-```rust
-use langchain_rust::llm::ollama::client::{Ollama, OllamaClient};
-use langchain_rust::language_models::llm::LLM;
-use std::sync::Arc;
-
-// Create client
-let ollama_client = OllamaClient::try_new(url: &str)
-    -> Result<OllamaClient, Box<dyn std::error::Error>>
-
-// Create LLM wrapper
-let ollama = Ollama::new(
-    client: Arc<OllamaClient>,
-    model: &str,              // e.g., "llama3.2"
-    options: Option<...>,     // Usually None
-) -> Ollama
-
-// Generate text (from LLM trait)
-ollama.invoke(prompt: &str) -> Result<String, Box<dyn std::error::Error>>
-// ⚠️ This is async — returns a Future
-```
-
-### async-openai — OpenAI Client
+### async-openai — Responses API Client
 
 ```rust
 use async_openai::{
     Client,
-    types::{
-        CreateChatCompletionRequestArgs,
-        ChatCompletionRequestUserMessageArgs,
-    },
-    config::OpenAIConfig,
+    config::{AzureConfig, OpenAIConfig},
+    types::responses::CreateResponseArgs,
 };
 
-// Create client
+// Create OpenAI client
 Client::new() -> Client<OpenAIConfig>                    // Uses OPENAI_API_KEY env var
 Client::with_config(config: OpenAIConfig) -> Client<OpenAIConfig>
 
-// Configure API key
+// Configure explicit OpenAI API key
 OpenAIConfig::new() -> OpenAIConfig
 config.with_api_key(key: impl Into<String>) -> OpenAIConfig
 
-// Build chat request
-CreateChatCompletionRequestArgs::default()
-    .model(model: impl Into<String>)          // e.g., "gpt-4"
-    .messages(messages: impl IntoIterator<Item = ChatCompletionRequestMessage>)
-    .build() -> Result<CreateChatCompletionRequest, OpenAIError>
-
-// Build user message
-ChatCompletionRequestUserMessageArgs::default()
-    .content(content: impl Into<String>)
-    .build() -> Result<ChatCompletionRequestUserMessage, OpenAIError>
-    // Then convert to generic message with .into()
+// Build a Responses API request
+CreateResponseArgs::default()
+    .model(model: impl Into<String>)          // e.g., "gpt-5-mini"
+    .input(input: impl Into<Input>)
+    .store(store: bool)
+    .max_output_tokens(tokens: u32)
+    .build() -> Result<CreateResponse, OpenAIError>
 
 // Send request
-client.chat().create(request) -> Result<CreateChatCompletionResponse, OpenAIError>
+client.responses().create(request) -> Result<Response, OpenAIError>
 
 // Extract response text
-response.choices[0].message.content  // Option<String>
-// Pattern: response.choices.first().and_then(|c| c.message.content.clone())
+response.output_text() -> Option<String>
 ```
 
 #### Azure OpenAI via AzureConfig
 
 ```rust
-use async_openai::{Client, config::AzureConfig};
+use async_openai::{Client, config::AzureConfig, types::responses::CreateResponseArgs};
 
 // Build AzureConfig
-AzureConfig::new() -> AzureConfig                              // Defaults; reads OPENAI_API_KEY env var
-config.with_api_base(url: impl Into<String>) -> AzureConfig    // e.g., "https://my-resource.openai.azure.com"
-config.with_deployment_id(id: impl Into<String>) -> AzureConfig // e.g., "gpt-4"
-config.with_api_version(ver: impl Into<String>) -> AzureConfig  // e.g., "2024-02-01"
-config.with_api_key(key: impl Into<String>) -> AzureConfig      // Explicit key (overrides env var)
+AzureConfig::new() -> AzureConfig
+config.with_api_base(url: impl Into<String>) -> AzureConfig
+config.with_deployment_id(id: impl Into<String>) -> AzureConfig
+config.with_api_version(ver: impl Into<String>) -> AzureConfig
+config.with_api_key(key: impl Into<String>) -> AzureConfig
 
 // Create client with Azure config
 let client = Client::with_config(config);  // Client<AzureConfig>
 
-// Then use same chat API as OpenAI:
-client.chat().create(request).await
+// Azure uses the same Responses API surface
+client.responses().create(request).await
+```
+
+### reqwest — Ollama Local HTTP
+
+```rust
+use reqwest::Client;
+
+#[derive(serde::Serialize)]
+struct OllamaGenerateRequest<'a> {
+    model: &'a str,
+    prompt: &'a str,
+    stream: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct OllamaGenerateResponse {
+    response: String,
+}
+
+let response = Client::new()
+    .post("http://localhost:11434/api/generate")
+    .json(&OllamaGenerateRequest {
+        model: "llama3.2",
+        prompt,
+        stream: false,
+    })
+    .send()
+    .await?;
 ```
 
 ### Common Gotchas
 
 | What You Might Assume | Actual API |
 |---|---|
-| `OllamaClient::new(url)` | **`OllamaClient::try_new(url)`** — returns `Result`, not direct construction. |
-| `Ollama::new(client, model)` | **Takes `Arc<OllamaClient>`** — must wrap: `Ollama::new(Arc::new(client), model, None)`. |
-| `ollama.invoke()` is sync | **Async** — must `.await`. Returns `Result<String, Box<dyn Error>>`. |
-| `LLM` trait is in `langchain_rust::llm` | **`langchain_rust::language_models::llm::LLM`** — note the `language_models` path. |
-| OpenAI `Client::new()` requires API key arg | **Reads from `OPENAI_API_KEY` env var.** Use `Client::with_config()` for explicit key. |
-| `ChatCompletionRequestUserMessageArgs` builds directly into a message vec | **Must call `.build()?.into()`** to convert to `ChatCompletionRequestMessage`. |
-| Response has `.text` field | **Access via `response.choices.first().and_then(\|c\| c.message.content.clone())`** — deeply nested `Option<String>`. |
+| `async-openai` Responses support is on by default | **Enable `responses` and `response-types` features explicitly.** |
+| OpenAI still needs Chat Completions builders | **This code uses `CreateResponseArgs` + `client.responses().create(...)`.** |
+| Response text is nested in `choices[0].message.content` | **Use `response.output_text()`** for the Responses API helper. |
+| `store` defaults to false | **Set it explicitly** if you want a clear no-storage policy in code. |
+| Ollama needs `langchain-rust` for simple generation | **A direct `reqwest` POST to `/api/generate` is sufficient** for single-prompt local inference. |
+| Azure OpenAI needs a separate request shape | **The client config changes, but the request still uses `CreateResponseArgs`.** |
 | These crates are always available | **Feature-gated: `#[cfg(feature = "ai-assistant")]`** — code must be conditional. |
 
 ---

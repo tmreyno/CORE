@@ -68,6 +68,15 @@ export function ExportStep() {
       {/* Export Button */}
       <div class="pt-5 border-t border-border/30">
         <button
+          class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 border border-border bg-surface hover:border-accent/50 hover:bg-surface/80 disabled:opacity-50 disabled:cursor-not-allowed mb-2"
+          onClick={ctx.exportStandardPackage}
+          disabled={ctx.exporting() || !ctx.caseInfo().case_number || !ctx.examiner().name}
+        >
+          <HiOutlineDocumentCheck class="w-5 h-5" />
+          {ctx.exporting() ? "Exporting..." : "Save Standard Report Package"}
+        </button>
+
+        <button
           class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 bg-accent text-white hover:bg-accent/90 shadow-lg shadow-accent/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           onClick={ctx.exportReport}
           disabled={ctx.exporting() || !ctx.caseInfo().case_number || !ctx.examiner().name}

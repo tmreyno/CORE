@@ -300,6 +300,8 @@ export interface AppPreferences {
   organizationName: string;
   defaultAgency: string;
   caseNumberPrefix: string;
+  reportAiProvider: string;
+  reportAiModel: string;
   
   // =========================================================================
   // Report Numbering
@@ -459,6 +461,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   organizationName: "",
   defaultAgency: "",
   caseNumberPrefix: "",
+  reportAiProvider: "openai",
+  reportAiModel: "gpt-5",
   
   // Report Numbering
   reportNumberPrefixes: {

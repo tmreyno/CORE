@@ -14,6 +14,7 @@ use std::path::Path;
 use docx_rs::*;
 
 use super::error::{ReportError, ReportResult};
+use super::format_helpers::{has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// DOCX generator for forensic reports
@@ -69,6 +70,10 @@ impl DocxGenerator {
             docx = self.add_evidence_collection_section(docx, report);
         }
 
+        if !report.chain_of_custody.is_empty() {
+            docx = self.add_chain_of_custody_section(docx, report);
+        }
+
         // Add findings
         if !report.findings.is_empty() {
             docx = self.add_findings_section(docx, report);
@@ -79,6 +84,10 @@ impl DocxGenerator {
             docx = self.add_timeline_section(docx, report);
         }
 
+        if !report.hash_records.is_empty() {
+            docx = self.add_hash_section(docx, report);
+        }
+
         // Add tools
         if !report.tools.is_empty() {
             docx = self.add_tools_section(docx, report);
@@ -87,6 +96,18 @@ impl DocxGenerator {
         // Add conclusions
         if report.conclusions.is_some() {
             docx = self.add_conclusions(docx, report);
+        }
+
+        if has_text(report.notes.as_deref()) {
+            docx = self.add_notes_section(docx, report);
+        }
+
+        if !report.appendices.is_empty() {
+            docx = self.add_appendices_section(docx, report);
+        }
+
+        if !report.signatures.is_empty() {
+            docx = self.add_signatures_section(docx, report);
         }
 
         // Add footer
@@ -185,7 +206,7 @@ impl DocxGenerator {
         let docx = self.add_section_header(docx, "Executive Summary");
 
         if let Some(ref summary) = report.executive_summary {
-            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(summary).size(20)))
+            self.add_rich_text(docx, summary)
                 .add_paragraph(Paragraph::new())
         } else {
             docx
@@ -196,7 +217,7 @@ impl DocxGenerator {
         let docx = self.add_section_header(docx, "Scope of Examination");
 
         if let Some(ref scope) = report.scope {
-            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(scope).size(20)))
+            self.add_rich_text(docx, scope)
                 .add_paragraph(Paragraph::new())
         } else {
             docx
@@ -207,7 +228,7 @@ impl DocxGenerator {
         let docx = self.add_section_header(docx, "Methodology");
 
         if let Some(ref methodology) = report.methodology {
-            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(methodology).size(20)))
+            self.add_rich_text(docx, methodology)
                 .add_paragraph(Paragraph::new())
         } else {
             docx
@@ -352,14 +373,39 @@ impl DocxGenerator {
             if !notes.is_empty() {
                 docx = docx.add_paragraph(Paragraph::new());
                 docx = docx.add_paragraph(
-                    Paragraph::new()
-                        .add_run(Run::new().add_text("Documentation Notes: ").bold())
-                        .add_run(Run::new().add_text(notes)),
+                    Paragraph::new().add_run(Run::new().add_text("Documentation Notes").bold()),
                 );
+                docx = self.add_rich_text(docx, notes);
             }
         }
 
         docx.add_paragraph(Paragraph::new()) // Spacer
+    }
+
+    fn add_chain_of_custody_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
+        let docx = self.add_section_header(docx, "Chain of Custody");
+
+        let mut table = Table::new(vec![TableRow::new(vec![
+            self.header_cell("Date/Time"),
+            self.header_cell("Evidence ID"),
+            self.header_cell("Released By"),
+            self.header_cell("Received By"),
+            self.header_cell("Purpose"),
+            self.header_cell("Location"),
+        ])]);
+
+        for record in &report.chain_of_custody {
+            table = table.add_row(TableRow::new(vec![
+                self.data_cell(&record.timestamp.format("%Y-%m-%d %H:%M").to_string()),
+                self.data_cell(&record.evidence_id),
+                self.data_cell(&record.released_by),
+                self.data_cell(&record.received_by),
+                self.data_cell(record.purpose.as_deref().unwrap_or("-")),
+                self.data_cell(record.location.as_deref().unwrap_or("-")),
+            ]));
+        }
+
+        docx.add_table(table).add_paragraph(Paragraph::new())
     }
 
     fn add_findings_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
@@ -383,9 +429,7 @@ impl DocxGenerator {
             );
 
             // Description
-            docx = docx.add_paragraph(
-                Paragraph::new().add_run(Run::new().add_text(&finding.description).size(20)),
-            );
+            docx = self.add_rich_text(docx, &finding.description);
 
             // Related files
             if !finding.related_files.is_empty() {
@@ -401,13 +445,26 @@ impl DocxGenerator {
                 }
             }
 
+            if !finding.supporting_evidence.is_empty() {
+                docx = docx.add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_text("Supporting Evidence:").bold().size(18)),
+                );
+
+                for evidence in &finding.supporting_evidence {
+                    docx = docx.add_paragraph(
+                        Paragraph::new()
+                            .add_run(Run::new().add_text(format!("• {}", evidence)).size(18)),
+                    );
+                }
+            }
+
             // Notes
             if let Some(ref notes) = finding.notes {
                 docx = docx.add_paragraph(
-                    Paragraph::new()
-                        .add_run(Run::new().add_text("Notes: ").bold().size(18))
-                        .add_run(Run::new().add_text(notes).size(18)),
+                    Paragraph::new().add_run(Run::new().add_text("Analyst Notes").bold().size(18)),
                 );
+                docx = self.add_rich_text(docx, notes);
             }
 
             docx = docx.add_paragraph(Paragraph::new()); // Spacer
@@ -433,6 +490,34 @@ impl DocxGenerator {
                 self.data_cell(&event.timestamp_type),
                 self.data_cell(&event.description),
                 self.data_cell(&event.source),
+            ]));
+        }
+
+        docx.add_table(table).add_paragraph(Paragraph::new())
+    }
+
+    fn add_hash_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
+        let docx = self.add_section_header(docx, "Hash Verification");
+
+        let mut table = Table::new(vec![TableRow::new(vec![
+            self.header_cell("Item"),
+            self.header_cell("Algorithm"),
+            self.header_cell("Hash Value"),
+            self.header_cell("Status"),
+        ])]);
+
+        for record in &report.hash_records {
+            let status = match record.verified {
+                Some(true) => "Verified",
+                Some(false) => "Mismatch",
+                None => "Not recorded",
+            };
+
+            table = table.add_row(TableRow::new(vec![
+                self.data_cell(&record.item),
+                self.data_cell(record.algorithm.as_str()),
+                self.data_cell(&record.value),
+                self.data_cell(status),
             ]));
         }
 
@@ -465,11 +550,82 @@ impl DocxGenerator {
         let docx = self.add_section_header(docx, "Conclusions");
 
         if let Some(ref conclusions) = report.conclusions {
-            docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(conclusions).size(20)))
+            self.add_rich_text(docx, conclusions)
                 .add_paragraph(Paragraph::new())
         } else {
             docx
         }
+    }
+
+    fn add_notes_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
+        let docx = self.add_section_header(docx, "Additional Notes");
+
+        if let Some(notes) = report.notes.as_deref().filter(|notes| !notes.trim().is_empty()) {
+            self.add_rich_text(docx, notes).add_paragraph(Paragraph::new())
+        } else {
+            docx
+        }
+    }
+
+    fn add_appendices_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
+        let mut docx = self.add_section_header(docx, "Appendices");
+
+        for (index, appendix) in report.appendices.iter().enumerate() {
+            docx = docx.add_paragraph(
+                Paragraph::new().add_run(
+                    Run::new()
+                        .add_text(format!(
+                            "Appendix {}: {}",
+                            (b'A' + index as u8) as char,
+                            appendix.title
+                        ))
+                        .bold()
+                        .size(22),
+                ),
+            );
+            docx = self.add_rich_text(docx, &appendix.content);
+            docx = docx.add_paragraph(Paragraph::new());
+        }
+
+        docx
+    }
+
+    fn add_signatures_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
+        let mut docx = self.add_section_header(docx, "Approvals and Signatures");
+
+        for signature in &report.signatures {
+            let mut rows = vec![
+                ("Role", signature.role.clone()),
+                ("Name", signature.name.clone()),
+                (
+                    "Status",
+                    match (signature.certified, signature.signature.is_some()) {
+                        (Some(true), _) => "Digitally certified".to_string(),
+                        (_, true) => "Signature captured".to_string(),
+                        _ => "Pending signature".to_string(),
+                    },
+                ),
+            ];
+
+            if let Some(ref signed_date) = signature.signed_date {
+                if !signed_date.trim().is_empty() {
+                    rows.push(("Signed", signed_date.clone()));
+                }
+            }
+
+            docx = self.add_info_table(docx, &rows);
+            if let Some(ref notes) = signature.notes {
+                if !notes.trim().is_empty() {
+                    docx = docx.add_paragraph(
+                        Paragraph::new().add_run(Run::new().add_text("Notes").bold().size(18)),
+                    );
+                    docx = self.add_rich_text(docx, notes);
+                }
+            }
+            docx = docx.add_paragraph(Paragraph::new());
+        }
+
+        docx
     }
 
     fn add_footer(&self, docx: Docx, report: &ForensicReport) -> Docx {
@@ -530,6 +686,28 @@ impl DocxGenerator {
 
     fn data_cell(&self, text: &str) -> TableCell {
         TableCell::new().add_paragraph(Paragraph::new().add_run(Run::new().add_text(text).size(18)))
+    }
+
+    fn add_rich_text(&self, mut docx: Docx, text: &str) -> Docx {
+        for block in text_blocks(text) {
+            match block {
+                TextBlock::Paragraph(paragraph) => {
+                    docx = docx.add_paragraph(
+                        Paragraph::new().add_run(Run::new().add_text(&paragraph).size(20)),
+                    );
+                }
+                TextBlock::BulletList(items) => {
+                    for item in items {
+                        docx = docx.add_paragraph(
+                            Paragraph::new()
+                                .add_run(Run::new().add_text(format!("• {}", item)).size(18)),
+                        );
+                    }
+                }
+            }
+        }
+
+        docx
     }
 }
 

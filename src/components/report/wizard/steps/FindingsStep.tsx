@@ -226,6 +226,10 @@ function AiSettingsPanel() {
 
       <Show when={aiState().showSettings}>
         <div class="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-border">
+          <div class="col-span-3 text-compact text-txt-muted">
+            {aiActions.getCurrentProviderInfo()?.description}
+          </div>
+
           <div>
             <label class="block text-compact text-txt-muted mb-0.5">Provider</label>
             <select
@@ -254,7 +258,7 @@ function AiSettingsPanel() {
 
           <Show when={aiActions.getCurrentProviderInfo()?.requires_api_key}>
             <div>
-              <label class="block text-compact text-txt-muted mb-0.5">API Key</label>
+              <label class="block text-compact text-txt-muted mb-0.5">OpenAI API Key</label>
               <input
                 type="password"
                 class="w-full px-2 py-1.5 bg-bg border border-border rounded text-sm"
@@ -262,6 +266,15 @@ function AiSettingsPanel() {
                 onInput={(e) => aiActions.setApiKey(e.currentTarget.value)}
                 placeholder="sk-..."
               />
+              <p class="mt-1 text-2xs text-txt-muted">
+                Optional if <code class="bg-bg px-1 rounded">OPENAI_API_KEY</code> is already configured for this app environment.
+              </p>
+            </div>
+          </Show>
+
+          <Show when={aiState().selectedProvider === "openai"}>
+            <div class="col-span-3 text-compact text-txt-muted">
+              OpenAI GPT-5 is the recommended default for the strongest report-writing quality.
             </div>
           </Show>
 

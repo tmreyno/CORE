@@ -11,6 +11,11 @@
 use parking_lot::Mutex;
 use tauri::State;
 
+use core_types::evidence::{DbCollectedItem, DbEvidenceCollection};
+use core_types::mobile::{
+    MobileEvidenceCollectionPackage, MobileEvidenceCollectionPackageCollection, MobileProject,
+};
+
 use super::{types::*, ForensicReport, OutputFormat, ReportGenerator};
 use crate::common::hex::format_size_compact;
 
@@ -68,10 +73,7 @@ pub async fn preview_report(
 ) -> Result<String, String> {
     let generator = state.generator.lock();
 
-    generator
-        .template_engine()
-        .render_html(&report)
-        .map_err(|e| e.to_string())
+    Ok(generator.render_preview_html(&report))
 }
 
 /// Get available output formats
@@ -398,9 +400,25 @@ pub mod ai_commands {
     pub fn get_ai_providers() -> Vec<AiProviderInfo> {
         vec![
             AiProviderInfo {
+                id: "openai".to_string(),
+                name: "OpenAI".to_string(),
+                description:
+                    "Recommended for the strongest report-writing quality via the Responses API. Uses a typed key or OPENAI_API_KEY."
+                        .to_string(),
+                requires_api_key: true,
+                default_model: "gpt-5".to_string(),
+                available_models: vec![
+                    "gpt-5".to_string(),
+                    "gpt-5-mini".to_string(),
+                    "gpt-4.1".to_string(),
+                    "gpt-4.1-mini".to_string(),
+                ],
+            },
+            AiProviderInfo {
                 id: "ollama".to_string(),
                 name: "Ollama (Local)".to_string(),
-                description: "Run LLMs locally - requires Ollama installed".to_string(),
+                description: "Run local models on the workstation with Ollama installed."
+                    .to_string(),
                 requires_api_key: false,
                 default_model: "llama3.2".to_string(),
                 available_models: vec![
@@ -410,19 +428,6 @@ pub mod ai_commands {
                     "codellama".to_string(),
                     "phi3".to_string(),
                     "gemma2".to_string(),
-                ],
-            },
-            AiProviderInfo {
-                id: "openai".to_string(),
-                name: "OpenAI".to_string(),
-                description: "Cloud-based GPT models - requires API key".to_string(),
-                requires_api_key: true,
-                default_model: "gpt-4o-mini".to_string(),
-                available_models: vec![
-                    "gpt-4o".to_string(),
-                    "gpt-4o-mini".to_string(),
-                    "gpt-4-turbo".to_string(),
-                    "gpt-3.5-turbo".to_string(),
                 ],
             },
         ]
@@ -539,7 +544,7 @@ pub mod ai_commands {
 
 /// Export evidence collection data in the specified format.
 ///
-/// Supported `format` values: `"pdf"`, `"csv"`, `"xlsx"`, `"html"`
+/// Supported `format` values: `"pdf"`, `"csv"`, `"xlsx"`, `"html"`, `"json"`
 #[tauri::command]
 pub async fn export_evidence_collection(
     data: super::types::EvidenceCollectionData,
@@ -561,6 +566,11 @@ pub async fn export_evidence_collection(
             super::evidence_collection_export::export_html(&data, &case_number, &output_path)
                 .map_err(|e| e.to_string())?;
         }
+        "json" => {
+            let package = build_evidence_collection_package(&data, &case_number, "CORE-FFX")?;
+            let json = serde_json::to_string_pretty(&package).map_err(|e| e.to_string())?;
+            std::fs::write(&output_path, json).map_err(|e| format!("Failed to write file: {e}"))?;
+        }
         "pdf" => {
             // Build a minimal ForensicReport to feed the PDF renderer
             let report = super::types::ForensicReport {
@@ -579,12 +589,129 @@ pub async fn export_evidence_collection(
         }
         _ => {
             return Err(format!(
-                "Unsupported export format: '{}'. Use pdf, csv, xlsx, or html.",
+                "Unsupported export format: '{}'. Use pdf, csv, xlsx, html, or json.",
                 format
             ))
         }
     }
     Ok(output_path)
+}
+
+fn build_evidence_collection_package(
+    data: &super::types::EvidenceCollectionData,
+    case_number: &str,
+    source_app: &str,
+) -> Result<MobileEvidenceCollectionPackage, String> {
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let project_id = uuid::Uuid::new_v4().to_string();
+    let collection_id = uuid::Uuid::new_v4().to_string();
+    let witnesses_json = if data.witnesses.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&data.witnesses).map_err(|e| e.to_string())?)
+    };
+
+    let items = data
+        .collected_items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let item_id = if item.id.is_empty() {
+                uuid::Uuid::new_v4().to_string()
+            } else {
+                item.id.clone()
+            };
+            let item_number = if item.item_number.is_empty() {
+                (index + 1).to_string()
+            } else {
+                item.item_number.clone()
+            };
+            let photo_refs_json = if item.photo_refs.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(&item.photo_refs).map_err(|e| e.to_string())?)
+            };
+
+            Ok(DbCollectedItem {
+                id: item_id,
+                collection_id: collection_id.clone(),
+                coc_item_id: None,
+                evidence_file_id: None,
+                item_number,
+                description: item.description.clone(),
+                found_location: item.found_location.clone(),
+                item_type: if item.item_type.is_empty() {
+                    item.device_type.clone()
+                } else {
+                    item.item_type.clone()
+                },
+                make: item.make.clone(),
+                model: item.model.clone(),
+                serial_number: item.serial_number.clone(),
+                condition: item.condition.clone(),
+                packaging: item.packaging.clone(),
+                photo_refs_json,
+                notes: item.notes.clone(),
+                item_collection_datetime: item.item_collection_datetime.clone(),
+                item_system_datetime: item.item_system_datetime.clone(),
+                item_collecting_officer: item.item_collecting_officer.clone(),
+                item_authorization: item.item_authorization.clone(),
+                device_type: (!item.device_type.is_empty()).then(|| item.device_type.clone()),
+                device_type_other: item.device_type_other.clone(),
+                storage_interface: item.storage_interface.clone(),
+                storage_interface_other: item.storage_interface_other.clone(),
+                brand: item.brand.clone(),
+                color: item.color.clone(),
+                imei: item.imei.clone(),
+                other_identifiers: item.other_identifiers.clone(),
+                building: item.building.clone(),
+                room: item.room.clone(),
+                location_other: item.location_other.clone(),
+                image_format: item.image_format.clone(),
+                image_format_other: item.image_format_other.clone(),
+                acquisition_method: item.acquisition_method.clone(),
+                acquisition_method_other: item.acquisition_method_other.clone(),
+                storage_notes: item.storage_notes.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(MobileEvidenceCollectionPackage {
+        export_version: "1.0".to_string(),
+        exported_at: timestamp.clone(),
+        source_app: source_app.to_string(),
+        project: MobileProject {
+            id: project_id,
+            case_number: case_number.to_string(),
+            case_title: case_number.to_string(),
+            examiner_name: data.collecting_officer.clone(),
+            organization: String::new(),
+            created_at: timestamp.clone(),
+            modified_at: timestamp.clone(),
+            status: "active".to_string(),
+        },
+        collections: vec![MobileEvidenceCollectionPackageCollection {
+            collection: DbEvidenceCollection {
+                id: collection_id,
+                case_number: case_number.to_string(),
+                collection_date: data.collection_date.clone(),
+                collection_location: data.collection_location.clone(),
+                collecting_officer: data.collecting_officer.clone(),
+                authorization: data.authorization.clone(),
+                authorization_date: data.authorization_date.clone(),
+                authorizing_authority: data.authorizing_authority.clone(),
+                witnesses_json,
+                documentation_notes: data.documentation_notes.clone(),
+                conditions: data.conditions.clone(),
+                status: "draft".to_string(),
+                created_at: timestamp.clone(),
+                modified_at: timestamp,
+                item_count: items.len() as i64,
+            },
+            items,
+        }],
+        coc_items: vec![],
+    })
 }
 
 // =============================================================================

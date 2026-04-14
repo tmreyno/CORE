@@ -15,6 +15,7 @@ use genpdf::{
 use std::path::Path;
 
 use super::error::{ReportError, ReportResult};
+use super::format_helpers::{has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// PDF generator for forensic reports
@@ -147,8 +148,24 @@ impl PdfGenerator {
             self.add_executive_summary(&mut doc, report)?;
         }
 
+        if report.scope.is_some() {
+            self.add_scope(&mut doc, report)?;
+        }
+
+        if report.methodology.is_some() {
+            self.add_methodology(&mut doc, report)?;
+        }
+
         if !report.evidence_items.is_empty() {
             self.add_evidence_section(&mut doc, report)?;
+        }
+
+        if report.evidence_collection.is_some() {
+            self.add_evidence_collection_section(&mut doc, report)?;
+        }
+
+        if !report.chain_of_custody.is_empty() {
+            self.add_chain_of_custody_section(&mut doc, report)?;
         }
 
         if !report.findings.is_empty() {
@@ -159,12 +176,28 @@ impl PdfGenerator {
             self.add_timeline_section(&mut doc, report)?;
         }
 
+        if !report.hash_records.is_empty() {
+            self.add_hash_section(&mut doc, report)?;
+        }
+
         if !report.tools.is_empty() {
             self.add_tools_section(&mut doc, report)?;
         }
 
         if report.conclusions.is_some() {
             self.add_conclusions(&mut doc, report)?;
+        }
+
+        if has_text(report.notes.as_deref()) {
+            self.add_notes_section(&mut doc, report)?;
+        }
+
+        if !report.appendices.is_empty() {
+            self.add_appendices_section(&mut doc, report)?;
+        }
+
+        if !report.signatures.is_empty() {
+            self.add_signatures_section(&mut doc, report)?;
         }
 
         self.add_footer(&mut doc, report)?;
@@ -265,7 +298,29 @@ impl PdfGenerator {
         self.add_section_header(doc, "Executive Summary");
 
         if let Some(ref summary) = report.executive_summary {
-            doc.push(Paragraph::new(summary).styled(style::Style::new().with_font_size(10)));
+            self.push_rich_text(doc, summary, 10);
+        }
+
+        doc.push(Break::new(1.0));
+        Ok(())
+    }
+
+    fn add_scope(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+        self.add_section_header(doc, "Scope of Examination");
+
+        if let Some(ref scope) = report.scope {
+            self.push_rich_text(doc, scope, 10);
+        }
+
+        doc.push(Break::new(1.0));
+        Ok(())
+    }
+
+    fn add_methodology(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+        self.add_section_header(doc, "Methodology");
+
+        if let Some(ref methodology) = report.methodology {
+            self.push_rich_text(doc, methodology, 10);
         }
 
         doc.push(Break::new(1.0));
@@ -311,6 +366,125 @@ impl PdfGenerator {
         Ok(())
     }
 
+    fn add_evidence_collection_section(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
+        let Some(ev) = &report.evidence_collection else {
+            return Ok(());
+        };
+
+        self.add_section_header(doc, "Evidence Collection");
+        doc.push(self.info_row("Collection Date:", &ev.collection_date));
+        doc.push(self.info_row("Collecting Officer:", &ev.collecting_officer));
+        doc.push(self.info_row("Authorization:", &ev.authorization));
+
+        if let Some(ref authority) = ev.authorizing_authority {
+            doc.push(self.info_row("Authorizing Authority:", authority));
+        }
+        if !ev.witnesses.is_empty() {
+            doc.push(self.info_row("Witnesses:", &ev.witnesses.join(", ")));
+        }
+
+        doc.push(Break::new(0.5));
+
+        if !ev.collected_items.is_empty() {
+            let mut table = TableLayout::new(vec![1, 3, 2, 2, 2]);
+            table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
+
+            table
+                .row()
+                .element(Text::new("Item").styled(style::Style::new().bold()))
+                .element(Text::new("Description").styled(style::Style::new().bold()))
+                .element(Text::new("Device Type").styled(style::Style::new().bold()))
+                .element(Text::new("Serial").styled(style::Style::new().bold()))
+                .element(Text::new("Condition").styled(style::Style::new().bold()))
+                .push()
+                .map_err(|e| ReportError::Pdf(e.to_string()))?;
+
+            for item in &ev.collected_items {
+                let device_type = if item.device_type.trim().is_empty() {
+                    item.item_type.as_str()
+                } else {
+                    item.device_type.as_str()
+                };
+
+                table
+                    .row()
+                    .element(Text::new(&item.item_number))
+                    .element(Text::new(&item.description))
+                    .element(Text::new(device_type))
+                    .element(Text::new(item.serial_number.as_deref().unwrap_or("-")))
+                    .element(Text::new(&item.condition))
+                    .push()
+                    .map_err(|e| ReportError::Pdf(e.to_string()))?;
+            }
+
+            doc.push(table);
+        }
+
+        if let Some(ref notes) = ev.documentation_notes {
+            if !notes.trim().is_empty() {
+                doc.push(Break::new(0.5));
+                doc.push(
+                    Paragraph::new("Documentation Notes")
+                        .styled(style::Style::new().bold().with_font_size(10)),
+                );
+                self.push_rich_text(doc, notes, 9);
+            }
+        }
+
+        doc.push(Break::new(1.0));
+        Ok(())
+    }
+
+    fn add_chain_of_custody_section(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
+        self.add_section_header(doc, "Chain of Custody");
+
+        let mut table = TableLayout::new(vec![2, 1, 2, 2, 3]);
+        table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
+
+        table
+            .row()
+            .element(Text::new("Date/Time").styled(style::Style::new().bold()))
+            .element(Text::new("Evidence").styled(style::Style::new().bold()))
+            .element(Text::new("Released By").styled(style::Style::new().bold()))
+            .element(Text::new("Received By").styled(style::Style::new().bold()))
+            .element(Text::new("Purpose / Location").styled(style::Style::new().bold()))
+            .push()
+            .map_err(|e| ReportError::Pdf(e.to_string()))?;
+
+        for record in &report.chain_of_custody {
+            let details = match (&record.purpose, &record.location) {
+                (Some(purpose), Some(location)) if !purpose.is_empty() && !location.is_empty() => {
+                    format!("{} | {}", purpose, location)
+                }
+                (Some(purpose), _) if !purpose.is_empty() => purpose.clone(),
+                (_, Some(location)) if !location.is_empty() => location.clone(),
+                _ => "-".to_string(),
+            };
+
+            table
+                .row()
+                .element(Text::new(record.timestamp.format("%Y-%m-%d %H:%M").to_string()))
+                .element(Text::new(&record.evidence_id))
+                .element(Text::new(&record.released_by))
+                .element(Text::new(&record.received_by))
+                .element(Text::new(details))
+                .push()
+                .map_err(|e| ReportError::Pdf(e.to_string()))?;
+        }
+
+        doc.push(table);
+        doc.push(Break::new(1.0));
+        Ok(())
+    }
+
     fn add_findings_section(
         &self,
         doc: &mut Document,
@@ -334,9 +508,7 @@ impl PdfGenerator {
             doc.push(Break::new(0.25));
 
             // Description
-            doc.push(
-                Paragraph::new(&finding.description).styled(style::Style::new().with_font_size(10)),
-            );
+            self.push_rich_text(doc, &finding.description, 10);
 
             // Related files
             if !finding.related_files.is_empty() {
@@ -351,6 +523,29 @@ impl PdfGenerator {
                             .styled(style::Style::new().with_font_size(9)),
                     );
                 }
+            }
+
+            if !finding.supporting_evidence.is_empty() {
+                doc.push(Break::new(0.25));
+                doc.push(
+                    Paragraph::new("Supporting Evidence:")
+                        .styled(style::Style::new().bold().with_font_size(9)),
+                );
+                for evidence in &finding.supporting_evidence {
+                    doc.push(
+                        Paragraph::new(format!("  • {}", evidence))
+                            .styled(style::Style::new().with_font_size(9)),
+                    );
+                }
+            }
+
+            if let Some(ref notes) = finding.notes {
+                doc.push(Break::new(0.25));
+                doc.push(
+                    Paragraph::new("Analyst Notes:")
+                        .styled(style::Style::new().bold().with_font_size(9)),
+                );
+                self.push_rich_text(doc, notes, 9);
             }
 
             doc.push(Break::new(0.75));
@@ -397,6 +592,43 @@ impl PdfGenerator {
         Ok(())
     }
 
+    fn add_hash_section(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+        self.add_section_header(doc, "Hash Verification");
+
+        let mut table = TableLayout::new(vec![2, 1, 4, 2]);
+        table.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
+
+        table
+            .row()
+            .element(Text::new("Item").styled(style::Style::new().bold()))
+            .element(Text::new("Algorithm").styled(style::Style::new().bold()))
+            .element(Text::new("Hash Value").styled(style::Style::new().bold()))
+            .element(Text::new("Status").styled(style::Style::new().bold()))
+            .push()
+            .map_err(|e| ReportError::Pdf(e.to_string()))?;
+
+        for record in &report.hash_records {
+            let status = match record.verified {
+                Some(true) => "Verified",
+                Some(false) => "Mismatch",
+                None => "Not recorded",
+            };
+
+            table
+                .row()
+                .element(Text::new(&record.item))
+                .element(Text::new(record.algorithm.as_str()))
+                .element(Text::new(&record.value))
+                .element(Text::new(status))
+                .push()
+                .map_err(|e| ReportError::Pdf(e.to_string()))?;
+        }
+
+        doc.push(table);
+        doc.push(Break::new(1.0));
+        Ok(())
+    }
+
     fn add_tools_section(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
         self.add_section_header(doc, "Tools Used");
 
@@ -434,10 +666,88 @@ impl PdfGenerator {
         self.add_section_header(doc, "Conclusions");
 
         if let Some(ref conclusions) = report.conclusions {
-            doc.push(Paragraph::new(conclusions).styled(style::Style::new().with_font_size(10)));
+            self.push_rich_text(doc, conclusions, 10);
         }
 
         doc.push(Break::new(1.0));
+        Ok(())
+    }
+
+    fn add_notes_section(&self, doc: &mut Document, report: &ForensicReport) -> ReportResult<()> {
+        self.add_section_header(doc, "Additional Notes");
+
+        if let Some(ref notes) = report.notes {
+            self.push_rich_text(doc, notes, 10);
+        }
+
+        doc.push(Break::new(1.0));
+        Ok(())
+    }
+
+    fn add_appendices_section(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
+        self.add_section_header(doc, "Appendices");
+
+        for (index, appendix) in report.appendices.iter().enumerate() {
+            doc.push(
+                Paragraph::new(format!(
+                    "Appendix {}: {}",
+                    (b'A' + index as u8) as char,
+                    appendix.title
+                ))
+                .styled(style::Style::new().bold().with_font_size(11)),
+            );
+            self.push_rich_text(doc, &appendix.content, 9);
+            doc.push(Break::new(0.75));
+        }
+
+        doc.push(Break::new(0.25));
+        Ok(())
+    }
+
+    fn add_signatures_section(
+        &self,
+        doc: &mut Document,
+        report: &ForensicReport,
+    ) -> ReportResult<()> {
+        self.add_section_header(doc, "Approvals and Signatures");
+
+        for signature in &report.signatures {
+            let status = match (signature.certified, signature.signature.is_some()) {
+                (Some(true), _) => "Digitally certified",
+                (_, true) => "Signature captured",
+                _ => "Pending signature",
+            };
+
+            doc.push(
+                Paragraph::new(&signature.role)
+                    .styled(style::Style::new().bold().with_font_size(11)),
+            );
+            doc.push(self.info_row("Name:", &signature.name));
+            doc.push(self.info_row("Status:", status));
+
+            if let Some(ref signed_date) = signature.signed_date {
+                if !signed_date.trim().is_empty() {
+                    doc.push(self.info_row("Signed:", signed_date));
+                }
+            }
+
+            if let Some(ref notes) = signature.notes {
+                if !notes.trim().is_empty() {
+                    doc.push(
+                        Paragraph::new("Notes:")
+                            .styled(style::Style::new().bold().with_font_size(9)),
+                    );
+                    self.push_rich_text(doc, notes, 9);
+                }
+            }
+
+            doc.push(Break::new(0.75));
+        }
+
         Ok(())
     }
 
@@ -472,6 +782,27 @@ impl PdfGenerator {
 
     fn info_row(&self, label: &str, value: &str) -> Paragraph {
         Paragraph::new(format!("{} {}", label, value))
+    }
+
+    fn push_rich_text(&self, doc: &mut Document, text: &str, font_size: u8) {
+        for block in text_blocks(text) {
+            match block {
+                TextBlock::Paragraph(paragraph) => {
+                    doc.push(
+                        Paragraph::new(paragraph)
+                            .styled(style::Style::new().with_font_size(font_size)),
+                    );
+                }
+                TextBlock::BulletList(items) => {
+                    for item in items {
+                        doc.push(
+                            Paragraph::new(format!("  • {}", item))
+                                .styled(style::Style::new().with_font_size(font_size)),
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 

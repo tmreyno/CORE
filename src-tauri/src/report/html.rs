@@ -12,6 +12,7 @@
 use std::path::Path;
 
 use super::error::ReportResult;
+use super::format_helpers::{has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// HTML generator for forensic reports
@@ -66,6 +67,7 @@ impl HtmlGenerator {
         // Body content
         html.push_str("<body>\n");
         html.push_str(&self.render_classification_banner(report));
+        html.push_str("<main class=\"report-shell\">\n");
         html.push_str(&self.render_title_page(report));
         html.push_str(&self.render_toc(report));
         html.push_str(&self.render_case_info(report));
@@ -114,12 +116,20 @@ impl HtmlGenerator {
             html.push_str(&self.render_conclusions(report));
         }
 
+        if has_text(report.notes.as_deref()) {
+            html.push_str(&self.render_notes(report));
+        }
+
         if !report.appendices.is_empty() {
             html.push_str(&self.render_appendices(report));
         }
 
+        if !report.signatures.is_empty() {
+            html.push_str(&self.render_signatures(report));
+        }
+
         html.push_str(&self.render_footer(report));
-        html.push_str("</body>\n</html>");
+        html.push_str("</main>\n</body>\n</html>");
 
         html
     }
@@ -151,13 +161,21 @@ impl HtmlGenerator {
 }}
 
 body {{
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    line-height: 1.6;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    line-height: 1.65;
     color: var(--text-color);
-    max-width: 1200px;
+    margin: 0;
+    padding: 24px;
+    background: #eef2f7;
+}}
+
+.report-shell {{
+    max-width: 980px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 32px 44px 56px;
     background: #fff;
+    border: 1px solid #d7dce4;
+    box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
 }}
 
 h1, h2, h3, h4 {{
@@ -174,18 +192,19 @@ h3 {{ font-size: 1.4em; }}
     background: var(--classification-color);
     color: white;
     text-align: center;
-    padding: 8px;
+    max-width: 980px;
+    margin: 0 auto 20px;
+    padding: 10px 16px;
     font-weight: bold;
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    margin: -20px -20px 20px -20px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    border-radius: 8px;
 }}
 
 .title-page {{
     text-align: center;
-    padding: 60px 20px;
-    border-bottom: 2px solid var(--border-color);
+    padding: 48px 20px 36px;
+    border-bottom: 1px solid var(--border-color);
     margin-bottom: 40px;
 }}
 
@@ -202,13 +221,18 @@ h3 {{ font-size: 1.4em; }}
 
 .title-page .report-meta {{
     margin-top: 30px;
-    font-size: 1.1em;
+    font-size: 1.02em;
+}}
+
+.title-page .report-meta p {{
+    margin: 0.35em 0;
 }}
 
 .toc {{
     background: var(--bg-light);
-    padding: 20px 30px;
+    padding: 24px 30px;
     border-radius: 8px;
+    border: 1px solid var(--border-color);
     margin-bottom: 40px;
 }}
 
@@ -223,7 +247,12 @@ h3 {{ font-size: 1.4em; }}
 }}
 
 .toc li {{
-    padding: 5px 0;
+    padding: 8px 0;
+    border-bottom: 1px solid #e5e7eb;
+}}
+
+.toc li:last-child {{
+    border-bottom: none;
 }}
 
 .toc a {{
@@ -233,16 +262,48 @@ h3 {{ font-size: 1.4em; }}
 
 .toc a:hover {{
     text-decoration: underline;
-}}
-
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--accent-color);
+    padding: 16px 20px;
 .section {{
     margin-bottom: 40px;
     page-break-inside: avoid;
+
+.info-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 20px 0;
+}}
+
+.info-item {{
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 14px 16px;
+}}
+
+.info-label {{
+    display: block;
+    margin-bottom: 6px;
+    color: var(--secondary-color);
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}}
+
+.info-value {{
+    display: block;
+    font-weight: 600;
+    color: var(--primary-color);
+}}
 }}
 
 .info-box {{
     background: var(--bg-light);
     border-left: 4px solid var(--accent-color);
+    background: white;
     padding: 15px 20px;
     margin: 20px 0;
     border-radius: 0 8px 8px 0;
@@ -306,7 +367,7 @@ tr:hover {{
 .footer {{
     margin-top: 60px;
     padding-top: 20px;
-    border-top: 2px solid var(--border-color);
+    border-top: 1px solid var(--border-color);
     text-align: center;
     color: var(--secondary-color);
     font-size: 0.9em;
@@ -317,7 +378,7 @@ tr:hover {{
     border-radius: 8px;
     padding: 20px;
     margin: 20px 0;
-    background: white;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }}
 
 .finding-header {{
@@ -346,14 +407,58 @@ tr:hover {{
 .timeline-event {{
     display: flex;
     margin: 15px 0;
-    padding-left: 20px;
+    padding: 12px 0 12px 20px;
     border-left: 3px solid var(--accent-color);
+    gap: 18px;
+    align-items: flex-start;
 }}
 
 .timeline-time {{
     min-width: 180px;
     font-weight: bold;
     color: var(--secondary-color);
+}}
+
+.timeline-content {{
+    flex: 1;
+}}
+
+.narrative p {{
+    margin: 0 0 1em 0;
+}}
+
+.narrative ul {{
+    margin: 0 0 1em 1.2em;
+    padding-left: 1em;
+}}
+
+.signature-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}}
+
+.signature-card {{
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    background: var(--bg-light);
+}}
+
+.signature-card h3 {{
+    margin-top: 0;
+    margin-bottom: 0.75em;
+}}
+
+.status-label {{
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.82em;
+    font-weight: 700;
+    background: #dbeafe;
+    color: #1d4ed8;
 }}
 "##
         );
@@ -428,7 +533,12 @@ tr:hover {{
 
     /// Render title page
     fn render_title_page(&self, report: &ForensicReport) -> String {
-        let case_name = report.case_info.case_name.as_deref().unwrap_or("");
+        let case_name = report
+            .case_info
+            .case_name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or("Forensic examination report");
         let organization = report.examiner.organization.as_deref().unwrap_or("");
 
         format!(
@@ -479,6 +589,9 @@ tr:hover {{
         if !report.evidence_items.is_empty() {
             toc.push_str("<li><a href=\"#evidence\">Evidence Examined</a></li>\n");
         }
+        if report.evidence_collection.is_some() {
+            toc.push_str("<li><a href=\"#evidence-collection\">Evidence Collection</a></li>\n");
+        }
         if !report.chain_of_custody.is_empty() {
             toc.push_str("<li><a href=\"#chain-of-custody\">Chain of Custody</a></li>\n");
         }
@@ -497,8 +610,14 @@ tr:hover {{
         if report.conclusions.is_some() {
             toc.push_str("<li><a href=\"#conclusions\">Conclusions</a></li>\n");
         }
+        if has_text(report.notes.as_deref()) {
+            toc.push_str("<li><a href=\"#additional-notes\">Additional Notes</a></li>\n");
+        }
         if !report.appendices.is_empty() {
             toc.push_str("<li><a href=\"#appendices\">Appendices</a></li>\n");
+        }
+        if !report.signatures.is_empty() {
+            toc.push_str("<li><a href=\"#signatures\">Approvals and Signatures</a></li>\n");
         }
 
         toc.push_str("</ul>\n</div>\n");
@@ -565,8 +684,8 @@ tr:hover {{
     fn render_executive_summary(&self, report: &ForensicReport) -> String {
         if let Some(ref summary) = report.executive_summary {
             format!(
-                "<div class=\"section\" id=\"executive-summary\">\n<h2>Executive Summary</h2>\n<p>{}</p>\n</div>\n",
-                Self::escape_html(summary).replace('\n', "<br>\n")
+                "<div class=\"section\" id=\"executive-summary\">\n<h2>Executive Summary</h2>\n<div class=\"narrative\">{}</div>\n</div>\n",
+                self.render_rich_text_html(summary)
             )
         } else {
             String::new()
@@ -577,8 +696,8 @@ tr:hover {{
     fn render_scope(&self, report: &ForensicReport) -> String {
         if let Some(ref scope) = report.scope {
             format!(
-                "<div class=\"section\" id=\"scope\">\n<h2>Scope of Examination</h2>\n<p>{}</p>\n</div>\n",
-                Self::escape_html(scope).replace('\n', "<br>\n")
+                "<div class=\"section\" id=\"scope\">\n<h2>Scope of Examination</h2>\n<div class=\"narrative\">{}</div>\n</div>\n",
+                self.render_rich_text_html(scope)
             )
         } else {
             String::new()
@@ -589,8 +708,8 @@ tr:hover {{
     fn render_methodology(&self, report: &ForensicReport) -> String {
         if let Some(ref methodology) = report.methodology {
             format!(
-                "<div class=\"section\" id=\"methodology\">\n<h2>Methodology</h2>\n<p>{}</p>\n</div>\n",
-                Self::escape_html(methodology).replace('\n', "<br>\n")
+                "<div class=\"section\" id=\"methodology\">\n<h2>Methodology</h2>\n<div class=\"narrative\">{}</div>\n</div>\n",
+                self.render_rich_text_html(methodology)
             )
         } else {
             String::new()
@@ -810,8 +929,8 @@ tr:hover {{
         if let Some(ref notes) = ev.documentation_notes {
             if !notes.is_empty() {
                 html.push_str(&format!(
-                    "<p><strong>Documentation Notes:</strong> {}</p>\n",
-                    Self::escape_html(notes)
+                    "<div class=\"narrative\"><p><strong>Documentation Notes</strong></p>{}</div>\n",
+                    self.render_rich_text_html(notes)
                 ));
             }
         }
@@ -853,8 +972,8 @@ tr:hover {{
             ));
 
             html.push_str(&format!(
-                "<p>{}</p>\n",
-                Self::escape_html(&finding.description).replace('\n', "<br>\n")
+                "<div class=\"narrative\">{}</div>\n",
+                self.render_rich_text_html(&finding.description)
             ));
 
             if !finding.related_files.is_empty() {
@@ -870,8 +989,8 @@ tr:hover {{
 
             if let Some(ref notes) = finding.notes {
                 html.push_str(&format!(
-                    "<p><strong>Notes:</strong> {}</p>\n",
-                    Self::escape_html(notes)
+                    "<div class=\"narrative\"><p><strong>Analyst Notes</strong></p>{}</div>\n",
+                    self.render_rich_text_html(notes)
                 ));
             }
 
@@ -916,9 +1035,11 @@ tr:hover {{
         );
 
         for record in &report.hash_records {
-            let verified_str = record
-                .verified
-                .map_or("N/A", |v| if v { "✓ Yes" } else { "✗ No" });
+            let verified_str = match record.verified {
+                Some(true) => "Verified",
+                Some(false) => "Mismatch",
+                None => "Not recorded",
+            };
             html.push_str(&format!(
                 "<tr><td>{}</td><td>{}</td><td class=\"hash-value\">{}</td><td>{}</td></tr>\n",
                 Self::escape_html(&record.item),
@@ -962,12 +1083,27 @@ tr:hover {{
     fn render_conclusions(&self, report: &ForensicReport) -> String {
         if let Some(ref conclusions) = report.conclusions {
             format!(
-                "<div class=\"section\" id=\"conclusions\">\n<h2>Conclusions</h2>\n<p>{}</p>\n</div>\n",
-                Self::escape_html(conclusions).replace('\n', "<br>\n")
+                "<div class=\"section\" id=\"conclusions\">\n<h2>Conclusions</h2>\n<div class=\"narrative\">{}</div>\n</div>\n",
+                self.render_rich_text_html(conclusions)
             )
         } else {
             String::new()
         }
+    }
+
+    /// Render additional notes section.
+    fn render_notes(&self, report: &ForensicReport) -> String {
+        report
+            .notes
+            .as_deref()
+            .filter(|notes| !notes.trim().is_empty())
+            .map(|notes| {
+                format!(
+                    "<div class=\"section\" id=\"additional-notes\">\n<h2>Additional Notes</h2>\n<div class=\"narrative\">{}</div>\n</div>\n",
+                    self.render_rich_text_html(notes)
+                )
+            })
+            .unwrap_or_default()
     }
 
     /// Render appendices
@@ -986,12 +1122,61 @@ tr:hover {{
                 Self::escape_html(&appendix.title)
             ));
             html.push_str(&format!(
-                "<div class=\"info-box\">\n<p>{}</p>\n</div>\n",
-                Self::escape_html(&appendix.content).replace('\n', "<br>\n")
+                "<div class=\"info-box narrative\">\n{}\n</div>\n",
+                self.render_rich_text_html(&appendix.content)
             ));
         }
 
         html.push_str("</div>\n");
+        html
+    }
+
+    /// Render approvals and signatures.
+    fn render_signatures(&self, report: &ForensicReport) -> String {
+        let mut html = String::from(
+            "<div class=\"section\" id=\"signatures\">\n<h2>Approvals and Signatures</h2>\n<div class=\"signature-grid\">\n",
+        );
+
+        for signature in &report.signatures {
+            let status = match (signature.certified, signature.signature.is_some()) {
+                (Some(true), _) => "Digitally certified",
+                (_, true) => "Signature captured",
+                _ => "Pending signature",
+            };
+
+            html.push_str("<div class=\"signature-card\">\n");
+            html.push_str(&format!(
+                "<h3>{}</h3>\n",
+                Self::escape_html(&signature.role)
+            ));
+            html.push_str(&format!(
+                "<p><strong>Name:</strong> {}</p>\n",
+                Self::escape_html(&signature.name)
+            ));
+            if let Some(ref signed_date) = signature.signed_date {
+                if !signed_date.trim().is_empty() {
+                    html.push_str(&format!(
+                        "<p><strong>Signed:</strong> {}</p>\n",
+                        Self::escape_html(signed_date)
+                    ));
+                }
+            }
+            html.push_str(&format!(
+                "<p><span class=\"status-label\">{}</span></p>\n",
+                Self::escape_html(status)
+            ));
+            if let Some(ref notes) = signature.notes {
+                if !notes.trim().is_empty() {
+                    html.push_str(&format!(
+                        "<div class=\"narrative\"><p><strong>Notes</strong></p>{}</div>\n",
+                        self.render_rich_text_html(notes)
+                    ));
+                }
+            }
+            html.push_str("</div>\n");
+        }
+
+        html.push_str("</div>\n</div>\n");
         html
     }
 
@@ -1019,6 +1204,27 @@ tr:hover {{
             .replace('>', "&gt;")
             .replace('"', "&quot;")
             .replace('\'', "&#39;")
+    }
+
+    fn render_rich_text_html(&self, text: &str) -> String {
+        let mut html = String::new();
+
+        for block in text_blocks(text) {
+            match block {
+                TextBlock::Paragraph(paragraph) => {
+                    html.push_str(&format!("<p>{}</p>\n", Self::escape_html(&paragraph)));
+                }
+                TextBlock::BulletList(items) => {
+                    html.push_str("<ul>\n");
+                    for item in items {
+                        html.push_str(&format!("<li>{}</li>\n", Self::escape_html(&item)));
+                    }
+                    html.push_str("</ul>\n");
+                }
+            }
+        }
+
+        html
     }
 }
 

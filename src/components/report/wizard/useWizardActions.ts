@@ -15,11 +15,16 @@
 import { onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import {
+  FORENSIC_REPORT_PACKAGE_SCHEMA_VERSION,
+  buildForensicReportPackageFilename,
+} from "../types";
 import type {
   CaseInfo,
   CustodyRecord,
   Finding,
   ForensicReport,
+  ForensicReportPackage,
   OutputFormat,
 } from "../types";
 import { REPORT_PRESETS, type ReportPreset } from "../constants";
@@ -46,6 +51,7 @@ export interface WizardActions {
   applyPreset: (presetId: ReportPreset) => void;
   generatePreview: () => Promise<void>;
   exportReport: () => Promise<void>;
+  exportStandardPackage: () => Promise<void>;
   buildReport: () => ForensicReport;
 }
 
@@ -179,6 +185,54 @@ export function useWizardActions(
         error: String(e),
       };
       dbSync.insertReport(failedRecord);
+    } finally {
+      state.setExporting(false);
+    }
+  };
+
+  const exportStandardPackage = async () => {
+    state.setExporting(true);
+    state.setExportError(null);
+
+    try {
+      const report = buildReport();
+      const path = await save({
+        title: "Save Standard Report Package",
+        defaultPath: buildForensicReportPackageFilename({
+          caseNumber: report.case_info.case_number || props.caseNumber,
+          reportNumber: report.metadata.report_number,
+          title: report.metadata.title,
+        }),
+        filters: [{ name: "Standard Report Package", extensions: ["json"] }],
+      });
+
+      if (!path) {
+        state.setExporting(false);
+        return;
+      }
+
+      const reportPackage: ForensicReportPackage = {
+        schema_version: FORENSIC_REPORT_PACKAGE_SCHEMA_VERSION,
+        source: {
+          app_name: "CORE-FFX",
+          app_version: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : undefined,
+          exported_at: nowISO(),
+          project_name: props.projectName,
+          case_number: report.case_info.case_number || props.caseNumber,
+          case_name: report.case_info.case_name || props.caseName,
+        },
+        report,
+      };
+
+      await invoke("write_text_file", {
+        path,
+        content: JSON.stringify(reportPackage, null, 2),
+      });
+
+      props.onGenerated?.(path, "json package");
+    } catch (e) {
+      log.error("Standard package export failed:", e);
+      state.setExportError(String(e));
     } finally {
       state.setExporting(false);
     }
@@ -427,6 +481,7 @@ export function useWizardActions(
     applyPreset,
     generatePreview,
     exportReport,
+    exportStandardPackage,
     buildReport,
   };
 }

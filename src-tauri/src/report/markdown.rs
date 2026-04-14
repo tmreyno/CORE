@@ -13,6 +13,7 @@
 use std::path::Path;
 
 use super::error::ReportResult;
+use super::format_helpers::{has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// Markdown generator for forensic reports
@@ -110,22 +111,19 @@ impl MarkdownGenerator {
         // Executive summary
         if let Some(ref summary) = report.executive_summary {
             md.push_str("## Executive Summary\n\n");
-            md.push_str(&Self::escape_md(summary));
-            md.push_str("\n\n");
+            md.push_str(&self.render_rich_text_md(summary));
         }
 
         // Scope
         if let Some(ref scope) = report.scope {
             md.push_str("## Scope of Examination\n\n");
-            md.push_str(&Self::escape_md(scope));
-            md.push_str("\n\n");
+            md.push_str(&self.render_rich_text_md(scope));
         }
 
         // Methodology
         if let Some(ref methodology) = report.methodology {
             md.push_str("## Methodology\n\n");
-            md.push_str(&Self::escape_md(methodology));
-            md.push_str("\n\n");
+            md.push_str(&self.render_rich_text_md(methodology));
         }
 
         // Evidence
@@ -166,13 +164,20 @@ impl MarkdownGenerator {
         // Conclusions
         if let Some(ref conclusions) = report.conclusions {
             md.push_str("## Conclusions\n\n");
-            md.push_str(&Self::escape_md(conclusions));
-            md.push_str("\n\n");
+            md.push_str(&self.render_rich_text_md(conclusions));
+        }
+
+        if has_text(report.notes.as_deref()) {
+            md.push_str(&self.render_notes(report));
         }
 
         // Appendices
         if !report.appendices.is_empty() {
             md.push_str(&self.render_appendices(report));
+        }
+
+        if !report.signatures.is_empty() {
+            md.push_str(&self.render_signatures(report));
         }
 
         // Footer
@@ -255,8 +260,14 @@ impl MarkdownGenerator {
         if report.conclusions.is_some() {
             toc.push_str("- [Conclusions](#conclusions)\n");
         }
+        if has_text(report.notes.as_deref()) {
+            toc.push_str("- [Additional Notes](#additional-notes)\n");
+        }
         if !report.appendices.is_empty() {
             toc.push_str("- [Appendices](#appendices)\n");
+        }
+        if !report.signatures.is_empty() {
+            toc.push_str("- [Approvals and Signatures](#approvals-and-signatures)\n");
         }
 
         toc.push_str("\n---\n\n");
@@ -571,10 +582,8 @@ impl MarkdownGenerator {
 
         if let Some(ref notes) = ev.documentation_notes {
             if !notes.is_empty() {
-                md.push_str(&format!(
-                    "**Documentation Notes:** {}\n\n",
-                    Self::escape_md(notes)
-                ));
+                md.push_str("**Documentation Notes**\n\n");
+                md.push_str(&self.render_rich_text_md(notes));
             }
         }
 
@@ -586,17 +595,8 @@ impl MarkdownGenerator {
         let mut md = String::from("## Findings\n\n");
 
         for finding in &report.findings {
-            let severity_emoji = match finding.severity {
-                FindingSeverity::Critical => "🔴",
-                FindingSeverity::High => "🟠",
-                FindingSeverity::Medium => "🟡",
-                FindingSeverity::Low => "🟢",
-                FindingSeverity::Info => "🔵",
-            };
-
             md.push_str(&format!(
-                "### {} {} - {}\n\n",
-                severity_emoji,
+                "### {} - {}\n\n",
                 Self::escape_md(&finding.finding_id),
                 Self::escape_md(&finding.title)
             ));
@@ -607,8 +607,7 @@ impl MarkdownGenerator {
                 finding.category.as_str()
             ));
 
-            md.push_str(&Self::escape_md(&finding.description));
-            md.push_str("\n\n");
+            md.push_str(&self.render_rich_text_md(&finding.description));
 
             if !finding.related_files.is_empty() {
                 md.push_str("**Related Files:**\n");
@@ -619,14 +618,16 @@ impl MarkdownGenerator {
             }
 
             if !finding.supporting_evidence.is_empty() {
-                md.push_str(&format!(
-                    "**Supporting Evidence:** {}\n\n",
-                    finding.supporting_evidence.join(", ")
-                ));
+                md.push_str("**Supporting Evidence:**\n");
+                for evidence in &finding.supporting_evidence {
+                    md.push_str(&format!("- {}\n", Self::escape_md(evidence)));
+                }
+                md.push('\n');
             }
 
             if let Some(ref notes) = finding.notes {
-                md.push_str(&format!("**Notes:** {}\n\n", Self::escape_md(notes)));
+                md.push_str("**Analyst Notes**\n\n");
+                md.push_str(&self.render_rich_text_md(notes));
             }
         }
 
@@ -675,7 +676,11 @@ impl MarkdownGenerator {
             md.push_str("|------|-----------|------------|----------|\n");
 
             for record in &report.hash_records {
-                let verified = record.verified.map_or("N/A", |v| if v { "✓" } else { "✗" });
+                let verified = match record.verified {
+                    Some(true) => "Verified",
+                    Some(false) => "Mismatch",
+                    None => "Not recorded",
+                };
                 md.push_str(&format!(
                     "| {} | {} | `{}` | {} |\n",
                     Self::escape_md(&record.item),
@@ -686,13 +691,11 @@ impl MarkdownGenerator {
             }
         } else {
             for record in &report.hash_records {
-                let verified = record.verified.map_or("N/A".to_string(), |v| {
-                    if v {
-                        "✓ Verified".to_string()
-                    } else {
-                        "✗ Failed".to_string()
-                    }
-                });
+                let verified = match record.verified {
+                    Some(true) => "Verified",
+                    Some(false) => "Mismatch",
+                    None => "Not recorded",
+                };
                 md.push_str(&format!(
                     "- **{}** ({}): `{}` - {}\n",
                     Self::escape_md(&record.item),
@@ -757,8 +760,59 @@ impl MarkdownGenerator {
                 (b'A' + i as u8) as char,
                 Self::escape_md(&appendix.title)
             ));
-            md.push_str(&Self::escape_md(&appendix.content));
-            md.push_str("\n\n");
+            md.push_str(&self.render_rich_text_md(&appendix.content));
+        }
+
+        md
+    }
+
+    fn render_notes(&self, report: &ForensicReport) -> String {
+        report
+            .notes
+            .as_deref()
+            .filter(|notes| !notes.trim().is_empty())
+            .map(|notes| {
+                let mut md = String::from("## Additional Notes\n\n");
+                md.push_str(&self.render_rich_text_md(notes));
+                md
+            })
+            .unwrap_or_default()
+    }
+
+    fn render_signatures(&self, report: &ForensicReport) -> String {
+        let mut md = String::from("## Approvals and Signatures\n\n");
+
+        for signature in &report.signatures {
+            let status = match (signature.certified, signature.signature.is_some()) {
+                (Some(true), _) => "Digitally certified",
+                (_, true) => "Signature captured",
+                _ => "Pending signature",
+            };
+
+            md.push_str(&format!(
+                "### {}\n\n**Name:** {}  \n**Status:** {}  \n",
+                Self::escape_md(&signature.role),
+                Self::escape_md(&signature.name),
+                Self::escape_md(status)
+            ));
+
+            if let Some(ref signed_date) = signature.signed_date {
+                if !signed_date.trim().is_empty() {
+                    md.push_str(&format!(
+                        "**Signed:** {}  \n",
+                        Self::escape_md(signed_date)
+                    ));
+                }
+            }
+
+            md.push('\n');
+
+            if let Some(ref notes) = signature.notes {
+                if !notes.trim().is_empty() {
+                    md.push_str("**Notes**\n\n");
+                    md.push_str(&self.render_rich_text_md(notes));
+                }
+            }
         }
 
         md
@@ -794,6 +848,27 @@ impl MarkdownGenerator {
     /// Escape YAML special characters
     fn escape_yaml(s: &str) -> String {
         s.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+
+    fn render_rich_text_md(&self, text: &str) -> String {
+        let mut md = String::new();
+
+        for block in text_blocks(text) {
+            match block {
+                TextBlock::Paragraph(paragraph) => {
+                    md.push_str(&Self::escape_md(&paragraph));
+                    md.push_str("\n\n");
+                }
+                TextBlock::BulletList(items) => {
+                    for item in items {
+                        md.push_str(&format!("- {}\n", Self::escape_md(&item)));
+                    }
+                    md.push('\n');
+                }
+            }
+        }
+
+        md
     }
 }
 

@@ -59,6 +59,7 @@ pub mod commands;
 pub mod docx;
 pub mod error;
 pub mod evidence_collection_export;
+pub mod format_helpers;
 pub mod html;
 pub mod markdown;
 pub mod pdf;
@@ -214,6 +215,11 @@ impl ReportGenerator {
                 "Typst support requires the 'typst-reports' feature. Rebuild with: cargo build --features typst-reports".to_string()
             )),
         }
+    }
+
+    /// Render the canonical HTML preview used by the report wizard.
+    pub fn render_preview_html(&self, report: &ForensicReport) -> String {
+        self.html_generator.render_html(report)
     }
 
     /// Generate HTML report using templates (legacy method, uses template engine)

@@ -19,8 +19,14 @@ import {
   type NarrativeType,
 } from "../../../../report/api";
 import type { CaseInfo, Finding, EvidenceItem, HashValue } from "../../types";
+import { getPreference, usePreferences } from "../../../preferences";
 import { logger } from "../../../../utils/logger";
 const log = logger.scope("AiAssistant");
+
+const PREFERRED_PROVIDER_ID = "openai";
+const PREFERRED_MODELS: Record<string, string> = {
+  openai: "gpt-5",
+};
 
 // =============================================================================
 // TYPES
@@ -74,6 +80,33 @@ export interface AiContext {
   evidenceItems: EvidenceItem[];
 }
 
+function getPreferredProvider(
+  aiProviders: AiProviderInfo[],
+  savedProviderId?: string
+): AiProviderInfo | undefined {
+  if (savedProviderId) {
+    const savedProvider = aiProviders.find((provider) => provider.id === savedProviderId);
+    if (savedProvider) {
+      return savedProvider;
+    }
+  }
+
+  return aiProviders.find((provider) => provider.id === PREFERRED_PROVIDER_ID) ?? aiProviders[0];
+}
+
+function getPreferredModel(provider: AiProviderInfo, savedModel?: string): string {
+  if (savedModel && provider.available_models.includes(savedModel)) {
+    return savedModel;
+  }
+
+  const preferred = PREFERRED_MODELS[provider.id];
+  if (preferred && provider.available_models.includes(preferred)) {
+    return preferred;
+  }
+
+  return provider.default_model;
+}
+
 // =============================================================================
 // HOOK
 // =============================================================================
@@ -82,11 +115,13 @@ export interface AiContext {
  * Hook for managing AI assistant functionality in the report wizard.
  */
 export function useAiAssistant(): [() => AiAssistantState, AiAssistantActions] {
+  const { updatePreference } = usePreferences();
+
   // State signals
   const [available, setAvailable] = createSignal(false);
   const [providers, setProviders] = createSignal<AiProviderInfo[]>([]);
-  const [selectedProvider, setSelectedProvider] = createSignal("ollama");
-  const [selectedModel, setSelectedModel] = createSignal("llama3.2");
+  const [selectedProvider, setSelectedProvider] = createSignal(getPreference("reportAiProvider") || PREFERRED_PROVIDER_ID);
+  const [selectedModel, setSelectedModel] = createSignal(getPreference("reportAiModel") || (PREFERRED_MODELS[PREFERRED_PROVIDER_ID] ?? ""));
   const [apiKey, setApiKey] = createSignal("");
   const [ollamaConnected, setOllamaConnected] = createSignal(false);
   const [generating, setGenerating] = createSignal<NarrativeType | null>(null);
@@ -103,10 +138,17 @@ export function useAiAssistant(): [() => AiAssistantState, AiAssistantActions] {
         const aiProviders = await getAiProviders();
         setProviders(aiProviders);
 
-        // Set defaults from first provider
-        if (aiProviders.length > 0) {
-          setSelectedProvider(aiProviders[0].id);
-          setSelectedModel(aiProviders[0].default_model);
+        const savedProviderId = getPreference("reportAiProvider");
+        const savedModel = getPreference("reportAiModel");
+        const preferredProvider = getPreferredProvider(aiProviders, savedProviderId);
+        if (preferredProvider) {
+          setSelectedProvider(preferredProvider.id);
+          setSelectedModel(
+            getPreferredModel(
+              preferredProvider,
+              preferredProvider.id === savedProviderId ? savedModel : undefined
+            )
+          );
         }
 
         // Check Ollama connection
@@ -136,16 +178,24 @@ export function useAiAssistant(): [() => AiAssistantState, AiAssistantActions] {
   const actions: AiAssistantActions = {
     setProvider: (provider: string) => {
       setSelectedProvider(provider);
+      updatePreference("reportAiProvider", provider);
+
       const info = providers().find((p) => p.id === provider);
       if (info) {
-        setSelectedModel(info.default_model);
+        const model = getPreferredModel(info);
+        setSelectedModel(model);
+        updatePreference("reportAiModel", model);
       }
+
       if (provider === "ollama") {
         actions.refreshOllamaStatus();
       }
     },
 
-    setModel: setSelectedModel,
+    setModel: (model: string) => {
+      setSelectedModel(model);
+      updatePreference("reportAiModel", model);
+    },
 
     setApiKey: setApiKey,
 
@@ -175,12 +225,6 @@ export function useAiAssistant(): [() => AiAssistantState, AiAssistantActions] {
         return;
       }
 
-      if (selectedProvider() === "openai" && !apiKey()) {
-        setError("OpenAI API key is required. Please enter your API key in AI settings.");
-        setShowSettings(true);
-        return;
-      }
-
       setGenerating(type);
       setError(null);
 
@@ -193,6 +237,7 @@ export function useAiAssistant(): [() => AiAssistantState, AiAssistantActions] {
           type,
           selectedProvider(),
           selectedModel(),
+          // Allow the backend to fall back to OPENAI_API_KEY if no per-session key is entered.
           selectedProvider() === "openai" ? apiKey() : undefined
         );
 

@@ -90,6 +90,21 @@ fn validate_ollama_url(url: &str) -> ReportResult<()> {
     }
 }
 
+fn build_ollama_generate_url(base_url: &str) -> ReportResult<url::Url> {
+    let normalized = if base_url.ends_with('/') {
+        base_url.to_string()
+    } else {
+        format!("{}/", base_url)
+    };
+
+    let parsed = url::Url::parse(&normalized)
+        .map_err(|e| ReportError::AiError(format!("Invalid Ollama URL: {}", e)))?;
+
+    parsed
+        .join("api/generate")
+        .map_err(|e| ReportError::AiError(format!("Invalid Ollama API URL: {}", e)))
+}
+
 /// Log AI interaction for forensic audit trail
 fn log_ai_interaction(provider: &str, model: &str, narrative_type: &str, prompt_length: usize) {
     tracing::info!(
@@ -137,7 +152,7 @@ pub enum AiProvider {
     },
     /// OpenAI API
     OpenAi {
-        /// Model name (e.g., "gpt-4", "gpt-3.5-turbo")
+        /// Model name (e.g., "gpt-5", "gpt-5-mini")
         model: String,
         /// API key (will use OPENAI_API_KEY env var if not provided)
         api_key: Option<String>,
@@ -302,26 +317,68 @@ FORMATTING:
         base_url: Option<&str>,
         prompt: &str,
     ) -> ReportResult<String> {
-        use langchain_rust::language_models::llm::LLM;
-        use langchain_rust::llm::ollama::client::{Ollama, OllamaClient};
-        use std::sync::Arc;
+        #[derive(serde::Serialize)]
+        struct OllamaGenerateRequest<'a> {
+            model: &'a str,
+            prompt: &'a str,
+            stream: bool,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct OllamaGenerateResponse {
+            response: String,
+        }
 
         let url = base_url.unwrap_or("http://localhost:11434");
 
         // Security: Validate URL to prevent SSRF
         validate_ollama_url(url)?;
+        let endpoint = build_ollama_generate_url(url)?;
 
         // Audit: Log the AI interaction
         log_ai_interaction("ollama", model, "narrative", prompt.len());
 
-        // Create the Ollama client with custom URL
-        let ollama_client = OllamaClient::try_new(url)
-            .map_err(|e| ReportError::AiError(format!("Invalid Ollama URL: {}", e)))?;
+        let request = OllamaGenerateRequest {
+            model,
+            prompt,
+            stream: false,
+        };
 
-        let ollama = Ollama::new(Arc::new(ollama_client), model, None);
+        let client = reqwest::Client::new();
 
-        let result = ollama
-            .invoke(prompt)
+        let result = async {
+            let response = client
+                .post(endpoint.as_str())
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| ReportError::AiError(format!("Ollama API error: {}", e)))?;
+
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                let detail = if body.trim().is_empty() {
+                    format!("status {}", status)
+                } else {
+                    format!("status {}: {}", status, body.trim())
+                };
+                return Err(ReportError::AiError(format!("Ollama API error: {}", detail)));
+            }
+
+            let body: OllamaGenerateResponse = response
+                .json()
+                .await
+                .map_err(|e| ReportError::AiError(format!("Invalid Ollama response: {}", e)))?;
+
+            let text = body.response.trim().to_string();
+            if text.is_empty() {
+                return Err(ReportError::AiError(
+                    "No response text returned from Ollama".to_string(),
+                ));
+            }
+
+            Ok(text)
+        }
             .await
             .map_err(|e| ReportError::AiError(e.to_string()));
 
@@ -344,7 +401,8 @@ FORMATTING:
         prompt: &str,
     ) -> ReportResult<String> {
         use async_openai::{
-            types::{ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
+            config::OpenAIConfig,
+            types::responses::CreateResponseArgs,
             Client,
         };
 
@@ -359,24 +417,22 @@ FORMATTING:
         }
 
         let client = if let Some(key) = api_key {
-            Client::with_config(async_openai::config::OpenAIConfig::new().with_api_key(key))
+            Client::with_config(OpenAIConfig::new().with_api_key(key))
         } else {
             // Falls back to OPENAI_API_KEY env var
             Client::new()
         };
 
-        let request = CreateChatCompletionRequestArgs::default()
+        let request = CreateResponseArgs::default()
             .model(model)
-            .messages([ChatCompletionRequestUserMessageArgs::default()
-                .content(prompt)
-                .build()
-                .map_err(|e| ReportError::AiError(e.to_string()))?
-                .into()])
+            .input(prompt)
+            .store(false)
+            .max_output_tokens(1600u32)
             .build()
             .map_err(|e| ReportError::AiError(e.to_string()))?;
 
         let result = client
-            .chat()
+            .responses()
             .create(request)
             .await
             .map_err(|e| ReportError::AiError(e.to_string()));
@@ -390,9 +446,9 @@ FORMATTING:
         };
 
         let content = response
-            .choices
-            .first()
-            .and_then(|c| c.message.content.clone())
+            .output_text()
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
             .ok_or_else(|| ReportError::AiError("No response from OpenAI".to_string()));
 
         log_ai_response(
@@ -419,7 +475,7 @@ FORMATTING:
     ) -> ReportResult<String> {
         use async_openai::{
             config::AzureConfig,
-            types::{ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
+            types::responses::CreateResponseArgs,
             Client,
         };
 
@@ -444,22 +500,18 @@ FORMATTING:
 
         let client = Client::with_config(config);
 
-        let request = CreateChatCompletionRequestArgs::default()
+        let request = CreateResponseArgs::default()
             .model(deployment)
-            .messages([ChatCompletionRequestUserMessageArgs::default()
-                .content(prompt)
-                .build()
-                .map_err(|e| {
-                    ReportError::AiError(format!("Failed to build Azure OpenAI message: {}", e))
-                })?
-                .into()])
+            .input(prompt)
+            .store(false)
+            .max_output_tokens(1600u32)
             .build()
             .map_err(|e| {
                 ReportError::AiError(format!("Failed to build Azure OpenAI request: {}", e))
             })?;
 
         let result = client
-            .chat()
+            .responses()
             .create(request)
             .await
             .map_err(|e| ReportError::AiError(format!("Azure OpenAI API error: {}", e)));
@@ -473,9 +525,9 @@ FORMATTING:
         };
 
         let content = response
-            .choices
-            .first()
-            .and_then(|c| c.message.content.clone())
+            .output_text()
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
             .ok_or_else(|| ReportError::AiError("No response from Azure OpenAI".to_string()));
 
         log_ai_response(
@@ -573,9 +625,9 @@ mod tests {
     #[test]
     fn test_provider_creation() {
         let ollama = AiAssistant::ollama("mistral");
-        let openai = AiAssistant::openai("gpt-4");
+        let openai = AiAssistant::openai("gpt-5");
         let azure = AiAssistant::new(AiProvider::AzureOpenAi {
-            deployment: "gpt-4".to_string(),
+            deployment: "report-narrative".to_string(),
             endpoint: "https://my-resource.openai.azure.com".to_string(),
             api_key: Some("test-key".to_string()),
         });
@@ -589,7 +641,7 @@ mod tests {
     #[test]
     fn test_azure_provider_without_key() {
         let azure = AiAssistant::new(AiProvider::AzureOpenAi {
-            deployment: "gpt-4o".to_string(),
+            deployment: "report-narrative".to_string(),
             endpoint: "https://test.openai.azure.com".to_string(),
             api_key: None,
         });
