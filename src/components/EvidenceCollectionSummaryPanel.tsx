@@ -28,6 +28,10 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
+  CORE_BASELINE_EVIDENCE_POLICY_PACK,
+  getStructuredOptionDisplayParts,
+} from "@core-suite/types/evidence-policy";
+import {
   HiOutlineArchiveBoxArrowDown,
   HiOutlineDocumentText,
   HiOutlineArrowDownTray,
@@ -44,6 +48,7 @@ import type { DbEvidenceCollection, DbCollectedItem } from "../types/projectDb";
 import type { DiscoveredFile } from "../types";
 
 const log = logger.scope("EvidenceCollectionSummary");
+const PACKAGING_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.packagingTypes;
 
 // =============================================================================
 // Props
@@ -368,6 +373,7 @@ function CollectionSection(props: {
 function CollectedItemCard(props: { item: DbCollectedItem }) {
   const [expanded, setExpanded] = createSignal(false);
   const item = () => props.item;
+  const packaging = createMemo(() => formatPackagingValue(item()));
 
   return (
     <div class="border border-border rounded bg-bg-secondary">
@@ -413,13 +419,13 @@ function CollectedItemCard(props: { item: DbCollectedItem }) {
           </Show>
 
           {/* Location & condition */}
-          <Show when={item().foundLocation || item().condition || item().packaging}>
+          <Show when={item().foundLocation || item().condition || packaging()}>
             <div class="text-2xs font-medium text-txt-muted uppercase tracking-wider mt-1">
               Collection Context
             </div>
             <OptionalMetadataRow label="Where Found / Received" value={item().foundLocation} />
             <OptionalMetadataRow label="Condition" value={item().condition} />
-            <OptionalMetadataRow label="Packaging" value={item().packaging} />
+            <OptionalMetadataRow label="Packaging" value={packaging() || undefined} />
           </Show>
 
           {/* Notes */}
@@ -487,6 +493,7 @@ function buildTextDocument(
       lines.push(`  COLLECTED ITEMS (${colItems.length}):`);
       lines.push("");
       for (const item of colItems) {
+        const packaging = formatPackagingValue(item);
         lines.push(`    Item ${item.itemNumber || "—"}: ${item.description || "Unnamed"}`);
         if (item.itemType) lines.push(`      Type:          ${item.itemType}`);
         if (item.brand) lines.push(`      Brand:         ${item.brand}`);
@@ -499,7 +506,7 @@ function buildTextDocument(
         if (item.acquisitionMethod) lines.push(`      Digital Acquisition Method: ${item.acquisitionMethod}`);
         if (item.foundLocation) lines.push(`      Where Found / Received: ${item.foundLocation}`);
         if (item.condition) lines.push(`      Condition:     ${item.condition}`);
-        if (item.packaging) lines.push(`      Packaging:     ${item.packaging}`);
+        if (packaging) lines.push(`      Packaging:     ${packaging}`);
         if (item.notes) lines.push(`      Notes:         ${item.notes}`);
         if (item.storageNotes) lines.push(`      Storage / Handling: ${item.storageNotes}`);
         lines.push("");
@@ -535,6 +542,7 @@ function buildHtmlDocument(
             <td>${esc(item.imageFormat || "")}</td>
             <td>${esc(item.acquisitionMethod || "")}</td>
             <td>${esc(item.condition || "")}</td>
+            <td>${esc(formatPackagingValue(item))}</td>
             <td>${esc(item.notes || "")}</td>
           </tr>`,
       )
@@ -561,7 +569,7 @@ function buildHtmlDocument(
                 <table class="items">
                   <thead><tr>
                     <th>#</th><th>Description</th><th>Type</th><th>Device</th>
-                    <th>Serial #</th><th>Image / Export Format</th><th>Digital Method</th><th>Condition</th><th>Notes</th>
+                    <th>Serial #</th><th>Image / Export Format</th><th>Digital Method</th><th>Condition</th><th>Packaging</th><th>Notes</th>
                   </tr></thead>
                   <tbody>${itemRows(itemsByCol.get(col.id) ?? [])}</tbody>
                 </table>`
@@ -633,6 +641,8 @@ const CSV_COLUMNS = [
   "Item Where Found / Received",
   "Condition",
   "Packaging",
+  "Packaging Type",
+  "Packaging Detail",
   "Notes",
   "Storage / Handling Notes",
   "Evidence File ID",
@@ -647,6 +657,7 @@ function buildCsvSpreadsheet(
 
   for (const item of items) {
     const col = colMap.get(item.collectionId);
+    const packagingDisplay = getPackagingDisplay(item);
     rows.push(
       [
         csvEsc(item.collectionId),
@@ -669,7 +680,9 @@ function buildCsvSpreadsheet(
         csvEsc(item.acquisitionMethod ?? ""),
         csvEsc(item.foundLocation),
         csvEsc(item.condition),
-        csvEsc(item.packaging),
+        csvEsc(formatPackagingValue(item)),
+        csvEsc(packagingDisplay.label),
+        csvEsc(packagingDisplay.detail),
         csvEsc(item.notes ?? ""),
         csvEsc(item.storageNotes ?? ""),
         csvEsc(item.evidenceFileId ?? ""),
@@ -697,6 +710,24 @@ function formatDate(iso?: string): string | undefined {
   } catch {
     return iso;
   }
+}
+
+function getPackagingDisplay(item: Pick<DbCollectedItem, "packaging" | "packagingType" | "packagingDetail">) {
+  return getStructuredOptionDisplayParts(PACKAGING_OPTIONS, {
+    legacyValue: item.packaging,
+    selectedValue: item.packagingType,
+    detail: item.packagingDetail,
+  });
+}
+
+function formatPackagingValue(
+  item: Pick<DbCollectedItem, "packaging" | "packagingType" | "packagingDetail">,
+): string {
+  const packaging = getPackagingDisplay(item);
+  if (packaging.label && packaging.detail) {
+    return `${packaging.label} — ${packaging.detail}`;
+  }
+  return packaging.detail || packaging.label || item.packaging || "";
 }
 
 function csvEsc(s: string): string {

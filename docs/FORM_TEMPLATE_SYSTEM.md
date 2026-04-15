@@ -111,7 +111,7 @@ src/templates/
 │   ├── iar.json                # Investigative Activity Report
 │   ├── user_activity.json      # User activity tracking
 │   └── timeline.json           # Timeline of events
-└── options/                    # Shared option registries (dropdowns)
+└── options/                    # Shared option registries (dropdowns; JSON plus policy-backed overrides)
     ├── device_types.json       # Desktop, Laptop, Mobile, etc.
     ├── evidence_types.json     # Physical, Digital, Documentary, etc.
     ├── evidence_conditions.json # Factory sealed, Good, Damaged, etc.
@@ -123,8 +123,10 @@ src/templates/
     ├── finding_categories.json  # Malware, User activity, etc.
     ├── custody_actions.json    # Received, Transferred, Returned, etc.
     ├── coc_dispositions.json   # Retained, Returned, Destroyed, etc.
-    ├── coc_transfer_methods.json # In person, Courier, Secure mail, etc.
-    ├── coc_transfer_purposes.json # Examination, Storage, Court, etc.
+    ├── coc_transfer_methods      # Policy-backed override from shared custody options
+    ├── coc_transfer_purposes     # Policy-backed override from shared custody options
+    ├── packaging_types           # Policy-backed override from shared packaging options
+    ├── storage_classes           # Policy-backed override from shared custody storage options
     ├── iar_event_categories.json # Analysis, Acquisition, Review, etc.
     ├── user_activity_categories.json # Web browsing, File access, etc.
     ├── report_types.json       # Report type options
@@ -775,8 +777,10 @@ Update the template's `version` field and optionally add a `changelog` entry:
 | `finding_categories` | `options/finding_categories.json` | — | iar |
 | `custody_actions` | `options/custody_actions.json` | — | — |
 | `coc_dispositions` | `options/coc_dispositions.json` | — | — |
-| `coc_transfer_methods` | `options/coc_transfer_methods.json` | — | — |
-| `coc_transfer_purposes` | `options/coc_transfer_purposes.json` | — | — |
+| `coc_transfer_methods` | shared policy-backed override | — | — |
+| `coc_transfer_purposes` | shared policy-backed override | — | — |
+| `packaging_types` | shared policy-backed override | — | evidence_collection |
+| `storage_classes` | shared policy-backed override | — | — |
 | `iar_event_categories` | `options/iar_event_categories.json` | — | iar |
 | `user_activity_categories` | `options/user_activity_categories.json` | — | user_activity |
 | `report_types` | `options/report_types.json` | — | — |

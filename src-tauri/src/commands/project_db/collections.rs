@@ -488,6 +488,8 @@ mod tests {
                         serial_number: None,
                         condition: "Good".to_string(),
                         packaging: "Bag".to_string(),
+                        packaging_type: Some("faraday_bag".to_string()),
+                        packaging_detail: Some("Mission Darkness bag".to_string()),
                         photo_refs_json: None,
                         notes: None,
                         item_collection_datetime: None,
@@ -525,6 +527,8 @@ mod tests {
                         serial_number: None,
                         condition: String::new(),
                         packaging: String::new(),
+                        packaging_type: None,
+                        packaging_detail: None,
                         photo_refs_json: None,
                         notes: None,
                         item_collection_datetime: None,
@@ -581,7 +585,9 @@ mod tests {
                     collected_date: None,
                     received_by: "Evidence Room".to_string(),
                     received_location: None,
-                    storage_location: None,
+                    storage_location: Some("Shelf 7".to_string()),
+                    storage_class: Some("evidence_locker".to_string()),
+                    storage_location_detail: Some("Shelf 7".to_string()),
                     reason_submitted: None,
                     intake_hashes_json: None,
                     notes: Some("Imported note".to_string()),
@@ -606,6 +612,8 @@ mod tests {
                     purpose: "Storage".to_string(),
                     location: Some("Locker A".to_string()),
                     storage_location: Some("Shelf 7".to_string()),
+                    storage_class: Some("evidence_locker".to_string()),
+                    storage_location_detail: Some("Shelf 7".to_string()),
                     storage_date: Some("2026-04-14".to_string()),
                     method: Some("Hand-delivered".to_string()),
                     notes: None,
@@ -678,6 +686,14 @@ mod tests {
             preserved_item.get("evidenceFileId").and_then(Value::as_str),
             Some("ev-existing")
         );
+        assert_eq!(
+            preserved_item.get("packagingType").and_then(Value::as_str),
+            Some("faraday_bag")
+        );
+        assert_eq!(
+            preserved_item.get("packagingDetail").and_then(Value::as_str),
+            Some("Mission Darkness bag")
+        );
         assert_ne!(
             preserved_item
                 .get("cocItemId")
@@ -705,9 +721,29 @@ mod tests {
             coc_json.get("cocNumber").and_then(Value::as_str),
             Some("COC-001")
         );
+        assert_eq!(
+            coc_json.get("storageClass").and_then(Value::as_str),
+            Some("evidence_locker")
+        );
+        assert_eq!(
+            coc_json.get("storageLocationDetail").and_then(Value::as_str),
+            Some("Shelf 7")
+        );
         assert_eq!(coc_json["transfers"].as_array().map(Vec::len), Some(1));
         assert_eq!(coc_json["amendments"].as_array().map(Vec::len), Some(1));
         assert_eq!(coc_json["auditLog"].as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            coc_json["transfers"][0]
+                .get("storageClass")
+                .and_then(Value::as_str),
+            Some("evidence_locker")
+        );
+        assert_eq!(
+            coc_json["transfers"][0]
+                .get("storageLocationDetail")
+                .and_then(Value::as_str),
+            Some("Shelf 7")
+        );
         assert_eq!(
             coc_json["auditLog"][0]
                 .get("action")

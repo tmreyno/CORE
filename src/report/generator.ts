@@ -23,11 +23,9 @@ import type {
   StoredHash,
 } from "../types";
 import { formatBytes, formatDateByPreference } from "../utils";
+import { APP_NAME } from "../utils/edition";
 
-// Import version from package.json (Vite handles JSON imports at build time)
-import { version as APP_VERSION } from "../../package.json";
-
-const APP_NAME = "FFX - Forensic File Explorer";
+const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "unknown";
 
 // =============================================================================
 // MAIN REPORT GENERATOR

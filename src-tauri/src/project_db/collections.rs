@@ -58,6 +58,17 @@ fn optional_non_empty_or(value: &Option<String>, fallback: &str) -> Option<Strin
     }
 }
 
+fn normalize_optional_text(value: Option<String>) -> Option<String> {
+    value.and_then(|entry| {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
 fn default_import_label(prefix: &str, id: &str) -> String {
     let short_id = id.get(..8).unwrap_or(id);
     format!("{}-{}", prefix, short_id)
@@ -148,7 +159,7 @@ fn insert_collected_item_row(conn: &Connection, item: &DbCollectedItem) -> SqlRe
         "INSERT INTO collected_items (
             id, collection_id, coc_item_id, evidence_file_id, item_number, description,
             found_location, item_type, make, model, serial_number, condition, packaging,
-            photo_refs_json, notes,
+            packaging_type, packaging_detail, photo_refs_json, notes,
             item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
             device_type, device_type_other, storage_interface, storage_interface_other,
             brand, color, imei, other_identifiers,
@@ -156,9 +167,9 @@ fn insert_collected_item_row(conn: &Connection, item: &DbCollectedItem) -> SqlRe
             image_format, image_format_other, acquisition_method, acquisition_method_other,
             storage_notes
          )
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-                 ?31, ?32, ?33, ?34, ?35)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                 ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32,
+                 ?33, ?34, ?35, ?36, ?37)",
         params![
             item.id,
             item.collection_id,
@@ -173,6 +184,8 @@ fn insert_collected_item_row(conn: &Connection, item: &DbCollectedItem) -> SqlRe
             item.serial_number,
             item.condition,
             item.packaging,
+            item.packaging_type,
+            item.packaging_detail,
             item.photo_refs_json,
             item.notes,
             item.item_collection_datetime,
@@ -209,7 +222,8 @@ fn insert_coc_item_row(conn: &Connection, item: &DbCocItem) -> SqlResult<()> {
             collection_method, collection_method_other,
             make, model, serial_number, capacity, condition,
             acquisition_date, entered_custody_date, submitted_by, collected_date, received_by,
-            received_location, storage_location, reason_submitted, intake_hashes_json, notes,
+            received_location, storage_location, storage_class, storage_location_detail,
+            reason_submitted, intake_hashes_json, notes,
             disposition, disposition_by, returned_to, destruction_date, disposition_date, disposition_notes,
             created_at, modified_at, status, locked_at, locked_by
          ) VALUES (
@@ -219,9 +233,9 @@ fn insert_coc_item_row(conn: &Connection, item: &DbCocItem) -> SqlResult<()> {
             ?17, ?18,
             ?19, ?20, ?21, ?22, ?23,
             ?24, ?25, ?26, ?27, ?28,
-            ?29, ?30, ?31, ?32, ?33,
-            ?34, ?35, ?36, ?37, ?38, ?39,
-            ?40, ?41, ?42, ?43, ?44
+            ?29, ?30, ?31, ?32, ?33, ?34, ?35,
+            ?36, ?37, ?38, ?39, ?40, ?41,
+            ?42, ?43, ?44, ?45, ?46
          )",
         params![
             item.id,
@@ -254,6 +268,8 @@ fn insert_coc_item_row(conn: &Connection, item: &DbCocItem) -> SqlResult<()> {
             item.received_by,
             item.received_location,
             item.storage_location,
+            item.storage_class,
+            item.storage_location_detail,
             item.reason_submitted,
             item.intake_hashes_json,
             item.notes,
@@ -275,8 +291,11 @@ fn insert_coc_item_row(conn: &Connection, item: &DbCocItem) -> SqlResult<()> {
 
 fn insert_coc_transfer_row(conn: &Connection, transfer: &DbCocTransfer) -> SqlResult<()> {
     conn.execute(
-        "INSERT INTO coc_transfers (id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO coc_transfers (
+            id, coc_item_id, timestamp, released_by, received_by, purpose, location,
+            storage_location, storage_class, storage_location_detail, storage_date, method, notes
+         )
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             transfer.id,
             transfer.coc_item_id,
@@ -286,6 +305,8 @@ fn insert_coc_transfer_row(conn: &Connection, transfer: &DbCocTransfer) -> SqlRe
             transfer.purpose,
             transfer.location,
             transfer.storage_location,
+            transfer.storage_class,
+            transfer.storage_location_detail,
             transfer.storage_date,
             transfer.method,
             transfer.notes,
@@ -515,6 +536,9 @@ impl ProjectDatabase {
                 item.submitted_by = non_empty_or(&item.submitted_by, &package.source_examiner_name);
                 item.received_by = non_empty_or(&item.received_by, &item.submitted_by);
                 item.condition = non_empty_or(&item.condition, "Unknown");
+                item.storage_class = normalize_optional_text(item.storage_class.take());
+                item.storage_location_detail =
+                    normalize_optional_text(item.storage_location_detail.take());
                 item.created_at = non_empty_or(&item.created_at, &now);
                 item.modified_at = non_empty_or(&item.modified_at, &item.created_at);
                 item.acquisition_date = non_empty_or(&item.acquisition_date, &item.created_at);
@@ -537,6 +561,9 @@ impl ProjectDatabase {
                     transfer.released_by = non_empty_or(&transfer.released_by, &item.submitted_by);
                     transfer.received_by = non_empty_or(&transfer.received_by, &item.received_by);
                     transfer.purpose = non_empty_or(&transfer.purpose, "Imported transfer");
+                    transfer.storage_class = normalize_optional_text(transfer.storage_class.take());
+                    transfer.storage_location_detail =
+                        normalize_optional_text(transfer.storage_location_detail.take());
                     insert_coc_transfer_row(&conn, &transfer)?;
                 }
 
@@ -636,6 +663,8 @@ impl ProjectDatabase {
                         non_empty_or(&item.found_location, &collection.collection_location);
                     item.item_type = non_empty_or(&item.item_type, "Evidence");
                     item.condition = non_empty_or(&item.condition, "Unknown");
+                    item.packaging_type = normalize_optional_text(item.packaging_type.take());
+                    item.packaging_detail = normalize_optional_text(item.packaging_detail.take());
                     item.packaging = non_empty_or(&item.packaging, "Unknown");
 
                     insert_collected_item_row(&conn, &item)?;
@@ -676,8 +705,8 @@ impl ProjectDatabase {
         conn.execute(
             "INSERT INTO collected_items (
                 id, collection_id, coc_item_id, evidence_file_id, item_number, description,
-                found_location, item_type, make, model, serial_number, condition, packaging,
-                photo_refs_json, notes,
+            found_location, item_type, make, model, serial_number, condition, packaging,
+            packaging_type, packaging_detail, photo_refs_json, notes,
                 item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
                 device_type, device_type_other, storage_interface, storage_interface_other,
                 brand, color, imei, other_identifiers,
@@ -685,16 +714,17 @@ impl ProjectDatabase {
                 image_format, image_format_other, acquisition_method, acquisition_method_other,
                 storage_notes
              )
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-                     ?31, ?32, ?33, ?34, ?35)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                 ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32,
+                 ?33, ?34, ?35, ?36, ?37)
              ON CONFLICT(id) DO UPDATE SET
                 collection_id=excluded.collection_id, coc_item_id=excluded.coc_item_id,
                 evidence_file_id=excluded.evidence_file_id, item_number=excluded.item_number,
                 description=excluded.description, found_location=excluded.found_location,
                 item_type=excluded.item_type, make=excluded.make, model=excluded.model,
                 serial_number=excluded.serial_number, condition=excluded.condition,
-                packaging=excluded.packaging, photo_refs_json=excluded.photo_refs_json,
+            packaging=excluded.packaging, packaging_type=excluded.packaging_type,
+            packaging_detail=excluded.packaging_detail, photo_refs_json=excluded.photo_refs_json,
                 notes=excluded.notes,
                 item_collection_datetime=excluded.item_collection_datetime,
                 item_system_datetime=excluded.item_system_datetime,
@@ -712,7 +742,8 @@ impl ProjectDatabase {
                 item.id, item.collection_id, item.coc_item_id, item.evidence_file_id,
                 item.item_number, item.description, item.found_location, item.item_type,
                 item.make, item.model, item.serial_number, item.condition,
-                item.packaging, item.photo_refs_json, item.notes,
+                item.packaging, item.packaging_type, item.packaging_detail,
+                item.photo_refs_json, item.notes,
                 item.item_collection_datetime, item.item_system_datetime,
                 item.item_collecting_officer, item.item_authorization,
                 item.device_type, item.device_type_other,
@@ -733,7 +764,7 @@ impl ProjectDatabase {
         let mut stmt = conn.prepare(
             "SELECT id, collection_id, coc_item_id, evidence_file_id, item_number, description,
                     found_location, item_type, make, model, serial_number, condition, packaging,
-                    photo_refs_json, notes,
+                    packaging_type, packaging_detail, photo_refs_json, notes,
                     item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
                     device_type, device_type_other, storage_interface, storage_interface_other,
                     brand, color, imei, other_identifiers,
@@ -752,7 +783,7 @@ impl ProjectDatabase {
         let mut stmt = conn.prepare(
             "SELECT id, collection_id, coc_item_id, evidence_file_id, item_number, description,
                     found_location, item_type, make, model, serial_number, condition, packaging,
-                    photo_refs_json, notes,
+                    packaging_type, packaging_detail, photo_refs_json, notes,
                     item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
                     device_type, device_type_other, storage_interface, storage_interface_other,
                     brand, color, imei, other_identifiers,
@@ -772,7 +803,7 @@ impl ProjectDatabase {
         Ok(())
     }
 
-    /// Row mapper for DbCollectedItem (35 columns)
+    /// Row mapper for DbCollectedItem (37 columns)
     fn map_collected_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbCollectedItem> {
         Ok(DbCollectedItem {
             id: row.get(0)?,
@@ -788,28 +819,30 @@ impl ProjectDatabase {
             serial_number: row.get(10)?,
             condition: row.get(11)?,
             packaging: row.get(12)?,
-            photo_refs_json: row.get(13)?,
-            notes: row.get(14)?,
-            item_collection_datetime: row.get(15)?,
-            item_system_datetime: row.get(16)?,
-            item_collecting_officer: row.get(17)?,
-            item_authorization: row.get(18)?,
-            device_type: row.get(19)?,
-            device_type_other: row.get(20)?,
-            storage_interface: row.get(21)?,
-            storage_interface_other: row.get(22)?,
-            brand: row.get(23)?,
-            color: row.get(24)?,
-            imei: row.get(25)?,
-            other_identifiers: row.get(26)?,
-            building: row.get(27)?,
-            room: row.get(28)?,
-            location_other: row.get(29)?,
-            image_format: row.get(30)?,
-            image_format_other: row.get(31)?,
-            acquisition_method: row.get(32)?,
-            acquisition_method_other: row.get(33)?,
-            storage_notes: row.get(34)?,
+            packaging_type: row.get(13)?,
+            packaging_detail: row.get(14)?,
+            photo_refs_json: row.get(15)?,
+            notes: row.get(16)?,
+            item_collection_datetime: row.get(17)?,
+            item_system_datetime: row.get(18)?,
+            item_collecting_officer: row.get(19)?,
+            item_authorization: row.get(20)?,
+            device_type: row.get(21)?,
+            device_type_other: row.get(22)?,
+            storage_interface: row.get(23)?,
+            storage_interface_other: row.get(24)?,
+            brand: row.get(25)?,
+            color: row.get(26)?,
+            imei: row.get(27)?,
+            other_identifiers: row.get(28)?,
+            building: row.get(29)?,
+            room: row.get(30)?,
+            location_other: row.get(31)?,
+            image_format: row.get(32)?,
+            image_format_other: row.get(33)?,
+            acquisition_method: row.get(34)?,
+            acquisition_method_other: row.get(35)?,
+            storage_notes: row.get(36)?,
         })
     }
 

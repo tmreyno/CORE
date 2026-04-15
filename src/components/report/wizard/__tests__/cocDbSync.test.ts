@@ -63,6 +63,8 @@ function makeCocItem(overrides?: Partial<COCItem>): COCItem {
     received_by: "Lab Tech A",
     received_location: "Digital Forensics Lab",
     storage_location: "Locker 42",
+    storage_class: "evidence_locker",
+    storage_location_detail: "Locker 42",
     reason_submitted: "Investigation",
     transfers: [],
     intake_hashes: [{ item: "EV-001", algorithm: "MD5", value: "abc123" }],
@@ -90,6 +92,8 @@ function makeDbCocItem(overrides?: Partial<DbCocItem>): DbCocItem {
     receivedBy: "Lab Tech A",
     receivedLocation: "Digital Forensics Lab",
     storageLocation: "Locker 42",
+    storageClass: "evidence_locker",
+    storageLocationDetail: "Locker 42",
     reasonSubmitted: "Investigation",
     intakeHashesJson: JSON.stringify([{ algorithm: "MD5", value: "abc123" }]),
     notes: "Some notes",
@@ -108,6 +112,9 @@ function makeCocTransfer(overrides?: Partial<COCTransfer>): COCTransfer {
     received_by: "Examiner B",
     purpose: "Analysis",
     location: "Lab 1",
+    storage_location: "Shelf 2",
+    storage_class: "temporary_custody",
+    storage_location_detail: "Shelf 2",
     method: "in-person",
     notes: "Transfer notes",
     ...overrides,
@@ -123,6 +130,9 @@ function makeDbCocTransfer(overrides?: Partial<DbCocTransfer>): DbCocTransfer {
     receivedBy: "Examiner B",
     purpose: "Analysis",
     location: "Lab 1",
+    storageLocation: "Shelf 2",
+    storageClass: "temporary_custody",
+    storageLocationDetail: "Shelf 2",
     method: "in-person",
     notes: "Transfer notes",
     ...overrides,
@@ -141,6 +151,8 @@ function makeCollectedItem(overrides?: Partial<CollectedItem>): CollectedItem {
     serial_number: "SN456",
     condition: "good",
     packaging: "Evidence bag",
+    packaging_type: "tamper_evident_bag",
+    packaging_detail: "Evidence bag #123",
     building: "HQ",
     room: "202A",
     location_other: "Desk 5",
@@ -206,6 +218,13 @@ describe("cocItemToDb", () => {
     expect(db.submittedBy).toBe("");
     expect(db.receivedBy).toBe("");
   });
+
+  it("preserves structured storage fields", () => {
+    const db = cocItemToDb(makeCocItem());
+    expect(db.storageClass).toBe("evidence_locker");
+    expect(db.storageLocationDetail).toBe("Locker 42");
+    expect(db.storageLocation).toBe("Locker 42");
+  });
 });
 
 // =============================================================================
@@ -241,6 +260,12 @@ describe("dbToCocItem", () => {
     const item = dbToCocItem(makeDbCocItem({ itemType: "" }));
     expect(item.item_type).toBe("HardDrive");
   });
+
+  it("restores structured storage fields", () => {
+    const item = dbToCocItem(makeDbCocItem());
+    expect(item.storage_class).toBe("evidence_locker");
+    expect(item.storage_location_detail).toBe("Locker 42");
+  });
 });
 
 // =============================================================================
@@ -260,6 +285,13 @@ describe("cocTransferToDb", () => {
     expect(db.method).toBe("in-person");
     expect(db.notes).toBe("Transfer notes");
   });
+
+  it("preserves structured transfer storage fields", () => {
+    const db = cocTransferToDb(makeCocTransfer(), "parent-coc-1");
+    expect(db.storageClass).toBe("temporary_custody");
+    expect(db.storageLocationDetail).toBe("Shelf 2");
+    expect(db.storageLocation).toBe("Shelf 2");
+  });
 });
 
 // =============================================================================
@@ -277,6 +309,12 @@ describe("dbToCocTransfer", () => {
     expect(transfer.location).toBe("Lab 1");
     expect(transfer.method).toBe("in-person");
     expect(transfer.notes).toBe("Transfer notes");
+  });
+
+  it("restores structured transfer storage fields", () => {
+    const transfer = dbToCocTransfer(makeDbCocTransfer());
+    expect(transfer.storage_class).toBe("temporary_custody");
+    expect(transfer.storage_location_detail).toBe("Shelf 2");
   });
 });
 
@@ -332,7 +370,9 @@ describe("collectedItemToDb", () => {
     expect(db.itemNumber).toBe("001");
     expect(db.description).toBe("Desktop computer");
     expect(db.condition).toBe("good");
-    expect(db.packaging).toBe("Evidence bag");
+    expect(db.packaging).toBe("Evidence bag #123");
+    expect(db.packagingType).toBe("tamper_evident_bag");
+    expect(db.packagingDetail).toBe("Evidence bag #123");
   });
 
   it("composes foundLocation from building/room/location_other", () => {
@@ -600,5 +640,22 @@ describe("dbToCollectedItem", () => {
       deviceType: "laptop",
     });
     expect(item.device_type).toBe("laptop");
+  });
+
+  it("restores structured packaging fields", () => {
+    const item = dbToCollectedItem({
+      id: "i1",
+      collectionId: "c1",
+      itemNumber: "001",
+      description: "PC",
+      foundLocation: "",
+      itemType: "desktop_computer",
+      condition: "good",
+      packaging: "Evidence bag #123",
+      packagingType: "tamper_evident_bag",
+      packagingDetail: "Evidence bag #123",
+    });
+    expect(item.packaging_type).toBe("tamper_evident_bag");
+    expect(item.packaging_detail).toBe("Evidence bag #123");
   });
 });

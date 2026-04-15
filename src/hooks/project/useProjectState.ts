@@ -32,7 +32,7 @@ export async function getAppVersion(): Promise<string> {
     const version = await invoke<string>("get_app_version");
     return version;
   } catch {
-    return "0.1.0";
+    return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "unknown";
   }
 }
 

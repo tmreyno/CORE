@@ -179,7 +179,8 @@ impl ProjectDatabase {
                 collection_method, collection_method_other,
                 make, model, serial_number, capacity, condition,
                 acquisition_date, entered_custody_date, submitted_by, collected_date, received_by,
-                received_location, storage_location, reason_submitted, intake_hashes_json, notes,
+                     received_location, storage_location, storage_class, storage_location_detail,
+                     reason_submitted, intake_hashes_json, notes,
                 disposition, disposition_by, returned_to, destruction_date, disposition_date, disposition_notes,
                 created_at, modified_at, status, locked_at, locked_by
              ) VALUES (
@@ -189,9 +190,9 @@ impl ProjectDatabase {
                 ?17, ?18,
                 ?19, ?20, ?21, ?22, ?23,
                 ?24, ?25, ?26, ?27, ?28,
-                ?29, ?30, ?31, ?32, ?33,
-                ?34, ?35, ?36, ?37, ?38, ?39,
-                ?40, ?41, ?42, ?43, ?44
+                     ?29, ?30, ?31, ?32, ?33, ?34, ?35,
+                     ?36, ?37, ?38, ?39, ?40, ?41,
+                     ?42, ?43, ?44, ?45, ?46
              ) ON CONFLICT(id) DO UPDATE SET
                 coc_number=excluded.coc_number, evidence_file_id=excluded.evidence_file_id,
                 case_number=excluded.case_number, evidence_id=excluded.evidence_id,
@@ -210,6 +211,8 @@ impl ProjectDatabase {
                 submitted_by=excluded.submitted_by, collected_date=excluded.collected_date,
                 received_by=excluded.received_by,
                 received_location=excluded.received_location, storage_location=excluded.storage_location,
+                storage_class=excluded.storage_class,
+                storage_location_detail=excluded.storage_location_detail,
                 reason_submitted=excluded.reason_submitted, intake_hashes_json=excluded.intake_hashes_json,
                 notes=excluded.notes, disposition=excluded.disposition,
                 disposition_by=excluded.disposition_by, returned_to=excluded.returned_to,
@@ -225,7 +228,8 @@ impl ProjectDatabase {
                 item.make, item.model, item.serial_number, item.capacity,
                 item.condition, item.acquisition_date, item.entered_custody_date,
                 item.submitted_by, item.collected_date, item.received_by,
-                item.received_location, item.storage_location, item.reason_submitted,
+                item.received_location, item.storage_location, item.storage_class,
+                item.storage_location_detail, item.reason_submitted,
                 item.intake_hashes_json, item.notes,
                 item.disposition, item.disposition_by, item.returned_to, item.destruction_date,
                 item.disposition_date, item.disposition_notes,
@@ -245,7 +249,8 @@ impl ProjectDatabase {
             collection_method, collection_method_other,
             make, model, serial_number, capacity, condition,
             acquisition_date, entered_custody_date, submitted_by, collected_date, received_by,
-            received_location, storage_location, reason_submitted, intake_hashes_json, notes,
+            received_location, storage_location, storage_class, storage_location_detail,
+            reason_submitted, intake_hashes_json, notes,
             disposition, disposition_by, returned_to, destruction_date, disposition_date, disposition_notes,
             created_at, modified_at, status, locked_at, locked_by";
         let sql = if case_number.is_some() {
@@ -296,20 +301,22 @@ impl ProjectDatabase {
                 received_by: row.get(27)?,
                 received_location: row.get(28)?,
                 storage_location: row.get(29)?,
-                reason_submitted: row.get(30)?,
-                intake_hashes_json: row.get(31)?,
-                notes: row.get(32)?,
-                disposition: row.get(33)?,
-                disposition_by: row.get(34)?,
-                returned_to: row.get(35)?,
-                destruction_date: row.get(36)?,
-                disposition_date: row.get(37)?,
-                disposition_notes: row.get(38)?,
-                created_at: row.get(39)?,
-                modified_at: row.get(40)?,
-                status: row.get(41)?,
-                locked_at: row.get(42)?,
-                locked_by: row.get(43)?,
+                storage_class: row.get(30)?,
+                storage_location_detail: row.get(31)?,
+                reason_submitted: row.get(32)?,
+                intake_hashes_json: row.get(33)?,
+                notes: row.get(34)?,
+                disposition: row.get(35)?,
+                disposition_by: row.get(36)?,
+                returned_to: row.get(37)?,
+                destruction_date: row.get(38)?,
+                disposition_date: row.get(39)?,
+                disposition_notes: row.get(40)?,
+                created_at: row.get(41)?,
+                modified_at: row.get(42)?,
+                status: row.get(43)?,
+                locked_at: row.get(44)?,
+                locked_by: row.get(45)?,
             })
         })?;
         rows.collect()
@@ -394,6 +401,8 @@ impl ProjectDatabase {
             "received_by",
             "received_location",
             "storage_location",
+            "storage_class",
+            "storage_location_detail",
             "reason_submitted",
             "intake_hashes_json",
             "notes",
@@ -582,18 +591,24 @@ impl ProjectDatabase {
     pub fn upsert_coc_transfer(&self, transfer: &DbCocTransfer) -> SqlResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO coc_transfers (id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO coc_transfers (
+                id, coc_item_id, timestamp, released_by, received_by, purpose, location,
+                storage_location, storage_class, storage_location_detail, storage_date, method, notes
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 timestamp=excluded.timestamp, released_by=excluded.released_by,
                 received_by=excluded.received_by, purpose=excluded.purpose,
                 location=excluded.location, storage_location=excluded.storage_location,
+                storage_class=excluded.storage_class,
+                storage_location_detail=excluded.storage_location_detail,
                 storage_date=excluded.storage_date, method=excluded.method, notes=excluded.notes",
             params![
                 transfer.id, transfer.coc_item_id, transfer.timestamp,
                 transfer.released_by, transfer.received_by, transfer.purpose,
-                transfer.location, transfer.storage_location, transfer.storage_date,
-                transfer.method, transfer.notes,
+                transfer.location, transfer.storage_location, transfer.storage_class,
+                transfer.storage_location_detail, transfer.storage_date, transfer.method,
+                transfer.notes,
             ],
         )?;
         self.insert_coc_audit_internal(
@@ -614,7 +629,8 @@ impl ProjectDatabase {
     pub fn get_coc_transfers(&self, coc_item_id: &str) -> SqlResult<Vec<DbCocTransfer>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes
+            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location,
+                    storage_location, storage_class, storage_location_detail, storage_date, method, notes
              FROM coc_transfers WHERE coc_item_id = ?1 ORDER BY timestamp ASC",
         )?;
         let rows = stmt.query_map(params![coc_item_id], |row| {
@@ -627,9 +643,11 @@ impl ProjectDatabase {
                 purpose: row.get(5)?,
                 location: row.get(6)?,
                 storage_location: row.get(7)?,
-                storage_date: row.get(8)?,
-                method: row.get(9)?,
-                notes: row.get(10)?,
+                storage_class: row.get(8)?,
+                storage_location_detail: row.get(9)?,
+                storage_date: row.get(10)?,
+                method: row.get(11)?,
+                notes: row.get(12)?,
             })
         })?;
         rows.collect()
@@ -639,7 +657,8 @@ impl ProjectDatabase {
     pub fn get_all_coc_transfers(&self) -> SqlResult<Vec<DbCocTransfer>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location, storage_location, storage_date, method, notes
+            "SELECT id, coc_item_id, timestamp, released_by, received_by, purpose, location,
+                    storage_location, storage_class, storage_location_detail, storage_date, method, notes
              FROM coc_transfers ORDER BY timestamp ASC",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -652,9 +671,11 @@ impl ProjectDatabase {
                 purpose: row.get(5)?,
                 location: row.get(6)?,
                 storage_location: row.get(7)?,
-                storage_date: row.get(8)?,
-                method: row.get(9)?,
-                notes: row.get(10)?,
+                storage_class: row.get(8)?,
+                storage_location_detail: row.get(9)?,
+                storage_date: row.get(10)?,
+                method: row.get(11)?,
+                notes: row.get(12)?,
             })
         })?;
         rows.collect()

@@ -36,7 +36,14 @@ import {
   EVIDENCE_TYPES,
   COC_COLLECTION_METHODS,
 } from "../../../constants";
+import {
+  CORE_BASELINE_EVIDENCE_POLICY_PACK,
+  buildStructuredOptionFieldState,
+  composeStructuredOptionLegacyValue,
+} from "@core-suite/types/evidence-policy";
 import type { COCItem, COCTransfer } from "../../../types";
+
+const STORAGE_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.storageClasses;
 
 // ── Helpers ──
 
@@ -89,6 +96,50 @@ export function COCItemRow(props: COCItemRowProps) {
   const isLocked = () => props.item.status === "locked";
   const isVoided = () => props.item.status === "voided";
   const badge = () => statusBadge(props.item.status);
+  const itemStorage = () =>
+    buildStructuredOptionFieldState(STORAGE_OPTIONS, {
+      legacyValue: props.item.storage_location,
+      selectedValue: props.item.storage_class,
+      detail: props.item.storage_location_detail,
+      unknownDefaultsToOther: false,
+    });
+
+  const updateItemStorage = (patch: { selectedValue?: string; detail?: string }) => {
+    const current = itemStorage();
+    const selectedValue = patch.selectedValue ?? current.selectedValue;
+    const detail = patch.detail ?? current.detail;
+    props.onUpdate("storage_class", selectedValue || undefined);
+    props.onUpdate("storage_location_detail", detail || undefined);
+    props.onUpdate(
+      "storage_location",
+      composeStructuredOptionLegacyValue(STORAGE_OPTIONS, { selectedValue, detail }) || "",
+    );
+  };
+
+  const getTransferStorage = (transfer: COCTransfer) =>
+    buildStructuredOptionFieldState(STORAGE_OPTIONS, {
+      legacyValue: transfer.storage_location,
+      selectedValue: transfer.storage_class,
+      detail: transfer.storage_location_detail,
+      unknownDefaultsToOther: false,
+    });
+
+  const updateTransferStorage = (
+    transferId: string,
+    transfer: COCTransfer,
+    patch: { selectedValue?: string; detail?: string },
+  ) => {
+    const current = getTransferStorage(transfer);
+    const selectedValue = patch.selectedValue ?? current.selectedValue;
+    const detail = patch.detail ?? current.detail;
+    props.onUpdateTransfer(transferId, "storage_class", selectedValue || "");
+    props.onUpdateTransfer(transferId, "storage_location_detail", detail || "");
+    props.onUpdateTransfer(
+      transferId,
+      "storage_location",
+      composeStructuredOptionLegacyValue(STORAGE_OPTIONS, { selectedValue, detail }) || "",
+    );
+  };
 
   return (
     <div
@@ -444,7 +495,31 @@ export function COCItemRow(props: COCItemRowProps) {
               />
             </div>
           </div>
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-2 gap-2">
+            <div class="form-group">
+              <label class="label">Storage Class</label>
+              <select
+                class="input-sm"
+                value={itemStorage().selectedValue}
+                disabled={isLocked()}
+                onChange={(e) => updateItemStorage({ selectedValue: e.currentTarget.value })}
+              >
+                <option value="">Select storage class</option>
+                <For each={STORAGE_OPTIONS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="label">Storage Location Detail</label>
+              <input
+                class="input-sm"
+                value={itemStorage().detail}
+                placeholder="Locker, shelf, vault slot, etc."
+                readOnly={isLocked()}
+                onInput={(e) => updateItemStorage({ detail: e.currentTarget.value })}
+              />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
             <div class="form-group">
               <label class="label">Acquisition Date</label>
               <input
@@ -463,16 +538,6 @@ export function COCItemRow(props: COCItemRowProps) {
                 value={props.item.entered_custody_date}
                 readOnly={isLocked()}
                 onInput={(e) => props.onUpdate("entered_custody_date", e.currentTarget.value)}
-              />
-            </div>
-            <div class="form-group">
-              <label class="label">Storage Location</label>
-              <input
-                class="input-sm"
-                value={props.item.storage_location || ""}
-                placeholder="Evidence locker, shelf, etc."
-                readOnly={isLocked()}
-                onInput={(e) => props.onUpdate("storage_location", e.currentTarget.value)}
               />
             </div>
           </div>
@@ -547,18 +612,44 @@ export function COCItemRow(props: COCItemRowProps) {
                           </select>
                         </div>
                       </div>
-                      <div class="grid grid-cols-3 gap-2 items-end">
+                      <div class="grid grid-cols-4 gap-2 items-end">
                         <div class="form-group">
-                          <label class="label text-xs">Storage Location</label>
-                          <input class="input-xs" value={transfer.storage_location || ""} placeholder="Location after transfer" onInput={(e) => props.onUpdateTransfer(transfer.id, "storage_location", e.currentTarget.value)} />
+                          <label class="label text-xs">Storage Class</label>
+                          <select
+                            class="input-xs"
+                            value={getTransferStorage(transfer).selectedValue}
+                            disabled={isLocked()}
+                            onChange={(e) =>
+                              updateTransferStorage(transfer.id, transfer, {
+                                selectedValue: e.currentTarget.value,
+                              })
+                            }
+                          >
+                            <option value="">Select class</option>
+                            <For each={STORAGE_OPTIONS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
+                          </select>
+                        </div>
+                        <div class="form-group">
+                          <label class="label text-xs">Storage Detail</label>
+                          <input
+                            class="input-xs"
+                            value={getTransferStorage(transfer).detail}
+                            placeholder="Location after transfer"
+                            readOnly={isLocked()}
+                            onInput={(e) =>
+                              updateTransferStorage(transfer.id, transfer, {
+                                detail: e.currentTarget.value,
+                              })
+                            }
+                          />
                         </div>
                         <div class="form-group">
                           <label class="label text-xs">Date Entered Storage</label>
-                          <input type="datetime-local" class="input-xs" value={transfer.storage_date || ""} onInput={(e) => props.onUpdateTransfer(transfer.id, "storage_date", e.currentTarget.value)} />
+                          <input type="datetime-local" class="input-xs" value={transfer.storage_date || ""} readOnly={isLocked()} onInput={(e) => props.onUpdateTransfer(transfer.id, "storage_date", e.currentTarget.value)} />
                         </div>
                         <div class="form-group">
                           <label class="label text-xs">Method</label>
-                          <select class="input-xs" value={transfer.method || "in_person"} onChange={(e) => props.onUpdateTransfer(transfer.id, "method", e.currentTarget.value)}>
+                          <select class="input-xs" value={transfer.method || "in_person"} disabled={isLocked()} onChange={(e) => props.onUpdateTransfer(transfer.id, "method", e.currentTarget.value)}>
                             <For each={COC_TRANSFER_METHODS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
                           </select>
                         </div>

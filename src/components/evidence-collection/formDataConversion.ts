@@ -11,6 +11,13 @@
 
 import type { FormData } from "../../templates/types";
 import type { EvidenceCollectionData, CollectedItem } from "../report/types";
+import {
+  CORE_BASELINE_EVIDENCE_POLICY_PACK,
+  buildStructuredOptionFieldState,
+  composeStructuredOptionLegacyValue,
+} from "@core-suite/types/evidence-policy";
+
+const PACKAGING_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.packagingTypes;
 
 export function generateId(): string {
   return crypto.randomUUID();
@@ -41,7 +48,15 @@ export function evidenceToFormData(d: EvidenceCollectionData): FormData {
     witnesses: d.witnesses || [],
     documentation_notes: d.documentation_notes || "",
     conditions: d.conditions || "",
-    collected_items: (d.collected_items || []).map((item) => ({
+    collected_items: (d.collected_items || []).map((item) => {
+      const packaging = buildStructuredOptionFieldState(PACKAGING_OPTIONS, {
+        legacyValue: item.packaging,
+        selectedValue: item.packaging_type,
+        detail: item.packaging_detail,
+        unknownDefaultsToOther: true,
+      });
+
+      return {
       id: item.id,
       item_number: item.item_number || "",
       evidence_file_id: item.evidence_file_id || "",
@@ -69,11 +84,14 @@ export function evidenceToFormData(d: EvidenceCollectionData): FormData {
       acquisition_method: item.acquisition_method || "",
       acquisition_method_other: item.acquisition_method_other || "",
       condition: item.condition || "good",
-      packaging: item.packaging || "",
+      packaging: item.packaging || composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, packaging) || "",
+      packaging_type: packaging.selectedValue || "",
+      packaging_detail: packaging.detail || "",
       storage_notes: item.storage_notes || "",
       notes: item.notes || "",
       photo_refs: item.photo_refs || [],
-    })),
+    };
+    }),
   };
 }
 
@@ -92,39 +110,49 @@ export function formDataToEvidence(fd: FormData): EvidenceCollectionData {
     ? (fd.collected_items as FormData[])
     : [];
 
-  const collected_items: CollectedItem[] = rawItems.map((item) => ({
-    id: (item.id as string) || crypto.randomUUID(),
-    item_number: (item.item_number as string) || "",
-    evidence_file_id: (item.evidence_file_id as string) || undefined,
-    description: (item.description as string) || "",
-    item_collection_datetime: (item.item_collection_datetime as string) || undefined,
-    item_system_datetime: (item.item_system_datetime as string) || undefined,
-    item_collecting_officer: (item.item_collecting_officer as string) || undefined,
-    item_authorization: (item.item_authorization as string) || undefined,
-    device_type: (item.device_type as string) || "desktop_computer",
-    device_type_other: (item.device_type_other as string) || undefined,
-    storage_interface: (item.storage_interface as string) || "sata",
-    storage_interface_other: (item.storage_interface_other as string) || undefined,
-    brand: (item.brand as string) || undefined,
-    make: (item.make as string) || undefined,
-    model: (item.model as string) || undefined,
-    color: (item.color as string) || undefined,
-    serial_number: (item.serial_number as string) || undefined,
-    imei: (item.imei as string) || undefined,
-    other_identifiers: (item.other_identifiers as string) || undefined,
-    building: (item.building as string) || undefined,
-    room: (item.room as string) || undefined,
-    location_other: (item.location_other as string) || undefined,
-    image_format: (item.image_format as string) || undefined,
-    image_format_other: (item.image_format_other as string) || undefined,
-    acquisition_method: (item.acquisition_method as string) || undefined,
-    acquisition_method_other: (item.acquisition_method_other as string) || undefined,
-    condition: (item.condition as string) || "good",
-    packaging: (item.packaging as string) || "",
-    storage_notes: (item.storage_notes as string) || undefined,
-    notes: (item.notes as string) || undefined,
-    photo_refs: Array.isArray(item.photo_refs) ? (item.photo_refs as string[]) : undefined,
-  }));
+  const collected_items: CollectedItem[] = rawItems.map((item) => {
+    const packagingType = (item.packaging_type as string) || "";
+    const packagingDetail = (item.packaging_detail as string) || "";
+
+    return {
+      id: (item.id as string) || crypto.randomUUID(),
+      item_number: (item.item_number as string) || "",
+      evidence_file_id: (item.evidence_file_id as string) || undefined,
+      description: (item.description as string) || "",
+      item_collection_datetime: (item.item_collection_datetime as string) || undefined,
+      item_system_datetime: (item.item_system_datetime as string) || undefined,
+      item_collecting_officer: (item.item_collecting_officer as string) || undefined,
+      item_authorization: (item.item_authorization as string) || undefined,
+      device_type: (item.device_type as string) || "desktop_computer",
+      device_type_other: (item.device_type_other as string) || undefined,
+      storage_interface: (item.storage_interface as string) || "sata",
+      storage_interface_other: (item.storage_interface_other as string) || undefined,
+      brand: (item.brand as string) || undefined,
+      make: (item.make as string) || undefined,
+      model: (item.model as string) || undefined,
+      color: (item.color as string) || undefined,
+      serial_number: (item.serial_number as string) || undefined,
+      imei: (item.imei as string) || undefined,
+      other_identifiers: (item.other_identifiers as string) || undefined,
+      building: (item.building as string) || undefined,
+      room: (item.room as string) || undefined,
+      location_other: (item.location_other as string) || undefined,
+      image_format: (item.image_format as string) || undefined,
+      image_format_other: (item.image_format_other as string) || undefined,
+      acquisition_method: (item.acquisition_method as string) || undefined,
+      acquisition_method_other: (item.acquisition_method_other as string) || undefined,
+      condition: (item.condition as string) || "good",
+      packaging: composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, {
+        selectedValue: packagingType,
+        detail: packagingDetail,
+      }) || (item.packaging as string) || "",
+      packaging_type: packagingType || undefined,
+      packaging_detail: packagingDetail || undefined,
+      storage_notes: (item.storage_notes as string) || undefined,
+      notes: (item.notes as string) || undefined,
+      photo_refs: Array.isArray(item.photo_refs) ? (item.photo_refs as string[]) : undefined,
+    };
+  });
 
   return {
     collection_date: (fd.collection_date as string) || "",

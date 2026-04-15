@@ -7,7 +7,7 @@
 //! Schema migration logic for the project database.
 //!
 //! Contains the `check_migrations()` method that upgrades `.ffxdb` databases
-//! from older schema versions to the current version (v11).
+//! from older schema versions to the current version (v12).
 
 use super::database::ProjectDatabase;
 use super::types::SCHEMA_VERSION;
@@ -620,6 +620,71 @@ impl ProjectDatabase {
                     DROP INDEX IF EXISTS idx_relationship_target;",
                 )?;
                 info!("Running v10 → v11 migration: dropped 5 redundant tables + 9 indexes");
+            }
+
+            // v11 → v12: Preserve additive shared packaging/storage fields on desktop DB rows
+            if current_version < 12 {
+                let existing_collected_item_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('collected_items')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut collected_item_added = 0;
+                for col in ["packaging_type", "packaging_detail"] {
+                    if !existing_collected_item_cols.iter().any(|c| c == col) {
+                        conn.execute(
+                            &format!("ALTER TABLE collected_items ADD COLUMN {} TEXT", col),
+                            [],
+                        )?;
+                        collected_item_added += 1;
+                    }
+                }
+
+                let existing_coc_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('coc_items')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut coc_item_added = 0;
+                for col in ["storage_class", "storage_location_detail"] {
+                    if !existing_coc_cols.iter().any(|c| c == col) {
+                        conn.execute(
+                            &format!("ALTER TABLE coc_items ADD COLUMN {} TEXT", col),
+                            [],
+                        )?;
+                        coc_item_added += 1;
+                    }
+                }
+
+                let existing_transfer_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('coc_transfers')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut transfer_added = 0;
+                for col in ["storage_class", "storage_location_detail"] {
+                    if !existing_transfer_cols.iter().any(|c| c == col) {
+                        conn.execute(
+                            &format!("ALTER TABLE coc_transfers ADD COLUMN {} TEXT", col),
+                            [],
+                        )?;
+                        transfer_added += 1;
+                    }
+                }
+
+                if collected_item_added > 0 || coc_item_added > 0 || transfer_added > 0 {
+                    info!(
+                        "Running v11 → v12 migration: added {} columns to collected_items, {} to coc_items, {} to coc_transfers",
+                        collected_item_added, coc_item_added, transfer_added
+                    );
+                } else {
+                    info!(
+                        "v11 → v12 migration: additive packaging/storage columns already exist, skipping"
+                    );
+                }
             }
 
             conn.execute(

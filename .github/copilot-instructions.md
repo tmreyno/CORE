@@ -646,11 +646,11 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 | `src/components/report/wizard/cocExport.ts` | Save-dialog helper for PDF/XLSX/CSV/HTML export plus canonical JSON package import/export |
 | `src/components/LinkedDataTree.tsx` | Reusable tree: `LinkedDataNode` type + `LinkedDataTree` component |
 | `src/components/LinkedDataPanel.tsx` | Right-panel wrapper with Linked Data & Summary tabs |
-| `src/templates/forms/evidence_collection.json` | JSON schema template (v1.3.0 — 3 sections, reordered forensic workflow, `evidence_container` field, conditional `show_when` device fields) |
+| `src/templates/forms/evidence_collection.json` | JSON schema template (v1.3.0 — 3 sections, reordered forensic workflow, `evidence_container` field, conditional `show_when` device fields, policy-backed `packaging_type` select) |
 | `src/components/report/wizard/cocDbSync.ts` | DB persistence (shared with COC). **Awaitable** — uses direct `invoke()`, NOT fire-and-forget `dbSync` |
 | `src/components/report/types.ts` | `EvidenceCollectionData`, `CollectedItem` types |
 | `src/components/evidence-collection/evidenceAutoFill.ts` | Maps container metadata (E01/AD1/UFED/L01) to ~30 form fields; includes L01 source metadata enrichment, stored intake hashes, examiner names, acquisition duration, AD1 filesystem/OS info |
-| `src/components/evidence-collection/formDataConversion.ts` | Bidirectional `EvidenceCollectionData` ↔ `FormData` conversion (all ~30 fields + photo_refs) |
+| `src/components/evidence-collection/formDataConversion.ts` | Bidirectional `EvidenceCollectionData` ↔ `FormData` conversion (all ~30 fields + photo_refs, including additive `packaging_type` / `packaging_detail`) |
 | `src-tauri/src/report/commands.rs` | Backend evidence collection report/export commands for PDF/XLSX/CSV/HTML and legacy form-driven JSON export |
 | `src-tauri/src/commands/project_db/collections.rs` | Canonical `.ffxdb`-driven package import/export via `project_db_export_evidence_collection_package` and `project_db_import_evidence_collection_package` |
 
@@ -674,7 +674,11 @@ EvidenceCollectionListPanel.tsx      # Browse/list all collections (center-pane 
 - The list-panel import path calls `project_db_import_evidence_collection_package`, which reads `MobileEvidenceCollectionPackage` JSON from disk and imports collections, collected items, and linked COC bundles transactionally into the current `.ffxdb`.
 - Imported linked COC records receive fresh local IDs; collected-item `coc_item_id` links are remapped to those new local IDs during import.
 - Imported `evidence_file_id` links are preserved only when the referenced evidence-file ID already exists in the current `.ffxdb`; otherwise the link is dropped and reported back to the frontend import summary.
+- Desktop `.ffxdb` round-trips must also preserve the additive structured compatibility fields alongside the legacy strings: `collected_items.packaging_type`, `collected_items.packaging_detail`, `coc_items.storage_class`, `coc_items.storage_location_detail`, `coc_transfers.storage_class`, and `coc_transfers.storage_location_detail`.
+- Desktop evidence-collection forms use the shared `packaging_types` option registry and must preserve both the normalized packaging fields and the legacy `packaging` string when editing or saving collections.
+- `EvidenceCollectionSummaryPanel.tsx` must prefer normalized packaging label/detail display and export output when `packagingType` / `packagingDetail` are present, while still falling back to legacy `packaging` for older rows.
 - Do NOT reimplement package import as a frontend loop over form-only persistence when `project_db_import_evidence_collection_package` already exists — the backend command owns transactional remapping and FK-safe link preservation.
+- Do NOT widen package import/export types without also updating `src-tauri/src/project_db/types.rs`, `schema_tables.rs`, `schema_migrations.rs`, the SQL mappers in `collections.rs` / `forensic.rs`, and the package round-trip tests together — otherwise desktop `.ffxdb` saves will silently drop the new fields.
 
 ### Linked Data Tree — Right Panel
 
@@ -3731,6 +3735,8 @@ Both operations are **fire-and-forget** — errors are logged via `console.warn`
 
 **Companion timing invariant:** `CompanionTiming.durationMs` is serialized as integer milliseconds on the Rust side (`u64`). Frontend acquisition flows must normalize any floating-point durations (for example `durationSecs * 1000`) to a rounded integer before calling `write_companion_file`.
 
+**Generated version metadata invariant:** Frontend-generated quick reports, acquisition text logs, and saved-session fallbacks must use the build-injected `__APP_VERSION__` plus `src/utils/edition.ts` `APP_NAME`. Do not import the live app version directly from `package.json`, and do not fall back to stale literals like `0.1.0` when a user-visible artifact or session record needs the current app version.
+
 #### Companion File Format (v1.0)
 
 ```json
@@ -3835,6 +3841,7 @@ Tools → "Import Acquisitions"
 #### Do NOT
 
 - Make companion writes blocking — they must be fire-and-forget to avoid slowing acquisition completion
+- Import app version directly from `package.json` inside live report/export generators or acquisition logs — use `__APP_VERSION__` on the frontend and `env!("CARGO_PKG_VERSION")` on the backend so generated metadata matches the actual build
 - Remove the source capture (`[...common.sources()]`) before async operations — `clearAllSources()` runs synchronously after `invoke()` starts
 - Remove `handleAcquisitionComplete` imports from any export hook — companion creation will silently stop for that mode
 - Change the companion file naming convention — `.ffx-companion.json` suffix is used by `find_companion_file` and `scan_for_acquisitions` for discovery
@@ -3860,16 +3867,16 @@ The COC data model and UI follow a standardized chain of custody form structure 
 | Collection Method | Search Warrant, Grand Jury Subpoena, Consent Seizure, Abandoned, Digital/Electronic Capture, Voluntary Submission, Other | `collection_method`, `collection_method_other` |
 | Collected By | Date Collected | `collected_date` |
 | Final Disposition | Disposition By, Returned To, Destruction Date | `disposition_by`, `returned_to`, `destruction_date` |
-| Transfer Rows | Storage Location, Date Entered Storage | `storage_location` (on coc\_transfers), `storage_date` (on coc\_transfers) |
+| Transfer Rows | Storage Class, Storage Detail, Date Entered Storage | `storage_class`, `storage_location_detail`, `storage_location`, `storage_date` (on `coc_transfers`) |
 
 **COCItemRow UI structure** (8 numbered sections):
 1. Case Information (Case Title, Office, Case#, COC#, Evidence ID)
 2. Owner / Source / Contact
 3. Collection Method (radio buttons: 7 options from `COC_COLLECTION_METHODS`)
 4. Item Details (Description, Type, Make, Model, Serial, Capacity, Condition)
-5. Collection & Custody (Collected By, Date, Received By, Acquisition/Custody Dates, Storage Location, Intake Hashes)
+5. Collection & Custody (Collected By, Date, Received By, Acquisition/Custody Dates, Storage Class, Storage Location Detail, Intake Hashes)
 6. Remarks
-7. Transfer Records (Relinquished By, Received By, Date, Purpose, Storage Location, Date Entered, Method)
+7. Transfer Records (Relinquished By, Received By, Date, Purpose, Storage Class, Storage Detail, Date Entered, Method)
 8. Final Disposition (Disposition, By, Returned To, Destruction Date, Notes)
 
 **COC Prefill** (`src/components/report/wizard/utils/cocPrefill.ts`):
@@ -3949,7 +3956,7 @@ The COC data model and UI follow a standardized chain of custody form structure 
 | `src/components/report/constants.ts` | `COC_COLLECTION_METHODS` — COC collection method options |
 | `src/components/report/wizard/utils/cocPrefill.ts` | `prefillCocFromContainer()`, `overlayCocFromCollection()` — maps container/collection data to COCItem |
 | `src/components/report/wizard/steps/reportdata/COCFormSection.tsx` | UI with lock/amend/void modals, auto-populate from container metadata |
-| `src/components/report/wizard/steps/reportdata/COCItemRow.tsx` | Structured COC layout (8 numbered sections) |
+| `src/components/report/wizard/steps/reportdata/COCItemRow.tsx` | Structured COC layout (8 numbered sections, shared storage-class select + detail input for item custody and transfers) |
 
 **Do NOT:**
 - Allow direct UPDATE of locked COC items — all edits must go through `amend_coc_item` with initials + reason
@@ -3960,6 +3967,9 @@ The COC data model and UI follow a standardized chain of custody form structure 
 - Change `readOnly` to `disabled` on locked text inputs — `readOnly` preserves the visual appearance while preventing edits
 - Allow `select` dropdowns on locked items without `disabled` — selects need `disabled` (not `readOnly`)
 - Remove `ON DELETE RESTRICT` from `coc_amendments` or `coc_audit_log` FKs — this prevents data loss
+- Reintroduce duplicated local `COC_COLLECTION_METHODS`, `COC_TRANSFER_METHODS`, or `COC_TRANSFER_PURPOSES` arrays when `@core-suite/types/evidence-policy` already defines the shared baseline custody options used by custody UIs
+- Re-add local `src/templates/options/coc_transfer_methods.json` or `src/templates/options/coc_transfer_purposes.json` copies when the schema-form loader can source those registries from shared policy-backed overrides
+- Reintroduce legacy-only freeform storage-location or packaging editing in desktop collection/COC UIs — preserve and edit `storage_class` / `storage_location_detail` and `packaging_type` / `packaging_detail`, then derive the legacy strings in converters for compatibility
 
 ---
 

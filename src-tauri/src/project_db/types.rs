@@ -24,7 +24,7 @@ pub const PROJECT_DB_EXTENSION: &str = ".ffxdb";
 /// v7: Evidence collection status lifecycle (status column on evidence_collections)
 /// v9: Extended COC fields (15 new coc_items columns, 2 new coc_transfers columns)
 /// v11: Dropped redundant tables (chain_of_custody, file_classifications, extraction_log, viewer_history, evidence_relationships)
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 
 /// Application name for metadata
 pub const APP_NAME: &str = "CORE-FFX";
@@ -426,6 +426,8 @@ pub struct DbCocItem {
     pub received_by: String,
     pub received_location: Option<String>,
     pub storage_location: Option<String>,
+    pub storage_class: Option<String>,
+    pub storage_location_detail: Option<String>,
     pub reason_submitted: Option<String>,
     pub intake_hashes_json: Option<String>,
     pub notes: Option<String>,
@@ -504,6 +506,8 @@ pub struct DbCocTransfer {
     pub purpose: String,
     pub location: Option<String>,
     pub storage_location: Option<String>,
+    pub storage_class: Option<String>,
+    pub storage_location_detail: Option<String>,
     pub storage_date: Option<String>,
     pub method: Option<String>,
     pub notes: Option<String>,
@@ -558,6 +562,8 @@ pub struct DbCollectedItem {
     pub serial_number: Option<String>,
     pub condition: String,
     pub packaging: String,
+    pub packaging_type: Option<String>,
+    pub packaging_detail: Option<String>,
     pub photo_refs_json: Option<String>,
     pub notes: Option<String>,
     // --- Per-item collection fields (v8) ---

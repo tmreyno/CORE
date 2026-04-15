@@ -14,6 +14,7 @@
  * Architecture:
  *   templates/forms/*.json   → form structure (sections, fields, layout)
  *   templates/options/*.json → shared dropdown option registries
+ *   policyOptionRegistries.ts → code-backed shared policy overrides
  *   SchemaFormRenderer       → generic component that renders any template
  *   form_submissions table   → generic JSON blob storage in .ffxdb
  */
@@ -106,7 +107,8 @@ export interface FieldSchema {
   show_when?: FieldCondition;
   /**
    * Reference to a shared option registry (for select/radio/multiselect).
-   * The renderer loads options from templates/options/{options_ref}.json
+  * The renderer loads options from templates/options/{options_ref}.json
+  * or from code-backed policy overrides when a registry is shared across apps.
    */
   options_ref?: string;
   /** Inline options (alternative to options_ref for small fixed lists) */
@@ -252,7 +254,7 @@ export interface FormTemplate {
 // OPTION REGISTRY
 // =============================================================================
 
-/** Option registry — loaded from templates/options/*.json */
+/** Option registry — loaded from templates/options/*.json or policy overrides */
 export interface OptionRegistry {
   /** Registry ID (matches the filename, e.g., "device_types") */
   id: string;

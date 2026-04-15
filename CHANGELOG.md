@@ -4,6 +4,15 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.110] - 2026-04-14
+
+### Changed
+- Desktop evidence collection and chain-of-custody editors now use the shared policy-backed packaging and storage option sets while still preserving legacy strings for compatibility
+- Desktop package import, database round-trips, summaries, and exports now preserve the additive structured packaging and custody storage fields end to end
+
+### Fixed
+- Frontend-generated acquisition logs and report metadata now use the build-injected app version instead of stale fallback values
+
 ## [0.1.109] - 2026-04-14
 
 ### Fixed

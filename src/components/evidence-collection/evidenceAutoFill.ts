@@ -590,6 +590,8 @@ export function buildCollectedItemsFromEvidence(
       acquisition_method_other: "",
       condition: "good",
       packaging: "",
+      packaging_type: "",
+      packaging_detail: "",
       timezone: "",
       storage_notes: fields.storage_notes || "",
       notes: fields.notes || "",

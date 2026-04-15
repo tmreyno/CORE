@@ -8,6 +8,11 @@
  * Report Constants - Static configuration options for report generation
  */
 
+import {
+  CORE_BASELINE_COLLECTION_METHOD_OPTIONS,
+  CORE_BASELINE_TRANSFER_METHOD_OPTIONS,
+  CORE_BASELINE_TRANSFER_PURPOSE_OPTIONS,
+} from "@core-suite/types/evidence-policy";
 import type { Classification, Severity, EvidenceType, ReportType, IAREventCategory } from "./types";
 
 // =============================================================================
@@ -352,13 +357,7 @@ export const COC_DISPOSITIONS = [
 // =============================================================================
 
 export const COC_COLLECTION_METHODS = [
-  { value: "search_warrant", label: "Search Warrant" },
-  { value: "grand_jury_subpoena", label: "Grand Jury Subpoena" },
-  { value: "consent_seizure", label: "Consent Seizure" },
-  { value: "abandoned", label: "Abandoned" },
-  { value: "digital_electronic_capture", label: "Digital/Electronic Capture" },
-  { value: "voluntary_submission", label: "Voluntary Submission" },
-  { value: "other", label: "Other" },
+  ...CORE_BASELINE_COLLECTION_METHOD_OPTIONS,
 ] as const;
 
 // =============================================================================
@@ -366,11 +365,7 @@ export const COC_COLLECTION_METHODS = [
 // =============================================================================
 
 export const COC_TRANSFER_METHODS = [
-  { value: "in_person", label: "In Person" },
-  { value: "courier", label: "Courier" },
-  { value: "mail", label: "Mail/Shipping" },
-  { value: "locker", label: "Evidence Locker" },
-  { value: "other", label: "Other" },
+  ...CORE_BASELINE_TRANSFER_METHOD_OPTIONS,
 ] as const;
 
 // =============================================================================
@@ -398,13 +393,7 @@ export const IAR_EVENT_CATEGORIES: { value: IAREventCategory; label: string; ico
 // =============================================================================
 
 export const COC_TRANSFER_PURPOSES = [
-  { value: "examination", label: "Forensic Examination" },
-  { value: "analysis", label: "Analysis" },
-  { value: "storage", label: "Secure Storage" },
-  { value: "court", label: "Court Presentation" },
-  { value: "return", label: "Return to Owner" },
-  { value: "review", label: "Attorney/Privileged Review" },
-  { value: "other", label: "Other" },
+  ...CORE_BASELINE_TRANSFER_PURPOSE_OPTIONS,
 ] as const;
 
 // =============================================================================

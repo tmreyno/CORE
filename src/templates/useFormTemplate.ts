@@ -9,7 +9,8 @@
  *
  * Responsibilities:
  *  1. Load a FormTemplate from templates/forms/{id}.json
- *  2. Load referenced OptionRegistry files from templates/options/{ref}.json
+ *  2. Load referenced OptionRegistry data from templates/options/{ref}.json or
+ *     policy-backed overrides
  *  3. Provide reactive FormData state with get/set helpers
  *  4. Evaluate show_when conditions for conditional visibility
  *  5. Generate auto-filled default values
@@ -28,6 +29,7 @@ import type {
   SectionSchema,
 } from "./types";
 import { getFilterMap, filterOptions } from "./deviceTypeFilters";
+import { POLICY_OPTION_REGISTRIES } from "./policyOptionRegistries";
 
 // =============================================================================
 // TEMPLATE & REGISTRY LOADING
@@ -42,10 +44,15 @@ export async function loadFormTemplate(templateId: string): Promise<FormTemplate
   return mod.default as FormTemplate;
 }
 
-/** Load an option registry JSON file by ID */
+/** Load an option registry by ID from policy overrides or JSON files */
 export async function loadOptionRegistry(registryId: string): Promise<OptionRegistry> {
   const cached = registryCache.get(registryId);
   if (cached) return cached;
+  const policyRegistry = POLICY_OPTION_REGISTRIES[registryId];
+  if (policyRegistry) {
+    registryCache.set(registryId, policyRegistry);
+    return policyRegistry;
+  }
   const mod = await import(`./options/${registryId}.json`);
   const registry = mod.default as OptionRegistry;
   registryCache.set(registryId, registry);

@@ -52,6 +52,8 @@ fn make_existing_item(id: &str, collection_id: &str) -> DbCollectedItem {
         serial_number: None,
         condition: "Good".to_string(),
         packaging: "Box".to_string(),
+        packaging_type: None,
+        packaging_detail: None,
         photo_refs_json: None,
         notes: None,
         item_collection_datetime: None,
@@ -116,6 +118,8 @@ fn make_import_package() -> ImportedEvidenceCollectionPackage {
                     serial_number: None,
                     condition: "Good".to_string(),
                     packaging: "Bag".to_string(),
+                    packaging_type: Some("faraday_bag".to_string()),
+                    packaging_detail: Some("Mission Darkness bag".to_string()),
                     photo_refs_json: None,
                     notes: None,
                     item_collection_datetime: None,
@@ -153,6 +157,8 @@ fn make_import_package() -> ImportedEvidenceCollectionPackage {
                     serial_number: None,
                     condition: String::new(),
                     packaging: String::new(),
+                    packaging_type: None,
+                    packaging_detail: None,
                     photo_refs_json: None,
                     notes: None,
                     item_collection_datetime: None,
@@ -209,7 +215,9 @@ fn make_import_package() -> ImportedEvidenceCollectionPackage {
                 collected_date: None,
                 received_by: "Evidence Room".to_string(),
                 received_location: None,
-                storage_location: None,
+                storage_location: Some("Shelf 7".to_string()),
+                storage_class: Some("evidence_locker".to_string()),
+                storage_location_detail: Some("Shelf 7".to_string()),
                 reason_submitted: None,
                 intake_hashes_json: None,
                 notes: Some("Imported note".to_string()),
@@ -234,6 +242,8 @@ fn make_import_package() -> ImportedEvidenceCollectionPackage {
                 purpose: "Storage".to_string(),
                 location: Some("Locker A".to_string()),
                 storage_location: Some("Shelf 7".to_string()),
+                storage_class: Some("evidence_locker".to_string()),
+                storage_location_detail: Some("Shelf 7".to_string()),
                 storage_date: Some("2026-04-14".to_string()),
                 method: Some("Hand-delivered".to_string()),
                 notes: None,
@@ -647,6 +657,11 @@ fn test_import_evidence_collection_package_remaps_links_and_preserves_valid_refe
         imported_coc.evidence_file_id.as_deref(),
         Some("ev-existing")
     );
+    assert_eq!(imported_coc.storage_class.as_deref(), Some("evidence_locker"));
+    assert_eq!(
+        imported_coc.storage_location_detail.as_deref(),
+        Some("Shelf 7")
+    );
 
     let items = db.get_collected_items(&imported_collection.id).unwrap();
     assert_eq!(items.len(), 2);
@@ -664,6 +679,11 @@ fn test_import_evidence_collection_package_remaps_links_and_preserves_valid_refe
         preserved_item.evidence_file_id.as_deref(),
         Some("ev-existing")
     );
+    assert_eq!(preserved_item.packaging_type.as_deref(), Some("faraday_bag"));
+    assert_eq!(
+        preserved_item.packaging_detail.as_deref(),
+        Some("Mission Darkness bag")
+    );
 
     let dropped_item = items
         .iter()
@@ -680,6 +700,11 @@ fn test_import_evidence_collection_package_remaps_links_and_preserves_valid_refe
     let transfers = db.get_coc_transfers(&imported_coc.id).unwrap();
     assert_eq!(transfers.len(), 1);
     assert_eq!(transfers[0].coc_item_id, imported_coc.id);
+    assert_eq!(transfers[0].storage_class.as_deref(), Some("evidence_locker"));
+    assert_eq!(
+        transfers[0].storage_location_detail.as_deref(),
+        Some("Shelf 7")
+    );
 
     let amendments = db.get_coc_amendments(&imported_coc.id).unwrap();
     assert_eq!(amendments.len(), 1);

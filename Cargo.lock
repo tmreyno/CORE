@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "core-ffx"
-version = "0.1.109"
+version = "0.1.110"
 dependencies = [
  "apple-dmg",
  "async-openai",
@@ -1179,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "core-types"
-version = "0.1.11"
+version = "0.1.13"
 dependencies = [
  "serde",
 ]

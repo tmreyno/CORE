@@ -12,6 +12,11 @@
  */
 
 import { nowISO } from "../../../types/project";
+import {
+  CORE_BASELINE_EVIDENCE_POLICY_PACK,
+  buildStructuredOptionFieldState,
+  composeStructuredOptionLegacyValue,
+} from "@core-suite/types/evidence-policy";
 import type { COCItem, COCTransfer, EvidenceCollectionData, CollectedItem } from "../types";
 import type {
   DbCocItem,
@@ -20,12 +25,20 @@ import type {
   DbCollectedItem,
 } from "../../../types/projectDb";
 
+const PACKAGING_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.packagingTypes;
+const STORAGE_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.storageClasses;
+
 // =============================================================================
 // COCItem ↔ DbCocItem conversion
 // =============================================================================
 
 export function cocItemToDb(item: COCItem): DbCocItem {
   const now = nowISO();
+  const storageLocation = composeStructuredOptionLegacyValue(STORAGE_OPTIONS, {
+    selectedValue: item.storage_class,
+    detail: item.storage_location_detail,
+  });
+
   return {
     id: item.id,
     cocNumber: item.coc_number,
@@ -61,7 +74,9 @@ export function cocItemToDb(item: COCItem): DbCocItem {
     collectedDate: item.collected_date,
     receivedBy: item.received_by || "",
     receivedLocation: item.received_location,
-    storageLocation: item.storage_location,
+    storageLocation: storageLocation || item.storage_location,
+    storageClass: item.storage_class,
+    storageLocationDetail: item.storage_location_detail,
     reasonSubmitted: item.reason_submitted,
     intakeHashesJson:
       item.intake_hashes.length > 0
@@ -84,6 +99,13 @@ export function cocItemToDb(item: COCItem): DbCocItem {
 }
 
 export function dbToCocItem(db: DbCocItem): COCItem {
+  const storage = buildStructuredOptionFieldState(STORAGE_OPTIONS, {
+    legacyValue: db.storageLocation,
+    selectedValue: db.storageClass,
+    detail: db.storageLocationDetail,
+    unknownDefaultsToOther: false,
+  });
+
   return {
     id: db.id,
     coc_number: db.cocNumber,
@@ -119,6 +141,8 @@ export function dbToCocItem(db: DbCocItem): COCItem {
     received_by: db.receivedBy || "",
     received_location: db.receivedLocation,
     storage_location: db.storageLocation,
+    storage_class: storage.selectedValue || undefined,
+    storage_location_detail: storage.detail || undefined,
     reason_submitted: db.reasonSubmitted,
     transfers: [], // loaded separately
     intake_hashes: db.intakeHashesJson
@@ -143,6 +167,11 @@ export function cocTransferToDb(
   transfer: COCTransfer,
   cocItemId: string
 ): DbCocTransfer {
+  const storageLocation = composeStructuredOptionLegacyValue(STORAGE_OPTIONS, {
+    selectedValue: transfer.storage_class,
+    detail: transfer.storage_location_detail,
+  });
+
   return {
     id: transfer.id,
     cocItemId,
@@ -151,7 +180,9 @@ export function cocTransferToDb(
     receivedBy: transfer.received_by,
     purpose: transfer.purpose,
     location: transfer.location,
-    storageLocation: transfer.storage_location,
+    storageLocation: storageLocation || transfer.storage_location,
+    storageClass: transfer.storage_class,
+    storageLocationDetail: transfer.storage_location_detail,
     storageDate: transfer.storage_date,
     method: transfer.method,
     notes: transfer.notes,
@@ -159,6 +190,13 @@ export function cocTransferToDb(
 }
 
 export function dbToCocTransfer(db: DbCocTransfer): COCTransfer {
+  const storage = buildStructuredOptionFieldState(STORAGE_OPTIONS, {
+    legacyValue: db.storageLocation,
+    selectedValue: db.storageClass,
+    detail: db.storageLocationDetail,
+    unknownDefaultsToOther: false,
+  });
+
   return {
     id: db.id,
     timestamp: db.timestamp,
@@ -167,6 +205,8 @@ export function dbToCocTransfer(db: DbCocTransfer): COCTransfer {
     purpose: db.purpose,
     location: db.location,
     storage_location: db.storageLocation,
+    storage_class: storage.selectedValue || undefined,
+    storage_location_detail: storage.detail || undefined,
     storage_date: db.storageDate,
     method: db.method,
     notes: db.notes,
@@ -219,6 +259,10 @@ export function collectedItemToDb(
   // Compose foundLocation from structured building/room/other fields (legacy compat)
   const locationParts = [item.building, item.room, item.location_other].filter(Boolean);
   const foundLocation = locationParts.join(", ") || "";
+  const packaging = composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, {
+    selectedValue: item.packaging_type,
+    detail: item.packaging_detail,
+  });
 
   return {
     id: item.id,
@@ -234,7 +278,9 @@ export function collectedItemToDb(
     model: item.model,
     serialNumber: item.serial_number,
     condition: item.condition || "good",
-    packaging: item.packaging || "",
+    packaging: packaging || item.packaging || "",
+    packagingType: item.packaging_type,
+    packagingDetail: item.packaging_detail,
     photoRefsJson:
       item.photo_refs && item.photo_refs.length > 0
         ? JSON.stringify(item.photo_refs)
@@ -311,6 +357,13 @@ export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
     locationOther = locationParts.slice(2).join(", ") || undefined;
   }
 
+  const packaging = buildStructuredOptionFieldState(PACKAGING_OPTIONS, {
+    legacyValue: db.packaging,
+    selectedValue: db.packagingType,
+    detail: db.packagingDetail,
+    unknownDefaultsToOther: true,
+  });
+
   return {
     id: db.id,
     item_number: db.itemNumber,
@@ -348,7 +401,9 @@ export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
 
     // Condition & packaging
     condition: db.condition,
-    packaging: db.packaging || "",
+    packaging: db.packaging || composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, packaging) || "",
+    packaging_type: packaging.selectedValue || undefined,
+    packaging_detail: packaging.detail || undefined,
 
     // Additional info
     storage_notes: db.storageNotes || undefined,

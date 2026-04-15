@@ -14,11 +14,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { writeCompanionFile, type CompanionFileInput } from "../../api/companion";
 import { formatBytes } from "../../api/archiveCreate";
 import { logger } from "../../utils/logger";
-import { isAcquireEdition } from "../../utils/edition";
+import { APP_NAME, isAcquireEdition } from "../../utils/edition";
 import { getBasename } from "../../utils/pathUtils";
 import { dbSync } from "../project/useProjectDbSync";
 
 const log = logger.scope("Companion");
+const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "unknown";
 import type { DbEvidenceCollection, DbCollectedItem } from "../../types/projectDb";
 
 /** Source drive metadata matched from list_drives() */
@@ -300,7 +301,7 @@ function writeAcquisitionLog(info: AcquisitionInfo): void {
   const lines: string[] = [];
   const divider = "--------------------------------------------------------------";
 
-  lines.push("Created By CORE-FFX Forensic File Explorer");
+  lines.push(`Created By ${APP_NAME} v${APP_VERSION}`);
   lines.push("");
   lines.push("Case Information:");
   lines.push(`  Case Number:     ${info.caseNumber || "(not specified)"}`);

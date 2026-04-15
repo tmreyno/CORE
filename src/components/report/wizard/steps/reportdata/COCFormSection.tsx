@@ -22,6 +22,11 @@ import {
   HiOutlinePlus,
   HiOutlineDocumentDuplicate,
 } from "../../../../icons";
+import {
+  CORE_BASELINE_EVIDENCE_POLICY_PACK,
+  buildStructuredOptionFieldState,
+  composeStructuredOptionLegacyValue,
+} from "@core-suite/types/evidence-policy";
 import { useWizard } from "../../WizardContext";
 import type { COCItem, COCTransfer } from "../../../types";
 import { generateCocNumber } from "../../utils/reportNumbering";
@@ -29,6 +34,8 @@ import { prefillCocFromContainer } from "../../utils/cocPrefill";
 import { AmendmentModal, LockConfirmationModal, VoidConfirmationModal } from "./COCModals";
 import type { AmendFieldInfo } from "./COCModals";
 import { COCItemRow } from "./COCItemRow";
+
+const STORAGE_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.storageClasses;
 
 export function COCFormSection() {
   const ctx = useWizard();
@@ -76,6 +83,8 @@ export function COCFormSection() {
       collected_date: "",
       received_by: "",
       storage_location: "",
+      storage_class: undefined,
+      storage_location_detail: undefined,
       transfers: [],
       intake_hashes: [],
       notes: "",
@@ -182,6 +191,9 @@ export function COCFormSection() {
       released_by: "",
       received_by: "",
       purpose: "examination",
+      storage_location: "",
+      storage_class: undefined,
+      storage_location_detail: undefined,
     };
     ctx.setCocItems(
       ctx.cocItems().map((item) =>
@@ -259,6 +271,12 @@ export function COCFormSection() {
         examiner,
         caseTitle,
       );
+      const storage = buildStructuredOptionFieldState(STORAGE_OPTIONS, {
+        legacyValue: prefilled.storage_location,
+        selectedValue: prefilled.storage_class,
+        detail: prefilled.storage_location_detail,
+        unknownDefaultsToOther: false,
+      });
 
       // Merge hash from fileHashMap if no intake_hashes from container
       const intakeHashes = (prefilled.intake_hashes && prefilled.intake_hashes.length > 0)
@@ -287,7 +305,11 @@ export function COCFormSection() {
         collected_date: prefilled.collected_date,
         submitted_by: prefilled.submitted_by || examiner,
         received_by: prefilled.received_by || examiner,
-        storage_location: prefilled.storage_location,
+        storage_location:
+          composeStructuredOptionLegacyValue(STORAGE_OPTIONS, storage) ||
+          prefilled.storage_location,
+        storage_class: storage.selectedValue || undefined,
+        storage_location_detail: storage.detail || undefined,
         transfers: [],
         intake_hashes: intakeHashes,
         notes: prefilled.notes || "",

@@ -651,6 +651,8 @@ fn build_evidence_collection_package(
                 serial_number: item.serial_number.clone(),
                 condition: item.condition.clone(),
                 packaging: item.packaging.clone(),
+                packaging_type: None,
+                packaging_detail: None,
                 photo_refs_json,
                 notes: item.notes.clone(),
                 item_collection_datetime: item.item_collection_datetime.clone(),

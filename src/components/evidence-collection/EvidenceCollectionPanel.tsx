@@ -13,6 +13,7 @@
  */
 
 import { createSignal, createEffect, on, onMount, Show, For, Component } from "solid-js";
+import { composeStructuredOptionLegacyValue, CORE_BASELINE_EVIDENCE_POLICY_PACK } from "@core-suite/types/evidence-policy";
 import {
   HiOutlineArchiveBoxArrowDown,
   HiOutlineLockClosed,
@@ -57,6 +58,7 @@ import { dbSync } from "../../hooks/project/useProjectDbSync";
 import type { DbCollectedItem, DbEvidenceDataAlternative } from "../../types/projectDb";
 
 const log = logger.scope("EvidenceCollectionPanel");
+const PACKAGING_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.packagingTypes;
 
 // =============================================================================
 // Main Panel Component
@@ -163,7 +165,11 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
 
     // Build DbCollectedItem[] from current form data for matching
     const formItems = form.getRepeatableItems("collected_items") as FormData[];
-    const collectedItems: DbCollectedItem[] = formItems.map((item) => ({
+    const collectedItems: DbCollectedItem[] = formItems.map((item) => {
+      const packagingType = (item.packaging_type as string) || "";
+      const packagingDetail = (item.packaging_detail as string) || "";
+
+      return {
       id: (item.id as string) || generateId(),
       collectionId: collectionId(),
       itemNumber: (item.item_number as string) || "",
@@ -174,7 +180,12 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
       model: (item.model as string) || undefined,
       serialNumber: (item.serial_number as string) || undefined,
       condition: (item.condition as string) || "",
-      packaging: (item.packaging as string) || "",
+      packaging: composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, {
+        selectedValue: packagingType,
+        detail: packagingDetail,
+      }) || (item.packaging as string) || "",
+      packagingType: packagingType || undefined,
+      packagingDetail: packagingDetail || undefined,
       notes: (item.notes as string) || undefined,
       evidenceFileId: (item.evidence_file_id as string) || undefined,
       cocItemId: (item.coc_item_id as string) || undefined,
@@ -198,7 +209,8 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
       acquisitionMethod: (item.acquisition_method as string) || undefined,
       acquisitionMethodOther: (item.acquisition_method_other as string) || undefined,
       storageNotes: (item.storage_notes as string) || undefined,
-    }));
+    };
+    });
 
     if (collectedItems.length === 0) {
       log.info("No collected items to reconcile — use 'From Evidence' to populate first");
@@ -246,6 +258,9 @@ export const EvidenceCollectionPanel: Component<EvidenceCollectionPanelProps> = 
           device_type: updated.deviceType || "",
           image_format: updated.imageFormat || "",
           acquisition_method: updated.acquisitionMethod || "",
+          packaging: updated.packaging || "",
+          packaging_type: updated.packagingType || "",
+          packaging_detail: updated.packagingDetail || "",
           item_collection_datetime: updated.itemCollectionDatetime || "",
           item_system_datetime: updated.itemSystemDatetime || "",
           item_collecting_officer: updated.itemCollectingOfficer || "",
