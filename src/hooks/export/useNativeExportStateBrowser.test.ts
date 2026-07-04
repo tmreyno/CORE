@@ -1,6 +1,7 @@
 import { createRoot, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useNativeExportState } from "./useNativeExportState";
+import { DESKTOP_EXPORT_ENGINE_MESSAGE } from "./desktopRuntimeGuard";
 import type { ToolsTabId } from "../../components/export/ToolsMode";
 
 vi.mock("../../api/archiveCreate", () => ({
@@ -97,7 +98,7 @@ describe("useNativeExportState in browser preview", () => {
       expect(toast.error).toHaveBeenCalledTimes(8);
       expect(toast.error).toHaveBeenCalledWith(
         "Desktop Runtime Required",
-        "Export and archive engines are available in the desktop app. Browser preview can configure fields but cannot run native export tools.",
+        DESKTOP_EXPORT_ENGINE_MESSAGE,
       );
 
       expect(archiveApi.estimateSize).not.toHaveBeenCalled();

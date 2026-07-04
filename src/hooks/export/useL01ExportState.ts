@@ -27,6 +27,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 /** Parse a comma/space-separated extension string into an array, stripping dots. */
 function parseExtensionList(input: string): string[] | undefined {
@@ -67,6 +68,8 @@ export function useL01ExportState(options: UseL01ExportStateOptions) {
   // ─── Handler ────────────────────────────────────────────────────────────
 
   const handleCreateL01Image = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     log.info(`Starting L01 creation: ${l01ImageName()}.L01, compression=${l01Compression()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);

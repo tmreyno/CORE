@@ -28,6 +28,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 export interface UseEwfExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -58,6 +59,8 @@ export function useEwfExportState(options: UseEwfExportStateOptions) {
   // ─── Handler ────────────────────────────────────────────────────────────
 
   const handleCreateE01Image = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     log.info(`Starting E01 creation: ${ewfImageName()}.E01, format=${ewfFormat()}, compression=${ewfCompression()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);

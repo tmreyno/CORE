@@ -28,6 +28,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 export interface UseRawExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -56,6 +57,8 @@ export function useRawExportState(options: UseRawExportStateOptions) {
   // ─── Handler ────────────────────────────────────────────────────────────
 
   const handleCreateRawImage = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     log.info(`Starting Raw image: ${rawImageName()}.dd, MD5=${rawComputeMd5()}, SHA1=${rawComputeSha1()}, SHA256=${rawComputeSha256()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);

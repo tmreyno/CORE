@@ -28,6 +28,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 interface UseAff4ExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -56,6 +57,8 @@ export function useAff4ExportState(options: UseAff4ExportStateOptions) {
   // ── Handler ──────────────────────────────────────────────────────────────
 
   const handleCreateAff4Image = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     const sources = [...common.sources()];
     const destination = common.destination();
     const imageName = aff4ImageName().trim() || "evidence";

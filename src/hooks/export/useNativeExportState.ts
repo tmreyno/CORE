@@ -49,9 +49,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
-
-const BROWSER_NATIVE_EXPORT_MESSAGE =
-  "Export and archive engines are available in the desktop app. Browser preview can configure fields but cannot run native export tools.";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 export interface UseNativeExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -141,9 +139,7 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   // ─── Archive Handler ───────────────────────────────────────────────────
 
   const canUseNativeExportEngine = () => {
-    if (isTauri) return true;
-    toast.error("Desktop Runtime Required", BROWSER_NATIVE_EXPORT_MESSAGE);
-    return false;
+    return canUseDesktopExportEngine(toast);
   };
 
   const handleCreateArchive = async () => {
