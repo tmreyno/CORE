@@ -24,7 +24,15 @@ pub const PROJECT_DB_EXTENSION: &str = ".ffxdb";
 /// v7: Evidence collection status lifecycle (status column on evidence_collections)
 /// v9: Extended COC fields (15 new coc_items columns, 2 new coc_transfers columns)
 /// v11: Dropped redundant tables (chain_of_custody, file_classifications, extraction_log, viewer_history, evidence_relationships)
-pub const SCHEMA_VERSION: u32 = 12;
+/// v13: Normalized artifact records extracted from evidence byte sources
+/// v14: Source byte-analysis records for hex/data review engines
+/// v15: Source identity columns on hash records for container-entry hashing
+/// v16: FTS5 search over source byte-analysis records
+/// v17: FTS5 search over normalized artifact records
+/// v18: FTS5 search over annotations and hex review findings
+/// v19: Persisted source-analysis text indicators
+/// v20: Collected item source/hash snapshots for portable collection packages
+pub const SCHEMA_VERSION: u32 = 20;
 
 /// Application name for metadata
 pub const APP_NAME: &str = "CORE-FFX";
@@ -93,6 +101,8 @@ pub struct DbEvidenceFile {
 pub struct DbProjectHash {
     pub id: String,
     pub file_id: String,
+    pub source_id: Option<String>,
+    pub source_ref_json: Option<String>,
     pub algorithm: String,
     pub hash_value: String,
     pub computed_at: String,
@@ -111,6 +121,125 @@ pub struct DbProjectVerification {
     pub result: String,
     pub expected_hash: String,
     pub actual_hash: String,
+}
+
+/// Aggregated hash facts grouped by algorithm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbHashAlgorithmSummary {
+    pub algorithm: String,
+    pub count: i64,
+    pub evidence_file_count: i64,
+    pub source_count: i64,
+    pub latest_computed_at: Option<String>,
+}
+
+/// Aggregated hash verification facts grouped by result status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbVerificationResultSummary {
+    pub result: String,
+    pub count: i64,
+    pub hash_count: i64,
+    pub latest_verified_at: Option<String>,
+}
+
+/// Normalized artifact record persisted from backend extraction engines.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbNormalizedArtifact {
+    pub id: String,
+    pub evidence_file_id: Option<String>,
+    pub source_id: String,
+    pub source_ref_json: String,
+    pub name: String,
+    pub extension: Option<String>,
+    pub size: i64,
+    pub mime_type: Option<String>,
+    pub type_description: String,
+    pub category: String,
+    pub confidence: String,
+    pub is_text: bool,
+    pub content_preview: Option<String>,
+    pub metadata_json: Option<String>,
+    pub extracted_at: String,
+    pub extractor: String,
+}
+
+/// Aggregated normalized artifact facts for project/report/search consumers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbArtifactCategorySummary {
+    pub category: String,
+    pub count: i64,
+    pub total_size: i64,
+    pub text_count: i64,
+    pub latest_extracted_at: Option<String>,
+}
+
+/// Aggregated normalized artifact facts grouped by evidence file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbArtifactEvidenceSummary {
+    pub evidence_file_id: Option<String>,
+    pub count: i64,
+    pub total_size: i64,
+    pub text_count: i64,
+    pub category_count: i64,
+    pub latest_extracted_at: Option<String>,
+}
+
+/// Aggregated normalized artifact facts grouped by extractor engine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbArtifactExtractorSummary {
+    pub extractor: String,
+    pub count: i64,
+    pub total_size: i64,
+    pub text_count: i64,
+    pub category_count: i64,
+    pub evidence_file_count: i64,
+    pub latest_extracted_at: Option<String>,
+}
+
+/// Persisted bounded source-analysis record for hex/data review engines.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSourceAnalysisRecord {
+    pub id: String,
+    pub evidence_file_id: Option<String>,
+    pub source_id: String,
+    pub source_ref_json: String,
+    pub total_size: i64,
+    pub offset: i64,
+    pub bytes_analyzed: i64,
+    pub magic_hex: String,
+    pub signature_count: i64,
+    pub primary_signature: Option<String>,
+    pub primary_mime_type: Option<String>,
+    pub primary_category: Option<String>,
+    pub entropy: f64,
+    pub printable_ratio: f64,
+    pub is_likely_text: bool,
+    pub ascii_preview: Option<String>,
+    pub signatures_json: Option<String>,
+    pub entropy_windows_json: Option<String>,
+    pub histogram_json: Option<String>,
+    pub indicators_json: Option<String>,
+    pub analyzed_at: String,
+    pub analyzer: String,
+}
+
+/// Aggregated source-analysis facts grouped by primary signature category.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSourceAnalysisCategorySummary {
+    pub category: String,
+    pub count: i64,
+    pub evidence_file_count: i64,
+    pub avg_entropy: f64,
+    pub text_like_count: i64,
+    pub latest_analyzed_at: Option<String>,
 }
 
 /// Bookmark (examiner-placed marker)
@@ -553,6 +682,8 @@ pub struct DbCollectedItem {
     pub collection_id: String,
     pub coc_item_id: Option<String>,
     pub evidence_file_id: Option<String>,
+    pub source_id: Option<String>,
+    pub source_ref_json: Option<String>,
     pub item_number: String,
     pub description: String,
     pub found_location: String,
@@ -589,6 +720,9 @@ pub struct DbCollectedItem {
     pub image_format_other: Option<String>,
     pub acquisition_method: Option<String>,
     pub acquisition_method_other: Option<String>,
+    pub hash_algorithm: Option<String>,
+    pub hash_value: Option<String>,
+    pub hash_computed_at: Option<String>,
     pub storage_notes: Option<String>,
 }
 
@@ -741,6 +875,8 @@ pub struct ProjectDbStats {
     pub total_processed_databases: i64,
     pub total_axiom_cases: i64,
     pub total_artifact_categories: i64,
+    pub total_artifacts: i64,
+    pub total_source_analyses: i64,
     pub total_exports: i64,
     pub total_annotations: i64,
     pub total_coc_items: i64,

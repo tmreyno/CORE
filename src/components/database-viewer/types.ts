@@ -9,6 +9,7 @@
  */
 
 import type { DatabaseMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 export interface TableSummary {
   name: string;
@@ -56,6 +57,8 @@ export interface TableRows {
 export interface DatabaseViewerProps {
   /** Path to the SQLite database file */
   path: string;
+  /** Optional evidence source for SQLite files inside containers */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

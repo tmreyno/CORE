@@ -16,6 +16,11 @@ use tracing::{debug, info, warn};
 
 use crate::ad1;
 use crate::archive;
+use crate::common::{
+    extract_normalized_artifact, read_range_fully, ArtifactExtractionOptions, EvidenceByteSource,
+    LocalFileByteSource, NormalizedArtifact,
+};
+use crate::containers::open_container_entry_source;
 use crate::ewf;
 use crate::raw;
 
@@ -258,7 +263,7 @@ fn crawl_vfs_ewf(container_path: &str) -> Result<Vec<CrawledEntry>, String> {
         .map_err(|e| format!("Failed to open E01 VFS: {:?}", e))?;
 
     let mut entries = Vec::new();
-    crawl_vfs_recursive(&vfs, container_path, "e01", "/", &mut entries);
+    crawl_vfs_recursive(&vfs, container_path, "e01", "/", &mut entries, 0);
     Ok(entries)
 }
 
@@ -268,7 +273,7 @@ fn crawl_vfs_raw(container_path: &str) -> Result<Vec<CrawledEntry>, String> {
         .map_err(|e| format!("Failed to open raw VFS: {:?}", e))?;
 
     let mut entries = Vec::new();
-    crawl_vfs_recursive(&vfs, container_path, "raw", "/", &mut entries);
+    crawl_vfs_recursive(&vfs, container_path, "raw", "/", &mut entries, 0);
     Ok(entries)
 }
 
@@ -278,7 +283,23 @@ fn crawl_vfs_recursive<V: crate::common::vfs::VirtualFileSystem>(
     container_type: &str,
     dir_path: &str,
     entries: &mut Vec<CrawledEntry>,
+    depth: usize,
 ) {
+    if depth > MAX_SEARCH_CRAWL_DEPTH {
+        warn!(
+            "Skipping search VFS crawl directory {}: maximum depth {} exceeded",
+            dir_path, MAX_SEARCH_CRAWL_DEPTH
+        );
+        return;
+    }
+    if entries.len() >= MAX_SEARCH_CRAWLED_ENTRIES {
+        warn!(
+            "Stopping search VFS crawl at {} entries",
+            MAX_SEARCH_CRAWLED_ENTRIES
+        );
+        return;
+    }
+
     let listing = match vfs.readdir(dir_path) {
         Ok(items) => items,
         Err(e) => {
@@ -288,6 +309,14 @@ fn crawl_vfs_recursive<V: crate::common::vfs::VirtualFileSystem>(
     };
 
     for item in &listing {
+        if entries.len() >= MAX_SEARCH_CRAWLED_ENTRIES {
+            warn!(
+                "Stopping search VFS crawl at {} entries",
+                MAX_SEARCH_CRAWLED_ENTRIES
+            );
+            return;
+        }
+
         let full_path = if dir_path == "/" {
             format!("/{}", item.name)
         } else {
@@ -331,7 +360,14 @@ fn crawl_vfs_recursive<V: crate::common::vfs::VirtualFileSystem>(
         });
 
         if item.is_directory {
-            crawl_vfs_recursive(vfs, container_path, container_type, &full_path, entries);
+            crawl_vfs_recursive(
+                vfs,
+                container_path,
+                container_type,
+                &full_path,
+                entries,
+                depth + 1,
+            );
         }
     }
 }
@@ -353,11 +389,39 @@ fn crawl_disk_files(paths: &[String]) -> Vec<CrawledEntry> {
 }
 
 fn crawl_disk_dir(dir: &Path, entries: &mut Vec<CrawledEntry>) {
+    crawl_disk_dir_limited(dir, entries, 0);
+}
+
+fn crawl_disk_dir_limited(dir: &Path, entries: &mut Vec<CrawledEntry>, depth: usize) {
+    if depth > MAX_SEARCH_CRAWL_DEPTH {
+        warn!(
+            "Skipping search disk crawl directory {}: maximum depth {} exceeded",
+            dir.display(),
+            MAX_SEARCH_CRAWL_DEPTH
+        );
+        return;
+    }
+    if entries.len() >= MAX_SEARCH_CRAWLED_ENTRIES {
+        warn!(
+            "Stopping search disk crawl at {} entries",
+            MAX_SEARCH_CRAWLED_ENTRIES
+        );
+        return;
+    }
+
     if let Ok(read_dir) = std::fs::read_dir(dir) {
         for entry in read_dir.flatten() {
+            if entries.len() >= MAX_SEARCH_CRAWLED_ENTRIES {
+                warn!(
+                    "Stopping search disk crawl at {} entries",
+                    MAX_SEARCH_CRAWLED_ENTRIES
+                );
+                return;
+            }
+
             let path = entry.path();
             if path.is_dir() {
-                crawl_disk_dir(&path, entries);
+                crawl_disk_dir_limited(&path, entries, depth + 1);
             } else if let Some(crawled) = make_disk_entry(&path) {
                 entries.push(crawled);
             }
@@ -402,108 +466,180 @@ fn make_disk_entry(path: &Path) -> Option<CrawledEntry> {
 
 /// Maximum content size to index per file (256 KB of text).
 const MAX_CONTENT_SIZE: usize = 256 * 1024;
+/// Maximum file size to read for expensive content extraction.
+const MAX_CONTENT_SOURCE_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_DOCX_XML_SCAN_BYTES: u64 = MAX_CONTENT_SIZE as u64;
+const MAX_SEARCH_CRAWL_DEPTH: usize = 128;
+const MAX_SEARCH_CRAWLED_ENTRIES: usize = 250_000;
 
-/// Extract text content from a file inside a container.
+/// Extract searchable content from a file inside a container.
 ///
-/// Returns the extracted text (truncated to MAX_CONTENT_SIZE), or empty string
-/// if extraction fails or is unsupported.
+/// Returns artifact metadata plus extracted text where available, truncated to
+/// MAX_CONTENT_SIZE. This keeps non-text artifacts such as images searchable by
+/// type and header metadata without requiring a full file read.
 fn extract_content_from_container(container_path: &str, entry: &CrawledEntry) -> String {
-    if entry.is_dir || !entry.text_eligible {
+    if entry.is_dir {
         return String::new();
     }
 
-    // Skip very large files for content extraction (> 10 MB)
-    if entry.size > 10 * 1024 * 1024 {
-        return String::new();
-    }
-
-    // Read the raw bytes from the container
-    let bytes = match read_entry_bytes(
-        container_path,
-        &entry.entry_path,
-        entry.size,
-        &entry.container_type,
-    ) {
-        Ok(data) => data,
+    let source = match open_entry_byte_source(container_path, entry) {
+        Ok(source) => source,
         Err(e) => {
-            debug!("Content extraction failed for {}: {}", entry.entry_path, e);
+            debug!(
+                "Artifact source open failed for {}: {}",
+                entry.entry_path, e
+            );
             return String::new();
         }
     };
 
-    if bytes.is_empty() {
-        return String::new();
+    let artifact = match extract_index_artifact(source.as_ref()) {
+        Ok(artifact) => artifact,
+        Err(e) => {
+            debug!("Artifact extraction failed for {}: {}", entry.entry_path, e);
+            return String::new();
+        }
+    };
+
+    let mut content_parts = artifact_search_terms(&artifact);
+
+    if let Some(preview) = artifact.content_preview.as_ref() {
+        if !preview.is_empty() {
+            content_parts.push(preview.clone());
+        }
     }
 
-    // Try to extract text based on the file extension/category
-    let text = extract_text_from_bytes(&bytes, &entry.extension, &entry.category);
+    if !entry.text_eligible || artifact.size > MAX_CONTENT_SOURCE_BYTES {
+        return truncate_index_content(content_parts.join("\n"));
+    }
 
-    // Truncate to max size
-    if text.len() > MAX_CONTENT_SIZE {
-        text[..MAX_CONTENT_SIZE].to_string()
-    } else {
-        text
+    let read_size = match bounded_entry_read_size(source.as_ref(), entry.size) {
+        Ok(size) => size,
+        Err(e) => {
+            debug!("Content read sizing failed for {}: {}", entry.entry_path, e);
+            return truncate_index_content(content_parts.join("\n"));
+        }
+    };
+
+    if read_size == 0 {
+        return truncate_index_content(content_parts.join("\n"));
+    }
+
+    match extract_entry_text(source.as_ref(), entry, read_size) {
+        Ok(extracted_text) if !extracted_text.is_empty() => content_parts.push(extracted_text),
+        Ok(_) => {}
+        Err(e) => {
+            debug!("Content read failed for {}: {}", entry.entry_path, e);
+        }
+    }
+
+    truncate_index_content(content_parts.join("\n"))
+}
+
+fn extract_entry_text(
+    source: &dyn EvidenceByteSource,
+    entry: &CrawledEntry,
+    read_size: usize,
+) -> Result<String, String> {
+    let bytes = read_range_fully(source, 0, read_size).map_err(|e| e.to_string())?;
+    Ok(extract_text_from_bytes(
+        &bytes,
+        &entry.extension,
+        &entry.category,
+    ))
+}
+
+fn extract_index_artifact(source: &dyn EvidenceByteSource) -> Result<NormalizedArtifact, String> {
+    extract_normalized_artifact(
+        source,
+        ArtifactExtractionOptions {
+            header_bytes: 4096,
+            preview_bytes: MAX_CONTENT_SIZE,
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn artifact_search_terms(artifact: &NormalizedArtifact) -> Vec<String> {
+    let mut terms = vec![
+        artifact.name.clone(),
+        artifact.type_description.clone(),
+        artifact.category.clone(),
+        artifact.confidence.clone(),
+    ];
+
+    if let Some(extension) = &artifact.extension {
+        terms.push(extension.clone());
+    }
+    if let Some(mime_type) = &artifact.mime_type {
+        terms.push(mime_type.clone());
+    }
+
+    for (key, value) in &artifact.metadata {
+        terms.push(key.clone());
+        if !value.is_empty() {
+            terms.push(value.clone());
+            terms.push(format!("{key}:{value}"));
+        }
+    }
+
+    terms
+        .into_iter()
+        .map(|term| term.trim().to_string())
+        .filter(|term| !term.is_empty())
+        .collect()
+}
+
+fn truncate_index_content(text: String) -> String {
+    if text.len() <= MAX_CONTENT_SIZE {
+        return text;
+    }
+
+    let mut end = MAX_CONTENT_SIZE;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_string()
+}
+
+/// Open a byte source for a crawled entry.
+fn open_entry_byte_source(
+    container_path: &str,
+    entry: &CrawledEntry,
+) -> Result<Box<dyn EvidenceByteSource>, String> {
+    match entry.container_type.as_str() {
+        "disk" => Ok(Box::new(LocalFileByteSource::new(&entry.entry_path))),
+        container_type => open_container_entry_source(
+            container_path,
+            &entry.entry_path,
+            container_type,
+            size_hint(entry.size),
+        )
+        .map_err(|e| format!("Container entry source: {}", e)),
     }
 }
 
-/// Read raw bytes of a file from its container.
-fn read_entry_bytes(
-    container_path: &str,
-    entry_path: &str,
-    size: u64,
-    container_type: &str,
-) -> Result<Vec<u8>, String> {
-    match container_type {
-        "ad1" => {
-            ad1::read_entry_data(container_path, entry_path).map_err(|e| format!("AD1 read: {}", e))
-        }
-        "l01" => {
-            let tree =
-                ewf::parse_l01_file_tree(container_path).map_err(|e| format!("L01 tree: {}", e))?;
-            let entry = tree
-                .entry_at_path(entry_path)
-                .ok_or_else(|| format!("L01 entry not found: {}", entry_path))?;
-            let mut handle =
-                ewf::EwfHandle::open(container_path).map_err(|e| format!("L01 handle: {}", e))?;
-            let read_size = if entry.size > 0 {
-                entry.size as usize
-            } else {
-                entry.data_size as usize
-            };
-            handle
-                .read_at(entry.data_offset, read_size)
-                .map_err(|e| format!("L01 read: {}", e))
-        }
-        "archive" => archive::libarchive_read_file(container_path, entry_path)
-            .map_err(|e| format!("Archive read: {}", e)),
-        "e01" => {
-            use crate::common::vfs::VirtualFileSystem;
-            let vfs =
-                ewf::vfs::EwfVfs::open(container_path).map_err(|e| format!("E01 VFS: {:?}", e))?;
-            let read_size = if size > 0 {
-                size as usize
-            } else {
-                vfs.file_size(entry_path).unwrap_or(0) as usize
-            };
-            vfs.read(entry_path, 0, read_size)
-                .map_err(|e| format!("E01 read: {:?}", e))
-        }
-        "raw" => {
-            use crate::common::vfs::VirtualFileSystem;
-            let vfs = raw::vfs::RawVfs::open_filesystem(container_path)
-                .or_else(|_| raw::vfs::RawVfs::open(container_path))
-                .map_err(|e| format!("Raw VFS: {:?}", e))?;
-            let read_size = if size > 0 {
-                size as usize
-            } else {
-                vfs.file_size(entry_path).unwrap_or(0) as usize
-            };
-            vfs.read(entry_path, 0, read_size)
-                .map_err(|e| format!("Raw read: {:?}", e))
-        }
-        "disk" => std::fs::read(entry_path).map_err(|e| format!("Disk read: {}", e)),
-        _ => Err(format!("Unknown container type: {}", container_type)),
+fn size_hint(size: u64) -> Option<u64> {
+    if size > 0 {
+        Some(size)
+    } else {
+        None
     }
+}
+
+fn add_indexed_count(total: u64, count: u64) -> u64 {
+    total.saturating_add(count)
+}
+
+fn bounded_entry_read_size(
+    source: &dyn EvidenceByteSource,
+    _known_size: u64,
+) -> Result<usize, String> {
+    let source_size = source.len().map_err(|e| e.to_string())?;
+    let byte_len = source_size.min(MAX_CONTENT_SOURCE_BYTES);
+
+    usize::try_from(byte_len)
+        .map_err(|_| format!("Entry is too large to read on this platform: {byte_len} bytes"))
 }
 
 /// Extract text content from raw bytes using the file extension to select
@@ -583,8 +719,7 @@ fn extract_docx_text(data: &[u8]) -> String {
 
     let mut text = String::new();
     if let Ok(mut file) = archive.by_name("word/document.xml") {
-        let mut xml = String::new();
-        if std::io::Read::read_to_string(&mut file, &mut xml).is_ok() {
+        if let Some(xml) = read_limited_zip_text(&mut file, MAX_DOCX_XML_SCAN_BYTES) {
             // Simple XML text extraction — get content between <w:t> tags
             for part in xml.split("<w:t") {
                 if let Some(content_start) = part.find('>') {
@@ -598,6 +733,18 @@ fn extract_docx_text(data: &[u8]) -> String {
         }
     }
     text
+}
+
+fn read_limited_zip_text<R: std::io::Read>(reader: &mut R, max_bytes: u64) -> Option<String> {
+    let mut limited_reader =
+        std::io::Read::take(std::io::Read::by_ref(reader), max_bytes.saturating_add(1));
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut limited_reader, &mut bytes).ok()?;
+    if bytes.len() as u64 > max_bytes {
+        return None;
+    }
+    let text = String::from_utf8(bytes).ok()?;
+    Some(text)
 }
 
 /// Extract text from EML/MBOX email bytes.
@@ -759,7 +906,7 @@ pub fn index_container(
         }
 
         // Extract content if requested and eligible
-        let content = if index_content && entry.text_eligible {
+        let content = if index_content && !entry.is_dir {
             let text = extract_content_from_container(container_path, entry);
             if !text.is_empty() {
                 state.content_extracted.fetch_add(1, Ordering::Relaxed);
@@ -821,7 +968,7 @@ pub fn index_disk_files(
             break;
         }
 
-        let content = if index_content && entry.text_eligible {
+        let content = if index_content && !entry.is_dir {
             let text = extract_content_from_container("disk", entry);
             if !text.is_empty() {
                 state.content_extracted.fetch_add(1, Ordering::Relaxed);
@@ -883,8 +1030,506 @@ pub fn rebuild_index(
         if state.is_cancelled() {
             break;
         }
-        total += index_container(search_index, path, index_content, state)?;
+        total = add_indexed_count(
+            total,
+            index_container(search_index, path, index_content, state)?,
+        );
     }
 
     Ok(total)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::{EvidenceSourceError, EvidenceSourceRef, EvidenceSourceResult};
+    use std::io::{Cursor, Write};
+
+    struct ChunkedByteSource {
+        source_ref: EvidenceSourceRef,
+        data: Vec<u8>,
+        max_chunk: usize,
+    }
+
+    impl ChunkedByteSource {
+        fn new(path: &str, data: &[u8], max_chunk: usize) -> Self {
+            Self {
+                source_ref: EvidenceSourceRef::LocalFile {
+                    path: path.to_string(),
+                },
+                data: data.to_vec(),
+                max_chunk,
+            }
+        }
+    }
+
+    impl EvidenceByteSource for ChunkedByteSource {
+        fn source_ref(&self) -> EvidenceSourceRef {
+            self.source_ref.clone()
+        }
+
+        fn len(&self) -> EvidenceSourceResult<u64> {
+            Ok(self.data.len() as u64)
+        }
+
+        fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
+            if offset > self.data.len() as u64 {
+                return Err(EvidenceSourceError::InvalidRange {
+                    source_id: self.source_ref.display_id(),
+                    offset,
+                    size: self.data.len() as u64,
+                });
+            }
+            let start = offset as usize;
+            if start >= self.data.len() {
+                return Ok(Vec::new());
+            }
+            let requested = size.min(self.max_chunk);
+            let end = start.saturating_add(requested).min(self.data.len());
+            Ok(self.data[start..end].to_vec())
+        }
+    }
+
+    struct DeclaredLenByteSource {
+        source_ref: EvidenceSourceRef,
+        declared_len: u64,
+    }
+
+    impl DeclaredLenByteSource {
+        fn new(path: &str, declared_len: u64) -> Self {
+            Self {
+                source_ref: EvidenceSourceRef::LocalFile {
+                    path: path.to_string(),
+                },
+                declared_len,
+            }
+        }
+    }
+
+    impl EvidenceByteSource for DeclaredLenByteSource {
+        fn source_ref(&self) -> EvidenceSourceRef {
+            self.source_ref.clone()
+        }
+
+        fn len(&self) -> EvidenceSourceResult<u64> {
+            Ok(self.declared_len)
+        }
+
+        fn read_range(&self, _offset: u64, _size: usize) -> EvidenceSourceResult<Vec<u8>> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn write_temp_file(suffix: &str, bytes: &[u8]) -> tempfile::NamedTempFile {
+        let mut file = tempfile::Builder::new().suffix(suffix).tempfile().unwrap();
+        file.write_all(bytes).unwrap();
+        file.flush().unwrap();
+        file
+    }
+
+    #[test]
+    fn add_indexed_count_saturates_on_overflow() {
+        assert_eq!(add_indexed_count(40, 2), 42);
+        assert_eq!(add_indexed_count(u64::MAX - 1, 8), u64::MAX);
+    }
+
+    fn disk_entry(path: &Path, category: &str, text_eligible: bool) -> CrawledEntry {
+        let filename = path.file_name().unwrap().to_string_lossy().to_string();
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let size = std::fs::metadata(path).unwrap().len();
+
+        CrawledEntry {
+            doc_id: format!("disk:{}", path.display()),
+            container_path: "disk".to_string(),
+            container_type: "disk".to_string(),
+            entry_path: path.to_string_lossy().to_string(),
+            filename,
+            extension,
+            size,
+            modified: 0,
+            is_dir: false,
+            category: category.to_string(),
+            text_eligible,
+        }
+    }
+
+    fn build_docx_with_document_xml(xml: &[u8]) -> Vec<u8> {
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut cursor);
+            zip.start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(xml).unwrap();
+            zip.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
+
+    #[derive(Clone, Copy)]
+    struct TestTiffEntry {
+        tag: u16,
+        field_type: u16,
+        count: u32,
+        value: u32,
+    }
+
+    fn push_u16_le(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32_le(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn append_ascii(bytes: &mut Vec<u8>, value: &str) -> (u32, u32) {
+        let offset = bytes.len() as u32;
+        bytes.extend_from_slice(value.as_bytes());
+        bytes.push(0);
+        (value.len() as u32 + 1, offset)
+    }
+
+    fn append_rationals(bytes: &mut Vec<u8>, values: &[(u32, u32)]) -> (u32, u32) {
+        let offset = bytes.len() as u32;
+        for (numerator, denominator) in values {
+            push_u32_le(bytes, *numerator);
+            push_u32_le(bytes, *denominator);
+        }
+        (values.len() as u32, offset)
+    }
+
+    fn inline_ascii_value(value: &[u8]) -> u32 {
+        let mut bytes = [0u8; 4];
+        for (index, byte) in value.iter().take(4).enumerate() {
+            bytes[index] = *byte;
+        }
+        u32::from_le_bytes(bytes)
+    }
+
+    fn write_ifd_at(bytes: &mut [u8], offset: usize, entries: &[TestTiffEntry]) {
+        bytes[offset..offset + 2].copy_from_slice(&(entries.len() as u16).to_le_bytes());
+        for (index, entry) in entries.iter().enumerate() {
+            let entry_offset = offset + 2 + index * 12;
+            bytes[entry_offset..entry_offset + 2].copy_from_slice(&entry.tag.to_le_bytes());
+            bytes[entry_offset + 2..entry_offset + 4]
+                .copy_from_slice(&entry.field_type.to_le_bytes());
+            bytes[entry_offset + 4..entry_offset + 8].copy_from_slice(&entry.count.to_le_bytes());
+            bytes[entry_offset + 8..entry_offset + 12].copy_from_slice(&entry.value.to_le_bytes());
+        }
+        let next_offset = offset + 2 + entries.len() * 12;
+        bytes[next_offset..next_offset + 4].copy_from_slice(&0u32.to_le_bytes());
+    }
+
+    fn append_ifd(bytes: &mut Vec<u8>, entries: &[TestTiffEntry]) -> u32 {
+        let offset = bytes.len();
+        bytes.resize(offset + 2 + entries.len() * 12 + 4, 0);
+        write_ifd_at(bytes, offset, entries);
+        offset as u32
+    }
+
+    fn jpeg_with_exif_search_terms() -> Vec<u8> {
+        let ifd0_offset = 8usize;
+        let ifd0_entries = 3usize;
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II");
+        push_u16_le(&mut tiff, 42);
+        push_u32_le(&mut tiff, ifd0_offset as u32);
+        tiff.resize(ifd0_offset + 2 + ifd0_entries * 12 + 4, 0);
+
+        let (make_count, make_offset) = append_ascii(&mut tiff, "CORE");
+        let (captured_count, captured_offset) = append_ascii(&mut tiff, "2026:02:16 10:01:00");
+        let exif_offset = append_ifd(
+            &mut tiff,
+            &[TestTiffEntry {
+                tag: 0x9003,
+                field_type: 2,
+                count: captured_count,
+                value: captured_offset,
+            }],
+        );
+
+        let (lat_count, lat_offset) = append_rationals(&mut tiff, &[(37, 1), (46, 1), (2964, 100)]);
+        let (lon_count, lon_offset) = append_rationals(&mut tiff, &[(122, 1), (25, 1), (984, 100)]);
+        let gps_offset = append_ifd(
+            &mut tiff,
+            &[
+                TestTiffEntry {
+                    tag: 0x0001,
+                    field_type: 2,
+                    count: 2,
+                    value: inline_ascii_value(b"N\0"),
+                },
+                TestTiffEntry {
+                    tag: 0x0002,
+                    field_type: 5,
+                    count: lat_count,
+                    value: lat_offset,
+                },
+                TestTiffEntry {
+                    tag: 0x0003,
+                    field_type: 2,
+                    count: 2,
+                    value: inline_ascii_value(b"W\0"),
+                },
+                TestTiffEntry {
+                    tag: 0x0004,
+                    field_type: 5,
+                    count: lon_count,
+                    value: lon_offset,
+                },
+            ],
+        );
+
+        write_ifd_at(
+            &mut tiff,
+            ifd0_offset,
+            &[
+                TestTiffEntry {
+                    tag: 0x010f,
+                    field_type: 2,
+                    count: make_count,
+                    value: make_offset,
+                },
+                TestTiffEntry {
+                    tag: 0x8769,
+                    field_type: 4,
+                    count: 1,
+                    value: exif_offset,
+                },
+                TestTiffEntry {
+                    tag: 0x8825,
+                    field_type: 4,
+                    count: 1,
+                    value: gps_offset,
+                },
+            ],
+        );
+
+        let mut app1 = Vec::from(&b"Exif\0\0"[..]);
+        app1.extend_from_slice(&tiff);
+        let segment_len = (app1.len() + 2) as u16;
+
+        let mut jpeg = vec![0xff, 0xd8, 0xff, 0xe1];
+        jpeg.extend_from_slice(&segment_len.to_be_bytes());
+        jpeg.extend_from_slice(&app1);
+        jpeg.extend_from_slice(&[0xff, 0xd9]);
+        jpeg
+    }
+
+    #[test]
+    fn content_extraction_uses_normalized_artifact_text_preview() {
+        let file = write_temp_file(".txt", b"normalized artifact search text");
+        let entry = disk_entry(file.path(), "text", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("Plain Text"));
+        assert!(content.contains("text/plain"));
+        assert!(content.contains("normalized artifact search text"));
+    }
+
+    #[test]
+    fn entry_text_extraction_assembles_chunked_source() {
+        let bytes = b"alpha beta gamma searchable tail";
+        let file = write_temp_file(".txt", bytes);
+        let source = ChunkedByteSource::new("chunked.txt", bytes, 5);
+        let entry = disk_entry(file.path(), "text", true);
+
+        let content = extract_entry_text(&source, &entry, bytes.len()).unwrap();
+
+        assert_eq!(content, "alpha beta gamma searchable tail");
+    }
+
+    #[test]
+    fn docx_text_extraction_uses_bounded_xml_scan() {
+        let mut xml = vec![b'a'; MAX_DOCX_XML_SCAN_BYTES as usize];
+        xml.extend_from_slice(b"<w:t>late searchable text</w:t>");
+        let docx = build_docx_with_document_xml(&xml);
+
+        let content = extract_text_from_bytes(&docx, "docx", "document");
+
+        assert!(!content.contains("late searchable text"));
+    }
+
+    #[test]
+    fn read_limited_zip_text_allows_exact_limit() {
+        let mut reader = Cursor::new(b"abc".to_vec());
+
+        let text = read_limited_zip_text(&mut reader, 3).unwrap();
+
+        assert_eq!(text, "abc");
+    }
+
+    #[test]
+    fn read_limited_zip_text_rejects_oversized_entry() {
+        let mut reader = Cursor::new(b"abcd".to_vec());
+
+        let text = read_limited_zip_text(&mut reader, 3);
+
+        assert!(text.is_none());
+    }
+
+    #[test]
+    fn bounded_entry_read_size_enforces_content_source_cap() {
+        let source = DeclaredLenByteSource::new("oversized.txt", MAX_CONTENT_SOURCE_BYTES + 4096);
+
+        let known_size = bounded_entry_read_size(&source, source.len().unwrap()).unwrap();
+        let fallback_size = bounded_entry_read_size(&source, 0).unwrap();
+
+        assert_eq!(known_size, MAX_CONTENT_SOURCE_BYTES as usize);
+        assert_eq!(fallback_size, MAX_CONTENT_SOURCE_BYTES as usize);
+    }
+
+    #[test]
+    fn bounded_entry_read_size_uses_live_source_size_for_stale_known_size() {
+        let bytes = b"stale crawler size";
+        let source = ChunkedByteSource::new("stale.txt", bytes, usize::MAX);
+
+        let read_size = bounded_entry_read_size(&source, bytes.len() as u64 + 4096).unwrap();
+
+        assert_eq!(read_size, bytes.len());
+    }
+
+    #[test]
+    fn bounded_entry_read_size_uses_live_source_size_when_known_size_is_short() {
+        let bytes = b"stale short crawler size";
+        let source = ChunkedByteSource::new("stale-short.txt", bytes, usize::MAX);
+
+        let read_size = bounded_entry_read_size(&source, 1).unwrap();
+
+        assert_eq!(read_size, bytes.len());
+    }
+
+    #[test]
+    fn crawl_disk_dir_limited_skips_beyond_depth_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut current = dir.path().to_path_buf();
+        for index in 0..=MAX_SEARCH_CRAWL_DEPTH + 1 {
+            current = current.join(format!("d{index}"));
+            std::fs::create_dir(&current).unwrap();
+        }
+        std::fs::write(current.join("too-deep.txt"), b"search text").unwrap();
+
+        let mut entries = Vec::new();
+        crawl_disk_dir(dir.path(), &mut entries);
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn artifact_indicator_metadata_is_searchable() {
+        let file = write_temp_file(
+            ".txt",
+            b"Contact admin@example.com from 192.168.1.10 and visit https://example.com/login",
+        );
+        let entry = disk_entry(file.path(), "text", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("indicators.emailCount:1"));
+        assert!(content.contains("indicators.emails:admin@example.com"));
+        assert!(content.contains("indicators.ipv4:192.168.1.10"));
+        assert!(content.contains("indicators.urls:https://example.com/login"));
+    }
+
+    #[test]
+    fn pdf_magic_indexes_artifact_metadata_without_plain_text_preview() {
+        let file = write_temp_file(".pdf", b"%PDF-1.7\nnot a complete pdf");
+        let entry = disk_entry(file.path(), "document", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("PDF Document"));
+        assert!(content.contains("application/pdf"));
+        assert!(content.contains("pdf.version:1.7"));
+        assert!(!content.contains("not a complete pdf"));
+    }
+
+    #[test]
+    fn image_artifact_metadata_is_searchable_even_when_not_text_eligible() {
+        let mut bytes = Vec::from(&b"\x89PNG\r\n\x1a\n"[..]);
+        bytes.extend_from_slice(&13u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&320u32.to_be_bytes());
+        bytes.extend_from_slice(&200u32.to_be_bytes());
+        bytes.extend_from_slice(&[8, 2, 0, 0, 0]);
+        let file = write_temp_file(".png", &bytes);
+        let entry = disk_entry(file.path(), "image", false);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("PNG Image"));
+        assert!(content.contains("image/png"));
+        assert!(content.contains("image.dimensions:320x200"));
+        assert!(content.contains("image.width:320"));
+    }
+
+    #[test]
+    fn jpeg_exif_artifact_metadata_is_searchable() {
+        let file = write_temp_file(".jpg", &jpeg_with_exif_search_terms());
+        let entry = disk_entry(file.path(), "image", false);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("JPEG Image"));
+        assert!(content.contains("exif.make:CORE"));
+        assert!(content.contains("exif.dateTimeOriginal:2026:02:16 10:01:00"));
+        assert!(content.contains("gps.latitude:37.774900"));
+        assert!(content.contains("gps.longitude:-122.419400"));
+    }
+
+    #[test]
+    fn sqlite_artifact_metadata_is_searchable() {
+        let mut bytes = vec![0u8; 100];
+        bytes[..16].copy_from_slice(b"SQLite format 3\0");
+        bytes[16..18].copy_from_slice(&4096u16.to_be_bytes());
+        bytes[18] = 1;
+        bytes[19] = 1;
+        bytes[28..32].copy_from_slice(&12u32.to_be_bytes());
+        bytes[56..60].copy_from_slice(&1u32.to_be_bytes());
+        let file = write_temp_file(".sqlite", &bytes);
+        let entry = disk_entry(file.path(), "database", false);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("SQLite Database"));
+        assert!(content.contains("sqlite.pageSize:4096"));
+        assert!(content.contains("sqlite.pageCount:12"));
+        assert!(content.contains("sqlite.textEncoding:UTF-8"));
+    }
+
+    #[test]
+    fn email_artifact_metadata_is_searchable() {
+        let file = write_temp_file(
+            ".eml",
+            b"From: Alice <alice@example.com>\r\nTo: Bob <bob@example.com>\r\nSubject: Quarterly update\r\nMessage-ID: <msg-1@example.com>\r\n\r\nBody",
+        );
+        let entry = disk_entry(file.path(), "email", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("Email Message"));
+        assert!(content.contains("email.from:Alice <alice@example.com>"));
+        assert!(content.contains("email.subject:Quarterly update"));
+        assert!(content.contains("email.messageId:<msg-1@example.com>"));
+    }
+
+    #[test]
+    fn truncate_index_content_preserves_utf8_boundaries() {
+        let mut text = "a".repeat(MAX_CONTENT_SIZE - 1);
+        text.push('é');
+        text.push_str("tail");
+
+        let truncated = truncate_index_content(text);
+
+        assert_eq!(truncated.len(), MAX_CONTENT_SIZE - 1);
+        assert!(truncated.is_char_boundary(truncated.len()));
+        assert!(truncated.ends_with('a'));
+    }
 }

@@ -386,6 +386,15 @@ pub struct Aff4StreamInfo {
 
     /// Stored hash values: algorithm → hex digest.
     pub hashes: HashMap<Aff4HashAlgorithm, String>,
+
+    /// Map point hash values: algorithm → hex digest.
+    pub map_point_hashes: HashMap<Aff4HashAlgorithm, String>,
+
+    /// Map idx hash values: algorithm → hex digest.
+    pub map_idx_hashes: HashMap<Aff4HashAlgorithm, String>,
+
+    /// Block map hash values: algorithm → hex digest.
+    pub block_map_hashes: HashMap<Aff4HashAlgorithm, String>,
 }
 
 // ─── Logical File Entry ──────────────────────────────────────────────────────

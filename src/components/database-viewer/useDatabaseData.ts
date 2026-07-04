@@ -12,8 +12,8 @@
  */
 
 import { createSignal, createEffect, createMemo, on } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
+import { commands, type HashSourceInput } from "../../api/commands";
 import type { DatabaseMetadataSection } from "../../types/viewerMetadata";
 import type { DatabaseInfo, TableSchema, TableRows } from "./types";
 
@@ -23,6 +23,7 @@ export const PAGE_SIZE = 100;
 
 export interface UseDatabaseDataOptions {
   path: () => string;
+  source?: () => HashSourceInput | null | undefined;
   onMetadata?: (section: DatabaseMetadataSection) => void;
 }
 
@@ -43,9 +44,10 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
     setError(null);
 
     try {
-      const info = await invoke<DatabaseInfo>("database_get_info", {
-        path: opts.path(),
-      });
+      const source = opts.source?.();
+      const info = source
+        ? await commands.sqlite.getInfoSource<DatabaseInfo>(source)
+        : await commands.sqlite.getInfo<DatabaseInfo>(opts.path());
       setDbInfo(info);
 
       // Auto-select first non-system table
@@ -70,17 +72,24 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
     setRowsLoading(true);
 
     try {
+      const source = opts.source?.();
       const [schemaResult, rowsResult] = await Promise.all([
-        invoke<TableSchema>("database_get_table_schema", {
-          dbPath: opts.path(),
-          tableName,
-        }),
-        invoke<TableRows>("database_query_table", {
-          dbPath: opts.path(),
-          tableName,
-          page: 0,
-          pageSize: PAGE_SIZE,
-        }),
+        source
+          ? commands.sqlite.getTableSchemaSource<TableSchema>(source, tableName)
+          : commands.sqlite.getTableSchema<TableSchema>(opts.path(), tableName),
+        source
+          ? commands.sqlite.queryTableSource<TableRows>(
+              source,
+              tableName,
+              0,
+              PAGE_SIZE,
+            )
+          : commands.sqlite.queryTable<TableRows>(
+              opts.path(),
+              tableName,
+              0,
+              PAGE_SIZE,
+            ),
       ]);
       setSchema(schemaResult);
       setTableRows(rowsResult);
@@ -99,12 +108,20 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
     setCurrentPage(page);
 
     try {
-      const rows = await invoke<TableRows>("database_query_table", {
-        dbPath: opts.path(),
-        tableName: table,
-        page,
-        pageSize: PAGE_SIZE,
-      });
+      const source = opts.source?.();
+      const rows = source
+        ? await commands.sqlite.queryTableSource<TableRows>(
+            source,
+            table,
+            page,
+            PAGE_SIZE,
+          )
+        : await commands.sqlite.queryTable<TableRows>(
+            opts.path(),
+            table,
+            page,
+            PAGE_SIZE,
+          );
       setTableRows(rows);
     } catch (e) {
       log.error("Failed to load page:", page, e);
@@ -133,7 +150,12 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
   });
 
   // ── Load on path change ──
-  createEffect(on(() => opts.path(), () => loadDatabase()));
+  createEffect(
+    on(
+      () => `${opts.path()}|${JSON.stringify(opts.source?.() ?? null)}`,
+      () => loadDatabase(),
+    ),
+  );
 
   // ── Emit metadata ──
   createEffect(() => {

@@ -22,11 +22,25 @@ use tracing::debug;
 use super::types::{CompanionLogInfo, SegmentHash, StoredHash};
 use super::ContainerError;
 
+const MAX_COMPANION_LOG_BYTES: u64 = 10 * 1024 * 1024;
+
 /// Pre-compiled regex for matching hex hash values (32-128 chars)
 /// Compiled once on first use via OnceLock
 fn hash_regex() -> &'static Regex {
     static HASH_REGEX: OnceLock<Regex> = OnceLock::new();
-    HASH_REGEX.get_or_init(|| Regex::new(r"[a-fA-F0-9]{32,128}").expect("Invalid hash regex"))
+    HASH_REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:^|[^a-f0-9])([a-f0-9]{128}|[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})(?:$|[^a-f0-9])",
+        )
+        .expect("Invalid hash regex")
+    })
+}
+
+fn find_hash_value(text: &str) -> Option<&str> {
+    hash_regex()
+        .captures(text)
+        .and_then(|captures| captures.get(1))
+        .map(|hash| hash.as_str())
 }
 
 /// Find and parse companion log file (e.g., .txt file created by FTK Imager, dc3dd, etc.)
@@ -125,6 +139,17 @@ pub fn find_companion_log(image_path: &str) -> Option<CompanionLogInfo> {
 
 /// Parse companion log file from various forensic tools (FTK Imager, dc3dd, dcfldd, Guymager, etc.)
 fn parse_companion_log(log_path: &Path) -> Result<CompanionLogInfo, ContainerError> {
+    let size = log_path
+        .metadata()
+        .map_err(|e| ContainerError::from(format!("Failed to inspect log file: {}", e)))?
+        .len();
+    if size > MAX_COMPANION_LOG_BYTES {
+        return Err(ContainerError::ParseError(format!(
+            "Companion log too large to parse: {} bytes > {} bytes",
+            size, MAX_COMPANION_LOG_BYTES
+        )));
+    }
+
     let content = fs::read_to_string(log_path)
         .map_err(|e| ContainerError::from(format!("Failed to read log file: {}", e)))?;
 
@@ -346,7 +371,7 @@ fn parse_simple_hash_file(content: &str, log_path: &Path) -> Option<StoredHash> 
     };
 
     // Extract hash from content (might be "hash  filename" or just "hash")
-    let hash = hash_regex().find(content.trim())?.as_str().to_lowercase();
+    let hash = find_hash_value(content.trim())?.to_lowercase();
 
     // Get file modification time as timestamp
     let timestamp = log_path
@@ -371,7 +396,7 @@ fn parse_simple_hash_file(content: &str, log_path: &Path) -> Option<StoredHash> 
 
 /// Parse hash from generic hash file content
 fn parse_hash_from_content(content: &str, log_path: &Path) -> Option<StoredHash> {
-    let hash = hash_regex().find(content.trim())?.as_str().to_lowercase();
+    let hash = find_hash_value(content.trim())?.to_lowercase();
 
     // Guess algorithm from hash length
     let algorithm = match hash.len() {
@@ -424,10 +449,10 @@ fn parse_dc3dd_hash_line(line: &str) -> Option<StoredHash> {
 
     for (pattern, algo_name) in &algorithms {
         if line_lower.contains(pattern) {
-            if let Some(m) = hash_regex().find(line) {
+            if let Some(hash) = find_hash_value(line) {
                 return Some(StoredHash {
                     algorithm: algo_name.to_string(),
-                    hash: m.as_str().to_lowercase(),
+                    hash: hash.to_lowercase(),
                     verified: None,
                     timestamp: None, // Will be set by caller from log file context
                     source: Some("companion".to_string()),
@@ -466,8 +491,8 @@ fn parse_hash_line(line: &str, check_verified: bool) -> Option<StoredHash> {
     for alg in &algorithms {
         if line_lower.contains(alg) {
             // Try to extract the hash value using pre-compiled regex
-            if let Some(m) = hash_regex().find(line) {
-                let hash = m.as_str().to_lowercase();
+            if let Some(hash) = find_hash_value(line) {
+                let hash = hash.to_lowercase();
 
                 // Check for verification status
                 let verified = if check_verified {
@@ -585,7 +610,7 @@ fn parse_forensic_md5_segments(content: &str) -> Option<Vec<SegmentHash>> {
                 .collect::<String>()
                 .to_lowercase();
 
-            if hash.len() >= 32 {
+            if hash.len() == 32 {
                 if let Some(seg) = current_segment.as_mut() {
                     seg.hash = hash;
                 }
@@ -646,25 +671,48 @@ mod tests {
 
     #[test]
     fn test_hash_regex() {
-        let regex = hash_regex();
-
         // Valid MD5 (32 chars)
-        assert!(regex.is_match("d41d8cd98f00b204e9800998ecf8427e"));
+        assert_eq!(
+            find_hash_value("d41d8cd98f00b204e9800998ecf8427e"),
+            Some("d41d8cd98f00b204e9800998ecf8427e")
+        );
 
         // Valid SHA-1 (40 chars)
-        assert!(regex.is_match("da39a3ee5e6b4b0d3255bfef95601890afd80709"));
+        assert_eq!(
+            find_hash_value("da39a3ee5e6b4b0d3255bfef95601890afd80709"),
+            Some("da39a3ee5e6b4b0d3255bfef95601890afd80709")
+        );
 
         // Valid SHA-256 (64 chars)
-        assert!(regex.is_match("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+        assert_eq!(
+            find_hash_value("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        );
 
         // Valid SHA-512 (128 chars)
-        assert!(regex.is_match("cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"));
+        assert_eq!(
+            find_hash_value("cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"),
+            Some("cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e")
+        );
 
         // Too short (31 chars)
-        assert!(!regex.is_match("d41d8cd98f00b204e9800998ecf842"));
+        assert_eq!(find_hash_value("d41d8cd98f00b204e9800998ecf842"), None);
 
         // Contains non-hex
-        assert!(!regex.is_match("d41d8cd98f00b204e9800998ecf8427g"));
+        assert_eq!(find_hash_value("d41d8cd98f00b204e9800998ecf8427g"), None);
+    }
+
+    #[test]
+    fn test_hash_extraction_rejects_long_hex_prefixes() {
+        let too_long_md5_like = format!("{}a", "d41d8cd98f00b204e9800998ecf8427e");
+        let too_long_sha256_like = format!(
+            "{}a",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        assert_eq!(find_hash_value(&too_long_md5_like), None);
+        assert_eq!(find_hash_value(&too_long_sha256_like), None);
+        assert!(parse_hash_line(&format!("MD5: {too_long_md5_like}"), false).is_none());
     }
 
     #[test]
@@ -765,6 +813,21 @@ mod tests {
         let hash = result.unwrap();
         // Verified field may or may not be set depending on implementation
         assert_eq!(hash.algorithm, "MD5");
+    }
+
+    #[test]
+    fn parse_companion_log_rejects_sparse_oversized_log_before_read() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_COMPANION_LOG_BYTES + 1)
+            .unwrap();
+
+        let err = match parse_companion_log(tmp.path()) {
+            Ok(_) => panic!("oversized companion log unexpectedly parsed"),
+            Err(err) => err,
+        };
+
+        assert!(err.to_string().contains("Companion log too large"));
     }
 
     #[test]

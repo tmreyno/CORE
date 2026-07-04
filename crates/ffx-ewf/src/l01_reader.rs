@@ -35,6 +35,10 @@ use tracing::{debug, trace, warn};
 use ffx_common::segments::discover_l01_segments;
 use ffx_errors::ContainerError;
 
+const MAX_LTREE_DECOMPRESSED_BYTES: u64 = 128 * 1024 * 1024;
+const L01_SECTION_HEADER_SIZE: u64 = 76;
+const L01_LTREE_SUBHEADER_SIZE: u64 = 48;
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /// A parsed file/directory entry from the ltree section
@@ -258,7 +262,7 @@ fn find_and_read_ltree_section(
     let mut section_count = 0;
 
     while offset < file_size && section_count < max_sections {
-        if offset + 76 > file_size {
+        if checked_l01_section_header_end(offset).is_none_or(|end| end > file_size) {
             break;
         }
 
@@ -297,7 +301,7 @@ fn find_and_read_ltree_section(
 
         if section_type == "ltree" {
             // Found the ltree section — read its data
-            let data_offset = offset + 76; // Skip section header
+            let data_offset = checked_l01_data_offset(offset)?;
 
             // Ltree has a 48-byte sub-header:
             // 0..16: MD5 hash of uncompressed data
@@ -322,28 +326,26 @@ fn find_and_read_ltree_section(
             ]);
 
             // The compressed data follows the 48-byte sub-header
-            let compressed_data_offset = data_offset + 48;
+            let compressed_data_offset = checked_l01_compressed_data_offset(data_offset)?;
 
             // Calculate compressed data size. Some EWF writers set section_size=0
             // and encode the data extent via next_offset instead.
-            let compressed_size = if section_size > 124 {
-                // section_size includes the 76-byte header + 48-byte sub-header
-                section_size - 76 - 48
-            } else if next_offset > compressed_data_offset {
-                // Fallback: use next_offset to determine data end
-                next_offset - compressed_data_offset
-            } else {
-                // Last resort: read from current position to end of file
-                file_size.saturating_sub(compressed_data_offset)
-            };
+            let compressed_size = checked_l01_compressed_size(
+                section_size,
+                next_offset,
+                compressed_data_offset,
+                file_size,
+            )?;
 
             debug!(
                 "Ltree section: compressed={}, uncompressed={}",
                 compressed_size, uncompressed_size
             );
+            checked_ltree_size("decompressed", uncompressed_size)?;
 
             file.seek(SeekFrom::Start(compressed_data_offset))?;
-            let mut raw_data = vec![0u8; compressed_size as usize];
+            let raw_len = checked_ltree_size("compressed", compressed_size)?;
+            let mut raw_data = vec![0u8; raw_len];
             file.read_exact(&mut raw_data).map_err(|e| {
                 ContainerError::ParseError(format!("Failed to read ltree data: {}", e))
             })?;
@@ -373,7 +375,10 @@ fn find_and_read_ltree_section(
         if next_offset > 0 && next_offset > offset {
             offset = next_offset;
         } else if section_size > 0 {
-            offset += section_size;
+            let Some(next_offset) = checked_l01_next_section_offset(offset, section_size) else {
+                break;
+            };
+            offset = next_offset;
         } else {
             break;
         }
@@ -390,13 +395,98 @@ fn find_and_read_ltree_section(
 fn decompress_zlib(data: &[u8], expected_size: u64) -> Result<Vec<u8>, ContainerError> {
     use flate2::read::ZlibDecoder;
 
-    let mut decoder = ZlibDecoder::new(data);
-    let mut decompressed = Vec::with_capacity(expected_size as usize);
-    decoder.read_to_end(&mut decompressed).map_err(|e| {
-        ContainerError::ParseError(format!("Failed to decompress ltree data: {}", e))
-    })?;
+    let expected_len = checked_ltree_size("decompressed", expected_size)?;
+    let decoder = ZlibDecoder::new(data);
+    let mut limited_decoder = decoder.take(expected_size.saturating_add(1));
+    let mut decompressed = Vec::with_capacity(expected_len);
+    limited_decoder
+        .read_to_end(&mut decompressed)
+        .map_err(|e| {
+            ContainerError::ParseError(format!("Failed to decompress ltree data: {}", e))
+        })?;
+    if decompressed.len() > expected_len {
+        return Err(ContainerError::ParseError(format!(
+            "Decompressed ltree data exceeds declared size {expected_size}"
+        )));
+    }
 
     Ok(decompressed)
+}
+
+fn checked_ltree_size(label: &str, size: u64) -> Result<usize, ContainerError> {
+    if size > MAX_LTREE_DECOMPRESSED_BYTES {
+        return Err(ContainerError::ParseError(format!(
+            "L01 ltree {label} size {size} exceeds limit {MAX_LTREE_DECOMPRESSED_BYTES}"
+        )));
+    }
+
+    usize::try_from(size).map_err(|_| {
+        ContainerError::ParseError(format!("L01 ltree {label} size {size} is too large"))
+    })
+}
+
+fn checked_l01_section_header_end(offset: u64) -> Option<u64> {
+    offset.checked_add(L01_SECTION_HEADER_SIZE)
+}
+
+fn checked_l01_data_offset(section_offset: u64) -> Result<u64, ContainerError> {
+    section_offset
+        .checked_add(L01_SECTION_HEADER_SIZE)
+        .ok_or_else(|| ContainerError::ParseError("L01 section data offset overflow".to_string()))
+}
+
+fn checked_l01_compressed_data_offset(data_offset: u64) -> Result<u64, ContainerError> {
+    data_offset
+        .checked_add(L01_LTREE_SUBHEADER_SIZE)
+        .ok_or_else(|| {
+            ContainerError::ParseError("L01 ltree compressed data offset overflow".to_string())
+        })
+}
+
+fn checked_l01_next_section_offset(offset: u64, section_size: u64) -> Option<u64> {
+    offset.checked_add(section_size)
+}
+
+fn checked_l01_compressed_size(
+    section_size: u64,
+    next_offset: u64,
+    compressed_data_offset: u64,
+    file_size: u64,
+) -> Result<u64, ContainerError> {
+    if compressed_data_offset > file_size {
+        return Err(ContainerError::ParseError(
+            "L01 ltree compressed data exceeds segment bounds".to_string(),
+        ));
+    }
+
+    let compressed_end = if section_size > L01_SECTION_HEADER_SIZE + L01_LTREE_SUBHEADER_SIZE {
+        let data_start = compressed_data_offset
+            .checked_sub(L01_SECTION_HEADER_SIZE + L01_LTREE_SUBHEADER_SIZE)
+            .ok_or_else(|| {
+                ContainerError::ParseError(
+                    "L01 ltree compressed data starts before section".to_string(),
+                )
+            })?;
+        data_start.checked_add(section_size).ok_or_else(|| {
+            ContainerError::ParseError("L01 ltree section bounds overflow".to_string())
+        })?
+    } else if next_offset > compressed_data_offset {
+        next_offset
+    } else {
+        file_size
+    };
+
+    if compressed_end > file_size {
+        return Err(ContainerError::ParseError(
+            "L01 ltree compressed data exceeds segment bounds".to_string(),
+        ));
+    }
+
+    compressed_end
+        .checked_sub(compressed_data_offset)
+        .ok_or_else(|| {
+            ContainerError::ParseError("L01 ltree compressed data range underflow".to_string())
+        })
 }
 
 /// Decode UTF-16LE bytes to a String.
@@ -1074,6 +1164,15 @@ fn build_entry_path(existing_entries: &[L01Entry], entry: &L01Entry) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    fn zlib_compress(data: &[u8]) -> Vec<u8> {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
 
     #[test]
     fn test_parse_tab_fields() {
@@ -1108,6 +1207,112 @@ mod tests {
         let data: Vec<u8> = vec![b'H', 0, b'i', 0];
         let result = decode_utf16le(&data).unwrap();
         assert_eq!(result, "Hi");
+    }
+
+    #[test]
+    fn test_decompress_zlib_allows_declared_size() {
+        let compressed = zlib_compress(b"ltree");
+
+        let decompressed = decompress_zlib(&compressed, 5).unwrap();
+
+        assert_eq!(decompressed, b"ltree");
+    }
+
+    #[test]
+    fn test_decompress_zlib_rejects_output_past_declared_size() {
+        let compressed = zlib_compress(&vec![0x41; 128]);
+
+        let err = decompress_zlib(&compressed, 64).unwrap_err();
+
+        assert!(
+            matches!(err, ContainerError::ParseError(message) if message.contains("exceeds declared size"))
+        );
+    }
+
+    #[test]
+    fn test_checked_ltree_size_rejects_huge_declaration() {
+        let err = checked_ltree_size("decompressed", MAX_LTREE_DECOMPRESSED_BYTES + 1).unwrap_err();
+
+        assert!(
+            matches!(err, ContainerError::ParseError(message) if message.contains("exceeds limit"))
+        );
+    }
+
+    #[test]
+    fn test_checked_l01_data_offset_rejects_overflow() {
+        let err = checked_l01_data_offset(u64::MAX)
+            .expect_err("overflowing L01 section data offset should fail");
+
+        assert!(
+            matches!(err, ContainerError::ParseError(message) if message.contains("offset overflow"))
+        );
+    }
+
+    #[test]
+    fn test_checked_l01_compressed_data_offset_rejects_overflow() {
+        let err = checked_l01_compressed_data_offset(u64::MAX)
+            .expect_err("overflowing L01 compressed data offset should fail");
+
+        assert!(
+            matches!(err, ContainerError::ParseError(message) if message.contains("offset overflow"))
+        );
+    }
+
+    #[test]
+    fn test_checked_l01_next_section_offset_rejects_overflow() {
+        assert_eq!(checked_l01_next_section_offset(u64::MAX, 1), None);
+    }
+
+    #[test]
+    fn test_checked_l01_compressed_size_uses_section_size() {
+        let section_offset = 32;
+        let compressed_offset = section_offset + L01_SECTION_HEADER_SIZE + L01_LTREE_SUBHEADER_SIZE;
+        let compressed_size = checked_l01_compressed_size(
+            L01_SECTION_HEADER_SIZE + L01_LTREE_SUBHEADER_SIZE + 25,
+            0,
+            compressed_offset,
+            compressed_offset + 25,
+        )
+        .unwrap();
+
+        assert_eq!(compressed_size, 25);
+    }
+
+    #[test]
+    fn test_checked_l01_compressed_size_rejects_out_of_bounds_section() {
+        let section_offset = 32;
+        let compressed_offset = section_offset + L01_SECTION_HEADER_SIZE + L01_LTREE_SUBHEADER_SIZE;
+        let err = checked_l01_compressed_size(
+            L01_SECTION_HEADER_SIZE + L01_LTREE_SUBHEADER_SIZE + 25,
+            0,
+            compressed_offset,
+            compressed_offset + 24,
+        )
+        .expect_err("compressed data past segment end should fail");
+
+        assert!(
+            matches!(err, ContainerError::ParseError(message) if message.contains("segment bounds"))
+        );
+    }
+
+    #[test]
+    fn test_checked_l01_compressed_size_uses_next_offset_fallback() {
+        let compressed_offset = 256;
+
+        assert_eq!(
+            checked_l01_compressed_size(0, compressed_offset + 10, compressed_offset, 512).unwrap(),
+            10
+        );
+    }
+
+    #[test]
+    fn test_checked_l01_compressed_size_rejects_underflow() {
+        let err = checked_l01_compressed_size(0, 0, 512, 256)
+            .expect_err("compressed offset past file end should fail");
+
+        assert!(
+            matches!(err, ContainerError::ParseError(message) if message.contains("segment bounds"))
+        );
     }
 
     #[test]

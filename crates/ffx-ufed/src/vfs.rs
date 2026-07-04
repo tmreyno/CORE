@@ -33,7 +33,8 @@
 //! let data = vfs.read("/Files/DCIM/image.jpg", 0, 1024)?;
 //! ```
 
-use std::fs;
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -42,6 +43,9 @@ use dashmap::DashMap;
 use super::detection::detect_format;
 use super::types::UfedFormat;
 use ffx_common::vfs::{join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem};
+
+const MAX_UFED_VFS_SCAN_DEPTH: usize = 128;
+const MAX_UFED_VFS_ENTRIES: usize = 250_000;
 
 // =============================================================================
 // UFED Virtual Filesystem
@@ -156,19 +160,39 @@ impl UfedVfs {
             .as_ref()
             .ok_or_else(|| VfsError::Internal("No root folder".to_string()))?;
 
-        self.scan_dir_recursive(root, "/")?;
+        self.scan_dir_recursive(root, "/", 0)?;
 
         Ok(())
     }
 
     /// Recursively scan a directory
-    fn scan_dir_recursive(&self, dir: &std::path::Path, vfs_path: &str) -> Result<(), VfsError> {
+    fn scan_dir_recursive(
+        &self,
+        dir: &std::path::Path,
+        vfs_path: &str,
+        depth: usize,
+    ) -> Result<(), VfsError> {
+        if depth > MAX_UFED_VFS_SCAN_DEPTH || self.entries.len() >= MAX_UFED_VFS_ENTRIES {
+            return Ok(());
+        }
+
         let read_dir = fs::read_dir(dir).map_err(|e| VfsError::IoError(e.to_string()))?;
 
         let mut children = Vec::new();
 
         for entry in read_dir {
+            if self.entries.len() >= MAX_UFED_VFS_ENTRIES {
+                break;
+            }
+
             let entry = entry.map_err(|e| VfsError::IoError(e.to_string()))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|e| VfsError::IoError(e.to_string()))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+
             let name = entry.file_name().to_string_lossy().to_string();
             let child_path = join_path(vfs_path, &name);
             let real_path = entry.path();
@@ -217,7 +241,7 @@ impl UfedVfs {
             let child_path = join_path(vfs_path, child_name);
             let real_path = dir.join(child_name);
             if real_path.is_dir() {
-                self.scan_dir_recursive(&real_path, &child_path)?;
+                self.scan_dir_recursive(&real_path, &child_path, depth + 1)?;
             }
         }
 
@@ -240,16 +264,27 @@ impl UfedVfs {
             .as_ref()
             .ok_or_else(|| VfsError::Internal("No real path for entry".to_string()))?;
 
-        let data = fs::read(real_path).map_err(|e| VfsError::IoError(e.to_string()))?;
-
-        let start = offset as usize;
-        if start >= data.len() {
+        if offset >= entry.attr.size || size == 0 {
             return Ok(Vec::new());
         }
 
-        let end = (start + size).min(data.len());
-        Ok(data[start..end].to_vec())
+        let read_len = bounded_range_len(entry.attr.size, offset, size);
+        let mut file = File::open(real_path).map_err(|e| VfsError::IoError(e.to_string()))?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|e| VfsError::IoError(e.to_string()))?;
+
+        let mut data = Vec::with_capacity(read_len);
+        file.take(read_len as u64)
+            .read_to_end(&mut data)
+            .map_err(|e| VfsError::IoError(e.to_string()))?;
+        Ok(data)
     }
+}
+
+fn bounded_range_len(total_size: u64, offset: u64, requested_size: usize) -> usize {
+    let remaining = total_size.saturating_sub(offset);
+    let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+    requested_size.min(remaining)
 }
 
 impl VirtualFileSystem for UfedVfs {
@@ -305,15 +340,8 @@ impl VirtualFileSystem for UfedVfs {
         } else {
             // For ZIP-based UFED, extract file data from the ZIP archive
             let entry_path = normalized.trim_start_matches('/');
-            let data = crate::archive_ops::read_archive_file(&self.path, entry_path)
-                .map_err(|e| VfsError::IoError(format!("Failed to read from UFED ZIP: {}", e)))?;
-
-            let start = offset as usize;
-            if start >= data.len() {
-                return Ok(Vec::new());
-            }
-            let end = (start + size).min(data.len());
-            Ok(data[start..end].to_vec())
+            crate::archive_ops::read_archive_file_range(&self.path, entry_path, offset, size)
+                .map_err(|e| VfsError::IoError(format!("Failed to read from UFED ZIP: {}", e)))
         }
     }
 }
@@ -325,10 +353,72 @@ impl VirtualFileSystem for UfedVfs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffx_common::vfs::VirtualFileSystem;
 
     #[test]
     fn test_ufed_vfs_format() {
         // Test that format enum works
         assert_eq!(UfedFormat::Ufd.to_string(), "UFD");
+    }
+
+    #[test]
+    fn bounded_range_len_clamps_to_available_bytes() {
+        assert_eq!(bounded_range_len(10, 4, 8), 6);
+        assert_eq!(bounded_range_len(10, 4, 2), 2);
+        assert_eq!(bounded_range_len(u64::MAX, u64::MAX - 3, usize::MAX), 3);
+    }
+
+    #[test]
+    fn folder_vfs_read_returns_requested_range() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path().join("case.ufd");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("evidence.bin"), b"abcdef").unwrap();
+
+        let vfs = UfedVfs::open(root.to_str().unwrap()).unwrap();
+
+        assert_eq!(vfs.read("/evidence.bin", 2, 3).unwrap(), b"cde");
+        assert_eq!(vfs.read("/evidence.bin", 6, 3).unwrap(), b"");
+        assert_eq!(vfs.read("/evidence.bin", u64::MAX, 3).unwrap(), b"");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folder_vfs_scan_skips_symlinked_directories() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path().join("case.ufd");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("evidence.bin"), b"abcdef").unwrap();
+        std::os::unix::fs::symlink(&root, root.join("loop")).unwrap();
+
+        let vfs = UfedVfs::open(root.to_str().unwrap()).unwrap();
+        let root_entries = vfs.readdir("/").unwrap();
+
+        assert!(root_entries
+            .iter()
+            .any(|entry| entry.name == "evidence.bin"));
+        assert!(!root_entries.iter().any(|entry| entry.name == "loop"));
+    }
+
+    #[test]
+    fn folder_vfs_scan_stops_beyond_depth_limit() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path().join("case.ufd");
+        std::fs::create_dir(&root).unwrap();
+        let mut current = root.clone();
+        let mut vfs_path = String::new();
+
+        for depth in 0..=MAX_UFED_VFS_SCAN_DEPTH + 1 {
+            let name = format!("d{depth}");
+            current = current.join(&name);
+            std::fs::create_dir(&current).unwrap();
+            vfs_path.push('/');
+            vfs_path.push_str(&name);
+        }
+        std::fs::write(current.join("too-deep.txt"), b"hidden").unwrap();
+
+        let vfs = UfedVfs::open(root.to_str().unwrap()).unwrap();
+
+        assert!(vfs.getattr(&format!("{vfs_path}/too-deep.txt")).is_err());
     }
 }

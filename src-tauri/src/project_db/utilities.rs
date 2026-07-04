@@ -159,6 +159,8 @@ impl ProjectDatabase {
             total_processed_databases: count("processed_databases")?,
             total_axiom_cases: count("axiom_case_info")?,
             total_artifact_categories: count("artifact_categories")?,
+            total_artifacts: count("artifacts")?,
+            total_source_analyses: count("source_analyses")?,
             total_exports: count("export_history")?,
             total_annotations: count("annotations")?,
             total_coc_items: count("coc_items")?,

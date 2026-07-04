@@ -12,7 +12,7 @@
 use std::path::Path;
 
 use super::error::ReportResult;
-use super::format_helpers::{has_text, text_blocks, TextBlock};
+use super::format_helpers::{appendix_label, has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// HTML generator for forensic reports
@@ -262,12 +262,12 @@ h3 {{ font-size: 1.4em; }}
 
 .toc a:hover {{
     text-decoration: underline;
-    border: 1px solid var(--border-color);
-    border-left: 4px solid var(--accent-color);
-    padding: 16px 20px;
+}}
+
 .section {{
     margin-bottom: 40px;
     page-break-inside: avoid;
+}}
 
 .info-grid {{
     display: grid;
@@ -297,7 +297,6 @@ h3 {{ font-size: 1.4em; }}
     display: block;
     font-weight: 600;
     color: var(--primary-color);
-}}
 }}
 
 .info-box {{
@@ -878,7 +877,7 @@ tr:hover {{
                 ev.collected_items.len()
             ));
             html.push_str("<table>\n");
-            html.push_str("<tr><th>Item #</th><th>Description</th><th>Device Type</th><th>Make/Model</th><th>Serial #</th><th>Location</th><th>Format</th><th>Condition</th></tr>\n");
+            html.push_str("<tr><th>Item #</th><th>Description</th><th>Device Type</th><th>Make/Model</th><th>Serial #</th><th>Location</th><th>Format</th><th>Condition</th><th>Source</th><th>Hash</th></tr>\n");
 
             for item in &ev.collected_items {
                 let device = if !item.device_type.is_empty() {
@@ -911,7 +910,7 @@ tr:hover {{
                     item.found_location.clone()
                 };
                 html.push_str(&format!(
-                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"hash-value\">{}</td></tr>\n",
                     Self::escape_html(&item.item_number),
                     Self::escape_html(&item.description),
                     device,
@@ -920,6 +919,8 @@ tr:hover {{
                     Self::escape_html(&location),
                     item.image_format.as_deref().map(Self::escape_html).unwrap_or_default(),
                     Self::escape_html(&item.condition),
+                    Self::escape_html(&Self::collection_item_source_summary(item)),
+                    Self::escape_html(&Self::collection_item_hash_summary(item)),
                 ));
             }
 
@@ -1118,7 +1119,7 @@ tr:hover {{
         for (i, appendix) in report.appendices.iter().enumerate() {
             html.push_str(&format!(
                 "<h3>Appendix {}: {}</h3>\n",
-                (b'A' + i as u8) as char,
+                appendix_label(i),
                 Self::escape_html(&appendix.title)
             ));
             html.push_str(&format!(
@@ -1204,6 +1205,30 @@ tr:hover {{
             .replace('>', "&gt;")
             .replace('"', "&quot;")
             .replace('\'', "&#39;")
+    }
+
+    fn collection_item_source_summary(item: &CollectedItem) -> String {
+        item.source_id
+            .as_deref()
+            .or(item.evidence_file_id.as_deref())
+            .unwrap_or("-")
+            .to_string()
+    }
+
+    fn collection_item_hash_summary(item: &CollectedItem) -> String {
+        match (item.hash_algorithm.as_deref(), item.hash_value.as_deref()) {
+            (Some(algorithm), Some(value)) if !algorithm.is_empty() && !value.is_empty() => {
+                match item
+                    .hash_computed_at
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                {
+                    Some(computed_at) => format!("{algorithm}: {value} ({computed_at})"),
+                    None => format!("{algorithm}: {value}"),
+                }
+            }
+            _ => "-".to_string(),
+        }
     }
 
     fn render_rich_text_html(&self, text: &str) -> String {
@@ -1294,6 +1319,83 @@ mod tests {
         assert!(html.contains("CASE-001"));
         assert!(html.contains("Test Examiner"));
         assert!(html.contains("CONFIDENTIAL"));
+    }
+
+    #[test]
+    fn html_appendices_use_stable_labels_after_z() {
+        let appendices = (0..27)
+            .map(|index| Appendix {
+                appendix_id: index.to_string(),
+                title: format!("Appendix {}", index + 1),
+                content_type: AppendixType::Markdown,
+                content: "Content".to_string(),
+            })
+            .collect();
+        let report = ForensicReport {
+            metadata: ReportMetadata {
+                title: "Test Report".to_string(),
+                report_number: "TEST-001".to_string(),
+                version: "1.0".to_string(),
+                classification: Classification::Confidential,
+                generated_at: Utc::now(),
+                generated_by: "Test".to_string(),
+            },
+            case_info: CaseInfo::default(),
+            examiner: ExaminerInfo {
+                name: "Test Examiner".to_string(),
+                ..Default::default()
+            },
+            executive_summary: None,
+            scope: None,
+            methodology: None,
+            evidence_items: vec![],
+            chain_of_custody: vec![],
+            findings: vec![],
+            timeline: vec![],
+            hash_records: vec![],
+            tools: vec![],
+            conclusions: None,
+            appendices,
+            signatures: vec![],
+            notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
+        };
+
+        let html = HtmlGenerator::new().render_html(&report);
+
+        assert!(html.contains("<h3>Appendix Z: Appendix 26</h3>"));
+        assert!(html.contains("<h3>Appendix AA: Appendix 27</h3>"));
+    }
+
+    #[test]
+    fn test_html_styles_close_toc_and_section_blocks() {
+        let report = ForensicReport {
+            metadata: ReportMetadata {
+                title: "Style Test".to_string(),
+                report_number: "STYLE-001".to_string(),
+                version: "1.0".to_string(),
+                classification: Classification::Internal,
+                generated_at: Utc::now(),
+                generated_by: "Test".to_string(),
+            },
+            case_info: CaseInfo {
+                case_number: "CASE-STYLE".to_string(),
+                ..Default::default()
+            },
+            examiner: ExaminerInfo {
+                name: "Style Examiner".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let html = HtmlGenerator::new().render_html(&report);
+
+        assert!(html.contains(".toc a:hover {\n    text-decoration: underline;\n}\n\n.section {"));
+        assert!(html.contains(".section {\n    margin-bottom: 40px;\n    page-break-inside: avoid;\n}\n\n.info-grid {"));
+        assert!(!html.contains("padding: 16px 20px;\n.section {"));
     }
 
     #[test]

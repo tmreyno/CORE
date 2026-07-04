@@ -37,7 +37,7 @@ impl FileChunk {
     /// Create a new file chunk
     #[inline]
     pub fn new(bytes: Vec<u8>, offset: u64, total_size: u64) -> Self {
-        let chunk_end = offset + bytes.len() as u64;
+        let chunk_end = offset.saturating_add(bytes.len() as u64);
         Self {
             bytes,
             offset,
@@ -370,6 +370,13 @@ mod tests {
         let chunk = FileChunk::new(vec![0; 10], 0, 10);
         assert!(!chunk.has_more);
         assert!(!chunk.has_prev);
+    }
+
+    #[test]
+    fn file_chunk_new_saturates_end_offset() {
+        let chunk = FileChunk::new(vec![0; 10], u64::MAX - 4, u64::MAX);
+        assert!(!chunk.has_more);
+        assert!(chunk.has_prev);
     }
 
     #[test]

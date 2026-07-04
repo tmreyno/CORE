@@ -664,7 +664,7 @@ where
                     let mut combined = Vec::new();
                     for chunk in &batch_chunks {
                         if total_data_bytes > 0 {
-                            let remaining = (total_data_bytes - bytes_hashed) as usize;
+                            let remaining = total_data_bytes.saturating_sub(bytes_hashed) as usize;
                             if remaining == 0 {
                                 break;
                             }
@@ -672,6 +672,7 @@ where
                             combined.extend_from_slice(&chunk[..bytes_to_use]);
                             bytes_hashed += bytes_to_use as u64;
                         } else {
+                            bytes_hashed += chunk.len() as u64;
                             combined.extend_from_slice(chunk);
                         }
                     }
@@ -683,7 +684,7 @@ where
                     for chunk_data in &batch_chunks {
                         // Truncate at media boundary
                         let data_to_hash: &[u8] = if total_data_bytes > 0 {
-                            let remaining = (total_data_bytes - bytes_hashed) as usize;
+                            let remaining = total_data_bytes.saturating_sub(bytes_hashed) as usize;
                             if remaining == 0 {
                                 break;
                             }
@@ -691,6 +692,7 @@ where
                             bytes_hashed += bytes_to_use as u64;
                             &chunk_data[..bytes_to_use]
                         } else {
+                            bytes_hashed += chunk_data.len() as u64;
                             chunk_data
                         };
 
@@ -721,11 +723,12 @@ where
         }
     }
 
-    progress_callback(chunk_count as u64, chunk_count as u64);
-
     io_handle
         .join()
         .map_err(|_| ContainerError::ParseError("I/O thread panicked".into()))?;
+
+    ensure_ewf_media_bytes_hashed(bytes_hashed, total_data_bytes)?;
+    progress_callback(chunk_count as u64, chunk_count as u64);
 
     // Return hash result
     if let Some(hasher) = md5_hasher {
@@ -768,7 +771,9 @@ where
 
     let handle = EwfHandle::open(path)?;
     let chunk_count = handle.get_chunk_count();
-    debug!(chunk_count, "EWF chunk count");
+    let volume = handle.get_volume_info();
+    let total_data_bytes = volume.sector_count * volume.bytes_per_sector as u64;
+    debug!(chunk_count, total_data_bytes, "EWF chunk count");
 
     // Create hasher based on algorithm
     let algorithm_lower = algorithm.to_lowercase();
@@ -910,6 +915,7 @@ where
     } else {
         None
     };
+    let mut bytes_hashed = 0u64;
 
     while let Ok(batch_result) = rx.recv() {
         let decompressed = decompressed_chunks.load(std::sync::atomic::Ordering::Relaxed);
@@ -919,25 +925,37 @@ where
             Ok((batch_start, batch_chunks)) => {
                 for (relative_idx, chunk_data) in batch_chunks.iter().enumerate() {
                     let _chunk_idx = batch_start + relative_idx;
+                    let data_to_hash: &[u8] = if total_data_bytes > 0 {
+                        let remaining = total_data_bytes.saturating_sub(bytes_hashed) as usize;
+                        if remaining == 0 {
+                            break;
+                        }
+                        let bytes_to_use = chunk_data.len().min(remaining);
+                        bytes_hashed += bytes_to_use as u64;
+                        &chunk_data[..bytes_to_use]
+                    } else {
+                        bytes_hashed += chunk_data.len() as u64;
+                        chunk_data
+                    };
 
                     if let Some(ref mut hasher) = md5_hasher {
-                        Digest::update(hasher, chunk_data);
+                        Digest::update(hasher, data_to_hash);
                     } else if let Some(ref mut hasher) = sha1_hasher {
-                        hasher.update(chunk_data);
+                        hasher.update(data_to_hash);
                     } else if let Some(ref mut hasher) = sha256_hasher {
-                        hasher.update(chunk_data);
+                        hasher.update(data_to_hash);
                     } else if let Some(ref mut hasher) = sha512_hasher {
-                        hasher.update(chunk_data);
+                        hasher.update(data_to_hash);
                     } else if let Some(ref mut hasher) = blake3_hasher {
-                        hasher.update_rayon(chunk_data);
+                        hasher.update_rayon(data_to_hash);
                     } else if let Some(ref mut hasher) = blake2_hasher {
-                        hasher.update(chunk_data);
+                        hasher.update(data_to_hash);
                     } else if let Some(ref mut hasher) = xxh3_hasher {
-                        hasher.update(chunk_data);
+                        hasher.update(data_to_hash);
                     } else if let Some(ref mut hasher) = xxh64_hasher {
-                        hasher.update(chunk_data);
+                        hasher.update(data_to_hash);
                     } else if let Some(ref mut hasher) = crc32_hasher {
-                        hasher.update(chunk_data);
+                        hasher.update(data_to_hash);
                     }
                 }
             }
@@ -948,11 +966,12 @@ where
         }
     }
 
-    progress_callback(chunk_count as u64, chunk_count as u64);
-
     decompression_handle
         .join()
         .map_err(|_| ContainerError::ParseError("Decompression thread panicked".into()))?;
+
+    ensure_ewf_media_bytes_hashed(bytes_hashed, total_data_bytes)?;
+    progress_callback(chunk_count as u64, chunk_count as u64);
 
     // Return hash result
     if let Some(hasher) = md5_hasher {
@@ -976,6 +995,18 @@ where
     } else {
         Err(ContainerError::ParseError("Unknown hash algorithm".into()))
     }
+}
+
+fn ensure_ewf_media_bytes_hashed(
+    bytes_hashed: u64,
+    expected_size: u64,
+) -> Result<(), ContainerError> {
+    if bytes_hashed != expected_size {
+        return Err(ContainerError::VerificationError(format!(
+            "EWF verification hashed {bytes_hashed} decoded media bytes, expected {expected_size}"
+        )));
+    }
+    Ok(())
 }
 
 // =============================================================================
@@ -1021,6 +1052,31 @@ mod tests {
     fn test_verify_chunks_nonexistent() {
         let result = verify_chunks("/nonexistent/path/test.E01", "md5");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ensure_ewf_media_bytes_hashed_accepts_exact_count() {
+        ensure_ewf_media_bytes_hashed(4096, 4096).unwrap();
+    }
+
+    #[test]
+    fn test_ensure_ewf_media_bytes_hashed_rejects_short_count() {
+        let err = ensure_ewf_media_bytes_hashed(2048, 4096).unwrap_err();
+        assert!(
+            err.to_string().contains("hashed 2048 decoded media bytes"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_ensure_ewf_media_bytes_hashed_rejects_over_count() {
+        let err = ensure_ewf_media_bytes_hashed(8192, 4096).unwrap_err();
+        assert!(
+            err.to_string().contains("expected 4096"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]

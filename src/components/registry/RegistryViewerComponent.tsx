@@ -20,6 +20,7 @@ import type { RegistryViewerProps } from "./types";
 export function RegistryViewer(props: RegistryViewerProps) {
   const reg = useRegistryData({
     path: () => props.path,
+    source: () => props.source,
     onMetadata: props.onMetadata,
   });
 

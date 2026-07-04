@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { EmailMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 export interface EmailAddress {
   name: string | null;
@@ -42,6 +43,8 @@ export interface EmailInfo {
 export interface EmailViewerProps {
   /** Path to the email file (.eml or .mbox) */
   path: string;
+  /** Optional evidence source for container or nested email entries */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

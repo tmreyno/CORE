@@ -19,7 +19,7 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use ffx_check_lib::common::health::{get_system_health, HealthStatus};
+//! use ffx_common::health::{get_system_health, HealthStatus};
 //!
 //! let health = get_system_health();
 //! if health.status != HealthStatus::Healthy {

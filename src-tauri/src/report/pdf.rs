@@ -15,7 +15,7 @@ use genpdf::{
 use std::path::Path;
 
 use super::error::{ReportError, ReportResult};
-use super::format_helpers::{has_text, text_blocks, TextBlock};
+use super::format_helpers::{appendix_label, has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// PDF generator for forensic reports
@@ -697,7 +697,7 @@ impl PdfGenerator {
             doc.push(
                 Paragraph::new(format!(
                     "Appendix {}: {}",
-                    (b'A' + index as u8) as char,
+                    appendix_label(index),
                     appendix.title
                 ))
                 .styled(style::Style::new().bold().with_font_size(11)),

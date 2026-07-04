@@ -513,6 +513,10 @@ pub fn is_valid_hash(hash: &str, algorithm: HashAlgorithm) -> bool {
     hash.len() == expected_len && hash.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+fn is_supported_hash_length(len: usize) -> bool {
+    matches!(len, 8 | 16 | 32 | 40 | 64 | 128)
+}
+
 /// Guess the hash algorithm from a hash string based on length
 pub fn guess_algorithm_from_hash(hash: &str) -> Option<HashAlgorithm> {
     match hash.len() {
@@ -561,6 +565,14 @@ pub fn compare_hashes(computed: &str, expected: &str) -> HashMatchResult {
     let computed = computed.trim();
     let expected = expected.trim();
 
+    if computed.is_empty()
+        || expected.is_empty()
+        || !is_supported_hash_length(computed.len())
+        || !is_supported_hash_length(expected.len())
+    {
+        return HashMatchResult::Invalid;
+    }
+
     // Check for invalid characters
     if !computed.chars().all(|c| c.is_ascii_hexdigit())
         || !expected.chars().all(|c| c.is_ascii_hexdigit())
@@ -608,7 +620,13 @@ pub struct HashVerificationResult {
 impl HashVerificationResult {
     /// Create a new verification result
     pub fn new(algorithm: HashAlgorithm, computed: String, expected: String) -> Self {
-        let match_result = compare_hashes(&computed, &expected);
+        let match_result = if !is_valid_hash(computed.trim(), algorithm)
+            || !is_valid_hash(expected.trim(), algorithm)
+        {
+            HashMatchResult::Invalid
+        } else {
+            compare_hashes(&computed, &expected)
+        };
         Self {
             algorithm: algorithm.name().to_string(),
             computed,
@@ -760,6 +778,24 @@ mod tests {
             "5eb63bbbe01eeed093cb22bb8f5acdc3",
             HashAlgorithm::Sha1
         ));
+    }
+
+    #[test]
+    fn test_compare_hashes_rejects_empty_and_fragment_values() {
+        assert_eq!(compare_hashes("", ""), HashMatchResult::Invalid);
+        assert_eq!(compare_hashes("abc123", "ABC123"), HashMatchResult::Invalid);
+    }
+
+    #[test]
+    fn test_verification_rejects_expected_hash_for_wrong_algorithm() {
+        let result = verify_hash(
+            b"hello world",
+            "5eb63bbbe01eeed093cb22bb8f5acdc3",
+            HashAlgorithm::Sha1,
+        );
+
+        assert!(!result.matches);
+        assert_eq!(result.match_result, HashMatchResult::Invalid);
     }
 
     #[test]

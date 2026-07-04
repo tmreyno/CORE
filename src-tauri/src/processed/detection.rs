@@ -14,6 +14,12 @@ use tracing::debug;
 
 use super::types::*;
 
+const PROCESSED_SCAN_MAX_DEPTH: usize = 128;
+const PROCESSED_SCAN_MAX_RESULTS: usize = 10_000;
+const PROCESSED_SIZE_MAX_FILES: usize = 250_000;
+const PROCESSED_DATABASE_FILES_MAX: usize = 10_000;
+const PROCESSED_TEXT_FIELD_MAX_CHARS: usize = 4096;
+
 /// Detect if a path is a processed database and what type
 pub fn detect_processed_db(path: &Path) -> Option<ProcessedDbType> {
     if !path.exists() {
@@ -305,9 +311,31 @@ fn is_ftk(path: &Path) -> bool {
 /// Scan a directory for processed databases
 pub fn scan_for_processed_dbs(root: &Path, recursive: bool) -> Vec<ProcessedDbInfo> {
     let mut results = Vec::new();
+    scan_for_processed_dbs_internal(root, recursive, 0, &mut results);
+    results
+}
+
+fn scan_for_processed_dbs_internal(
+    root: &Path,
+    recursive: bool,
+    depth: usize,
+    results: &mut Vec<ProcessedDbInfo>,
+) {
+    if results.len() >= PROCESSED_SCAN_MAX_RESULTS {
+        return;
+    }
+
+    if depth > PROCESSED_SCAN_MAX_DEPTH {
+        tracing::warn!(
+            "Skipping processed DB scan directory {}: maximum depth {} exceeded",
+            root.display(),
+            PROCESSED_SCAN_MAX_DEPTH
+        );
+        return;
+    }
 
     if !root.exists() || !root.is_dir() {
-        return results;
+        return;
     }
 
     debug!("Scanning for processed databases: {}", root.display());
@@ -316,7 +344,7 @@ pub fn scan_for_processed_dbs(root: &Path, recursive: bool) -> Vec<ProcessedDbIn
     if let Some(db_type) = detect_processed_db(root) {
         if let Some(info) = get_processed_db_info(root, db_type) {
             results.push(info);
-            return results; // Don't recurse into a processed DB
+            return; // Don't recurse into a processed DB
         }
     }
 
@@ -328,15 +356,23 @@ pub fn scan_for_processed_dbs(root: &Path, recursive: bool) -> Vec<ProcessedDbIn
             if let Some(db_type) = detect_processed_db(&path) {
                 if let Some(info) = get_processed_db_info(&path, db_type) {
                     results.push(info);
+                    if results.len() >= PROCESSED_SCAN_MAX_RESULTS {
+                        tracing::warn!(
+                            "Stopping processed DB scan at {} results",
+                            PROCESSED_SCAN_MAX_RESULTS
+                        );
+                        break;
+                    }
                 }
             } else if recursive && path.is_dir() {
                 // Recurse into subdirectories
-                results.extend(scan_for_processed_dbs(&path, true));
+                scan_for_processed_dbs_internal(&path, true, depth + 1, results);
+                if results.len() >= PROCESSED_SCAN_MAX_RESULTS {
+                    break;
+                }
             }
         }
     }
-
-    results
 }
 
 /// Get detailed info about a processed database
@@ -356,7 +392,7 @@ pub fn get_processed_db_info(path: &Path, db_type: ProcessedDbType) -> Option<Pr
     // Try to extract case info from the name
     let case_number = extract_case_number(&name);
 
-    Some(ProcessedDbInfo {
+    Some(bounded_processed_db_info(ProcessedDbInfo {
         db_type,
         path: path.to_path_buf(),
         name,
@@ -367,23 +403,54 @@ pub fn get_processed_db_info(path: &Path, db_type: ProcessedDbType) -> Option<Pr
         artifact_count: None,
         database_files,
         notes: None,
-    })
+    }))
 }
 
 /// Calculate total size of a directory
 fn calculate_dir_size(path: &Path) -> u64 {
+    let mut files_seen = 0usize;
+    calculate_dir_size_bounded(path, 0, &mut files_seen)
+}
+
+fn calculate_dir_size_bounded(path: &Path, depth: usize, files_seen: &mut usize) -> u64 {
+    if *files_seen >= PROCESSED_SIZE_MAX_FILES {
+        return 0;
+    }
+
+    if depth > PROCESSED_SCAN_MAX_DEPTH {
+        tracing::warn!(
+            "Skipping processed DB size directory {}: maximum depth {} exceeded",
+            path.display(),
+            PROCESSED_SCAN_MAX_DEPTH
+        );
+        return 0;
+    }
+
     if path.is_file() {
+        *files_seen += 1;
         return path.metadata().map(|m| m.len()).unwrap_or(0);
     }
 
     let mut total = 0u64;
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.filter_map(|e| e.ok()) {
+            if *files_seen >= PROCESSED_SIZE_MAX_FILES {
+                tracing::warn!(
+                    "Stopping processed DB size calculation at {} files",
+                    PROCESSED_SIZE_MAX_FILES
+                );
+                break;
+            }
             let entry_path = entry.path();
             if entry_path.is_file() {
-                total += entry_path.metadata().map(|m| m.len()).unwrap_or(0);
+                *files_seen += 1;
+                total = total.saturating_add(entry_path.metadata().map(|m| m.len()).unwrap_or(0));
             } else if entry_path.is_dir() {
-                total += calculate_dir_size(&entry_path);
+                total = total.saturating_add(calculate_dir_size_bounded(
+                    &entry_path,
+                    depth + 1,
+                    files_seen,
+                ));
             }
         }
     }
@@ -404,7 +471,7 @@ fn find_database_files(path: &Path, db_type: ProcessedDbType) -> Vec<DatabaseFil
                 contents: classify_database_contents(name, db_type),
             });
         }
-        return files;
+        return bounded_database_files(files);
     }
 
     // Scan for database files
@@ -420,6 +487,13 @@ fn find_database_files(path: &Path, db_type: ProcessedDbType) -> Vec<DatabaseFil
 
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.filter_map(|e| e.ok()) {
+            if files.len() >= PROCESSED_DATABASE_FILES_MAX {
+                tracing::warn!(
+                    "Stopping processed DB file listing at {} files",
+                    PROCESSED_DATABASE_FILES_MAX
+                );
+                break;
+            }
             let entry_path = entry.path();
             if entry_path.is_file() {
                 if let Some(ext) = entry_path.extension().and_then(|e| e.to_str()) {
@@ -438,7 +512,36 @@ fn find_database_files(path: &Path, db_type: ProcessedDbType) -> Vec<DatabaseFil
         }
     }
 
+    bounded_database_files(files)
+}
+
+fn bounded_processed_db_info(mut info: ProcessedDbInfo) -> ProcessedDbInfo {
+    info.name = truncate_processed_text(info.name);
+    info.case_number = info.case_number.map(truncate_processed_text);
+    info.examiner = info.examiner.map(truncate_processed_text);
+    info.created_date = info.created_date.map(truncate_processed_text);
+    info.notes = info.notes.map(truncate_processed_text);
+    info.database_files = bounded_database_files(info.database_files);
+    info
+}
+
+fn bounded_database_files(mut files: Vec<DatabaseFile>) -> Vec<DatabaseFile> {
+    files.truncate(PROCESSED_DATABASE_FILES_MAX);
     files
+        .into_iter()
+        .map(|mut file| {
+            file.name = truncate_processed_text(file.name);
+            file
+        })
+        .collect()
+}
+
+fn truncate_processed_text(value: String) -> String {
+    if value.chars().count() <= PROCESSED_TEXT_FIELD_MAX_CHARS {
+        value
+    } else {
+        value.chars().take(PROCESSED_TEXT_FIELD_MAX_CHARS).collect()
+    }
 }
 
 /// Classify what a database file contains based on its name
@@ -694,6 +797,76 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let results = scan_for_processed_dbs(temp_dir.path(), false);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn scan_for_processed_dbs_skips_beyond_depth_limit() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut current = temp_dir.path().to_path_buf();
+        for index in 0..=PROCESSED_SCAN_MAX_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            fs::create_dir(&current).unwrap();
+        }
+        fs::write(current.join("case.aut"), b"test").unwrap();
+
+        let results = scan_for_processed_dbs(temp_dir.path(), true);
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn scan_for_processed_dbs_internal_respects_existing_result_cap() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("case.aut"), b"test").unwrap();
+        let mut results = (0..PROCESSED_SCAN_MAX_RESULTS)
+            .map(|index| ProcessedDbInfo {
+                db_type: ProcessedDbType::Autopsy,
+                path: std::path::PathBuf::from(format!("/case/{index}")),
+                name: format!("case-{index}"),
+                ..Default::default()
+            })
+            .collect();
+
+        scan_for_processed_dbs_internal(temp_dir.path(), false, 0, &mut results);
+
+        assert_eq!(results.len(), PROCESSED_SCAN_MAX_RESULTS);
+    }
+
+    #[test]
+    fn bounded_processed_db_info_caps_database_files_and_text() {
+        let long_text = "x".repeat(PROCESSED_TEXT_FIELD_MAX_CHARS + 1);
+        let info = ProcessedDbInfo {
+            db_type: ProcessedDbType::Autopsy,
+            path: std::path::PathBuf::from("/case"),
+            name: long_text.clone(),
+            case_number: Some(long_text.clone()),
+            examiner: Some(long_text.clone()),
+            created_date: Some(long_text.clone()),
+            total_size: 0,
+            artifact_count: None,
+            database_files: (0..PROCESSED_DATABASE_FILES_MAX + 1)
+                .map(|index| DatabaseFile {
+                    path: std::path::PathBuf::from(format!("/case/db-{index}.db")),
+                    name: long_text.clone(),
+                    size: 1,
+                    contents: DatabaseContents::Unknown,
+                })
+                .collect(),
+            notes: Some(long_text.clone()),
+        };
+
+        let bounded = bounded_processed_db_info(info);
+
+        assert_eq!(bounded.database_files.len(), PROCESSED_DATABASE_FILES_MAX);
+        assert_eq!(bounded.name.chars().count(), PROCESSED_TEXT_FIELD_MAX_CHARS);
+        assert_eq!(
+            bounded.case_number.as_ref().unwrap().chars().count(),
+            PROCESSED_TEXT_FIELD_MAX_CHARS
+        );
+        assert!(bounded
+            .database_files
+            .iter()
+            .all(|file| file.name.chars().count() <= PROCESSED_TEXT_FIELD_MAX_CHARS));
     }
 
     #[test]

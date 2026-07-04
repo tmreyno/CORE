@@ -16,8 +16,11 @@
 //! | Module | Description |
 //! |--------|-------------|
 //! | [`hash`] | Cryptographic hashing (MD5, SHA-*, BLAKE3, XXH3) |
+//! | [`artifacts`] | Normalized artifact extraction from evidence sources |
 //! | [`binary`] | Little-endian binary reading utilities |
 //! | [`segments`] | Multi-segment file discovery (.E01/.E02, .ad1/.ad2) |
+//! | [`evidence_source`] | Read-only byte sources for evidence data |
+//! | [`source_analysis`] | Source-aware byte statistics and signature analysis |
 //! | [`io_pool`] | File handle pooling for segment management |
 //! | [`hex`] | Hex dump formatting for viewers |
 //! | [`magic`] | File type detection by magic bytes |
@@ -34,10 +37,12 @@
 //! - `BUFFER_SIZE`: 16MB buffer optimized for modern NVMe SSDs
 //! - `MMAP_THRESHOLD`: 64MB threshold for memory-mapped I/O
 
+pub mod artifacts;
 pub mod audit;
 pub mod binary;
 pub mod container_detect;
 pub mod datetime;
+pub mod evidence_source;
 pub mod filesystem;
 pub mod hash;
 pub mod hash_cache;
@@ -53,9 +58,11 @@ pub mod progress;
 pub mod retry;
 pub mod segment_hash;
 pub mod segments;
+pub mod source_analysis;
 pub mod vfs;
 
 // Re-exports for convenience
+pub use artifacts::{extract_normalized_artifact, ArtifactExtractionOptions, NormalizedArtifact};
 pub use audit::{
     log_container_opened, log_evidence_access, log_hash_verification, log_report_generation,
     log_security_event,
@@ -68,8 +75,16 @@ pub use container_detect::{
 pub use datetime::{
     format_display, format_duration, now_local_display, now_rfc3339, parse_rfc3339,
 };
+pub use evidence_source::{
+    bounded_read_size, read_all_with_limit, read_range_fully, EvidenceByteSource,
+    EvidenceSourceError, EvidenceSourceReader, EvidenceSourceRef, EvidenceSourceResult,
+    LocalFileByteSource, VfsEntryByteSource,
+};
 pub use hash::{compare_hashes, verify_hash, HashMatchResult, HashVerificationResult};
-pub use hash::{compute_hash, hash_file_with_progress, HashAlgorithm, StreamingHasher};
+pub use hash::{
+    compute_hash, hash_byte_source, hash_byte_source_with_progress, hash_file_with_progress,
+    HashAlgorithm, StreamingHasher,
+};
 pub use hash_cache::{
     cache_hash, get_cached_hash, get_or_compute_hash, HashCache, HashCacheEntry, HashCacheKey,
     HashCacheStats, GLOBAL_HASH_CACHE,
@@ -94,6 +109,10 @@ pub use segments::{
     build_ad1_segment_path, discover_ad1_segments, discover_e01_segments,
     discover_numbered_segments, extract_ad1_segment_number, get_segment_basename, is_ad1_segment,
     is_first_ad1_segment, is_numbered_segment, is_segmented_file,
+};
+pub use source_analysis::{
+    analyze_byte_source, EntropyWindow, SourceAnalysis, SourceAnalysisOptions, SourceIndicator,
+    SourceSignature,
 };
 pub use vfs::{
     join_path, normalize_path, DirEntry, FileAttr, MountHandle, VfsError, VirtualFileSystem,

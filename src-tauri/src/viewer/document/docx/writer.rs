@@ -15,6 +15,7 @@ use std::path::Path;
 use docx_rs::{AlignmentType, Docx, Paragraph, Run, Shading, Table, WidthType};
 
 use super::DocxDocument;
+use crate::report::format_helpers::appendix_label;
 use crate::report::ForensicReport;
 use crate::viewer::document::error::{DocumentError, DocumentResult};
 
@@ -415,7 +416,7 @@ impl DocxDocument {
                         Run::new()
                             .add_text(format!(
                                 "Appendix {}: {}",
-                                (b'A' + i as u8) as char,
+                                appendix_label(i),
                                 appendix.title
                             ))
                             .bold()

@@ -9,6 +9,21 @@ use std::path::Path;
 
 use super::error::{DocumentError, DocumentResult};
 
+pub(crate) const MAX_DATABASE_PREVIEW_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_DATABASE_PAGE_OFFSET: usize = i64::MAX as usize;
+const MAX_SQL_TEXT_DISPLAY_CHARS: usize = 256;
+
+pub(crate) fn ensure_database_preview_size_allowed(path: &Path) -> DocumentResult<()> {
+    let size = std::fs::metadata(path).map_err(DocumentError::Io)?.len();
+    if size > MAX_DATABASE_PREVIEW_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "Database file too large for preview: {} bytes > {} bytes",
+            size, MAX_DATABASE_PREVIEW_BYTES
+        )));
+    }
+    Ok(())
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -83,6 +98,7 @@ pub struct TableRows {
 /// WAL/journal files which may not exist on extracted forensic evidence.
 fn open_readonly(path: impl AsRef<Path>) -> DocumentResult<Connection> {
     let path = path.as_ref();
+    ensure_database_preview_size_allowed(path)?;
 
     // Try immutable mode first (skips WAL/journal, ideal for forensic files)
     let uri = format!("file:{}?immutable=1", path.to_string_lossy());
@@ -109,15 +125,7 @@ fn format_sql_value(val: &SqlValue) -> String {
         SqlValue::Null => "(NULL)".to_string(),
         SqlValue::Integer(i) => i.to_string(),
         SqlValue::Real(f) => format!("{}", f),
-        SqlValue::Text(s) => {
-            if s.len() > 256 {
-                // Use char_indices to find a safe UTF-8 boundary near 256 chars
-                let truncated: String = s.chars().take(256).collect();
-                format!("{}... ({} chars)", truncated, s.chars().count())
-            } else {
-                s.clone()
-            }
-        }
+        SqlValue::Text(s) => format_sql_text_value(s, MAX_SQL_TEXT_DISPLAY_CHARS),
         SqlValue::Blob(b) => {
             let hex: String = b
                 .iter()
@@ -132,6 +140,43 @@ fn format_sql_value(val: &SqlValue) -> String {
             }
         }
     }
+}
+
+fn format_sql_text_value(value: &str, max_chars: usize) -> String {
+    let char_count = value.chars().count();
+    if char_count > max_chars {
+        let truncated: String = value.chars().take(max_chars).collect();
+        format!("{}... ({} chars)", truncated, char_count)
+    } else {
+        value.to_string()
+    }
+}
+
+fn checked_page_offset(page: usize, page_size: usize) -> DocumentResult<usize> {
+    let offset = page.checked_mul(page_size).ok_or_else(|| {
+        DocumentError::Parse(format!(
+            "Database page offset overflow: page {} with page size {}",
+            page, page_size
+        ))
+    })?;
+
+    if offset > MAX_DATABASE_PAGE_OFFSET {
+        return Err(DocumentError::Parse(format!(
+            "Database page offset too large: {} bytes > {}",
+            offset, MAX_DATABASE_PAGE_OFFSET
+        )));
+    }
+
+    Ok(offset)
+}
+
+fn database_has_more(offset: usize, page_size: usize, total_count: i64) -> bool {
+    let Ok(total_count) = usize::try_from(total_count.max(0)) else {
+        return true;
+    };
+    offset
+        .checked_add(page_size)
+        .is_some_and(|next_offset| next_offset < total_count)
 }
 
 /// Sanitize a table name for use in SQL queries (prevent injection)
@@ -320,7 +365,7 @@ pub fn query_table_rows(
 
     // Clamp page_size
     let page_size = page_size.clamp(1, 500);
-    let offset = page * page_size;
+    let offset = checked_page_offset(page, page_size)?;
 
     // Get total count
     let total_count: i64 = conn
@@ -368,7 +413,7 @@ pub fn query_table_rows(
         total_count,
         page,
         page_size,
-        has_more: (offset + page_size) < total_count as usize,
+        has_more: database_has_more(offset, page_size, total_count),
     })
 }
 
@@ -379,6 +424,7 @@ pub fn query_table_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     /// Create a temp SQLite DB for testing
     fn create_test_db() -> (tempfile::NamedTempFile, String) {
@@ -476,6 +522,29 @@ mod tests {
     }
 
     #[test]
+    fn query_table_rows_rejects_page_offset_overflow() {
+        let (_tmp, path) = create_test_db();
+
+        let err = query_table_rows(&path, "users", usize::MAX, 500).unwrap_err();
+
+        assert!(err.to_string().contains("Database page offset overflow"));
+    }
+
+    #[test]
+    fn checked_page_offset_rejects_sqlite_offset_overflow() {
+        let err = checked_page_offset((i64::MAX as usize / 500) + 1, 500).unwrap_err();
+
+        assert!(err.to_string().contains("Database page offset too large"));
+    }
+
+    #[test]
+    fn database_has_more_handles_extreme_counts_safely() {
+        assert!(database_has_more(0, 500, i64::MAX));
+        assert!(!database_has_more(usize::MAX - 1, 500, i64::MAX));
+        assert!(!database_has_more(0, 500, -1));
+    }
+
+    #[test]
     fn test_format_sql_value_types() {
         assert_eq!(format_sql_value(&SqlValue::Null), "(NULL)");
         assert_eq!(format_sql_value(&SqlValue::Integer(42)), "42");
@@ -497,6 +566,31 @@ mod tests {
         let formatted = format_sql_value(&SqlValue::Text(long_text));
         assert!(formatted.contains("..."));
         assert!(formatted.contains("500 chars"));
+    }
+
+    #[test]
+    fn format_sql_text_value_does_not_truncate_multibyte_text_below_char_limit() {
+        let value = "é".repeat(MAX_SQL_TEXT_DISPLAY_CHARS);
+
+        let formatted = format_sql_value(&SqlValue::Text(value.clone()));
+
+        assert_eq!(formatted, value);
+    }
+
+    #[test]
+    fn format_sql_text_value_truncates_multibyte_text_on_char_boundary() {
+        let value = "é".repeat(MAX_SQL_TEXT_DISPLAY_CHARS + 1);
+
+        let formatted = format_sql_value(&SqlValue::Text(value));
+
+        assert!(formatted.ends_with("... (257 chars)"));
+        assert_eq!(
+            formatted
+                .trim_end_matches("... (257 chars)")
+                .chars()
+                .count(),
+            MAX_SQL_TEXT_DISPLAY_CHARS
+        );
     }
 
     #[test]
@@ -574,5 +668,18 @@ mod tests {
         assert_eq!(rows.rows.len(), 2);
         assert_eq!(rows.rows[0][1], "(NULL)");
         assert_eq!(rows.rows[1][0], "(NULL)");
+    }
+
+    #[test]
+    fn database_preview_rejects_sparse_oversized_file_before_open() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"SQLite format 3\0").unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_DATABASE_PREVIEW_BYTES + 1)
+            .unwrap();
+
+        let err = get_database_info(tmp.path()).unwrap_err();
+
+        assert!(err.to_string().contains("Database file too large"));
     }
 }

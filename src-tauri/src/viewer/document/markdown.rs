@@ -10,10 +10,23 @@
 
 use std::path::Path;
 
-use super::error::DocumentResult;
+use super::error::{DocumentError, DocumentResult};
 use super::types::*;
 use super::DocumentFormat;
 use crate::report::ForensicReport;
+
+const MAX_MARKDOWN_SOURCE_BYTES: u64 = 50 * 1024 * 1024;
+
+fn ensure_markdown_size_allowed(size: u64) -> DocumentResult<()> {
+    if size > MAX_MARKDOWN_SOURCE_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "Markdown file too large for extraction ({:.1} MiB, max {} MiB)",
+            size as f64 / (1024.0 * 1024.0),
+            MAX_MARKDOWN_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
 
 /// Markdown document handler
 pub struct MarkdownDocument {
@@ -34,12 +47,14 @@ impl MarkdownDocument {
 
     /// Read Markdown from file path
     pub fn read(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
+        ensure_markdown_size_allowed(std::fs::metadata(path.as_ref())?.len())?;
         let data = std::fs::read(path)?;
         self.read_bytes(&data)
     }
 
     /// Read Markdown from bytes
     pub fn read_bytes(&self, data: &[u8]) -> DocumentResult<DocumentContent> {
+        ensure_markdown_size_allowed(data.len() as u64)?;
         let text = String::from_utf8_lossy(data).to_string();
         self.parse_markdown(&text)
     }
@@ -581,9 +596,32 @@ impl Default for MarkdownDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     fn doc() -> MarkdownDocument {
         MarkdownDocument::new()
+    }
+
+    #[test]
+    fn read_rejects_sparse_oversized_markdown_before_full_read() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"# Heading\n\nBody").unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_MARKDOWN_SOURCE_BYTES + 1)
+            .unwrap();
+
+        let err = doc().read(tmp.path()).unwrap_err();
+
+        assert!(err.to_string().contains("too large for extraction"));
+    }
+
+    #[test]
+    fn read_bytes_rejects_oversized_markdown() {
+        let data = vec![b'a'; MAX_MARKDOWN_SOURCE_BYTES as usize + 1];
+
+        let err = doc().read_bytes(&data).unwrap_err();
+
+        assert!(err.to_string().contains("too large for extraction"));
     }
 
     // -------------------------------------------------------------------------

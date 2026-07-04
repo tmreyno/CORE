@@ -19,6 +19,7 @@ import { dbSync } from "./useProjectDbSync";
 import { generateId } from "../../types/project";
 import type { FFXProject } from "../../types/project";
 import type { ProjectDbStats } from "../../types/projectDb";
+import { buildLocalFileHashSourceFields } from "../../utils/hashSourceIdentity";
 
 const log = logger.scope("DbRead");
 
@@ -146,6 +147,7 @@ export async function seedDatabaseFromProject(project: FFXProject): Promise<void
         dbSync.insertHash({
           id: hashRecordId,
           fileId: filePath,
+          ...buildLocalFileHashSourceFields(filePath),
           algorithm: hash.algorithm,
           hashValue: hash.hash,
           computedAt: hash.computed_at ?? project.evidence_cache?.cached_at ?? new Date().toISOString(),

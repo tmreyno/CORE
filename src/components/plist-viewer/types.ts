@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { PlistMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 export interface FlatPlistEntry {
   key_path: string;
@@ -23,6 +24,8 @@ export interface PlistInfo {
 export interface PlistViewerProps {
   /** Path to the plist file */
   path: string;
+  /** Optional evidence source for container or nested plist entries */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

@@ -101,10 +101,19 @@ impl BevyWriter {
         let (compressed, _is_stored) =
             compress_chunk(raw_chunk, self.compression, self.chunk_size)?;
 
+        let compressed_len =
+            u32::try_from(compressed.len()).map_err(|_| Aff4Error::InvalidBevyIndex {
+                offset,
+                reason: format!(
+                    "Compressed chunk length {} exceeds AFF4 bevy index u32 length",
+                    compressed.len()
+                ),
+            })?;
+
         // Index entry
         self.index.push(BevyIndexEntry {
             offset,
-            length: compressed.len() as u32,
+            length: compressed_len,
         });
 
         // Block hashes — hash the raw (uncompressed) data
@@ -225,21 +234,7 @@ impl BevyReader {
                 ),
             })?;
 
-        let start = entry.offset as usize;
-        let end = start + entry.length as usize;
-
-        if end > bevy_data.len() {
-            return Err(Aff4Error::InvalidBevyIndex {
-                offset: entry.offset,
-                reason: format!(
-                    "Chunk data range {}..{} exceeds bevy data size {}",
-                    start,
-                    end,
-                    bevy_data.len()
-                ),
-            });
-        }
-
+        let (start, end) = checked_bevy_data_range(entry, bevy_data.len())?;
         let compressed = &bevy_data[start..end];
 
         // If the compressed length equals chunk_size, it was stored uncompressed
@@ -291,6 +286,38 @@ impl BevyReader {
     }
 }
 
+fn checked_bevy_data_range(
+    entry: &BevyIndexEntry,
+    bevy_data_len: usize,
+) -> Aff4Result<(usize, usize)> {
+    let start = usize::try_from(entry.offset).map_err(|_| Aff4Error::InvalidBevyIndex {
+        offset: entry.offset,
+        reason: "Chunk offset exceeds addressable memory size".to_string(),
+    })?;
+    let length = usize::try_from(entry.length).map_err(|_| Aff4Error::InvalidBevyIndex {
+        offset: entry.offset,
+        reason: "Chunk length exceeds addressable memory size".to_string(),
+    })?;
+    let end = start
+        .checked_add(length)
+        .ok_or_else(|| Aff4Error::InvalidBevyIndex {
+            offset: entry.offset,
+            reason: format!("Chunk data range starts at {start} and overflows usize"),
+        })?;
+
+    if end > bevy_data_len {
+        return Err(Aff4Error::InvalidBevyIndex {
+            offset: entry.offset,
+            reason: format!(
+                "Chunk data range {}..{} exceeds bevy data size {}",
+                start, end, bevy_data_len
+            ),
+        });
+    }
+
+    Ok((start, end))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +331,46 @@ mod tests {
         let bytes = entry.to_bytes();
         let parsed = BevyIndexEntry::from_bytes(&bytes);
         assert_eq!(entry, parsed);
+    }
+
+    #[test]
+    fn test_checked_bevy_data_range_accepts_valid_range() {
+        let entry = BevyIndexEntry {
+            offset: 2,
+            length: 4,
+        };
+
+        assert_eq!(checked_bevy_data_range(&entry, 8).unwrap(), (2, 6));
+    }
+
+    #[test]
+    fn test_checked_bevy_data_range_rejects_overflow() {
+        let entry = BevyIndexEntry {
+            offset: usize::MAX as u64,
+            length: 1,
+        };
+
+        let err = checked_bevy_data_range(&entry, usize::MAX)
+            .expect_err("overflowing bevy range should fail");
+
+        assert!(
+            matches!(err, Aff4Error::InvalidBevyIndex { reason, .. } if reason.contains("overflows"))
+        );
+    }
+
+    #[test]
+    fn test_checked_bevy_data_range_rejects_past_data_end() {
+        let entry = BevyIndexEntry {
+            offset: 8,
+            length: 4,
+        };
+
+        let err =
+            checked_bevy_data_range(&entry, 10).expect_err("bevy range past data end should fail");
+
+        assert!(
+            matches!(err, Aff4Error::InvalidBevyIndex { reason, .. } if reason.contains("exceeds bevy data size"))
+        );
     }
 
     #[test]

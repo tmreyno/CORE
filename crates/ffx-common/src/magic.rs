@@ -129,9 +129,11 @@ impl MagicSignature {
     }
 
     fn matches(&self, header: &[u8]) -> bool {
-        header.len() >= self.min_size
-            && header.len() > self.offset + self.pattern.len() - 1
-            && header[self.offset..self.offset + self.pattern.len()] == *self.pattern
+        let Some(end) = self.offset.checked_add(self.pattern.len()) else {
+            return false;
+        };
+
+        header.len() >= self.min_size && header.get(self.offset..end) == Some(self.pattern)
     }
 
     fn to_file_type(&self) -> FileType {
@@ -498,7 +500,7 @@ static MAGIC_SIGNATURES: &[MagicSignature] = &[
         4,
         "application/x-ms-registry",
         "Windows Registry Hive",
-        &["dat"],
+        &["dat", "hiv", "hive"],
         FileCategory::System,
     ),
     MagicSignature::new(
@@ -818,6 +820,21 @@ mod tests {
     fn test_unknown() {
         let header = [0x00, 0x00, 0x00, 0x00];
         assert!(detect_file_type(&header).is_none());
+    }
+
+    #[test]
+    fn test_magic_signature_rejects_overflowing_match_range() {
+        let sig = MagicSignature::new(
+            b"ABC",
+            usize::MAX,
+            3,
+            "application/octet-stream",
+            "Overflow Test",
+            &["bin"],
+            FileCategory::Unknown,
+        );
+
+        assert!(!sig.matches(b"ABC"));
     }
 
     #[test]

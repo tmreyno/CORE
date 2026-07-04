@@ -424,6 +424,48 @@ mod tests {
     }
 
     #[test]
+    fn test_write_rejects_source_shorter_than_snapshot() {
+        let tmp = TempDir::new().unwrap();
+        let source_dir = tmp.path().join("source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("evidence.bin");
+        std::fs::write(&source, b"snapshot").unwrap();
+
+        let output_path = tmp.path().join("short.L01");
+        let mut writer = L01Writer::new(L01WriterConfig {
+            output_path,
+            ..Default::default()
+        });
+        writer.add_source_directory(&source_dir).unwrap();
+        std::fs::write(&source, b"short").unwrap();
+
+        let err = writer.write(None, None).unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("expected 8 bytes"), "unexpected error: {msg}");
+        assert!(msg.contains("processed 5 bytes"), "unexpected error: {msg}");
+    }
+
+    #[test]
+    fn test_write_rejects_existing_output_segment() {
+        let tmp = TempDir::new().unwrap();
+        let source_dir = tmp.path().join("source");
+        create_test_files(&source_dir);
+        let output_path = tmp.path().join("output.L01");
+        std::fs::write(&output_path, b"existing").unwrap();
+
+        let mut writer = L01Writer::new(L01WriterConfig {
+            output_path,
+            ..Default::default()
+        });
+        writer.add_source_directory(&source_dir).unwrap();
+
+        let err = writer.write(None, None).unwrap_err();
+
+        assert!(matches!(err, L01WriteError::OutputExists(_)));
+    }
+
+    #[test]
     fn test_write_with_progress() {
         let tmp = TempDir::new().unwrap();
         let source_dir = tmp.path().join("source");

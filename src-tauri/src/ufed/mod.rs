@@ -12,6 +12,7 @@
 pub use ffx_ufed::*;
 
 use crate::archive;
+use crate::common::VirtualFileSystem;
 use crate::containers::ContainerError;
 
 // Alias to avoid shadowing the pub use glob re-export of `archive_ops` module
@@ -103,6 +104,19 @@ impl ArchiveOps for RealArchiveOps {
         entry_path: &str,
     ) -> Result<Vec<u8>, ContainerError> {
         archive::libarchive_read_file(archive_path, entry_path)
+    }
+
+    fn read_archive_file_range(
+        &self,
+        archive_path: &str,
+        entry_path: &str,
+        offset: u64,
+        size: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
+        let vfs = archive::ArchiveVfs::open(archive_path)
+            .map_err(|e| ContainerError::IoError(e.to_string()))?;
+        vfs.read(entry_path, offset, size)
+            .map_err(|e| ContainerError::IoError(e.to_string()))
     }
 }
 

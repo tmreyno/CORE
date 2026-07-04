@@ -10,6 +10,30 @@ use crate::common::format_size;
 use crate::containers::ContainerError;
 use crate::viewer::types::{HeaderRegion, MetadataField, ParsedMetadata};
 
+fn checked_slice(data: &[u8], offset: usize, len: usize) -> Option<&[u8]> {
+    let end = offset.checked_add(len)?;
+    data.get(offset..end)
+}
+
+fn read_le_u32_at(data: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(
+        checked_slice(data, offset, 4)?.try_into().ok()?,
+    ))
+}
+
+fn read_le_u64_at(data: &[u8], offset: usize) -> Option<u64> {
+    Some(u64::from_le_bytes(
+        checked_slice(data, offset, 8)?.try_into().ok()?,
+    ))
+}
+
+fn bounded_region_end(header: &[u8], start: usize, len: usize) -> u64 {
+    start
+        .checked_add(len)
+        .map(|end| end.min(header.len()) as u64)
+        .unwrap_or(header.len() as u64)
+}
+
 /// Parse AD1 (AccessData Logical Image) header and extract metadata with regions
 pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata, ContainerError> {
     let mut fields = vec![];
@@ -18,17 +42,18 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
     // Signature region (full 16 bytes including null terminator)
     regions.push(HeaderRegion::new(
         0,
-        16,
+        bounded_region_end(header, 0, 16),
         "Signature",
         "region-signature",
         "ADSEGMENTEDFILE signature (15 bytes + null)",
     ));
 
     // Extract and validate signature
-    let signature = if header.len() >= 15 {
-        String::from_utf8_lossy(&header[0..15]).to_string()
+    let signature = if let Some(signature) = checked_slice(header, 0, 15) {
+        String::from_utf8_lossy(signature).to_string()
     } else {
-        String::from_utf8_lossy(&header[0..header.len().min(8)]).to_string()
+        String::from_utf8_lossy(checked_slice(header, 0, header.len().min(8)).unwrap_or_default())
+            .to_string()
     };
 
     fields.push(MetadataField::new(
@@ -40,9 +65,7 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
     fields.push(MetadataField::new("Signature", signature, "Format"));
 
     // Segment Index at offset 16 (u32 LE)
-    if header.len() > 20 {
-        let segment_index = u32::from_le_bytes([header[16], header[17], header[18], header[19]]);
-
+    if let Some(segment_index) = read_le_u32_at(header, 16) {
         regions.push(HeaderRegion::new(
             16,
             20,
@@ -59,9 +82,7 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
     }
 
     // Segment Number at offset 20 (u32 LE)
-    if header.len() > 24 {
-        let segment_number = u32::from_le_bytes([header[20], header[21], header[22], header[23]]);
-
+    if let Some(segment_number) = read_le_u32_at(header, 20) {
         regions.push(HeaderRegion::new(
             20,
             24,
@@ -80,9 +101,7 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
     }
 
     // Fragments Size at offset 24 (u32 LE)
-    if header.len() > 28 {
-        let fragments_size = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
-
+    if let Some(fragments_size) = read_le_u32_at(header, 24) {
         regions.push(HeaderRegion::new(
             24,
             28,
@@ -99,9 +118,7 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
     }
 
     // Header Size at offset 28 (u32 LE)
-    if header.len() > 32 {
-        let header_size = u32::from_le_bytes([header[28], header[29], header[30], header[31]]);
-
+    if let Some(header_size) = read_le_u32_at(header, 28) {
         regions.push(HeaderRegion::new(
             28,
             32,
@@ -119,13 +136,12 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
 
     // Look for logical header signature "ADLOGICAL" at offset 512
     let logical_offset = 512usize;
-    if header.len() > logical_offset + 64 {
-        let logical_sig =
-            String::from_utf8_lossy(&header[logical_offset..logical_offset + 9]).to_string();
+    if let Some(logical_sig_bytes) = checked_slice(header, logical_offset, 9) {
+        let logical_sig = String::from_utf8_lossy(logical_sig_bytes).to_string();
         if logical_sig == "ADLOGICAL" {
             regions.push(HeaderRegion::new(
                 logical_offset as u64,
-                (logical_offset + 16) as u64,
+                bounded_region_end(header, logical_offset, 16),
                 "Logical Signature",
                 "region-signature",
                 "ADLOGICAL header signature",
@@ -138,17 +154,10 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
             ));
 
             // Image version at logical_offset + 16 (u32 LE)
-            if header.len() > logical_offset + 20 {
-                let image_version = u32::from_le_bytes([
-                    header[logical_offset + 16],
-                    header[logical_offset + 17],
-                    header[logical_offset + 18],
-                    header[logical_offset + 19],
-                ]);
-
+            if let Some(image_version) = read_le_u32_at(header, logical_offset + 16) {
                 regions.push(HeaderRegion::new(
                     (logical_offset + 16) as u64,
-                    (logical_offset + 20) as u64,
+                    bounded_region_end(header, logical_offset + 16, 4),
                     "Image Version",
                     "region-version",
                     "AD1 image format version",
@@ -162,17 +171,10 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
             }
 
             // Zlib chunk size at logical_offset + 20 (u32 LE)
-            if header.len() > logical_offset + 24 {
-                let zlib_chunk_size = u32::from_le_bytes([
-                    header[logical_offset + 20],
-                    header[logical_offset + 21],
-                    header[logical_offset + 22],
-                    header[logical_offset + 23],
-                ]);
-
+            if let Some(zlib_chunk_size) = read_le_u32_at(header, logical_offset + 20) {
                 regions.push(HeaderRegion::new(
                     (logical_offset + 20) as u64,
-                    (logical_offset + 24) as u64,
+                    bounded_region_end(header, logical_offset + 20, 4),
                     "Zlib Chunk Size",
                     "region-compression",
                     "Size of compressed data chunks",
@@ -186,21 +188,10 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
             }
 
             // First item address at logical_offset + 40 (u64 LE)
-            if header.len() > logical_offset + 48 {
-                let first_item_addr = u64::from_le_bytes([
-                    header[logical_offset + 40],
-                    header[logical_offset + 41],
-                    header[logical_offset + 42],
-                    header[logical_offset + 43],
-                    header[logical_offset + 44],
-                    header[logical_offset + 45],
-                    header[logical_offset + 46],
-                    header[logical_offset + 47],
-                ]);
-
+            if let Some(first_item_addr) = read_le_u64_at(header, logical_offset + 40) {
                 regions.push(HeaderRegion::new(
                     (logical_offset + 40) as u64,
-                    (logical_offset + 48) as u64,
+                    bounded_region_end(header, logical_offset + 40, 8),
                     "First Item Addr",
                     "region-offset",
                     "Address of first file/folder item",
@@ -217,14 +208,20 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
 
     // Volume info at offset 0x2A8 (680)
     let volume_offset = 680usize;
-    if header.len() > volume_offset + 64 {
+    if volume_offset < header.len() {
         let mut label_end = volume_offset;
-        while label_end < header.len() && label_end < volume_offset + 64 && header[label_end] != 0 {
+        let label_limit = volume_offset
+            .checked_add(64)
+            .unwrap_or(usize::MAX)
+            .min(header.len());
+        while label_end < label_limit && header[label_end] != 0 {
             label_end += 1;
         }
         if label_end > volume_offset {
-            let volume_label =
-                String::from_utf8_lossy(&header[volume_offset..label_end]).to_string();
+            let volume_label = String::from_utf8_lossy(
+                checked_slice(header, volume_offset, label_end - volume_offset).unwrap_or_default(),
+            )
+            .to_string();
             if !volume_label.is_empty()
                 && volume_label
                     .chars()
@@ -285,6 +282,21 @@ mod tests {
         buf.extend_from_slice(&header_size.to_le_bytes());
         // Pad one extra byte so header.len() > 32 passes
         buf.push(0);
+        buf
+    }
+
+    fn make_exact_ad1_header(
+        segment_index: u32,
+        segment_number: u32,
+        fragments_size: u32,
+        header_size: u32,
+    ) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"ADSEGMENTEDFILE\0");
+        buf.extend_from_slice(&segment_index.to_le_bytes());
+        buf.extend_from_slice(&segment_number.to_le_bytes());
+        buf.extend_from_slice(&fragments_size.to_le_bytes());
+        buf.extend_from_slice(&header_size.to_le_bytes());
         buf
     }
 
@@ -386,6 +398,47 @@ mod tests {
     }
 
     #[test]
+    fn ad1_exact_length_fixed_fields_are_parsed() {
+        let header = make_exact_ad1_header(42, 3, 512, 2048);
+        let result = parse_ad1_header(&header, 0).unwrap();
+
+        assert_eq!(
+            result
+                .fields
+                .iter()
+                .find(|f| f.key == "Segment Index")
+                .unwrap()
+                .value,
+            "42"
+        );
+        assert!(result
+            .fields
+            .iter()
+            .find(|f| f.key == "Segment Number")
+            .unwrap()
+            .value
+            .contains(".ad3"));
+        assert_eq!(
+            result
+                .fields
+                .iter()
+                .find(|f| f.key == "Fragments Size")
+                .unwrap()
+                .value,
+            "512 bytes"
+        );
+        assert_eq!(
+            result
+                .fields
+                .iter()
+                .find(|f| f.key == "Header Size")
+                .unwrap()
+                .value,
+            "2048 bytes"
+        );
+    }
+
+    #[test]
     fn ad1_has_signature_region() {
         let header = make_ad1_header(0, 1, 0, 0);
         let result = parse_ad1_header(&header, 0).unwrap();
@@ -452,6 +505,49 @@ mod tests {
     }
 
     #[test]
+    fn ad1_exact_length_logical_first_item_offset_is_parsed() {
+        let mut header = make_exact_ad1_header(0, 1, 256, 1024);
+        header.resize(512, 0);
+        header.extend_from_slice(b"ADLOGICAL\0\0\0\0\0\0\0");
+        header.extend_from_slice(&3u32.to_le_bytes());
+        header.extend_from_slice(&65536u32.to_le_bytes());
+        header.resize(552, 0);
+        header.extend_from_slice(&0xABCDu64.to_le_bytes());
+
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "First Item Offset")
+            .unwrap();
+
+        assert!(field.value.contains("ABCD"));
+    }
+
+    #[test]
+    fn ad1_volume_label_parses_without_full_sixty_four_byte_field() {
+        let mut header = make_exact_ad1_header(0, 1, 256, 1024);
+        header.resize(680, 0);
+        header.extend_from_slice(b"Evidence\0");
+
+        let result = parse_ad1_header(&header, 0).unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "Volume Label")
+            .unwrap();
+
+        assert_eq!(field.value, "Evidence");
+    }
+
+    #[test]
+    fn ad1_checked_helpers_reject_overflowing_ranges() {
+        assert!(checked_slice(b"abc", usize::MAX, 1).is_none());
+        assert!(read_le_u32_at(b"abc", usize::MAX).is_none());
+        assert!(read_le_u64_at(b"abc", usize::MAX).is_none());
+    }
+
+    #[test]
     fn ad1_no_logical_header_when_missing() {
         let header = make_ad1_header(0, 1, 0, 0);
         let result = parse_ad1_header(&header, 0).unwrap();
@@ -467,6 +563,12 @@ mod tests {
         // Short header: uses header[0..header.len().min(8)] = "ADSEGMEN"
         let sig = result.fields.iter().find(|f| f.key == "Signature").unwrap();
         assert!(sig.value.starts_with("ADSEGMEN"));
+        let sig_region = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
+        assert_eq!(sig_region.end, header.len() as u64);
     }
 
     #[test]
@@ -476,6 +578,13 @@ mod tests {
         assert_eq!(result.format, "AD1");
         // Should have format field at least
         assert!(result.fields.iter().any(|f| f.key == "Format"));
+        let sig_region = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
+        assert_eq!(sig_region.start, 0);
+        assert_eq!(sig_region.end, 0);
     }
 
     #[test]

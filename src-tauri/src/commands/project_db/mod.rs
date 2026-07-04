@@ -11,22 +11,26 @@
 //! when the project is closed.
 
 mod activity;
+mod artifacts;
 mod bookmarks;
 mod collections;
 mod evidence;
 mod forensic;
 mod processed;
 mod search;
+mod source_analysis;
 mod utilities;
 mod workflow;
 
 pub use activity::*;
+pub use artifacts::*;
 pub use bookmarks::*;
 pub use collections::*;
 pub use evidence::*;
 pub use forensic::*;
 pub use processed::*;
 pub use search::*;
+pub use source_analysis::*;
 pub use utilities::*;
 pub use workflow::*;
 
@@ -51,7 +55,7 @@ static PROJECT_DBS: LazyLock<Mutex<HashMap<String, ProjectDatabase>>> =
 
 /// Helper: execute a closure with the project database for a specific window.
 /// Accessible to sibling command modules within this directory.
-pub(super) fn with_project_db<F, T>(window_label: &str, f: F) -> Result<T, String>
+pub(crate) fn with_project_db<F, T>(window_label: &str, f: F) -> Result<T, String>
 where
     F: FnOnce(&ProjectDatabase) -> rusqlite::Result<T>,
 {
@@ -64,7 +68,7 @@ where
 
 /// Helper: execute a closure with the project database for a specific window
 /// when the closure needs to return a custom `Result<T, String>`.
-pub(super) fn with_project_db_result<F, T>(window_label: &str, f: F) -> Result<T, String>
+pub(crate) fn with_project_db_result<F, T>(window_label: &str, f: F) -> Result<T, String>
 where
     F: FnOnce(&ProjectDatabase) -> Result<T, String>,
 {
@@ -100,7 +104,7 @@ pub fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<Strin
 
     // If this is a brand-new .ffxdb, migrate data from the .cffx file
     if is_new {
-        if let Ok(content) = std::fs::read_to_string(&cffx) {
+        if let Ok(content) = crate::project::read_project_json_with_limit(&cffx, "project file") {
             if let Ok(project) = serde_json::from_str::<crate::project::FFXProject>(&content) {
                 if let Err(e) = db.migrate_from_project(&project) {
                     warn!("Migration from .cffx had errors: {}", e);

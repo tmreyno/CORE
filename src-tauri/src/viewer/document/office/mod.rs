@@ -35,11 +35,19 @@ mod odf;
 mod ooxml;
 mod rtf;
 
+use std::io::Cursor;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use super::error::{DocumentError, DocumentResult};
+
+const MAX_OFFICE_SECTIONS: usize = 512;
+const MAX_OFFICE_PARAGRAPHS_PER_SECTION: usize = 5_000;
+const MAX_OFFICE_PARAGRAPH_CHARS: usize = 16_384;
+const MAX_OFFICE_METADATA_CHARS: usize = 4_096;
+const MAX_OFFICE_WARNINGS: usize = 128;
+const MAX_OFFICE_WARNING_CHARS: usize = 2_048;
 
 // =============================================================================
 // Types
@@ -278,7 +286,132 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
         OfficeFormat::Unknown => unreachable!(),
     }
 
-    // Compute totals
+    Ok(build_office_document_info(
+        path.to_string_lossy().to_string(),
+        format,
+        metadata,
+        sections,
+        extraction_complete,
+        warnings,
+    ))
+}
+
+/// Extract text and metadata from office document bytes.
+///
+/// `source_id` is used for extension-based format selection and provenance in
+/// the returned metadata. It may be a local path or a container display ID.
+pub fn read_office_document_bytes(
+    source_id: impl Into<String>,
+    data: &[u8],
+) -> DocumentResult<OfficeDocumentInfo> {
+    let source_id = source_id.into();
+    let ext = Path::new(&source_id)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let format = OfficeFormat::from_extension(&ext);
+    if format == OfficeFormat::Unknown {
+        return Err(DocumentError::Parse(format!(
+            "Unsupported office format: .{}",
+            ext
+        )));
+    }
+
+    let mut warnings = Vec::new();
+    let metadata;
+    let sections;
+    let mut extraction_complete = true;
+
+    match format {
+        OfficeFormat::Docx => {
+            metadata = ooxml::extract_ooxml_metadata_from_reader(
+                Cursor::new(data),
+                "docProps/core.xml",
+                "docProps/app.xml",
+            )?;
+            sections = ooxml::extract_docx_text_from_reader(Cursor::new(data))?;
+        }
+        OfficeFormat::Pptx => {
+            metadata = ooxml::extract_ooxml_metadata_from_reader(
+                Cursor::new(data),
+                "docProps/core.xml",
+                "docProps/app.xml",
+            )?;
+            sections = ooxml::extract_pptx_text_from_reader(Cursor::new(data))?;
+        }
+        OfficeFormat::Doc => {
+            metadata = OfficeMetadata::default();
+            warnings.push("Legacy .doc metadata extraction is limited".to_string());
+            match cfb::extract_doc_text_from_bytes(data) {
+                Ok(s) => sections = s,
+                Err(e) => {
+                    warnings.push(format!("Text extraction partial: {}", e));
+                    sections = vec![OfficeTextSection {
+                        label: None,
+                        paragraphs: vec![OfficeParagraph::normal(
+                            "[Could not extract text from legacy .doc file]".to_string(),
+                        )],
+                    }];
+                    extraction_complete = false;
+                }
+            }
+        }
+        OfficeFormat::Ppt => {
+            metadata = OfficeMetadata::default();
+            warnings.push("Legacy .ppt text extraction is limited".to_string());
+            match cfb::extract_ppt_text_from_bytes(data) {
+                Ok(s) => sections = s,
+                Err(e) => {
+                    warnings.push(format!("Text extraction partial: {}", e));
+                    sections = vec![OfficeTextSection {
+                        label: None,
+                        paragraphs: vec![OfficeParagraph::normal(
+                            "[Could not extract text from legacy .ppt file]".to_string(),
+                        )],
+                    }];
+                    extraction_complete = false;
+                }
+            }
+        }
+        OfficeFormat::Odt => {
+            metadata = odf::extract_odf_metadata_from_reader(Cursor::new(data))?;
+            sections = odf::extract_odt_text_from_reader(Cursor::new(data))?;
+        }
+        OfficeFormat::Odp => {
+            metadata = odf::extract_odf_metadata_from_reader(Cursor::new(data))?;
+            sections = odf::extract_odp_text_from_reader(Cursor::new(data))?;
+        }
+        OfficeFormat::Rtf => {
+            metadata = OfficeMetadata::default();
+            sections = rtf::extract_rtf_text_from_bytes(data)?;
+        }
+        OfficeFormat::Unknown => unreachable!(),
+    }
+
+    Ok(build_office_document_info(
+        source_id,
+        format,
+        metadata,
+        sections,
+        extraction_complete,
+        warnings,
+    ))
+}
+
+fn build_office_document_info(
+    path: String,
+    format: OfficeFormat,
+    mut metadata: OfficeMetadata,
+    sections: Vec<OfficeTextSection>,
+    extraction_complete: bool,
+    warnings: Vec<String>,
+) -> OfficeDocumentInfo {
+    normalize_office_metadata(&mut metadata);
+    let sections = normalize_office_sections(sections);
+    let warnings = normalize_office_warnings(warnings);
+
     let all_text: String = sections
         .iter()
         .flat_map(|s| s.paragraphs.iter())
@@ -288,8 +421,8 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
     let total_chars = all_text.len();
     let total_words = all_text.split_whitespace().count();
 
-    Ok(OfficeDocumentInfo {
-        path: path.to_string_lossy().to_string(),
+    OfficeDocumentInfo {
+        path,
         format,
         format_description: format.description().to_string(),
         metadata,
@@ -298,7 +431,62 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
         total_words,
         extraction_complete,
         warnings,
-    })
+    }
+}
+
+fn normalize_office_metadata(metadata: &mut OfficeMetadata) {
+    truncate_option_string(&mut metadata.title, MAX_OFFICE_METADATA_CHARS);
+    truncate_option_string(&mut metadata.creator, MAX_OFFICE_METADATA_CHARS);
+    truncate_option_string(&mut metadata.last_modified_by, MAX_OFFICE_METADATA_CHARS);
+    truncate_option_string(&mut metadata.subject, MAX_OFFICE_METADATA_CHARS);
+    truncate_option_string(&mut metadata.description, MAX_OFFICE_METADATA_CHARS);
+    truncate_option_string(&mut metadata.created, MAX_OFFICE_METADATA_CHARS);
+    truncate_option_string(&mut metadata.modified, MAX_OFFICE_METADATA_CHARS);
+    truncate_option_string(&mut metadata.application, MAX_OFFICE_METADATA_CHARS);
+}
+
+fn normalize_office_sections(sections: Vec<OfficeTextSection>) -> Vec<OfficeTextSection> {
+    sections
+        .into_iter()
+        .take(MAX_OFFICE_SECTIONS)
+        .map(|mut section| {
+            truncate_option_string(&mut section.label, MAX_OFFICE_METADATA_CHARS);
+            section.paragraphs = section
+                .paragraphs
+                .into_iter()
+                .take(MAX_OFFICE_PARAGRAPHS_PER_SECTION)
+                .map(|mut paragraph| {
+                    paragraph.text = truncate_chars(&paragraph.text, MAX_OFFICE_PARAGRAPH_CHARS);
+                    paragraph
+                })
+                .collect();
+            section
+        })
+        .collect()
+}
+
+fn normalize_office_warnings(warnings: Vec<String>) -> Vec<String> {
+    warnings
+        .into_iter()
+        .take(MAX_OFFICE_WARNINGS)
+        .map(|warning| truncate_chars(&warning, MAX_OFFICE_WARNING_CHARS))
+        .collect()
+}
+
+fn truncate_option_string(value: &mut Option<String>, max_chars: usize) {
+    if let Some(text) = value {
+        *text = truncate_chars(text, max_chars);
+    }
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let mut truncated: String = value.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
 }
 
 // =============================================================================
@@ -308,6 +496,32 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Cursor, Write};
+
+    fn build_docx_bytes() -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+
+        zip.start_file("docProps/core.xml", options).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0"?><cp:coreProperties><dc:title>Evidence Memo</dc:title><dc:creator>Analyst</dc:creator></cp:coreProperties>"#,
+        )
+        .unwrap();
+
+        zip.start_file("docProps/app.xml", options).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0"?><Properties><Application>CORE Test</Application><Words>2</Words></Properties>"#,
+        )
+        .unwrap();
+
+        zip.start_file("word/document.xml", options).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello source</w:t></w:r></w:p></w:body></w:document>"#,
+        )
+        .unwrap();
+
+        zip.finish().unwrap().into_inner()
+    }
 
     #[test]
     fn test_office_format_from_extension() {
@@ -359,5 +573,119 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Unsupported office format"), "Got: {}", err);
+    }
+
+    #[test]
+    fn truncate_chars_is_unicode_safe() {
+        let value = "é".repeat(MAX_OFFICE_METADATA_CHARS + 1);
+
+        let truncated = truncate_chars(&value, MAX_OFFICE_METADATA_CHARS);
+
+        assert!(truncated.ends_with("..."));
+        assert_eq!(
+            truncated.trim_end_matches("...").chars().count(),
+            MAX_OFFICE_METADATA_CHARS
+        );
+    }
+
+    #[test]
+    fn build_office_document_info_caps_response_sections_and_paragraphs() {
+        let sections = (0..(MAX_OFFICE_SECTIONS + 8))
+            .map(|section| OfficeTextSection {
+                label: Some(format!("Section {section}")),
+                paragraphs: (0..(MAX_OFFICE_PARAGRAPHS_PER_SECTION + 8))
+                    .map(|paragraph| OfficeParagraph {
+                        text: format!("paragraph {section}-{paragraph}"),
+                        hint: ParagraphHint::Normal,
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        let info = build_office_document_info(
+            "source.docx".to_string(),
+            OfficeFormat::Docx,
+            OfficeMetadata::default(),
+            sections,
+            true,
+            Vec::new(),
+        );
+
+        assert_eq!(info.sections.len(), MAX_OFFICE_SECTIONS);
+        assert_eq!(
+            info.sections[0].paragraphs.len(),
+            MAX_OFFICE_PARAGRAPHS_PER_SECTION
+        );
+    }
+
+    #[test]
+    fn build_office_document_info_truncates_metadata_warnings_and_paragraphs() {
+        let metadata_value = "é".repeat(MAX_OFFICE_METADATA_CHARS + 1);
+        let paragraph_value = "é".repeat(MAX_OFFICE_PARAGRAPH_CHARS + 1);
+        let warning_value = "é".repeat(MAX_OFFICE_WARNING_CHARS + 1);
+
+        let info = build_office_document_info(
+            "source.docx".to_string(),
+            OfficeFormat::Docx,
+            OfficeMetadata {
+                title: Some(metadata_value),
+                ..Default::default()
+            },
+            vec![OfficeTextSection {
+                label: Some("section".to_string()),
+                paragraphs: vec![OfficeParagraph {
+                    text: paragraph_value,
+                    hint: ParagraphHint::Normal,
+                }],
+            }],
+            true,
+            vec![warning_value; MAX_OFFICE_WARNINGS + 8],
+        );
+
+        let title = info.metadata.title.as_deref().unwrap();
+        assert!(title.ends_with("..."));
+        assert_eq!(
+            title.trim_end_matches("...").chars().count(),
+            MAX_OFFICE_METADATA_CHARS
+        );
+
+        let paragraph = &info.sections[0].paragraphs[0].text;
+        assert!(paragraph.ends_with("..."));
+        assert_eq!(
+            paragraph.trim_end_matches("...").chars().count(),
+            MAX_OFFICE_PARAGRAPH_CHARS
+        );
+
+        assert_eq!(info.warnings.len(), MAX_OFFICE_WARNINGS);
+        assert!(info.warnings[0].ends_with("..."));
+        assert_eq!(
+            info.warnings[0].trim_end_matches("...").chars().count(),
+            MAX_OFFICE_WARNING_CHARS
+        );
+    }
+
+    #[test]
+    fn read_office_document_bytes_reads_docx_source() {
+        let info = read_office_document_bytes("container.ad1:docs/memo.docx", &build_docx_bytes())
+            .unwrap();
+
+        assert_eq!(info.path, "container.ad1:docs/memo.docx");
+        assert_eq!(info.format, OfficeFormat::Docx);
+        assert_eq!(info.metadata.title.as_deref(), Some("Evidence Memo"));
+        assert_eq!(info.metadata.creator.as_deref(), Some("Analyst"));
+        assert_eq!(info.sections[0].paragraphs[0].text, "Hello source");
+    }
+
+    #[test]
+    fn read_office_document_bytes_reads_rtf_source() {
+        let info = read_office_document_bytes(
+            "container.ad1:docs/note.rtf",
+            br"{\rtf1\ansi First\par Second}",
+        )
+        .unwrap();
+
+        assert_eq!(info.format, OfficeFormat::Rtf);
+        assert_eq!(info.sections[0].paragraphs.len(), 2);
+        assert_eq!(info.total_words, 2);
     }
 }

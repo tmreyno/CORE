@@ -90,6 +90,25 @@ describe("SpreadsheetViewer", () => {
       });
     });
 
+    it("calls spreadsheet_info_source when an evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockSpreadsheetInfo,
+        path: "/evidence/image.ad1:tables/data.csv",
+      });
+      mockInvoke.mockResolvedValueOnce(mockRows);
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "tables/data.csv",
+        containerType: "ad1",
+        size: 1024,
+      };
+
+      renderComponent(() => <SpreadsheetViewer path="/evidence/data.csv" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("spreadsheet_info_source", { source });
+    });
+
     it("loads first sheet automatically after info", async () => {
       mockInvoke.mockResolvedValueOnce(mockSpreadsheetInfo);
       mockInvoke.mockResolvedValueOnce(mockRows);
@@ -99,6 +118,27 @@ describe("SpreadsheetViewer", () => {
 
       expect(mockInvoke).toHaveBeenCalledWith("spreadsheet_read_sheet", {
         path: "/evidence/data.xlsx",
+        sheetName: "Sheet1",
+        startRow: 0,
+        maxRows: 500,
+      });
+    });
+
+    it("loads first sheet through source command when an evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce(mockSpreadsheetInfo);
+      mockInvoke.mockResolvedValueOnce(mockRows);
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "tables/data.csv",
+        containerType: "ad1",
+        size: 1024,
+      };
+
+      renderComponent(() => <SpreadsheetViewer path="/evidence/data.csv" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("spreadsheet_read_sheet_source", {
+        source,
         sheetName: "Sheet1",
         startRow: 0,
         maxRows: 500,

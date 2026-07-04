@@ -246,8 +246,9 @@ impl ExtDriver {
 
         // Read superblock
         let mut sb_buf = vec![0u8; SUPERBLOCK_SIZE];
+        let superblock_offset = checked_ext_absolute_offset(offset, SUPERBLOCK_OFFSET)?;
         device
-            .read_at(offset + SUPERBLOCK_OFFSET, &mut sb_buf)
+            .read_at(superblock_offset, &mut sb_buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
 
         let superblock = Self::parse_superblock(&sb_buf)?;
@@ -260,7 +261,7 @@ impl ExtDriver {
             )));
         }
 
-        let block_size = 1024u32 << superblock.log_block_size;
+        let block_size = checked_ext_block_size(superblock.log_block_size)?;
         let inode_size = if superblock.rev_level >= 1 {
             superblock.inode_size
         } else {
@@ -282,8 +283,8 @@ impl ExtDriver {
         // Read block group descriptors
         let group_descs = Self::read_group_descriptors(&device, offset, &superblock, block_size)?;
 
-        let total_size = superblock.blocks_count * block_size as u64;
-        let free_space = superblock.free_blocks_count * block_size as u64;
+        let total_size = checked_ext_size_bytes(superblock.blocks_count, block_size, "total")?;
+        let free_space = checked_ext_size_bytes(superblock.free_blocks_count, block_size, "free")?;
 
         let label = if superblock.volume_name.is_empty() {
             None
@@ -483,6 +484,11 @@ impl ExtDriver {
 
         // Calculate which block group the inode is in
         let inode_index = inode_num - 1; // Inodes are 1-indexed
+        if self.superblock.inodes_per_group == 0 {
+            return Err(VfsError::Internal(
+                "Invalid ext superblock: inodes_per_group is 0".to_string(),
+            ));
+        }
         let group = (inode_index / self.superblock.inodes_per_group) as usize;
         let index_in_group = inode_index % self.superblock.inodes_per_group;
 
@@ -494,9 +500,13 @@ impl ExtDriver {
         }
 
         let inode_table_block = self.group_descs[group].inode_table;
-        let inode_offset = self.offset
-            + inode_table_block * self.block_size as u64
-            + index_in_group as u64 * self.inode_size as u64;
+        let inode_offset = checked_ext_inode_offset(
+            self.offset,
+            inode_table_block,
+            self.block_size,
+            index_in_group,
+            self.inode_size,
+        )?;
 
         let inode_size = usize::from(self.inode_size);
         if inode_size < 128 {
@@ -596,12 +606,12 @@ impl ExtDriver {
 
             let block_offset =
                 checked_ext_block_offset(self.offset, block_num, self.block_size, offset_in_block)?;
-            self.device
-                .read_at(
-                    block_offset,
-                    &mut result[bytes_read..bytes_read + bytes_to_read],
-                )
-                .map_err(|e| VfsError::IoError(e.to_string()))?;
+            read_ext_exact(
+                self.device.as_ref(),
+                block_offset,
+                &mut result[bytes_read..bytes_read + bytes_to_read],
+                "EXT data block",
+            )?;
 
             bytes_read += bytes_to_read;
             current_offset = current_offset
@@ -671,8 +681,11 @@ impl ExtDriver {
 
     /// Read a block pointer from an indirect block
     fn read_indirect_block(&self, block_num: u32, index: usize) -> Result<u32, VfsError> {
-        let block_offset = self.offset + block_num as u64 * self.block_size as u64;
-        let ptr_offset = block_offset + (index * 4) as u64;
+        let ptr_offset_in_block = index
+            .checked_mul(4)
+            .ok_or_else(|| VfsError::IoError("Invalid ext indirect pointer offset".to_string()))?;
+        let ptr_offset =
+            checked_ext_block_offset(self.offset, block_num, self.block_size, ptr_offset_in_block)?;
 
         let mut buf = [0u8; 4];
         self.device
@@ -896,6 +909,51 @@ fn bounded_ext_read_len(file_size: u64, offset: u64, requested: usize) -> Option
     Some(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
 }
 
+fn read_ext_exact(
+    device: &dyn SeekableBlockDevice,
+    offset: u64,
+    buf: &mut [u8],
+    context: &str,
+) -> Result<(), VfsError> {
+    let bytes_read = device
+        .read_at(offset, buf)
+        .map_err(|e| VfsError::IoError(e.to_string()))?;
+
+    if bytes_read != buf.len() {
+        return Err(VfsError::IoError(format!(
+            "{} short read: expected {} bytes, got {}",
+            context,
+            buf.len(),
+            bytes_read
+        )));
+    }
+
+    Ok(())
+}
+
+fn checked_ext_absolute_offset(base_offset: u64, relative_offset: u64) -> Result<u64, VfsError> {
+    base_offset
+        .checked_add(relative_offset)
+        .ok_or_else(|| VfsError::IoError("Invalid ext absolute offset".to_string()))
+}
+
+fn checked_ext_block_size(log_block_size: u32) -> Result<u32, VfsError> {
+    1024u32
+        .checked_shl(log_block_size)
+        .filter(|block_size| *block_size > 0)
+        .ok_or_else(|| VfsError::Internal("Invalid ext block size".to_string()))
+}
+
+fn checked_ext_size_bytes(
+    block_count: u64,
+    block_size: u32,
+    context: &str,
+) -> Result<u64, VfsError> {
+    block_count
+        .checked_mul(u64::from(block_size))
+        .ok_or_else(|| VfsError::IoError(format!("Invalid ext {} size", context)))
+}
+
 fn checked_ext_block_offset(
     base_offset: u64,
     block_num: u32,
@@ -913,6 +971,27 @@ fn checked_ext_block_offset(
     block_offset
         .checked_add(offset_in_block)
         .ok_or_else(|| VfsError::IoError("Invalid ext block offset".to_string()))
+}
+
+fn checked_ext_inode_offset(
+    base_offset: u64,
+    inode_table_block: u64,
+    block_size: u32,
+    index_in_group: u32,
+    inode_size: u16,
+) -> Result<u64, VfsError> {
+    let table_offset = inode_table_block
+        .checked_mul(u64::from(block_size))
+        .ok_or_else(|| VfsError::IoError("Invalid ext inode offset".to_string()))?;
+    let table_offset = base_offset
+        .checked_add(table_offset)
+        .ok_or_else(|| VfsError::IoError("Invalid ext inode offset".to_string()))?;
+    let inode_offset = u64::from(index_in_group)
+        .checked_mul(u64::from(inode_size))
+        .ok_or_else(|| VfsError::IoError("Invalid ext inode offset".to_string()))?;
+    table_offset
+        .checked_add(inode_offset)
+        .ok_or_else(|| VfsError::IoError("Invalid ext inode offset".to_string()))
 }
 
 fn parse_group_descriptors(
@@ -1171,11 +1250,119 @@ mod tests {
     }
 
     #[test]
+    fn test_read_ext_exact_rejects_short_read() {
+        let device = MockBlockDevice {
+            data: b"abcd".to_vec(),
+        };
+        let mut buf = [0u8; 4];
+
+        let err = read_ext_exact(&device, 2, &mut buf, "test")
+            .expect_err("short EXT exact read should fail");
+
+        assert!(matches!(err, VfsError::IoError(message) if message.contains("short read")));
+    }
+
+    #[test]
+    fn test_checked_ext_absolute_offset_rejects_overflow() {
+        let err = checked_ext_absolute_offset(u64::MAX, SUPERBLOCK_OFFSET)
+            .expect_err("overflowing ext superblock offset should be rejected");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_checked_ext_block_size_rejects_oversized_shift() {
+        let err = checked_ext_block_size(32).expect_err("oversized ext block shift should fail");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_checked_ext_size_bytes_rejects_overflow() {
+        let err = checked_ext_size_bytes(u64::MAX, 2, "total")
+            .expect_err("overflowing ext byte size should fail");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
     fn test_checked_ext_block_offset_rejects_overflow() {
         let err = checked_ext_block_offset(u64::MAX, 1, 1, 1)
             .expect_err("overflowing ext block offset should be rejected");
 
         assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_checked_ext_inode_offset_rejects_table_overflow() {
+        let err = checked_ext_inode_offset(0, u64::MAX, 2, 0, 128)
+            .expect_err("overflowing ext inode table offset should fail");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_checked_ext_inode_offset_rejects_base_overflow() {
+        let err = checked_ext_inode_offset(u64::MAX, 1, 1, 0, 128)
+            .expect_err("overflowing ext inode base offset should fail");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_read_inode_rejects_zero_inodes_per_group() {
+        let mut superblock = test_superblock();
+        superblock.inodes_per_group = 0;
+        let driver = ExtDriver {
+            info: FilesystemInfo {
+                fs_type: FilesystemType::Ext4,
+                label: None,
+                total_size: 0,
+                free_space: None,
+                cluster_size: 1024,
+            },
+            device: Arc::new(MockBlockDevice { data: vec![0; 16] }),
+            offset: 0,
+            superblock,
+            block_size: 1024,
+            inode_size: 128,
+            group_descs: Vec::new(),
+            dir_cache: RwLock::new(HashMap::new()),
+        };
+
+        let err = driver
+            .read_inode(1)
+            .expect_err("zero inodes_per_group should fail before division");
+
+        assert!(matches!(err, VfsError::Internal(message) if message.contains("inodes_per_group")));
+    }
+
+    #[test]
+    fn test_read_indirect_block_rejects_pointer_offset_overflow() {
+        let driver = ExtDriver {
+            info: FilesystemInfo {
+                fs_type: FilesystemType::Ext4,
+                label: None,
+                total_size: 0,
+                free_space: None,
+                cluster_size: 1024,
+            },
+            device: Arc::new(MockBlockDevice { data: vec![0; 16] }),
+            offset: 0,
+            superblock: test_superblock(),
+            block_size: 1024,
+            inode_size: 128,
+            group_descs: Vec::new(),
+            dir_cache: RwLock::new(HashMap::new()),
+        };
+
+        let err = driver
+            .read_indirect_block(1, usize::MAX)
+            .expect_err("overflowing pointer offset should fail");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("indirect pointer offset"))
+        );
     }
 
     #[test]

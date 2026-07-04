@@ -296,6 +296,47 @@ const TABLE_ENTRY_SIZE: usize = 4;
 /// Table header size: 4 (chunk_count) + 4 (padding) + 8 (base_offset) + 4 (padding) + 4 (Adler-32) = 24 bytes
 const TABLE_HEADER_SIZE: usize = 24;
 
+/// Total serialized size of a table/table2 section, including the section
+/// header and trailing entries checksum.
+pub(crate) fn table_section_size(chunk_count: usize) -> Result<u64, L01WriteError> {
+    let entries_size = table_entries_size(chunk_count)?;
+    let data_size = TABLE_HEADER_SIZE
+        .checked_add(entries_size)
+        .and_then(|size| size.checked_add(4))
+        .ok_or_else(|| L01WriteError::Internal("L01 table section size overflow".to_string()))?;
+
+    SECTION_HEADER_SIZE
+        .checked_add(data_size)
+        .and_then(|size| u64::try_from(size).ok())
+        .ok_or_else(|| L01WriteError::Internal("L01 table section size exceeds u64".to_string()))
+}
+
+pub(crate) fn table_entries_size(chunk_count: usize) -> Result<usize, L01WriteError> {
+    chunk_count
+        .checked_mul(TABLE_ENTRY_SIZE)
+        .ok_or_else(|| L01WriteError::Internal("L01 table entries size overflow".to_string()))
+}
+
+pub(crate) fn table_chunk_count(chunk_count: usize) -> Result<u32, L01WriteError> {
+    u32::try_from(chunk_count)
+        .map_err(|_| L01WriteError::Internal("L01 table chunk count exceeds u32".to_string()))
+}
+
+pub(crate) fn encoded_table_offset(offset: u64, is_compressed: bool) -> Result<u32, L01WriteError> {
+    let mut offset_value = u32::try_from(offset).map_err(|_| {
+        L01WriteError::Internal("L01 chunk table offset exceeds table field".to_string())
+    })?;
+    if offset_value & 0x8000_0000 != 0 {
+        return Err(L01WriteError::Internal(
+            "L01 chunk table offset uses reserved compression bit".to_string(),
+        ));
+    }
+    if is_compressed {
+        offset_value |= 0x8000_0000; // Set MSB for compressed chunks
+    }
+    Ok(offset_value)
+}
+
 /// Write the "table" section with chunk offset entries.
 ///
 /// Layout after section header:
@@ -313,16 +354,14 @@ pub fn write_table_section<W: Write + io::Seek>(
     table: &ChunkTable,
     next_offset: u64,
 ) -> Result<u64, L01WriteError> {
-    let entries_size = table.chunk_count() as usize * TABLE_ENTRY_SIZE;
-    let entries_checksum_size = 4;
-    let data_size = TABLE_HEADER_SIZE + entries_size + entries_checksum_size;
-    let section_size = (SECTION_HEADER_SIZE + data_size) as u64;
+    let entries_size = table_entries_size(table.chunks.len())?;
+    let section_size = table_section_size(table.chunks.len())?;
 
     write_section_header(writer, SECTION_TYPE_TABLE, next_offset, section_size)?;
 
     // Table header
     let mut header = [0u8; TABLE_HEADER_SIZE];
-    header[0..4].copy_from_slice(&table.chunk_count().to_le_bytes());
+    header[0..4].copy_from_slice(&table_chunk_count(table.chunks.len())?.to_le_bytes());
     // [4..8] padding
     header[8..16].copy_from_slice(&table.base_offset.to_le_bytes());
     // [16..20] padding
@@ -333,10 +372,7 @@ pub fn write_table_section<W: Write + io::Seek>(
     // Chunk offset entries
     let mut entries_data = Vec::with_capacity(entries_size);
     for chunk in &table.chunks {
-        let mut offset_value = chunk.offset as u32;
-        if chunk.is_compressed {
-            offset_value |= 0x8000_0000; // Set MSB for compressed chunks
-        }
+        let offset_value = encoded_table_offset(chunk.offset, chunk.is_compressed)?;
         entries_data.extend_from_slice(&offset_value.to_le_bytes());
     }
     writer.write_all(&entries_data)?;
@@ -354,16 +390,14 @@ pub fn write_table2_section<W: Write + io::Seek>(
     table: &ChunkTable,
     next_offset: u64,
 ) -> Result<u64, L01WriteError> {
-    let entries_size = table.chunk_count() as usize * TABLE_ENTRY_SIZE;
-    let entries_checksum_size = 4;
-    let data_size = TABLE_HEADER_SIZE + entries_size + entries_checksum_size;
-    let section_size = (SECTION_HEADER_SIZE + data_size) as u64;
+    let entries_size = table_entries_size(table.chunks.len())?;
+    let section_size = table_section_size(table.chunks.len())?;
 
     write_section_header(writer, SECTION_TYPE_TABLE2, next_offset, section_size)?;
 
     // Table header (same as table)
     let mut header = [0u8; TABLE_HEADER_SIZE];
-    header[0..4].copy_from_slice(&table.chunk_count().to_le_bytes());
+    header[0..4].copy_from_slice(&table_chunk_count(table.chunks.len())?.to_le_bytes());
     header[8..16].copy_from_slice(&table.base_offset.to_le_bytes());
     let header_checksum = adler32(&header[0..20]);
     header[20..24].copy_from_slice(&header_checksum.to_le_bytes());
@@ -372,10 +406,7 @@ pub fn write_table2_section<W: Write + io::Seek>(
     // Chunk offset entries (same as table)
     let mut entries_data = Vec::with_capacity(entries_size);
     for chunk in &table.chunks {
-        let mut offset_value = chunk.offset as u32;
-        if chunk.is_compressed {
-            offset_value |= 0x8000_0000;
-        }
+        let offset_value = encoded_table_offset(chunk.offset, chunk.is_compressed)?;
         entries_data.extend_from_slice(&offset_value.to_le_bytes());
     }
     writer.write_all(&entries_data)?;
@@ -763,6 +794,56 @@ mod tests {
             u32::from_le_bytes(th[entries_start + 4..entries_start + 8].try_into().unwrap());
         // Second chunk: offset=500, not compressed → MSB clear
         assert_eq!(entry1, 500);
+    }
+
+    #[test]
+    fn test_table_section_size_uses_checked_math() {
+        assert_eq!(
+            table_section_size(2).unwrap(),
+            (SECTION_HEADER_SIZE + TABLE_HEADER_SIZE + 8 + 4) as u64
+        );
+
+        assert!(matches!(
+            table_entries_size(usize::MAX),
+            Err(L01WriteError::Internal(message)) if message.contains("entries size overflow")
+        ));
+        assert!(matches!(
+            table_chunk_count(u32::MAX as usize + 1),
+            Err(L01WriteError::Internal(message)) if message.contains("chunk count exceeds u32")
+        ));
+    }
+
+    #[test]
+    fn test_encoded_table_offset_rejects_reserved_bit() {
+        assert_eq!(
+            encoded_table_offset(0x7FFF_FFFF, false).unwrap(),
+            0x7FFF_FFFF
+        );
+        assert_eq!(
+            encoded_table_offset(0x7FFF_FFFF, true).unwrap(),
+            0xFFFF_FFFF
+        );
+
+        assert!(matches!(
+            encoded_table_offset(0x8000_0000, false),
+            Err(L01WriteError::Internal(message)) if message.contains("reserved compression bit")
+        ));
+        assert!(matches!(
+            encoded_table_offset(u64::from(u32::MAX) + 1, true),
+            Err(L01WriteError::Internal(message)) if message.contains("table field")
+        ));
+    }
+
+    #[test]
+    fn test_write_table_section_rejects_reserved_offset_bit() {
+        let mut buf = Cursor::new(Vec::new());
+        let mut table = ChunkTable::new(1000);
+        table.add_chunk(0x8000_0000, 500, false);
+
+        assert!(matches!(
+            write_table_section(&mut buf, &table, 0),
+            Err(L01WriteError::Internal(message)) if message.contains("reserved compression bit")
+        ));
     }
 
     #[test]

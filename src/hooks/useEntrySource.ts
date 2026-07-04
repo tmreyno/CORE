@@ -17,9 +17,10 @@
  * Used by HexViewer, TextViewer, and other content viewers.
  */
 
-import { invoke } from "@tauri-apps/api/core";
-import type { DiscoveredFile, FileChunk } from "../types";
+import type { DiscoveredFile } from "../types";
 import type { SelectedEntry } from "../components/EvidenceTree/types";
+import { commands } from "../api/commands";
+import { buildEvidenceSourceInput } from "../components/evidenceSourceInput";
 
 /**
  * Result of reading bytes from a source
@@ -46,76 +47,14 @@ export async function readBytesFromSource(
   offset: number,
   size: number
 ): Promise<ByteReadResult> {
-  // Case 1: SelectedEntry provided (container file viewing)
-  if (entry) {
-    // VFS entries (E01/Raw)
-    if (entry.isVfsEntry) {
-      const bytes = await invoke<number[]>("vfs_read_file", {
-        containerPath: entry.containerPath,
-        filePath: entry.entryPath,
-        offset,
-        length: size
-      });
-      return { bytes, totalSize: entry.size };
-    }
-    
-    // Archive entries (ZIP, 7z, TAR, etc.)
-    if (entry.isArchiveEntry) {
-      // Check if this is a nested archive entry (path contains "::")
-      // Format: "nestedArchive.zip::file.txt" means file.txt inside nestedArchive.zip
-      if (entry.entryPath.includes("::")) {
-        const [nestedArchivePath, nestedEntryPath] = entry.entryPath.split("::", 2);
-        const bytes = await invoke<number[]>("nested_archive_read_entry_chunk", {
-          containerPath: entry.containerPath,
-          nestedArchivePath,
-          entryPath: nestedEntryPath,
-          offset,
-          size
-        });
-        return { bytes, totalSize: entry.size };
-      }
-      
-      // Regular archive entry
-      const bytes = await invoke<number[]>("archive_read_entry_chunk", {
-        containerPath: entry.containerPath,
-        entryPath: entry.entryPath,
-        offset,
-        size
-      });
-      return { bytes, totalSize: entry.size };
-    }
-    
-    // Disk file entry (file inside container that's actually on disk)
-    if (entry.isDiskFile) {
-      const bytes = await invoke<number[]>("read_file_bytes", {
-        path: entry.entryPath,
-        offset,
-        length: size
-      });
-      return { bytes, totalSize: entry.size };
-    }
-    
-    // AD1 container entry - use chunk-based reading for scroll support
-    const bytes = await invoke<number[]>("container_read_entry_chunk", {
-      containerPath: entry.containerPath,
-      entryPath: entry.entryPath,
-      offset,
-      size
-    });
-    return { bytes, totalSize: entry.size };
-  }
-  
-  // Case 2: Regular disk file (DiscoveredFile)
-  if (file) {
-    const result = await invoke<FileChunk>("viewer_read_chunk", {
-      path: file.path,
-      offset,
-      size
-    });
-    return { bytes: result.bytes, totalSize: result.total_size };
-  }
-  
-  throw new Error("No file or entry provided");
+  const source = buildEvidenceSourceInput(file, entry);
+  if (!source) throw new Error("No file or entry provided");
+
+  const chunk = await commands.viewer.readBinarySourceBase64Chunk(source, offset, size);
+  return {
+    bytes: base64ToBytes(chunk.data),
+    totalSize: chunk.totalSize,
+  };
 }
 
 /**
@@ -127,24 +66,10 @@ export async function readTextFromSource(
   offset: number,
   maxChars: number
 ): Promise<TextReadResult> {
-  // For container entries, read bytes and decode as text
-  if (entry) {
-    const { bytes, totalSize } = await readBytesFromSource(file, entry, offset, maxChars);
-    const text = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
-    return { text, totalSize };
-  }
-  
-  // For disk files, use the dedicated text reading command (more efficient)
-  if (file) {
-    const text = await invoke<string>("viewer_read_text", {
-      path: file.path,
-      offset,
-      maxChars
-    });
-    return { text, totalSize: file.size };
-  }
-  
-  throw new Error("No file or entry provided");
+  const { bytes, totalSize } = await readBytesFromSource(file, entry, offset, maxChars * 4);
+  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
+  const text = decoded.length > maxChars ? Array.from(decoded).slice(0, maxChars).join("") : decoded;
+  return { text, totalSize };
 }
 
 /**
@@ -169,4 +94,13 @@ export function getSourceFilename(
   if (entry) return entry.name;
   if (file) return file.filename;
   return "";
+}
+
+function base64ToBytes(data: string): number[] {
+  const binaryString = atob(data);
+  const bytes = new Array<number>(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }

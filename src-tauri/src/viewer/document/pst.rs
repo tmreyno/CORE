@@ -25,6 +25,45 @@ use outlook_pst::UnicodePstFile;
 
 use super::error::{DocumentError, DocumentResult};
 
+pub(crate) const MAX_PST_PREVIEW_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const DEFAULT_PST_MESSAGE_LIMIT: usize = 200;
+const MAX_PST_MESSAGE_LIMIT: usize = 1_000;
+const MAX_PST_FOLDERS: usize = 10_000;
+const MAX_PST_FOLDER_DEPTH: usize = 128;
+const MAX_PST_ATTACHMENTS: usize = 1_024;
+const MAX_PST_FIELD_CHARS: usize = 4_096;
+const MAX_PST_BODY_CHARS: usize = 1_048_576;
+
+pub(crate) fn ensure_pst_preview_size_allowed(path: &str) -> DocumentResult<()> {
+    let size = std::fs::metadata(path).map_err(DocumentError::Io)?.len();
+    if size > MAX_PST_PREVIEW_BYTES {
+        return Err(DocumentError::InvalidDocument(format!(
+            "PST/OST file too large for preview: {} bytes > {} bytes",
+            size, MAX_PST_PREVIEW_BYTES
+        )));
+    }
+    Ok(())
+}
+
+fn normalized_pst_message_page(offset: Option<usize>, limit: Option<usize>) -> (usize, usize) {
+    (
+        offset.unwrap_or(0),
+        limit
+            .unwrap_or(DEFAULT_PST_MESSAGE_LIMIT)
+            .clamp(1, MAX_PST_MESSAGE_LIMIT),
+    )
+}
+
+fn truncate_pst_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let mut truncated: String = value.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
+}
+
 // =============================================================================
 // MAPI Property IDs
 // =============================================================================
@@ -216,9 +255,13 @@ pub struct PstAttachmentInfo {
 // =============================================================================
 
 fn prop_string(props: &dyn PropGetter, id: u16) -> Option<String> {
+    prop_string_with_limit(props, id, MAX_PST_FIELD_CHARS)
+}
+
+fn prop_string_with_limit(props: &dyn PropGetter, id: u16, max_chars: usize) -> Option<String> {
     match props.get_prop(id)? {
-        PropertyValue::Unicode(s) => Some(s.to_string()),
-        PropertyValue::String8(s) => Some(s.to_string()),
+        PropertyValue::Unicode(s) => Some(truncate_pst_text(&s.to_string(), max_chars)),
+        PropertyValue::String8(s) => Some(truncate_pst_text(&s.to_string(), max_chars)),
         _ => None,
     }
 }
@@ -258,9 +301,11 @@ fn prop_time_iso(props: &dyn PropGetter, id: u16) -> Option<String> {
 
 fn prop_html_string(props: &dyn PropGetter, id: u16) -> Option<String> {
     match props.get_prop(id)? {
-        PropertyValue::Unicode(s) => Some(s.to_string()),
-        PropertyValue::String8(s) => Some(s.to_string()),
-        PropertyValue::Binary(bytes) => String::from_utf8(bytes.buffer().to_vec()).ok(),
+        PropertyValue::Unicode(s) => Some(truncate_pst_text(&s.to_string(), MAX_PST_BODY_CHARS)),
+        PropertyValue::String8(s) => Some(truncate_pst_text(&s.to_string(), MAX_PST_BODY_CHARS)),
+        PropertyValue::Binary(bytes) => std::str::from_utf8(bytes.buffer())
+            .ok()
+            .map(|s| truncate_pst_text(s, MAX_PST_BODY_CHARS)),
         _ => None,
     }
 }
@@ -268,8 +313,8 @@ fn prop_html_string(props: &dyn PropGetter, id: u16) -> Option<String> {
 /// Extract a string from a PropertyValue (owned conversion)
 fn pv_to_string(val: &PropertyValue) -> Option<String> {
     match val {
-        PropertyValue::Unicode(s) => Some(s.to_string()),
-        PropertyValue::String8(s) => Some(s.to_string()),
+        PropertyValue::Unicode(s) => Some(truncate_pst_text(&s.to_string(), MAX_PST_FIELD_CHARS)),
+        PropertyValue::String8(s) => Some(truncate_pst_text(&s.to_string(), MAX_PST_FIELD_CHARS)),
         _ => None,
     }
 }
@@ -296,6 +341,7 @@ impl<'a> PropGetter for MsgProps<'a> {
 ///
 /// This is the entry point — returns the folder tree for the sidebar.
 pub fn pst_list_folders(path: &str) -> DocumentResult<PstInfo> {
+    ensure_pst_preview_size_allowed(path)?;
     let pst = UnicodePstFile::open(path)
         .map_err(|e| DocumentError::InvalidDocument(format!("Failed to open PST: {}", e)))?;
     let pst_rc = Rc::new(pst);
@@ -306,6 +352,7 @@ pub fn pst_list_folders(path: &str) -> DocumentResult<PstInfo> {
     let store_props = store.properties();
     let display_name = store_props
         .display_name()
+        .map(|name| truncate_pst_text(&name, MAX_PST_FIELD_CHARS))
         .unwrap_or_else(|_| "Unknown".to_string());
 
     // Get the IPM subtree root (where user folders live)
@@ -321,7 +368,7 @@ pub fn pst_list_folders(path: &str) -> DocumentResult<PstInfo> {
     let mut total_folders = 0;
 
     // Walk the hierarchy table to discover subfolders
-    walk_folders(&store, &root_folder, &mut folders, &mut total_folders)?;
+    walk_folders(&store, &root_folder, &mut folders, &mut total_folders, 0)?;
 
     Ok(PstInfo {
         path: path.to_string(),
@@ -340,6 +387,7 @@ pub fn pst_list_messages(
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> DocumentResult<Vec<PstMessageSummary>> {
+    ensure_pst_preview_size_allowed(path)?;
     let pst = UnicodePstFile::open(path)
         .map_err(|e| DocumentError::InvalidDocument(format!("Failed to open PST: {}", e)))?;
     let pst_rc = Rc::new(pst);
@@ -361,8 +409,7 @@ pub fn pst_list_messages(
         None => return Ok(Vec::new()), // Empty folder
     };
 
-    let offset = offset.unwrap_or(0);
-    let limit = limit.unwrap_or(200);
+    let (offset, limit) = normalized_pst_message_page(offset, limit);
 
     let mut messages = Vec::new();
     for row in contents_table.rows_matrix().skip(offset).take(limit) {
@@ -412,6 +459,7 @@ pub fn pst_list_messages(
 ///
 /// The node_id comes from `PstMessageSummary.node_id`.
 pub fn pst_get_message(path: &str, message_node_id: u32) -> DocumentResult<PstMessageDetail> {
+    ensure_pst_preview_size_allowed(path)?;
     let pst = UnicodePstFile::open(path)
         .map_err(|e| DocumentError::InvalidDocument(format!("Failed to open PST: {}", e)))?;
     let pst_rc = Rc::new(pst);
@@ -445,7 +493,7 @@ pub fn pst_get_message(path: &str, message_node_id: u32) -> DocumentResult<PstMe
         let tc_info = att_table.context();
         let col_descs = tc_info.columns();
 
-        for row in att_table.rows_matrix() {
+        for row in att_table.rows_matrix().take(MAX_PST_ATTACHMENTS) {
             let cols = match row.columns(tc_info) {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -499,7 +547,7 @@ pub fn pst_get_message(path: &str, message_node_id: u32) -> DocumentResult<PstMe
         display_cc: prop_string(&props, PID_TAG_DISPLAY_CC),
         display_bcc: prop_string(&props, PID_TAG_DISPLAY_BCC),
         date,
-        body_text: prop_string(&props, PID_TAG_BODY),
+        body_text: prop_string_with_limit(&props, PID_TAG_BODY, MAX_PST_BODY_CHARS),
         body_html: prop_html_string(&props, PID_TAG_BODY_HTML),
         size: prop_i32(&props, PID_TAG_MESSAGE_SIZE),
         has_attachments: prop_bool(&props, PID_TAG_HASATTACH).unwrap_or(false),
@@ -521,7 +569,12 @@ fn walk_folders(
     folder: &Rc<UnicodeFolder>,
     out: &mut Vec<PstFolderInfo>,
     total: &mut usize,
+    depth: usize,
 ) -> DocumentResult<()> {
+    if depth >= MAX_PST_FOLDER_DEPTH || *total >= MAX_PST_FOLDERS {
+        return Ok(());
+    }
+
     let hierarchy_table = match folder.hierarchy_table() {
         Some(ht) => ht,
         None => return Ok(()), // No subfolders
@@ -530,6 +583,10 @@ fn walk_folders(
     let _context = hierarchy_table.context();
 
     for row in hierarchy_table.rows_matrix() {
+        if *total >= MAX_PST_FOLDERS {
+            break;
+        }
+
         let row_node_id: u32 = row.id().into();
 
         // Try to open this subfolder
@@ -546,6 +603,7 @@ fn walk_folders(
         let sub_props = sub_folder.properties();
         let name = sub_props
             .display_name()
+            .map(|name| truncate_pst_text(&name, MAX_PST_FIELD_CHARS))
             .unwrap_or_else(|_| format!("Folder {}", row_node_id));
         let content_count = sub_props.content_count().unwrap_or(0);
         let unread_count = sub_props.unread_count().unwrap_or(0);
@@ -555,7 +613,7 @@ fn walk_folders(
 
         let mut children = Vec::new();
         if has_sub_folders {
-            walk_folders(store, &sub_folder, &mut children, total)?;
+            walk_folders(store, &sub_folder, &mut children, total, depth + 1)?;
         }
 
         out.push(PstFolderInfo {
@@ -574,6 +632,7 @@ fn walk_folders(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_windows_filetime_conversion() {
@@ -584,6 +643,41 @@ mod tests {
         assert!(unix_100ns > 0);
         let secs = unix_100ns / 10_000_000;
         assert!(secs > 0);
+    }
+
+    #[test]
+    fn normalized_pst_message_page_uses_default_limit() {
+        assert_eq!(
+            normalized_pst_message_page(Some(25), None),
+            (25, DEFAULT_PST_MESSAGE_LIMIT)
+        );
+    }
+
+    #[test]
+    fn normalized_pst_message_page_clamps_limit_bounds() {
+        assert_eq!(normalized_pst_message_page(None, Some(0)), (0, 1));
+        assert_eq!(
+            normalized_pst_message_page(None, Some(usize::MAX)),
+            (0, MAX_PST_MESSAGE_LIMIT)
+        );
+    }
+
+    #[test]
+    fn truncate_pst_text_is_unicode_safe() {
+        let value = "é".repeat(MAX_PST_FIELD_CHARS + 1);
+
+        let truncated = truncate_pst_text(&value, MAX_PST_FIELD_CHARS);
+
+        assert!(truncated.ends_with("..."));
+        assert_eq!(
+            truncated.trim_end_matches("...").chars().count(),
+            MAX_PST_FIELD_CHARS
+        );
+    }
+
+    #[test]
+    fn pst_body_limit_is_larger_than_field_limit() {
+        assert!(MAX_PST_BODY_CHARS > MAX_PST_FIELD_CHARS);
     }
 
     #[test]
@@ -600,5 +694,18 @@ mod tests {
         assert!(prop_i32(&empty, 0x0E08).is_none());
         assert!(prop_bool(&empty, 0x0E1B).is_none());
         assert!(prop_time_iso(&empty, 0x0E06).is_none());
+    }
+
+    #[test]
+    fn pst_preview_rejects_sparse_oversized_file_before_open() {
+        let mut tmp = tempfile::Builder::new().suffix(".pst").tempfile().unwrap();
+        tmp.write_all(b"!BDN").unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_PST_PREVIEW_BYTES + 1)
+            .unwrap();
+
+        let err = pst_list_folders(&tmp.path().to_string_lossy()).unwrap_err();
+
+        assert!(err.to_string().contains("PST/OST file too large"));
     }
 }

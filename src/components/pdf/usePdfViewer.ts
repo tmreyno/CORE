@@ -12,6 +12,7 @@ import { GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 import PdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { loadPdfDocument, renderPdfPage, generateThumbnailsBatch } from "./pdfHelpers";
 import { logger } from "../../utils/logger";
+import type { HashSourceInput } from "../../api/commands";
 
 const log = logger.scope("PdfViewer");
 
@@ -22,7 +23,10 @@ GlobalWorkerOptions.workerSrc = PdfWorkerUrl;
  * Hook encapsulating all PDF viewer state and logic:
  * loading, navigation, zoom, thumbnails, keyboard handling, and resize.
  */
-export function usePdfViewer(getPath: () => string) {
+export function usePdfViewer(
+  getPath: () => string,
+  getSource?: () => HashSourceInput | null | undefined
+) {
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [numPages, setNumPages] = createSignal(0);
@@ -46,7 +50,7 @@ export function usePdfViewer(getPath: () => string) {
     setThumbnails([]);
 
     try {
-      const pdf = await loadPdfDocument(getPath());
+      const pdf = await loadPdfDocument(getPath(), getSource?.());
       setPdfDoc(pdf);
       setNumPages(pdf.numPages);
       setCurrentPage(1);
@@ -192,7 +196,8 @@ export function usePdfViewer(getPath: () => string) {
 
   createEffect(() => {
     const path = getPath();
-    if (path) loadPdf();
+    const source = getSource?.();
+    if (path || source) loadPdf();
   });
 
   const debouncedRerender = debounce(() => {

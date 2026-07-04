@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { createSignal, createEffect, createMemo } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "../../api/commands";
 import { logger } from "../../utils/logger";
 import type { ExifMetadataSection } from "../../types/viewerMetadata";
 import type { ExifMetadata, ExifPanelProps } from "./types";
@@ -23,7 +23,9 @@ export function useExifData(props: ExifPanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const data = await invoke<ExifMetadata>("exif_extract", { path: props.path });
+      const data = props.source
+        ? await commands.image.extractExifSource(props.source)
+        : await commands.image.extractExif(props.path);
       setExif(data);
     } catch (e) {
       log.error("Failed to extract EXIF:", e);
@@ -34,7 +36,9 @@ export function useExifData(props: ExifPanelProps) {
   };
 
   createEffect(() => {
-    if (props.path) loadExif();
+    const path = props.path;
+    const source = props.source;
+    if (path || source) void loadExif();
   });
 
   const filteredRawTags = createMemo(() => {

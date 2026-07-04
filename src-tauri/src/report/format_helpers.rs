@@ -64,6 +64,23 @@ pub fn normalized_paragraph_text(input: &str) -> String {
     parts.join("\n\n")
 }
 
+/// Return a stable appendix label for a zero-based index: A..Z, AA..AZ, BA...
+pub fn appendix_label(index: usize) -> String {
+    let mut value = index;
+    let mut chars = Vec::new();
+
+    loop {
+        let rem = value % 26;
+        chars.push((b'A' + rem as u8) as char);
+        if value < 26 {
+            break;
+        }
+        value = (value / 26).saturating_sub(1);
+    }
+
+    chars.into_iter().rev().collect()
+}
+
 fn push_block(blocks: &mut Vec<TextBlock>, current_lines: &mut Vec<String>) {
     if current_lines.is_empty() {
         return;
@@ -134,5 +151,17 @@ mod tests {
                 "Gamma".to_string()
             ])]
         );
+    }
+
+    #[test]
+    fn appendix_label_handles_more_than_twenty_six_entries() {
+        assert_eq!(appendix_label(0), "A");
+        assert_eq!(appendix_label(25), "Z");
+        assert_eq!(appendix_label(26), "AA");
+        assert_eq!(appendix_label(27), "AB");
+        assert_eq!(appendix_label(51), "AZ");
+        assert_eq!(appendix_label(52), "BA");
+        assert_eq!(appendix_label(701), "ZZ");
+        assert_eq!(appendix_label(702), "AAA");
     }
 }

@@ -84,6 +84,24 @@ describe("EmailViewer", () => {
       expect(mockInvoke).toHaveBeenCalledWith("email_parse_eml", { path: "/tmp/test.eml" });
     });
 
+    it("calls email_parse_eml_source when an EML evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockEmlData,
+        path: "/evidence/image.ad1:mail/test.eml",
+      });
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "mail/test.eml",
+        containerType: "ad1",
+        size: 4096,
+      };
+
+      renderComponent(() => <EmailViewer path="/tmp/test.eml" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("email_parse_eml_source", { source });
+    });
+
     it("displays recipient information", async () => {
       mockInvoke.mockResolvedValueOnce(mockEmlData);
 
@@ -132,6 +150,24 @@ describe("EmailViewer", () => {
       });
     });
 
+    it("calls email_parse_mbox_source when an MBOX evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce(mockMboxData);
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "mail/archive.mbox",
+        containerType: "ad1",
+        size: 8192,
+      };
+
+      renderComponent(() => <EmailViewer path="/tmp/mailbox.mbox" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("email_parse_mbox_source", {
+        source,
+        maxMessages: 200,
+      });
+    });
+
     it("renders message list for mbox files", async () => {
       mockInvoke.mockResolvedValueOnce(mockMboxData);
 
@@ -142,6 +178,26 @@ describe("EmailViewer", () => {
 
       expect(container.textContent).toContain("First Message");
       expect(container.textContent).toContain("Second Message");
+    });
+  });
+
+  describe("MSG file rendering", () => {
+    it("calls email_parse_msg_source when a MSG evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockEmlData,
+        path: "/evidence/image.ad1:mail/message.msg",
+      });
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "mail/message.msg",
+        containerType: "ad1",
+        size: 12288,
+      };
+
+      renderComponent(() => <EmailViewer path="/tmp/message.msg" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("email_parse_msg_source", { source });
     });
   });
 

@@ -17,7 +17,12 @@ import {
   buildStructuredOptionFieldState,
   composeStructuredOptionLegacyValue,
 } from "@core-suite/types/evidence-policy";
-import type { COCItem, COCTransfer, EvidenceCollectionData, CollectedItem } from "../types";
+import type {
+  COCItem,
+  COCTransfer,
+  EvidenceCollectionData,
+  CollectedItem,
+} from "../types";
 import type {
   DbCocItem,
   DbCocTransfer,
@@ -145,9 +150,7 @@ export function dbToCocItem(db: DbCocItem): COCItem {
     storage_location_detail: storage.detail || undefined,
     reason_submitted: db.reasonSubmitted,
     transfers: [], // loaded separately
-    intake_hashes: db.intakeHashesJson
-      ? JSON.parse(db.intakeHashesJson)
-      : [],
+    intake_hashes: db.intakeHashesJson ? JSON.parse(db.intakeHashesJson) : [],
     notes: db.notes,
     // Final Disposition
     disposition: db.disposition as COCItem["disposition"],
@@ -165,7 +168,7 @@ export function dbToCocItem(db: DbCocItem): COCItem {
 
 export function cocTransferToDb(
   transfer: COCTransfer,
-  cocItemId: string
+  cocItemId: string,
 ): DbCocTransfer {
   const storageLocation = composeStructuredOptionLegacyValue(STORAGE_OPTIONS, {
     selectedValue: transfer.storage_class,
@@ -221,7 +224,7 @@ export function evidenceCollectionToDb(
   data: EvidenceCollectionData,
   collectionId: string,
   caseNumber?: string,
-  status?: string
+  status?: string,
 ): { collection: DbEvidenceCollection; items: DbCollectedItem[] } {
   const now = nowISO();
   const collection: DbEvidenceCollection = {
@@ -244,7 +247,12 @@ export function evidenceCollectionToDb(
   };
 
   const items: DbCollectedItem[] = data.collected_items.map((item) =>
-    collectedItemToDb(item, collectionId, item.coc_item_id, item.evidence_file_id)
+    collectedItemToDb(
+      item,
+      collectionId,
+      item.coc_item_id,
+      item.evidence_file_id,
+    ),
   );
 
   return { collection, items };
@@ -254,10 +262,12 @@ export function collectedItemToDb(
   item: CollectedItem,
   collectionId: string,
   cocItemId?: string,
-  evidenceFileId?: string
+  evidenceFileId?: string,
 ): DbCollectedItem {
   // Compose foundLocation from structured building/room/other fields (legacy compat)
-  const locationParts = [item.building, item.room, item.location_other].filter(Boolean);
+  const locationParts = [item.building, item.room, item.location_other].filter(
+    Boolean,
+  );
   const foundLocation = locationParts.join(", ") || "";
   const packaging = composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, {
     selectedValue: item.packaging_type,
@@ -269,11 +279,16 @@ export function collectedItemToDb(
     collectionId,
     cocItemId,
     evidenceFileId,
+    sourceId: item.source_id || undefined,
+    sourceRefJson: item.source_ref_json || undefined,
     // NOT NULL columns — use empty string fallback to avoid SQLite constraint violations
     itemNumber: item.item_number || "",
     description: item.description || "",
     foundLocation,
-    itemType: item.device_type === "other" ? (item.device_type_other || "") : (item.device_type || ""),
+    itemType:
+      item.device_type === "other"
+        ? item.device_type_other || ""
+        : item.device_type || "",
     make: item.make,
     model: item.model,
     serialNumber: item.serial_number,
@@ -313,6 +328,9 @@ export function collectedItemToDb(
     imageFormatOther: item.image_format_other || undefined,
     acquisitionMethod: item.acquisition_method || undefined,
     acquisitionMethodOther: item.acquisition_method_other || undefined,
+    hashAlgorithm: item.hash_algorithm || undefined,
+    hashValue: item.hash_value || undefined,
+    hashComputedAt: item.hash_computed_at || undefined,
 
     // Additional info (v8)
     storageNotes: item.storage_notes || undefined,
@@ -321,7 +339,7 @@ export function collectedItemToDb(
 
 export function dbToEvidenceCollectionData(
   collection: DbEvidenceCollection,
-  items: DbCollectedItem[]
+  items: DbCollectedItem[],
 ): EvidenceCollectionData {
   return {
     collection_date: collection.collectionDate || "",
@@ -351,7 +369,9 @@ export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
     locationOther = db.locationOther || undefined;
   } else {
     // Legacy fallback: parse comma-separated foundLocation
-    const locationParts = (db.foundLocation || "").split(",").map((s) => s.trim());
+    const locationParts = (db.foundLocation || "")
+      .split(",")
+      .map((s) => s.trim());
     building = locationParts[0] || undefined;
     room = locationParts[1] || undefined;
     locationOther = locationParts.slice(2).join(", ") || undefined;
@@ -401,7 +421,10 @@ export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
 
     // Condition & packaging
     condition: db.condition,
-    packaging: db.packaging || composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, packaging) || "",
+    packaging:
+      db.packaging ||
+      composeStructuredOptionLegacyValue(PACKAGING_OPTIONS, packaging) ||
+      "",
     packaging_type: packaging.selectedValue || undefined,
     packaging_detail: packaging.detail || undefined,
 
@@ -413,5 +436,10 @@ export function dbToCollectedItem(db: DbCollectedItem): CollectedItem {
     // Linkage
     evidence_file_id: db.evidenceFileId || undefined,
     coc_item_id: db.cocItemId || undefined,
+    source_id: db.sourceId || undefined,
+    source_ref_json: db.sourceRefJson || undefined,
+    hash_algorithm: db.hashAlgorithm || undefined,
+    hash_value: db.hashValue || undefined,
+    hash_computed_at: db.hashComputedAt || undefined,
   };
 }

@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { OfficeMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 // Types matching Rust OfficeDocumentInfo with camelCase serde
 
@@ -55,6 +56,8 @@ export interface OfficeDocumentInfo {
 export interface OfficeViewerProps {
   /** Path to the office document file */
   path: string;
+  /** Optional evidence source for files inside containers */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

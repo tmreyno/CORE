@@ -83,9 +83,37 @@ fn checked_hfsplus_block_offset(
     checked_hfsplus_add_u64(base_offset, block_offset, context)
 }
 
+fn checked_hfsplus_read_advance(current_offset: u64, bytes_read: usize) -> Result<u64, VfsError> {
+    let bytes_read = u64::try_from(bytes_read)
+        .map_err(|_| VfsError::IoError("HFS+ read byte count exceeded u64".into()))?;
+    checked_hfsplus_add_u64(current_offset, bytes_read, "HFS+ logical read offset")
+}
+
 fn bounded_hfsplus_read_len(logical_size: u64, offset: u64, requested: usize) -> Option<usize> {
     let remaining = logical_size.checked_sub(offset)?;
     Some(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
+}
+
+fn read_hfsplus_exact(
+    device: &dyn SeekableBlockDevice,
+    offset: u64,
+    buf: &mut [u8],
+    context: &str,
+) -> Result<(), VfsError> {
+    let bytes_read = device
+        .read_at(offset, buf)
+        .map_err(|e| VfsError::IoError(e.to_string()))?;
+
+    if bytes_read != buf.len() {
+        return Err(VfsError::IoError(format!(
+            "{} short read: expected {} bytes, got {}",
+            context,
+            buf.len(),
+            bytes_read
+        )));
+    }
+
+    Ok(())
 }
 /// Extents overflow file ID
 #[allow(dead_code)]
@@ -361,8 +389,10 @@ impl HfsPlusDriver {
 
         // Read volume header
         let mut buf = vec![0u8; VOLUME_HEADER_SIZE];
+        let volume_header_offset =
+            checked_hfsplus_add_u64(offset, VOLUME_HEADER_OFFSET, "HFS+ volume header offset")?;
         device
-            .read_at(offset + VOLUME_HEADER_OFFSET, &mut buf)
+            .read_at(volume_header_offset, &mut buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
 
         let header = Self::parse_volume_header(&buf)?;
@@ -378,14 +408,23 @@ impl HfsPlusDriver {
         // Read catalog B-tree header
         let catalog_header = Self::read_btree_header(&device, offset, &header)?;
 
-        let total_size = header.block_size as u64 * header.total_blocks as u64;
+        let total_size = checked_hfsplus_mul_u64(
+            header.block_size as u64,
+            header.total_blocks as u64,
+            "HFS+ total size",
+        )?;
+        let free_space = checked_hfsplus_mul_u64(
+            header.free_blocks as u64,
+            header.block_size as u64,
+            "HFS+ free space",
+        )?;
 
         let info = FilesystemInfo {
             // HFSX is still HFS+ (case-sensitive variant)
             fs_type: FilesystemType::HfsPlus,
             label: None, // Could extract from catalog
             total_size: total_size.min(size),
-            free_space: Some(header.free_blocks as u64 * header.block_size as u64),
+            free_space: Some(free_space),
             cluster_size: header.block_size,
         };
 
@@ -573,7 +612,11 @@ impl HfsPlusDriver {
         let mut node_buf = vec![0u8; node_size];
 
         // Calculate physical offset
-        let node_byte_offset = node_num as u64 * node_size as u64;
+        let node_byte_offset = checked_hfsplus_mul_u64(
+            node_num as u64,
+            node_size as u64,
+            "HFS+ catalog node byte offset",
+        )?;
         let mut remaining = node_byte_offset;
         let mut physical_offset = None;
 
@@ -582,13 +625,23 @@ impl HfsPlusDriver {
             if extent.block_count == 0 {
                 break;
             }
-            let extent_bytes = extent.block_count as u64 * self.header.block_size as u64;
+            let extent_bytes = checked_hfsplus_mul_u64(
+                extent.block_count as u64,
+                self.header.block_size as u64,
+                "HFS+ catalog extent size",
+            )?;
             if remaining < extent_bytes {
-                physical_offset = Some(
-                    self.offset
-                        + (extent.start_block as u64 * self.header.block_size as u64)
-                        + remaining,
-                );
+                let extent_offset = checked_hfsplus_block_offset(
+                    self.offset,
+                    extent.start_block as u64,
+                    self.header.block_size as u64,
+                    "HFS+ catalog node physical extent offset",
+                )?;
+                physical_offset = Some(checked_hfsplus_add_u64(
+                    extent_offset,
+                    remaining,
+                    "HFS+ catalog node physical offset",
+                )?);
                 break;
             }
             remaining -= extent_bytes;
@@ -598,9 +651,12 @@ impl HfsPlusDriver {
             VfsError::IoError(format!("Node {} beyond catalog extents", node_num))
         })?;
 
-        self.device
-            .read_at(physical_offset, &mut node_buf)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
+        read_hfsplus_exact(
+            self.device.as_ref(),
+            physical_offset,
+            &mut node_buf,
+            "HFS+ catalog node",
+        )?;
 
         Ok(node_buf)
     }
@@ -1008,17 +1064,19 @@ impl HfsPlusDriver {
                     extent_size.checked_sub(extent_offset).ok_or_else(|| {
                         VfsError::IoError("HFS+ extent offset exceeded extent size".into())
                     })?;
-                let to_read = (actual_size - bytes_read).min(available_in_extent as usize);
+                let available_in_extent =
+                    usize::try_from(available_in_extent).unwrap_or(usize::MAX);
+                let to_read = (actual_size - bytes_read).min(available_in_extent);
 
-                self.device
-                    .read_at(
-                        physical_offset,
-                        &mut result[bytes_read..bytes_read + to_read],
-                    )
-                    .map_err(|e| VfsError::IoError(e.to_string()))?;
+                read_hfsplus_exact(
+                    self.device.as_ref(),
+                    physical_offset,
+                    &mut result[bytes_read..bytes_read + to_read],
+                    "HFS+ file extent",
+                )?;
 
                 bytes_read += to_read;
-                current_offset += to_read as u64;
+                current_offset = checked_hfsplus_read_advance(current_offset, to_read)?;
             }
 
             extent_logical_start = extent_logical_end;
@@ -1121,7 +1179,40 @@ impl FilesystemDriver for HfsPlusDriver {
 
 #[cfg(test)]
 mod tests {
+    use super::super::traits::{BlockDevice, BlockReader, SeekableBlockDevice};
     use super::*;
+    use ffx_errors::ContainerError;
+    use std::io::Cursor;
+
+    struct MockBlockDevice {
+        data: Vec<u8>,
+    }
+
+    impl BlockDevice for MockBlockDevice {
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            if start >= self.data.len() {
+                return Ok(0);
+            }
+
+            let to_read = buf.len().min(self.data.len() - start);
+            buf[..to_read].copy_from_slice(&self.data[start..start + to_read]);
+            Ok(to_read)
+        }
+
+        fn size(&self) -> u64 {
+            self.data.len() as u64
+        }
+    }
+
+    impl SeekableBlockDevice for MockBlockDevice {
+        fn reader_at(&self, offset: u64) -> Box<dyn BlockReader> {
+            let start = usize::try_from(offset).unwrap_or(self.data.len());
+            Box::new(Cursor::new(
+                self.data[start.min(self.data.len())..].to_vec(),
+            ))
+        }
+    }
 
     #[test]
     fn test_hfsplus_signature_constants() {
@@ -1171,8 +1262,34 @@ mod tests {
     }
 
     #[test]
+    fn test_checked_hfsplus_mul_rejects_overflow() {
+        let err = checked_hfsplus_mul_u64(u64::MAX, 2, "test").unwrap_err();
+
+        assert!(err.to_string().contains("test"));
+    }
+
+    #[test]
+    fn test_checked_hfsplus_add_rejects_overflow() {
+        let err = checked_hfsplus_add_u64(u64::MAX, 1, "test").unwrap_err();
+
+        assert!(err.to_string().contains("test"));
+    }
+
+    #[test]
     fn test_checked_hfsplus_block_offset_rejects_overflow() {
         assert!(checked_hfsplus_block_offset(u64::MAX, 1, 1, "test").is_err());
+    }
+
+    #[test]
+    fn test_checked_hfsplus_read_advance_adds_bytes_read() {
+        assert_eq!(checked_hfsplus_read_advance(40, 2).unwrap(), 42);
+    }
+
+    #[test]
+    fn test_checked_hfsplus_read_advance_rejects_overflow() {
+        let err = checked_hfsplus_read_advance(u64::MAX, 1).unwrap_err();
+
+        assert!(err.to_string().contains("HFS+ logical read offset"));
     }
 
     #[test]
@@ -1180,6 +1297,32 @@ mod tests {
         assert_eq!(bounded_hfsplus_read_len(8, 4, 16), Some(4));
         assert_eq!(bounded_hfsplus_read_len(8, 8, 16), Some(0));
         assert_eq!(bounded_hfsplus_read_len(8, 9, 16), None);
+    }
+
+    #[test]
+    fn test_read_hfsplus_exact_reads_full_buffer() {
+        let device = MockBlockDevice {
+            data: b"abcdef".to_vec(),
+        };
+        let mut buf = [0u8; 3];
+
+        read_hfsplus_exact(&device, 2, &mut buf, "test")
+            .expect("full HFS+ exact read should succeed");
+
+        assert_eq!(&buf, b"cde");
+    }
+
+    #[test]
+    fn test_read_hfsplus_exact_rejects_short_read() {
+        let device = MockBlockDevice {
+            data: b"abcd".to_vec(),
+        };
+        let mut buf = [0u8; 4];
+
+        let err = read_hfsplus_exact(&device, 2, &mut buf, "test")
+            .expect_err("short HFS+ exact read should fail");
+
+        assert!(matches!(err, VfsError::IoError(message) if message.contains("short read")));
     }
 
     #[test]

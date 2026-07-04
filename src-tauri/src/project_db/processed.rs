@@ -10,6 +10,9 @@ use super::database::ProjectDatabase;
 use super::types::*;
 use rusqlite::{params, Result as SqlResult};
 
+const MAX_PROCESSED_JSON_BYTES: usize = 1024 * 1024;
+const MAX_PROCESSED_TEXT_FIELD_BYTES: usize = 16 * 1024;
+
 impl ProjectDatabase {
     // ========================================================================
     // Processed Database Operations
@@ -17,6 +20,8 @@ impl ProjectDatabase {
 
     /// Insert or update a processed database record
     pub fn upsert_processed_database(&self, db: &DbProcessedDatabase) -> SqlResult<()> {
+        validate_processed_database_record(db)?;
+
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO processed_databases (id, path, name, db_type, case_number, examiner, created_date, total_size, artifact_count, notes, registered_at, metadata_json)
@@ -145,6 +150,8 @@ impl ProjectDatabase {
 
     /// Insert or update an integrity record
     pub fn upsert_processed_db_integrity(&self, i: &DbProcessedDbIntegrity) -> SqlResult<()> {
+        validate_processed_db_integrity_record(i)?;
+
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO processed_db_integrity (id, processed_db_id, file_path, file_size, baseline_hash, baseline_timestamp, current_hash, current_hash_timestamp, status, changes_json)
@@ -200,6 +207,8 @@ impl ProjectDatabase {
 
     /// Insert or update metrics for a processed database
     pub fn upsert_processed_db_metrics(&self, m: &DbProcessedDbMetrics) -> SqlResult<()> {
+        validate_processed_db_metrics_record(m)?;
+
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO processed_db_metrics (id, processed_db_id, total_scans, last_scan_date, total_jobs, last_job_date, total_notes, total_tagged_items, total_users, user_names_json, captured_at)
@@ -261,6 +270,8 @@ impl ProjectDatabase {
 
     /// Insert or update AXIOM case information
     pub fn upsert_axiom_case_info(&self, a: &DbAxiomCaseInfo) -> SqlResult<()> {
+        validate_axiom_case_info_record(a)?;
+
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO axiom_case_info (id, processed_db_id, case_name, case_number, case_type, description, examiner, agency, axiom_version, search_start, search_end, search_duration, search_outcome, output_folder, total_artifacts, case_path, captured_at, keyword_info_json)
@@ -369,6 +380,8 @@ impl ProjectDatabase {
 
     /// Insert an AXIOM evidence source
     pub fn insert_axiom_evidence_source(&self, s: &DbAxiomEvidenceSource) -> SqlResult<()> {
+        validate_axiom_evidence_source_record(s)?;
+
         let conn = self.conn.lock();
         conn.execute(
             "INSERT OR IGNORE INTO axiom_evidence_sources (id, axiom_case_id, name, evidence_number, source_type, path, hash, size, acquired, search_types_json)
@@ -416,6 +429,8 @@ impl ProjectDatabase {
 
     /// Insert an AXIOM search result
     pub fn insert_axiom_search_result(&self, r: &DbAxiomSearchResult) -> SqlResult<()> {
+        validate_axiom_search_result_record(r)?;
+
         let conn = self.conn.lock();
         conn.execute(
             "INSERT OR IGNORE INTO axiom_search_results (id, axiom_case_id, artifact_type, hit_count)
@@ -454,6 +469,10 @@ impl ProjectDatabase {
 
     /// Insert or replace artifact categories for a processed database
     pub fn upsert_artifact_categories(&self, categories: &[DbArtifactCategory]) -> SqlResult<()> {
+        for category in categories {
+            validate_artifact_category_record(category)?;
+        }
+
         let conn = self.conn.lock();
         for c in categories {
             conn.execute(
@@ -490,4 +509,242 @@ impl ProjectDatabase {
 
         rows.collect()
     }
+}
+
+fn validate_processed_database_record(db: &DbProcessedDatabase) -> SqlResult<()> {
+    validate_required_processed_text_field("id", &db.id, &db.id)?;
+    validate_required_processed_text_field("path", &db.path, &db.id)?;
+    validate_required_processed_text_field("name", &db.name, &db.id)?;
+    validate_required_processed_text_field("db_type", &db.db_type, &db.id)?;
+    validate_optional_processed_text_field("case_number", db.case_number.as_deref(), &db.id)?;
+    validate_optional_processed_text_field("examiner", db.examiner.as_deref(), &db.id)?;
+    validate_optional_processed_text_field("created_date", db.created_date.as_deref(), &db.id)?;
+    validate_optional_processed_text_field("notes", db.notes.as_deref(), &db.id)?;
+    validate_required_processed_text_field("registered_at", &db.registered_at, &db.id)?;
+    validate_optional_processed_json_field("metadata_json", db.metadata_json.as_deref(), &db.id)?;
+    validate_nonnegative_i64("total_size", db.total_size, &db.id)?;
+    validate_optional_nonnegative_i64("artifact_count", db.artifact_count, &db.id)
+}
+
+fn validate_processed_db_integrity_record(i: &DbProcessedDbIntegrity) -> SqlResult<()> {
+    validate_required_processed_text_field("id", &i.id, &i.id)?;
+    validate_required_processed_text_field("processed_db_id", &i.processed_db_id, &i.id)?;
+    validate_required_processed_text_field("file_path", &i.file_path, &i.id)?;
+    validate_nonnegative_i64("file_size", i.file_size, &i.id)?;
+    validate_required_processed_text_field("baseline_hash", &i.baseline_hash, &i.id)?;
+    validate_processed_hex_digest("baseline_hash", &i.baseline_hash, &i.id)?;
+    validate_required_processed_text_field("baseline_timestamp", &i.baseline_timestamp, &i.id)?;
+    if let Some(current_hash) = &i.current_hash {
+        validate_required_processed_text_field("current_hash", current_hash, &i.id)?;
+        validate_processed_hex_digest("current_hash", current_hash, &i.id)?;
+    }
+    validate_optional_processed_text_field(
+        "current_hash_timestamp",
+        i.current_hash_timestamp.as_deref(),
+        &i.id,
+    )?;
+    validate_required_processed_text_field("status", &i.status, &i.id)?;
+    validate_optional_processed_json_field("changes_json", i.changes_json.as_deref(), &i.id)
+}
+
+fn validate_processed_db_metrics_record(m: &DbProcessedDbMetrics) -> SqlResult<()> {
+    validate_required_processed_text_field("id", &m.id, &m.id)?;
+    validate_required_processed_text_field("processed_db_id", &m.processed_db_id, &m.id)?;
+    validate_nonnegative_i32("total_scans", m.total_scans, &m.id)?;
+    validate_optional_processed_text_field("last_scan_date", m.last_scan_date.as_deref(), &m.id)?;
+    validate_nonnegative_i32("total_jobs", m.total_jobs, &m.id)?;
+    validate_optional_processed_text_field("last_job_date", m.last_job_date.as_deref(), &m.id)?;
+    validate_nonnegative_i32("total_notes", m.total_notes, &m.id)?;
+    validate_nonnegative_i32("total_tagged_items", m.total_tagged_items, &m.id)?;
+    validate_nonnegative_i32("total_users", m.total_users, &m.id)?;
+    validate_optional_processed_json_field("user_names_json", m.user_names_json.as_deref(), &m.id)?;
+    validate_required_processed_text_field("captured_at", &m.captured_at, &m.id)
+}
+
+fn validate_axiom_case_info_record(a: &DbAxiomCaseInfo) -> SqlResult<()> {
+    validate_required_processed_text_field("id", &a.id, &a.id)?;
+    validate_required_processed_text_field("processed_db_id", &a.processed_db_id, &a.id)?;
+    validate_required_processed_text_field("case_name", &a.case_name, &a.id)?;
+    validate_optional_processed_text_field("case_number", a.case_number.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("case_type", a.case_type.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("description", a.description.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("examiner", a.examiner.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("agency", a.agency.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("axiom_version", a.axiom_version.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("search_start", a.search_start.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("search_end", a.search_end.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("search_duration", a.search_duration.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("search_outcome", a.search_outcome.as_deref(), &a.id)?;
+    validate_optional_processed_text_field("output_folder", a.output_folder.as_deref(), &a.id)?;
+    validate_nonnegative_i64("total_artifacts", a.total_artifacts, &a.id)?;
+    validate_optional_processed_text_field("case_path", a.case_path.as_deref(), &a.id)?;
+    validate_required_processed_text_field("captured_at", &a.captured_at, &a.id)?;
+    validate_optional_processed_json_field(
+        "keyword_info_json",
+        a.keyword_info_json.as_deref(),
+        &a.id,
+    )
+}
+
+fn validate_axiom_evidence_source_record(s: &DbAxiomEvidenceSource) -> SqlResult<()> {
+    validate_required_processed_text_field("id", &s.id, &s.id)?;
+    validate_required_processed_text_field("axiom_case_id", &s.axiom_case_id, &s.id)?;
+    validate_required_processed_text_field("name", &s.name, &s.id)?;
+    validate_optional_processed_text_field("evidence_number", s.evidence_number.as_deref(), &s.id)?;
+    validate_required_processed_text_field("source_type", &s.source_type, &s.id)?;
+    validate_optional_processed_text_field("path", s.path.as_deref(), &s.id)?;
+    validate_optional_processed_text_field("hash", s.hash.as_deref(), &s.id)?;
+    validate_optional_nonnegative_i64("size", s.size, &s.id)?;
+    validate_optional_processed_text_field("acquired", s.acquired.as_deref(), &s.id)?;
+    validate_optional_processed_json_field(
+        "search_types_json",
+        s.search_types_json.as_deref(),
+        &s.id,
+    )
+}
+
+fn validate_axiom_search_result_record(r: &DbAxiomSearchResult) -> SqlResult<()> {
+    validate_required_processed_text_field("id", &r.id, &r.id)?;
+    validate_required_processed_text_field("axiom_case_id", &r.axiom_case_id, &r.id)?;
+    validate_required_processed_text_field("artifact_type", &r.artifact_type, &r.id)?;
+    validate_nonnegative_i64("hit_count", r.hit_count, &r.id)
+}
+
+fn validate_artifact_category_record(c: &DbArtifactCategory) -> SqlResult<()> {
+    validate_required_processed_text_field("id", &c.id, &c.id)?;
+    validate_required_processed_text_field("processed_db_id", &c.processed_db_id, &c.id)?;
+    validate_required_processed_text_field("category", &c.category, &c.id)?;
+    validate_required_processed_text_field("artifact_type", &c.artifact_type, &c.id)?;
+    validate_nonnegative_i64("count", c.count, &c.id)
+}
+
+fn validate_required_processed_text_field(
+    field_name: &str,
+    value: &str,
+    record_id: &str,
+) -> SqlResult<()> {
+    if value.trim().is_empty() {
+        return Err(processed_validation_error(format!(
+            "Processed {field_name} cannot be blank for {}",
+            processed_id_for_error(record_id)
+        )));
+    }
+
+    validate_processed_text_field_size(field_name, value, record_id)
+}
+
+fn validate_optional_processed_text_field(
+    field_name: &str,
+    value: Option<&str>,
+    record_id: &str,
+) -> SqlResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+
+    if value.trim().is_empty() {
+        return Err(processed_validation_error(format!(
+            "Processed {field_name} cannot be blank for {}",
+            processed_id_for_error(record_id)
+        )));
+    }
+
+    validate_processed_text_field_size(field_name, value, record_id)
+}
+
+fn validate_processed_text_field_size(
+    field_name: &str,
+    value: &str,
+    record_id: &str,
+) -> SqlResult<()> {
+    if value.len() > MAX_PROCESSED_TEXT_FIELD_BYTES {
+        return Err(processed_validation_error(format!(
+            "Processed {field_name} exceeds {MAX_PROCESSED_TEXT_FIELD_BYTES} bytes for {}",
+            processed_id_for_error(record_id)
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_optional_processed_json_field(
+    field_name: &str,
+    value: Option<&str>,
+    record_id: &str,
+) -> SqlResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+
+    serde_json::from_str::<serde_json::Value>(value)
+        .map(|_| ())
+        .map_err(|e| processed_validation_error(format!("Invalid processed {field_name}: {e}")))?;
+    if value.len() > MAX_PROCESSED_JSON_BYTES {
+        return Err(processed_validation_error(format!(
+            "Processed {field_name} exceeds {MAX_PROCESSED_JSON_BYTES} bytes for {}",
+            processed_id_for_error(record_id)
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_nonnegative_i64(field_name: &str, value: i64, record_id: &str) -> SqlResult<()> {
+    if value < 0 {
+        return Err(processed_validation_error(format!(
+            "Processed {field_name} cannot be negative for {}: {value}",
+            processed_id_for_error(record_id)
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_optional_nonnegative_i64(
+    field_name: &str,
+    value: Option<i64>,
+    record_id: &str,
+) -> SqlResult<()> {
+    if let Some(value) = value {
+        validate_nonnegative_i64(field_name, value, record_id)?;
+    }
+
+    Ok(())
+}
+
+fn validate_nonnegative_i32(field_name: &str, value: i32, record_id: &str) -> SqlResult<()> {
+    if value < 0 {
+        return Err(processed_validation_error(format!(
+            "Processed {field_name} cannot be negative for {}: {value}",
+            processed_id_for_error(record_id)
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_processed_hex_digest(field_name: &str, value: &str, record_id: &str) -> SqlResult<()> {
+    let value = value.trim();
+    if !matches!(value.len(), 8 | 16 | 32 | 40 | 64 | 128)
+        || !value.chars().all(|ch| ch.is_ascii_hexdigit())
+    {
+        return Err(processed_validation_error(format!(
+            "Processed {field_name} is not a valid hex digest for {}",
+            processed_id_for_error(record_id)
+        )));
+    }
+
+    Ok(())
+}
+
+fn processed_id_for_error(record_id: &str) -> &str {
+    if record_id.trim().is_empty() {
+        "<blank>"
+    } else {
+        record_id
+    }
+}
+
+fn processed_validation_error(message: String) -> rusqlite::Error {
+    rusqlite::Error::InvalidParameterName(message)
 }

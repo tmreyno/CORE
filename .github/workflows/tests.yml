@@ -297,7 +297,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-cargo-build-app-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-build-app-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-build-app-
 

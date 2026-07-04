@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { BinaryMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 // ============================================================================
 // Types (matching Rust structs)
@@ -56,6 +57,8 @@ export interface BinaryInfo {
 export interface BinaryViewerProps {
   /** Path to the binary file */
   path: string;
+  /** Optional evidence source for container or nested binary entries */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

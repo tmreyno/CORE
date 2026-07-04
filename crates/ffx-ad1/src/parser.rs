@@ -35,7 +35,7 @@ use rayon::prelude::*;
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, instrument, trace};
 
@@ -769,6 +769,65 @@ impl Session {
             )));
         }
 
+        let addresses = self.read_zlib_chunk_addresses(item)?;
+        let chunk_count = addresses.len().saturating_sub(1);
+
+        let decompressed_size = usize::try_from(item.decompressed_size).map_err(|_| {
+            ContainerError::ParseError(format!(
+                "Item '{}' (id={}) has decompressed size larger than memory limits",
+                item.name, item.id
+            ))
+        })?;
+
+        // For small files (< 4 chunks), use sequential decompression
+        // For larger files, use parallel decompression
+        let data = if chunk_count < 4 {
+            self.decompress_sequential(&addresses, decompressed_size)?
+        } else {
+            self.decompress_parallel(&addresses, decompressed_size)?
+        };
+
+        let data = Arc::new(data);
+        self.cache_data(item.id, data.clone());
+        Ok(data)
+    }
+
+    /// Read and decompress a bounded range of file data for an item.
+    pub fn read_file_data_range(
+        &mut self,
+        item: &Item,
+        offset: u64,
+        size: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
+        if item.decompressed_size == 0 || size == 0 || offset >= item.decompressed_size {
+            return Ok(Vec::new());
+        }
+
+        if let Some(data) = self.search_cache(item.id) {
+            let Some((start, end)) = Self::bounded_output_range(offset, size, data.len() as u64)?
+            else {
+                return Ok(Vec::new());
+            };
+            return Ok(data[start..end].to_vec());
+        }
+
+        if item.zlib_metadata_addr == 0 {
+            return Err(ContainerError::ParseError(format!(
+                "Item '{}' (id={}) has invalid zlib metadata address: 0x0",
+                item.name, item.id
+            )));
+        }
+
+        let Some((range_start, range_end)) =
+            Self::bounded_output_range_u64(offset, size, item.decompressed_size)?
+        else {
+            return Ok(Vec::new());
+        };
+        let addresses = self.read_zlib_chunk_addresses(item)?;
+        self.decompress_range(&addresses, range_start, range_end)
+    }
+
+    fn read_zlib_chunk_addresses(&mut self, item: &Item) -> Result<Vec<u64>, ContainerError> {
         let chunk_count = self.read_u64(item.zlib_metadata_addr)?;
         let address_count = chunk_count.checked_add(1).ok_or_else(|| {
             ContainerError::ParseError(format!(
@@ -794,25 +853,7 @@ impl Session {
             let addr = self.read_u64(table_addr)?;
             addresses.push(addr);
         }
-
-        let decompressed_size = usize::try_from(item.decompressed_size).map_err(|_| {
-            ContainerError::ParseError(format!(
-                "Item '{}' (id={}) has decompressed size larger than memory limits",
-                item.name, item.id
-            ))
-        })?;
-
-        // For small files (< 4 chunks), use sequential decompression
-        // For larger files, use parallel decompression
-        let data = if chunk_count < 4 {
-            self.decompress_sequential(&addresses, decompressed_size)?
-        } else {
-            self.decompress_parallel(&addresses, decompressed_size)?
-        };
-
-        let data = Arc::new(data);
-        self.cache_data(item.id, data.clone());
-        Ok(data)
+        Ok(addresses)
     }
 
     /// Sequential decompression for small files
@@ -833,16 +874,18 @@ impl Session {
                 continue;
             }
             let compressed = self.read_bytes(start, compressed_len)?;
-            let mut decoder = ZlibDecoder::new(&compressed[..]);
-            let mut chunk = Vec::new();
-            decoder
-                .read_to_end(&mut chunk)
-                .map_err(|e| ContainerError::IoError(format!("Zlib inflate error: {e}")))?;
-            let end_index = Self::checked_output_end_index(data_index, chunk.len(), output.len());
+            let remaining_output = output.len().checked_sub(data_index).ok_or_else(|| {
+                ContainerError::ParseError(
+                    "AD1 decompressed output cursor exceeded declared size".to_string(),
+                )
+            })?;
+            let chunk = Self::read_zlib_chunk_limited(&compressed, remaining_output)?;
+            let end_index = Self::checked_output_end_index(data_index, chunk.len(), output.len())?;
             output[data_index..end_index].copy_from_slice(&chunk[..end_index - data_index]);
             data_index = end_index;
         }
 
+        Self::ensure_decompressed_size_complete(data_index, output.len())?;
         Ok(output)
     }
 
@@ -868,14 +911,10 @@ impl Session {
         }
 
         // Decompress in parallel (CPU bound)
-        let decompressed_chunks: Vec<Result<(usize, Vec<u8>), String>> = compressed_chunks
+        let decompressed_chunks: Vec<Result<(usize, Vec<u8>), ContainerError>> = compressed_chunks
             .par_iter()
             .map(|(index, compressed)| {
-                let mut decoder = ZlibDecoder::new(&compressed[..]);
-                let mut chunk = Vec::new();
-                decoder
-                    .read_to_end(&mut chunk)
-                    .map_err(|e| ContainerError::IoError(format!("Zlib inflate error: {e}")))?;
+                let chunk = Self::read_zlib_chunk_limited(compressed, decompressed_size)?;
                 Ok((*index, chunk))
             })
             .collect();
@@ -893,9 +932,70 @@ impl Session {
         sorted_chunks.sort_by_key(|(idx, _)| *idx);
 
         for (_, chunk) in sorted_chunks {
-            let end_index = Self::checked_output_end_index(data_index, chunk.len(), output.len());
+            let end_index = Self::checked_output_end_index(data_index, chunk.len(), output.len())?;
             output[data_index..end_index].copy_from_slice(&chunk[..end_index - data_index]);
             data_index = end_index;
+        }
+
+        Self::ensure_decompressed_size_complete(data_index, output.len())?;
+        Ok(output)
+    }
+
+    fn decompress_range(
+        &mut self,
+        addresses: &[u64],
+        range_start: u64,
+        range_end: u64,
+    ) -> Result<Vec<u8>, ContainerError> {
+        let output_len = usize::try_from(range_end.saturating_sub(range_start)).map_err(|_| {
+            ContainerError::ParseError("AD1 requested output range is too large".to_string())
+        })?;
+        let mut output = Vec::with_capacity(output_len);
+        let chunk_count = addresses.len().saturating_sub(1);
+        let mut decompressed_pos = 0u64;
+
+        for index in 0..chunk_count {
+            if decompressed_pos >= range_end {
+                break;
+            }
+
+            let start = addresses[index];
+            let end = addresses[index + 1];
+            let compressed_len = Self::checked_compressed_len(start, end)?;
+            if compressed_len == 0 {
+                continue;
+            }
+            let compressed = self.read_bytes(start, compressed_len)?;
+            let max_needed =
+                usize::try_from(range_end.saturating_sub(decompressed_pos)).map_err(|_| {
+                    ContainerError::ParseError("AD1 range chunk prefix is too large".to_string())
+                })?;
+            let chunk = Self::read_zlib_chunk_prefix(&compressed, max_needed)?;
+
+            let chunk_start = decompressed_pos;
+            let chunk_len = u64::try_from(chunk.len()).map_err(|_| {
+                ContainerError::ParseError("AD1 decompressed chunk is too large".to_string())
+            })?;
+            let chunk_end = decompressed_pos.checked_add(chunk_len).ok_or_else(|| {
+                ContainerError::ParseError("AD1 decompressed range offset overflow".to_string())
+            })?;
+            Self::append_overlapping_chunk_range(
+                &mut output,
+                &chunk,
+                chunk_start,
+                chunk_end,
+                range_start,
+                range_end,
+            )?;
+            decompressed_pos = chunk_end;
+        }
+
+        if output.len() < output_len {
+            return Err(ContainerError::IoError(format!(
+                "AD1 decompressed range ended early: expected {} bytes, got {} bytes",
+                output_len,
+                output.len()
+            )));
         }
 
         Ok(output)
@@ -950,8 +1050,116 @@ impl Session {
         })
     }
 
-    fn checked_output_end_index(data_index: usize, chunk_len: usize, output_len: usize) -> usize {
-        data_index.saturating_add(chunk_len).min(output_len)
+    fn read_zlib_chunk_limited(
+        compressed: &[u8],
+        max_output_len: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
+        let read_limit = max_output_len.checked_add(1).ok_or_else(|| {
+            ContainerError::ParseError("AD1 zlib output limit is too large".to_string())
+        })?;
+        let chunk = Self::read_zlib_chunk_prefix(compressed, read_limit)?;
+        if chunk.len() > max_output_len {
+            return Err(ContainerError::ParseError(
+                "AD1 zlib chunk inflated beyond declared output size".to_string(),
+            ));
+        }
+        Ok(chunk)
+    }
+
+    fn read_zlib_chunk_prefix(
+        compressed: &[u8],
+        max_output_len: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut chunk = Vec::new();
+        decoder
+            .by_ref()
+            .take(max_output_len as u64)
+            .read_to_end(&mut chunk)
+            .map_err(|e| ContainerError::IoError(format!("Zlib inflate error: {e}")))?;
+        Ok(chunk)
+    }
+
+    fn checked_output_end_index(
+        data_index: usize,
+        chunk_len: usize,
+        output_len: usize,
+    ) -> Result<usize, ContainerError> {
+        let end_index = data_index.checked_add(chunk_len).ok_or_else(|| {
+            ContainerError::ParseError("AD1 decompressed output offset overflow".to_string())
+        })?;
+        if end_index > output_len {
+            return Err(ContainerError::ParseError(
+                "AD1 zlib chunk inflated beyond declared output size".to_string(),
+            ));
+        }
+        Ok(end_index)
+    }
+
+    fn ensure_decompressed_size_complete(
+        actual_len: usize,
+        expected_len: usize,
+    ) -> Result<(), ContainerError> {
+        if actual_len != expected_len {
+            return Err(ContainerError::IoError(format!(
+                "AD1 decompressed data ended early: expected {} bytes, got {} bytes",
+                expected_len, actual_len
+            )));
+        }
+        Ok(())
+    }
+
+    fn bounded_output_range(
+        offset: u64,
+        size: usize,
+        len: u64,
+    ) -> Result<Option<(usize, usize)>, ContainerError> {
+        let Some((start, end)) = Self::bounded_output_range_u64(offset, size, len)? else {
+            return Ok(None);
+        };
+        let start = usize::try_from(start).map_err(|_| {
+            ContainerError::ParseError("AD1 range start is larger than memory limits".to_string())
+        })?;
+        let end = usize::try_from(end).map_err(|_| {
+            ContainerError::ParseError("AD1 range end is larger than memory limits".to_string())
+        })?;
+        Ok(Some((start, end)))
+    }
+
+    fn bounded_output_range_u64(
+        offset: u64,
+        size: usize,
+        len: u64,
+    ) -> Result<Option<(u64, u64)>, ContainerError> {
+        if offset >= len || size == 0 {
+            return Ok(None);
+        }
+        let end = offset.saturating_add(size as u64).min(len);
+        Ok(Some((offset, end)))
+    }
+
+    fn append_overlapping_chunk_range(
+        output: &mut Vec<u8>,
+        chunk: &[u8],
+        chunk_start: u64,
+        chunk_end: u64,
+        range_start: u64,
+        range_end: u64,
+    ) -> Result<(), ContainerError> {
+        if chunk_end <= range_start || chunk_start >= range_end {
+            return Ok(());
+        }
+
+        let copy_start = range_start.saturating_sub(chunk_start);
+        let copy_end = range_end.min(chunk_end).saturating_sub(chunk_start);
+        let copy_start = usize::try_from(copy_start).map_err(|_| {
+            ContainerError::ParseError("AD1 chunk range start is too large".to_string())
+        })?;
+        let copy_end = usize::try_from(copy_end).map_err(|_| {
+            ContainerError::ParseError("AD1 chunk range end is too large".to_string())
+        })?;
+        output.extend_from_slice(&chunk[copy_start..copy_end]);
+        Ok(())
     }
 
     /// Verify item hash with progress callback
@@ -1036,7 +1244,7 @@ impl Session {
     where
         F: FnMut(u64, u64),
     {
-        let item_path = output_dir.join(&item.name);
+        let item_path = checked_ad1_item_output_path(output_dir, &item.name)?;
         if item.item_type == AD1_FOLDER_SIGNATURE {
             fs::create_dir_all(&item_path)
                 .map_err(|e| format!("Failed to create directory {:?}: {e}", item_path))?;
@@ -1072,6 +1280,34 @@ fn checked_ad1_length(length: u32) -> Option<usize> {
     usize::try_from(length).ok()
 }
 
+pub(crate) fn is_safe_ad1_item_name(name: &str) -> bool {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('\0')
+        || name.contains('/')
+        || name.contains('\\')
+    {
+        return false;
+    }
+
+    let bytes = name.as_bytes();
+    !(bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic())
+}
+
+fn checked_ad1_item_output_path(
+    output_dir: &Path,
+    item_name: &str,
+) -> Result<PathBuf, ContainerError> {
+    if !is_safe_ad1_item_name(item_name) {
+        return Err(ContainerError::ParseError(format!(
+            "AD1 item name is unsafe for extraction: {item_name:?}"
+        )));
+    }
+
+    Ok(output_dir.join(item_name))
+}
+
 // =============================================================================
 // TESTS
 // =============================================================================
@@ -1079,6 +1315,7 @@ fn checked_ad1_length(length: u32) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::{write::ZlibEncoder, Compression};
     use std::io::Write;
     use tempfile::TempDir;
 
@@ -1094,6 +1331,12 @@ mod tests {
         file.write_all(&[0u8; 496]).unwrap();
 
         path
+    }
+
+    fn zlib_bytes(data: &[u8]) -> Vec<u8> {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
     }
 
     #[test]
@@ -1206,6 +1449,36 @@ mod tests {
     }
 
     #[test]
+    fn test_safe_ad1_item_name_accepts_leaf_names() {
+        assert!(is_safe_ad1_item_name("report.pdf"));
+        assert!(is_safe_ad1_item_name("readme..txt"));
+        assert!(is_safe_ad1_item_name("case notes.txt"));
+    }
+
+    #[test]
+    fn test_safe_ad1_item_name_rejects_traversal_and_separators() {
+        assert!(!is_safe_ad1_item_name(""));
+        assert!(!is_safe_ad1_item_name("."));
+        assert!(!is_safe_ad1_item_name(".."));
+        assert!(!is_safe_ad1_item_name("../evil.txt"));
+        assert!(!is_safe_ad1_item_name("nested/file.txt"));
+        assert!(!is_safe_ad1_item_name(r"nested\file.txt"));
+        assert!(!is_safe_ad1_item_name("bad\0name"));
+        assert!(!is_safe_ad1_item_name("C:evil.txt"));
+    }
+
+    #[test]
+    fn test_checked_ad1_item_output_path_rejects_unsafe_name() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let err = checked_ad1_item_output_path(temp_dir.path(), "../evil.txt").unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("AD1 item name is unsafe for extraction"));
+    }
+
+    #[test]
     fn test_checked_zlib_chunk_table_entry_addr_overflow() {
         assert_eq!(
             Session::checked_zlib_chunk_table_entry_addr(u64::MAX, 0),
@@ -1223,7 +1496,76 @@ mod tests {
     }
 
     #[test]
-    fn test_checked_output_end_index_saturates() {
-        assert_eq!(Session::checked_output_end_index(6, usize::MAX, 8), 8);
+    fn test_checked_output_end_index_accepts_exact_end() {
+        assert_eq!(Session::checked_output_end_index(6, 2, 8).unwrap(), 8);
+    }
+
+    #[test]
+    fn test_checked_output_end_index_rejects_overflow() {
+        assert!(Session::checked_output_end_index(6, 3, 8).is_err());
+        assert!(Session::checked_output_end_index(6, usize::MAX, 8).is_err());
+    }
+
+    #[test]
+    fn test_read_zlib_chunk_limited_rejects_over_declared_output() {
+        let compressed = zlib_bytes(b"abcdef");
+
+        let err = Session::read_zlib_chunk_limited(&compressed, 5).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("inflated beyond declared output size"));
+    }
+
+    #[test]
+    fn test_read_zlib_chunk_limited_accepts_exact_declared_output() {
+        let compressed = zlib_bytes(b"abcdef");
+
+        let chunk = Session::read_zlib_chunk_limited(&compressed, 6).unwrap();
+
+        assert_eq!(chunk, b"abcdef");
+    }
+
+    #[test]
+    fn test_read_zlib_chunk_prefix_allows_bounded_range_decode() {
+        let compressed = zlib_bytes(b"abcdef");
+
+        let chunk = Session::read_zlib_chunk_prefix(&compressed, 3).unwrap();
+
+        assert_eq!(chunk, b"abc");
+    }
+
+    #[test]
+    fn test_ensure_decompressed_size_complete_rejects_short_output() {
+        let err = Session::ensure_decompressed_size_complete(4, 6).unwrap_err();
+
+        assert!(err.to_string().contains("ended early"));
+    }
+
+    #[test]
+    fn test_bounded_output_range_saturates_to_end() {
+        assert_eq!(
+            Session::bounded_output_range(4, usize::MAX, 6).unwrap(),
+            Some((4, 6))
+        );
+        assert_eq!(Session::bounded_output_range(6, 4, 6).unwrap(), None);
+    }
+
+    #[test]
+    fn test_append_overlapping_chunk_range_copies_only_overlap() {
+        let mut output = Vec::new();
+
+        Session::append_overlapping_chunk_range(&mut output, b"abcdef", 10, 16, 12, 15).unwrap();
+
+        assert_eq!(output, b"cde");
+    }
+
+    #[test]
+    fn test_append_overlapping_chunk_range_skips_non_overlap() {
+        let mut output = Vec::new();
+
+        Session::append_overlapping_chunk_range(&mut output, b"abcdef", 0, 6, 10, 12).unwrap();
+
+        assert!(output.is_empty());
     }
 }

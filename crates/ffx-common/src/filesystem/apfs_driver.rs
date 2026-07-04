@@ -111,11 +111,47 @@ fn checked_apfs_physical_offset(
         .ok_or_else(|| VfsError::Internal("APFS physical read offset overflow".into()))
 }
 
+fn checked_apfs_block_offset(
+    base_offset: u64,
+    block_num: u64,
+    block_size: u32,
+) -> Result<u64, VfsError> {
+    let block_offset = block_num
+        .checked_mul(u64::from(block_size))
+        .ok_or_else(|| VfsError::Internal("APFS block offset overflow".into()))?;
+    base_offset
+        .checked_add(block_offset)
+        .ok_or_else(|| VfsError::Internal("APFS block offset overflow".into()))
+}
+
+fn checked_apfs_container_size(block_count: u64, block_size: u32) -> Result<u64, VfsError> {
+    block_count
+        .checked_mul(u64::from(block_size))
+        .ok_or_else(|| VfsError::Internal("APFS container size overflow".into()))
+}
+
 fn has_buffer_range(buf: &[u8], start: usize, len: usize) -> bool {
     match start.checked_add(len) {
         Some(end) => end <= buf.len(),
         None => false,
     }
+}
+
+fn checked_slice(buf: &[u8], start: usize, len: usize) -> Option<&[u8]> {
+    let end = start.checked_add(len)?;
+    buf.get(start..end)
+}
+
+fn read_le_u16_at(buf: &[u8], start: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(
+        checked_slice(buf, start, 2)?.try_into().ok()?,
+    ))
+}
+
+fn read_le_u64_at(buf: &[u8], start: usize) -> Option<u64> {
+    Some(u64::from_le_bytes(
+        checked_slice(buf, start, 8)?.try_into().ok()?,
+    ))
 }
 
 fn checked_toc_entry_offset(toc_offset: usize, index: usize) -> Option<usize> {
@@ -139,6 +175,24 @@ fn checked_kvloc_capacity(count: usize) -> Result<Vec<KvLoc>, VfsError> {
     locs.try_reserve_exact(count)
         .map_err(|_| VfsError::IoError("APFS TOC entry count too large".into()))?;
     Ok(locs)
+}
+
+fn read_apfs_exact(
+    device: &dyn SeekableBlockDevice,
+    offset: u64,
+    buf: &mut [u8],
+    context: &str,
+) -> Result<(), VfsError> {
+    let bytes_read = device
+        .read_at(offset, buf)
+        .map_err(|e| VfsError::IoError(e.to_string()))?;
+    if bytes_read != buf.len() {
+        return Err(VfsError::IoError(format!(
+            "{context} is truncated: read {bytes_read} of {} bytes at offset {offset}",
+            buf.len()
+        )));
+    }
+    Ok(())
 }
 
 // =============================================================================
@@ -391,7 +445,7 @@ impl ApfsDriver {
         // Find first volume
         let volume = Self::find_first_volume(&device, offset, &container)?;
 
-        let total_size = container.block_count * block_size as u64;
+        let total_size = checked_apfs_container_size(container.block_count, block_size)?;
 
         let info = FilesystemInfo {
             fs_type: FilesystemType::Apfs,
@@ -421,10 +475,8 @@ impl ApfsDriver {
     /// Read a block from the device
     fn read_block(&self, block_num: u64) -> Result<Vec<u8>, VfsError> {
         let mut buf = vec![0u8; self.block_size as usize];
-        let block_offset = self.offset + (block_num * self.block_size as u64);
-        self.device
-            .read_at(block_offset, &mut buf)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
+        let block_offset = checked_apfs_block_offset(self.offset, block_num, self.block_size)?;
+        read_apfs_exact(self.device.as_ref(), block_offset, &mut buf, "APFS block")?;
         Ok(buf)
     }
 
@@ -452,9 +504,15 @@ impl ApfsDriver {
     ) -> Result<NxSuperblock, VfsError> {
         // First read to get block size (at offset 36)
         let mut header_buf = vec![0u8; 64];
-        device
+        let bytes_read = device
             .read_at(offset, &mut header_buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
+        if bytes_read < header_buf.len() {
+            return Err(VfsError::IoError(format!(
+                "APFS container header is truncated: read {} bytes",
+                bytes_read
+            )));
+        }
 
         let block_size = u32::from_le_bytes(header_buf[36..40].try_into().unwrap());
         if block_size == 0 || block_size > 65536 {
@@ -466,9 +524,16 @@ impl ApfsDriver {
 
         // Now read full block
         let mut buf = vec![0u8; block_size as usize];
-        device
+        let bytes_read = device
             .read_at(offset, &mut buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
+        if bytes_read < buf.len() {
+            return Err(VfsError::IoError(format!(
+                "APFS container block is truncated: read {} of {} bytes",
+                bytes_read,
+                buf.len()
+            )));
+        }
 
         let header = Self::parse_obj_header(&buf)?;
 
@@ -549,10 +614,8 @@ impl ApfsDriver {
         block_num: u64,
     ) -> Result<Vec<u8>, VfsError> {
         let mut buf = vec![0u8; block_size as usize];
-        let block_offset = offset + (block_num * block_size as u64);
-        device
-            .read_at(block_offset, &mut buf)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
+        let block_offset = checked_apfs_block_offset(offset, block_num, block_size)?;
+        read_apfs_exact(device.as_ref(), block_offset, &mut buf, "APFS block")?;
         Ok(buf)
     }
 
@@ -608,8 +671,9 @@ impl ApfsDriver {
                 continue;
             }
 
-            let key_oid =
-                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let Some(key_oid) = read_le_u64_at(node_buf, key_offset) else {
+                continue;
+            };
 
             if is_leaf {
                 if key_oid == target_oid {
@@ -621,11 +685,12 @@ impl ApfsDriver {
                     };
                     if has_buffer_range(node_buf, val_offset, 16) {
                         // Skip flags (4 bytes) and size (4 bytes), get paddr
-                        let paddr = u64::from_le_bytes(
-                            node_buf[val_offset + 8..val_offset + 16]
-                                .try_into()
-                                .unwrap(),
-                        );
+                        let Some(paddr_offset) = val_offset.checked_add(8) else {
+                            continue;
+                        };
+                        let Some(paddr) = read_le_u64_at(node_buf, paddr_offset) else {
+                            continue;
+                        };
                         return Ok(paddr);
                     }
                 }
@@ -638,9 +703,9 @@ impl ApfsDriver {
                         continue;
                     };
                     if has_buffer_range(node_buf, val_offset, 8) {
-                        let child_oid = u64::from_le_bytes(
-                            node_buf[val_offset..val_offset + 8].try_into().unwrap(),
-                        );
+                        let Some(child_oid) = read_le_u64_at(node_buf, val_offset) else {
+                            continue;
+                        };
                         let child_buf =
                             Self::read_block_static(device, offset, block_size, child_oid)?;
                         return Self::search_btree_for_oid(
@@ -660,8 +725,9 @@ impl ApfsDriver {
                 return Err(VfsError::NotFound(format!("OID {} not found", target_oid)));
             };
             if has_buffer_range(node_buf, val_offset, 8) {
-                let child_oid =
-                    u64::from_le_bytes(node_buf[val_offset..val_offset + 8].try_into().unwrap());
+                let Some(child_oid) = read_le_u64_at(node_buf, val_offset) else {
+                    return Err(VfsError::NotFound(format!("OID {} not found", target_oid)));
+                };
                 let child_buf = Self::read_block_static(device, offset, block_size, child_oid)?;
                 return Self::search_btree_for_oid(
                     device, offset, block_size, &child_buf, target_oid,
@@ -709,18 +775,29 @@ impl ApfsDriver {
             }
 
             locs.push(KvLoc {
-                key_offset: u16::from_le_bytes(
-                    buf[entry_offset..entry_offset + 2].try_into().unwrap(),
-                ),
-                key_len: u16::from_le_bytes(
-                    buf[entry_offset + 2..entry_offset + 4].try_into().unwrap(),
-                ),
-                val_offset: u16::from_le_bytes(
-                    buf[entry_offset + 4..entry_offset + 6].try_into().unwrap(),
-                ),
-                val_len: u16::from_le_bytes(
-                    buf[entry_offset + 6..entry_offset + 8].try_into().unwrap(),
-                ),
+                key_offset: read_le_u16_at(buf, entry_offset)
+                    .ok_or_else(|| VfsError::IoError("APFS TOC key offset out of range".into()))?,
+                key_len: read_le_u16_at(
+                    buf,
+                    entry_offset.checked_add(2).ok_or_else(|| {
+                        VfsError::IoError("APFS TOC key length offset overflow".into())
+                    })?,
+                )
+                .ok_or_else(|| VfsError::IoError("APFS TOC key length out of range".into()))?,
+                val_offset: read_le_u16_at(
+                    buf,
+                    entry_offset.checked_add(4).ok_or_else(|| {
+                        VfsError::IoError("APFS TOC value offset overflow".into())
+                    })?,
+                )
+                .ok_or_else(|| VfsError::IoError("APFS TOC value offset out of range".into()))?,
+                val_len: read_le_u16_at(
+                    buf,
+                    entry_offset.checked_add(6).ok_or_else(|| {
+                        VfsError::IoError("APFS TOC value length offset overflow".into())
+                    })?,
+                )
+                .ok_or_else(|| VfsError::IoError("APFS TOC value length out of range".into()))?,
             });
         }
 
@@ -1230,9 +1307,12 @@ impl FilesystemDriver for ApfsDriver {
             )?;
 
             let mut extent_buf = vec![0u8; bytes_from_extent];
-            self.device
-                .read_at(phys_byte_offset, &mut extent_buf)
-                .map_err(|e| VfsError::IoError(e.to_string()))?;
+            read_apfs_exact(
+                self.device.as_ref(),
+                phys_byte_offset,
+                &mut extent_buf,
+                "APFS file extent",
+            )?;
 
             // Copy into result at the right position
             let dest_offset = if extent_logical_offset > offset {
@@ -1372,6 +1452,59 @@ impl ApfsDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffx_errors::ContainerError;
+    use std::io::{Cursor, Read, Seek, SeekFrom};
+
+    struct MockBlockDevice {
+        data: Vec<u8>,
+    }
+
+    struct MockBlockReader {
+        cursor: Cursor<Vec<u8>>,
+    }
+
+    impl Read for MockBlockReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.cursor.read(buf)
+        }
+    }
+
+    impl Seek for MockBlockReader {
+        fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+            self.cursor.seek(pos)
+        }
+    }
+
+    impl super::super::traits::BlockReader for MockBlockReader {}
+
+    impl super::super::traits::BlockDevice for MockBlockDevice {
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
+            let start = usize::try_from(offset).unwrap_or(self.data.len());
+            if start >= self.data.len() {
+                return Ok(0);
+            }
+
+            let available = self.data.len() - start;
+            let to_copy = available.min(buf.len());
+            buf[..to_copy].copy_from_slice(&self.data[start..start + to_copy]);
+            Ok(to_copy)
+        }
+
+        fn size(&self) -> u64 {
+            self.data.len() as u64
+        }
+    }
+
+    impl super::super::traits::SeekableBlockDevice for MockBlockDevice {
+        fn reader_at(&self, offset: u64) -> Box<dyn super::super::traits::BlockReader> {
+            let start = usize::try_from(offset)
+                .unwrap_or(self.data.len())
+                .min(self.data.len());
+            Box::new(MockBlockReader {
+                cursor: Cursor::new(self.data[start..].to_vec()),
+            })
+        }
+    }
 
     #[test]
     fn test_apfs_magic_constants() {
@@ -1432,8 +1565,87 @@ mod tests {
     }
 
     #[test]
+    fn test_checked_apfs_block_offset_rejects_overflow() {
+        let err = checked_apfs_block_offset(u64::MAX - 1, 1, 2)
+            .expect_err("APFS block offset overflow should be rejected");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_checked_apfs_block_offset_adds_base_and_block_offset() {
+        assert_eq!(checked_apfs_block_offset(10, 2, 4).unwrap(), 18);
+    }
+
+    #[test]
+    fn test_checked_apfs_container_size_rejects_overflow() {
+        let err = checked_apfs_container_size(u64::MAX, 2)
+            .expect_err("APFS container size overflow should be rejected");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_read_container_superblock_rejects_short_header() {
+        let device: Arc<dyn super::super::traits::SeekableBlockDevice> =
+            Arc::new(MockBlockDevice { data: vec![0; 32] });
+
+        let err = ApfsDriver::read_container_superblock(&device, 0)
+            .expect_err("short APFS header should be rejected");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("header is truncated"))
+        );
+    }
+
+    #[test]
+    fn test_read_container_superblock_rejects_short_full_block() {
+        let mut data = vec![0u8; 128];
+        data[36..40].copy_from_slice(&4096u32.to_le_bytes());
+        let device: Arc<dyn super::super::traits::SeekableBlockDevice> =
+            Arc::new(MockBlockDevice { data });
+
+        let err = ApfsDriver::read_container_superblock(&device, 0)
+            .expect_err("short APFS container block should be rejected");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("block is truncated"))
+        );
+    }
+
+    #[test]
     fn test_checked_toc_entry_offset_handles_overflow() {
         assert_eq!(checked_toc_entry_offset(usize::MAX - 4, 1), None);
+    }
+
+    #[test]
+    fn test_apfs_checked_slice_rejects_overflowing_range() {
+        assert!(checked_slice(&[0u8; 8], usize::MAX, 1).is_none());
+    }
+
+    #[test]
+    fn test_apfs_little_endian_read_helpers_reject_overflowing_offsets() {
+        let bytes = [0u8; 8];
+
+        assert!(read_le_u16_at(&bytes, usize::MAX).is_none());
+        assert!(read_le_u64_at(&bytes, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn test_parse_toc_reads_valid_entry_with_checked_helpers() {
+        let mut buf = vec![0u8; 64];
+        buf[16..18].copy_from_slice(&2u16.to_le_bytes());
+        buf[18..20].copy_from_slice(&4u16.to_le_bytes());
+        buf[20..22].copy_from_slice(&6u16.to_le_bytes());
+        buf[22..24].copy_from_slice(&8u16.to_le_bytes());
+
+        let entries = ApfsDriver::parse_toc(&buf, 16, 1).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key_offset, 2);
+        assert_eq!(entries[0].key_len, 4);
+        assert_eq!(entries[0].val_offset, 6);
+        assert_eq!(entries[0].val_len, 8);
     }
 
     #[test]
@@ -1447,5 +1659,45 @@ mod tests {
             .expect_err("huge APFS TOC entry count should be rejected");
 
         assert!(matches!(err, VfsError::IoError(_)));
+    }
+
+    #[test]
+    fn test_read_apfs_exact_accepts_full_read() {
+        let device = MockBlockDevice {
+            data: vec![1, 2, 3, 4],
+        };
+        let mut buf = [0u8; 2];
+
+        read_apfs_exact(&device, 1, &mut buf, "APFS test").unwrap();
+
+        assert_eq!(buf, [2, 3]);
+    }
+
+    #[test]
+    fn test_read_apfs_exact_rejects_short_read() {
+        let device = MockBlockDevice {
+            data: vec![1, 2, 3],
+        };
+        let mut buf = [0u8; 4];
+
+        let err = read_apfs_exact(&device, 0, &mut buf, "APFS test")
+            .expect_err("short APFS exact read should fail");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("APFS test is truncated"))
+        );
+    }
+
+    #[test]
+    fn test_read_block_static_rejects_short_block() {
+        let device: Arc<dyn super::super::traits::SeekableBlockDevice> =
+            Arc::new(MockBlockDevice { data: vec![0; 32] });
+
+        let err = ApfsDriver::read_block_static(&device, 0, 64, 0)
+            .expect_err("short APFS block should fail");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("APFS block is truncated"))
+        );
     }
 }

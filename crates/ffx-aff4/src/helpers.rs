@@ -6,10 +6,8 @@
 
 //! Shared helper functions used by the reader, writer, and logical modules.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::error::{Aff4Error, Aff4Result};
 use crate::types::{Aff4Phase, Aff4Progress};
 
 /// Emit a progress event if a callback is configured.
@@ -48,7 +46,12 @@ pub(crate) fn ensure_aff4_extension(path: &Path) -> PathBuf {
 ///
 /// Unlike `Read::read_exact`, this does not error when fewer bytes are
 /// available — it returns the number of bytes actually read.
-pub(crate) fn read_exact_or_eof<R: Read>(reader: &mut R, buf: &mut [u8]) -> Aff4Result<usize> {
+#[cfg(test)]
+pub(crate) fn read_exact_or_eof<R: std::io::Read>(
+    reader: &mut R,
+    buf: &mut [u8],
+) -> crate::error::Aff4Result<usize> {
+    use crate::error::Aff4Error;
     let mut total = 0;
     while total < buf.len() {
         match reader.read(&mut buf[total..]) {

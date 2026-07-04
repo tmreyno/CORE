@@ -16,9 +16,10 @@
 //! - Path traversal attacks are prevented
 //! - CRC verification is performed during extraction
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
+use std::io::ErrorKind;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tracing::debug;
 use zip::ZipArchive;
@@ -26,6 +27,34 @@ use zip::ZipArchive;
 use super::types::ArchiveFormat;
 use ffx_common::path_security::{safe_join, sanitize_filename};
 use ffx_errors::ContainerError;
+
+fn add_extracted_bytes(total: u64, bytes: u64, path: &str) -> Result<u64, String> {
+    total.checked_add(bytes).ok_or_else(|| {
+        format!(
+            "Archive extraction byte count overflow while adding {} bytes from {} to {} bytes",
+            bytes, path, total
+        )
+    })
+}
+
+fn archive_entry_output_path(
+    output_path: &Path,
+    entry_name: &str,
+    entry_path: &Path,
+) -> Result<PathBuf, ExtractError> {
+    let sanitized_name = sanitize_filename(&entry_path.to_string_lossy());
+    if sanitized_name.is_empty() {
+        return Err(ExtractError {
+            path: entry_name.to_string(),
+            error: "Invalid empty extraction path".to_string(),
+        });
+    }
+
+    safe_join(output_path, &sanitized_name).map_err(|e| ExtractError {
+        path: entry_name.to_string(),
+        error: format!("Path traversal detected: {:?}", e),
+    })
+}
 
 /// Extract result containing extraction statistics
 #[derive(Debug, Clone, serde::Serialize)]
@@ -103,15 +132,10 @@ pub fn extract_zip(archive_path: &str, output_dir: &str) -> Result<ExtractResult
             }
         };
 
-        // Sanitize and join path safely
-        let sanitized_name = sanitize_filename(&entry_path.to_string_lossy());
-        let dest_path = match safe_join(output_path, &sanitized_name) {
+        let dest_path = match archive_entry_output_path(output_path, entry.name(), &entry_path) {
             Ok(p) => p,
-            Err(e) => {
-                result.failed_files.push(ExtractError {
-                    path: entry.name().to_string(),
-                    error: format!("Path traversal detected: {:?}", e),
-                });
+            Err(error) => {
+                result.failed_files.push(error);
                 continue;
             }
         };
@@ -140,48 +164,30 @@ pub fn extract_zip(archive_path: &str, output_dir: &str) -> Result<ExtractResult
                 }
             }
 
-            // Extract file
-            let mut outfile = match File::create(&dest_path) {
-                Ok(f) => f,
-                Err(e) => {
-                    result.failed_files.push(ExtractError {
-                        path: entry.name().to_string(),
-                        error: e.to_string(),
-                    });
-                    continue;
-                }
-            };
-
-            let mut buffer = [0u8; 65536];
-            let mut bytes_written = 0u64;
-
-            loop {
-                let bytes_read = match entry.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(n) => n,
-                    Err(e) => {
-                        result.failed_files.push(ExtractError {
-                            path: entry.name().to_string(),
-                            error: format!("Read error: {}", e),
-                        });
-                        break;
+            match copy_entry_to_file(&mut entry, &dest_path, |_| {}) {
+                Ok(bytes_written) => {
+                    match add_extracted_bytes(result.bytes_written, bytes_written, entry.name()) {
+                        Ok(total) => {
+                            result.bytes_written = total;
+                            result.files_extracted += 1;
+                            debug!(path = %dest_path.display(), bytes = bytes_written, "Extracted file");
+                        }
+                        Err(error) => {
+                            let _ = fs::remove_file(&dest_path);
+                            result.failed_files.push(ExtractError {
+                                path: entry.name().to_string(),
+                                error,
+                            });
+                        }
                     }
-                };
-
-                if let Err(e) = outfile.write_all(&buffer[..bytes_read]) {
+                }
+                Err(error) => {
                     result.failed_files.push(ExtractError {
                         path: entry.name().to_string(),
-                        error: format!("Write error: {}", e),
+                        error,
                     });
-                    break;
                 }
-
-                bytes_written += bytes_read as u64;
             }
-
-            result.bytes_written += bytes_written;
-            result.files_extracted += 1;
-            debug!(path = %dest_path.display(), bytes = bytes_written, "Extracted file");
         }
     }
 
@@ -231,7 +237,7 @@ where
         let mut total = 0u64;
         for i in 0..archive.len() {
             if let Ok(entry) = archive.by_index(i) {
-                total += entry.size();
+                total = add_extracted_bytes(total, entry.size(), entry.name())?;
             }
         }
         total
@@ -268,15 +274,10 @@ where
             }
         };
 
-        // Sanitize and join path safely
-        let sanitized_name = sanitize_filename(&entry_path.to_string_lossy());
-        let dest_path = match safe_join(output_path, &sanitized_name) {
+        let dest_path = match archive_entry_output_path(output_path, entry.name(), &entry_path) {
             Ok(p) => p,
-            Err(e) => {
-                result.failed_files.push(ExtractError {
-                    path: entry.name().to_string(),
-                    error: format!("Path traversal detected: {:?}", e),
-                });
+            Err(error) => {
+                result.failed_files.push(error);
                 continue;
             }
         };
@@ -304,49 +305,51 @@ where
                 }
             }
 
-            // Extract file
-            let mut outfile = match File::create(&dest_path) {
-                Ok(f) => f,
-                Err(e) => {
-                    result.failed_files.push(ExtractError {
-                        path: entry.name().to_string(),
-                        error: e.to_string(),
-                    });
-                    continue;
+            let committed_bytes = result.bytes_written;
+            let entry_name = entry.name().to_string();
+            let mut progress_error = None;
+            match copy_entry_to_file(&mut entry, &dest_path, |chunk_bytes| {
+                if progress_error.is_some() {
+                    return;
                 }
-            };
 
-            let mut buffer = [0u8; 65536];
-            let mut bytes_for_file = 0u64;
-
-            loop {
-                let bytes_read = match entry.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(n) => n,
-                    Err(e) => {
+                match add_extracted_bytes(committed_bytes, chunk_bytes, &entry_name) {
+                    Ok(total) => progress_callback(total, total_size),
+                    Err(error) => progress_error = Some(error),
+                }
+            }) {
+                Ok(bytes_for_file) => {
+                    if let Some(error) = progress_error {
+                        let _ = fs::remove_file(&dest_path);
                         result.failed_files.push(ExtractError {
                             path: entry.name().to_string(),
-                            error: format!("Read error: {}", e),
+                            error,
                         });
-                        break;
+                        continue;
                     }
-                };
 
-                if let Err(e) = outfile.write_all(&buffer[..bytes_read]) {
+                    match add_extracted_bytes(result.bytes_written, bytes_for_file, entry.name()) {
+                        Ok(total) => {
+                            result.bytes_written = total;
+                            result.files_extracted += 1;
+                            debug!(path = %dest_path.display(), bytes = bytes_for_file, "Extracted file");
+                        }
+                        Err(error) => {
+                            let _ = fs::remove_file(&dest_path);
+                            result.failed_files.push(ExtractError {
+                                path: entry.name().to_string(),
+                                error,
+                            });
+                        }
+                    }
+                }
+                Err(error) => {
                     result.failed_files.push(ExtractError {
                         path: entry.name().to_string(),
-                        error: format!("Write error: {}", e),
+                        error,
                     });
-                    break;
                 }
-
-                bytes_for_file += bytes_read as u64;
-                result.bytes_written += bytes_read as u64;
-                progress_callback(result.bytes_written, total_size);
             }
-
-            result.files_extracted += 1;
-            debug!(path = %dest_path.display(), bytes = bytes_for_file, "Extracted file");
         }
     }
 
@@ -420,10 +423,7 @@ pub fn extract_gzip(gzip_path: &str, output_dir: &str) -> Result<ExtractResult, 
     let file = File::open(gzip_path_obj).map_err(|e| format!("Failed to open file: {}", e))?;
 
     let mut decoder = GzDecoder::new(file);
-    let mut outfile =
-        File::create(&dest_path).map_err(|e| format!("Failed to create output file: {}", e))?;
-
-    let bytes_written = std::io::copy(&mut decoder, &mut outfile)
+    let bytes_written = copy_entry_to_file(&mut decoder, &dest_path, |_| {})
         .map_err(|e| format!("Failed to decompress: {}", e))?;
 
     debug!(
@@ -440,6 +440,65 @@ pub fn extract_gzip(gzip_path: &str, output_dir: &str) -> Result<ExtractResult, 
         failed_files: vec![],
         success: true,
     })
+}
+
+fn copy_entry_to_file<R, F>(
+    reader: &mut R,
+    dest_path: &Path,
+    mut progress_callback: F,
+) -> Result<u64, String>
+where
+    R: Read,
+    F: FnMut(u64),
+{
+    let mut created_output = false;
+    let copy_result = (|| {
+        let mut outfile = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(dest_path)
+            .map_err(|e| {
+                if e.kind() == ErrorKind::AlreadyExists {
+                    format!(
+                        "Output file already exists and will not be overwritten: {}",
+                        dest_path.display()
+                    )
+                } else {
+                    format!("Failed to create output file: {}", e)
+                }
+            })?;
+        created_output = true;
+        let mut buffer = [0u8; 65536];
+        let mut bytes_written = 0u64;
+
+        loop {
+            let bytes_read = reader
+                .read(&mut buffer)
+                .map_err(|e| format!("Read error: {}", e))?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            outfile
+                .write_all(&buffer[..bytes_read])
+                .map_err(|e| format!("Write error: {}", e))?;
+            bytes_written = add_extracted_bytes(
+                bytes_written,
+                bytes_read as u64,
+                &dest_path.display().to_string(),
+            )?;
+            progress_callback(bytes_written);
+        }
+
+        outfile.flush().map_err(|e| format!("Flush error: {}", e))?;
+        Ok(bytes_written)
+    })();
+
+    if copy_result.is_err() && created_output {
+        let _ = fs::remove_file(dest_path);
+    }
+
+    copy_result
 }
 
 /// Extract a single entry from a ZIP archive to a destination path
@@ -509,11 +568,7 @@ pub fn extract_zip_entry(
             .map_err(|e| format!("Failed to create output directory: {}", e))?;
     }
 
-    // Create output file and extract
-    let mut outfile = File::create(output_path_obj)
-        .map_err(|e| format!("Failed to create output file: {}", e))?;
-
-    let bytes_written = std::io::copy(&mut entry, &mut outfile)
+    let bytes_written = copy_entry_to_file(&mut entry, output_path_obj, |_| {})
         .map_err(|e| format!("Failed to extract entry: {}", e))?;
 
     debug!(
@@ -1042,6 +1097,7 @@ fn get_zip_children_at_path_native(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
     use std::io::Write;
     use tempfile::TempDir;
 
@@ -1069,6 +1125,50 @@ mod tests {
     }
 
     #[test]
+    fn add_extracted_bytes_rejects_overflow() {
+        assert_eq!(add_extracted_bytes(40, 2, "entry.bin").unwrap(), 42);
+
+        let err = add_extracted_bytes(u64::MAX - 5, 10, "entry.bin").unwrap_err();
+        assert!(err.contains("byte count overflow"), "unexpected: {}", err);
+    }
+
+    #[test]
+    fn extraction_progress_addition_rejects_overflow() {
+        let committed_bytes = u64::MAX - 1;
+
+        let err = add_extracted_bytes(committed_bytes, 64, "entry.bin").unwrap_err();
+
+        assert!(err.contains("entry.bin"), "unexpected: {}", err);
+    }
+
+    #[test]
+    fn archive_entry_output_path_sanitizes_archive_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let dest_path = archive_entry_output_path(
+            temp_dir.path(),
+            "folder/file?.txt",
+            Path::new("folder/file?.txt"),
+        )
+        .unwrap();
+
+        let canonical_base = temp_dir.path().canonicalize().unwrap();
+        assert!(dest_path.starts_with(canonical_base));
+        assert_eq!(
+            dest_path.file_name().and_then(|name| name.to_str()),
+            Some("folder_file.txt")
+        );
+    }
+
+    #[test]
+    fn archive_entry_output_path_rejects_empty_sanitized_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let err = archive_entry_output_path(temp_dir.path(), "...", Path::new("...")).unwrap_err();
+
+        assert_eq!(err.path, "...");
+        assert!(err.error.contains("empty extraction path"));
+    }
+
+    #[test]
     fn test_extract_zip_nonexistent() {
         let result = extract_zip("/nonexistent/archive.zip", "/tmp/output");
         assert!(result.is_err());
@@ -1079,6 +1179,69 @@ mod tests {
     fn test_extract_gzip_nonexistent() {
         let result = extract_gzip("/nonexistent/file.gz", "/tmp/output");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_gzip_removes_partial_output_on_decode_error() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+
+        let temp_dir = TempDir::new().unwrap();
+        let gzip_path = temp_dir.path().join("corrupt.gz");
+        let output_dir = temp_dir.path().join("out");
+        let output_file = output_dir.join("corrupt");
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(b"decoded bytes before footer failure")
+            .unwrap();
+        let mut gzip_data = encoder.finish().unwrap();
+        let last = gzip_data.last_mut().unwrap();
+        *last ^= 0xff;
+        std::fs::write(&gzip_path, gzip_data).unwrap();
+
+        let err = extract_gzip(gzip_path.to_str().unwrap(), output_dir.to_str().unwrap())
+            .expect_err("corrupt gzip footer should fail extraction");
+
+        assert!(
+            err.to_string().contains("Failed to decompress"),
+            "unexpected error: {}",
+            err
+        );
+        assert!(
+            !output_file.exists(),
+            "partial GZIP extraction output should be removed"
+        );
+    }
+
+    #[test]
+    fn test_extract_gzip_rejects_existing_output_without_removing_it() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+
+        let temp_dir = TempDir::new().unwrap();
+        let gzip_path = temp_dir.path().join("evidence.gz");
+        let output_dir = temp_dir.path().join("out");
+        let output_file = output_dir.join("evidence");
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"new extracted bytes").unwrap();
+        std::fs::write(&gzip_path, encoder.finish().unwrap()).unwrap();
+        std::fs::create_dir_all(&output_dir).unwrap();
+        std::fs::write(&output_file, b"original examiner data").unwrap();
+
+        let err = extract_gzip(gzip_path.to_str().unwrap(), output_dir.to_str().unwrap())
+            .expect_err("existing GZIP destination should be rejected");
+
+        assert!(
+            err.to_string().contains("will not be overwritten"),
+            "unexpected error: {}",
+            err
+        );
+        assert_eq!(
+            std::fs::read(&output_file).unwrap(),
+            b"original examiner data"
+        );
     }
 
     #[test]
@@ -1121,5 +1284,146 @@ mod tests {
         assert!(!entry.is_directory);
         assert_eq!(entry.size, 1024);
         assert_eq!(entry.compressed_size, 512);
+    }
+
+    #[test]
+    fn test_copy_entry_to_file_removes_partial_output_on_read_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let dest_path = temp_dir.path().join("partial.bin");
+        let mut reader = FailingReader::new(b"partial bytes", true);
+
+        let err = copy_entry_to_file(&mut reader, &dest_path, |_| {}).unwrap_err();
+
+        assert!(err.contains("Read error"), "unexpected error: {}", err);
+        assert!(
+            !dest_path.exists(),
+            "partial extraction output should be removed"
+        );
+    }
+
+    #[test]
+    fn test_copy_entry_to_file_rejects_existing_output_without_removing_it() {
+        let temp_dir = TempDir::new().unwrap();
+        let dest_path = temp_dir.path().join("existing.bin");
+        std::fs::write(&dest_path, b"existing bytes").unwrap();
+        let mut reader = std::io::Cursor::new(b"replacement bytes".to_vec());
+
+        let err = copy_entry_to_file(&mut reader, &dest_path, |_| {}).unwrap_err();
+
+        assert!(
+            err.contains("will not be overwritten"),
+            "unexpected error: {}",
+            err
+        );
+        assert_eq!(std::fs::read(&dest_path).unwrap(), b"existing bytes");
+    }
+
+    #[test]
+    fn test_copy_entry_to_file_reports_success_bytes() {
+        let temp_dir = TempDir::new().unwrap();
+        let dest_path = temp_dir.path().join("complete.bin");
+        let mut reader = std::io::Cursor::new(b"complete bytes".to_vec());
+        let mut progress = Vec::new();
+
+        let bytes = copy_entry_to_file(&mut reader, &dest_path, |written| {
+            progress.push(written);
+        })
+        .unwrap();
+
+        assert_eq!(bytes, 14);
+        assert_eq!(std::fs::read(&dest_path).unwrap(), b"complete bytes");
+        assert_eq!(progress.last().copied(), Some(14));
+    }
+
+    #[test]
+    fn test_extract_zip_rejects_existing_output_without_removing_it() {
+        let temp_dir = TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("archive.zip");
+        let output_dir = temp_dir.path().join("out");
+        let output_file = output_dir.join("file.txt");
+        write_test_zip(&zip_path, "file.txt", b"new archive bytes");
+        std::fs::create_dir_all(&output_dir).unwrap();
+        std::fs::write(&output_file, b"existing bytes").unwrap();
+
+        let result = extract_zip(zip_path.to_str().unwrap(), output_dir.to_str().unwrap()).unwrap();
+
+        assert!(!result.success);
+        assert_eq!(result.files_extracted, 0);
+        assert_eq!(result.failed_files.len(), 1);
+        assert!(
+            result.failed_files[0]
+                .error
+                .contains("will not be overwritten"),
+            "unexpected error: {}",
+            result.failed_files[0].error
+        );
+        assert_eq!(std::fs::read(&output_file).unwrap(), b"existing bytes");
+    }
+
+    #[test]
+    fn test_extract_zip_entry_rejects_existing_output_without_removing_it() {
+        let temp_dir = TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("archive.zip");
+        let output_file = temp_dir.path().join("single.bin");
+        write_test_zip(&zip_path, "file.txt", b"new archive bytes");
+        std::fs::write(&output_file, b"existing bytes").unwrap();
+
+        let err = extract_zip_entry(
+            zip_path.to_str().unwrap(),
+            "file.txt",
+            output_file.to_str().unwrap(),
+        )
+        .expect_err("existing single-entry destination should be rejected");
+
+        assert!(
+            err.to_string().contains("will not be overwritten"),
+            "unexpected error: {}",
+            err
+        );
+        assert_eq!(std::fs::read(&output_file).unwrap(), b"existing bytes");
+    }
+
+    fn write_test_zip(path: &Path, entry_path: &str, data: &[u8]) {
+        use zip::write::SimpleFileOptions;
+        use zip::{CompressionMethod, ZipWriter};
+
+        let file = File::create(path).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file(entry_path, options).unwrap();
+        zip.write_all(data).unwrap();
+        zip.finish().unwrap();
+    }
+
+    struct FailingReader {
+        data: Vec<u8>,
+        offset: usize,
+        fail_after_data: bool,
+    }
+
+    impl FailingReader {
+        fn new(data: &[u8], fail_after_data: bool) -> Self {
+            Self {
+                data: data.to_vec(),
+                offset: 0,
+                fail_after_data,
+            }
+        }
+    }
+
+    impl Read for FailingReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.offset < self.data.len() {
+                let len = (self.data.len() - self.offset).min(buf.len());
+                buf[..len].copy_from_slice(&self.data[self.offset..self.offset + len]);
+                self.offset += len;
+                return Ok(len);
+            }
+            if self.fail_after_data {
+                self.fail_after_data = false;
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "forced EOF"));
+            }
+            Ok(0)
+        }
     }
 }

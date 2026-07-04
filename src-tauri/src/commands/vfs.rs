@@ -29,6 +29,24 @@ use crate::raw;
 
 /// Maximum number of cached VFS handles before LRU eviction
 const VFS_POOL_MAX_ENTRIES: usize = 32;
+/// Maximum bytes returned by a single mounted-VFS file read command.
+const VFS_MAX_READ_BYTES: usize = 16 * 1024 * 1024;
+
+fn checked_vfs_read_size(file_size: u64, offset: u64, requested: usize) -> Result<usize, String> {
+    if requested > VFS_MAX_READ_BYTES {
+        return Err(format!(
+            "VFS read request is too large: {requested} bytes > {VFS_MAX_READ_BYTES} bytes"
+        ));
+    }
+
+    if offset >= file_size {
+        return Ok(0);
+    }
+
+    let remaining = file_size.saturating_sub(offset);
+    usize::try_from(remaining.min(requested as u64))
+        .map_err(|_| "VFS read range is too large for this platform".to_string())
+}
 
 /// Type-erased VFS wrapper for the handle pool
 enum PooledVfsKind {
@@ -458,7 +476,24 @@ pub async fn vfs_read_file(
 ) -> Result<Vec<u8>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let handle = get_or_open_vfs(&containerPath)?;
-        handle.read(&filePath, offset, length)
+        let attr = handle.getattr_cached(&filePath)?;
+        if attr.is_directory {
+            return Err(format!("Cannot read directory as file: {filePath}"));
+        }
+
+        let read_size = checked_vfs_read_size(attr.size, offset, length)?;
+        if read_size == 0 {
+            return Ok(Vec::new());
+        }
+
+        let data = handle.read(&filePath, offset, read_size)?;
+        if data.len() > read_size {
+            return Err(format!(
+                "VFS backend returned too many bytes for {filePath}: requested {read_size}, received {}",
+                data.len()
+            ));
+        }
+        Ok(data)
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
@@ -487,4 +522,35 @@ pub async fn vfs_clear_pool() -> Result<usize, String> {
     pool.clear();
     debug!("[vfs_clear_pool] Cleared {} cached VFS handles", count);
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_vfs_read_size_clamps_to_remaining_file_bytes() {
+        assert_eq!(checked_vfs_read_size(100, 90, 64).unwrap(), 10);
+    }
+
+    #[test]
+    fn checked_vfs_read_size_returns_zero_at_or_past_eof() {
+        assert_eq!(checked_vfs_read_size(100, 100, 64).unwrap(), 0);
+        assert_eq!(checked_vfs_read_size(100, 150, 64).unwrap(), 0);
+    }
+
+    #[test]
+    fn checked_vfs_read_size_rejects_oversized_request() {
+        let err = checked_vfs_read_size(100, 0, VFS_MAX_READ_BYTES + 1).unwrap_err();
+
+        assert!(err.contains("VFS read request is too large"));
+    }
+
+    #[test]
+    fn checked_vfs_read_size_allows_limit() {
+        assert_eq!(
+            checked_vfs_read_size(u64::MAX, 0, VFS_MAX_READ_BYTES).unwrap(),
+            VFS_MAX_READ_BYTES
+        );
+    }
 }

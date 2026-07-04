@@ -32,6 +32,36 @@ use super::DocumentFormat;
 
 pub mod writer;
 
+const MAX_DOCX_XML_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_DOCX_SOURCE_BYTES: u64 = 100 * 1024 * 1024;
+
+fn ensure_docx_source_size_allowed(size: u64) -> DocumentResult<()> {
+    if size > MAX_DOCX_SOURCE_BYTES {
+        return Err(DocumentError::Docx(format!(
+            "DOCX source exceeds {} MiB limit",
+            MAX_DOCX_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
+fn read_docx_xml_entry<R: Read>(reader: R, entry_name: &str) -> DocumentResult<String> {
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_DOCX_XML_ENTRY_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+
+    if bytes.len() as u64 > MAX_DOCX_XML_ENTRY_BYTES {
+        return Err(DocumentError::Docx(format!(
+            "DOCX XML entry '{}' exceeds {} MiB limit",
+            entry_name,
+            MAX_DOCX_XML_ENTRY_BYTES / (1024 * 1024)
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
 /// DOCX document handler with read/write capabilities
 pub struct DocxDocument;
 
@@ -47,6 +77,7 @@ impl DocxDocument {
 
     /// Read DOCX from file path
     pub fn read(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
+        ensure_docx_source_size_allowed(std::fs::metadata(path.as_ref())?.len())?;
         let data = std::fs::read(&path)?;
 
         // Check for OLE compound document magic bytes (legacy .doc format)
@@ -201,6 +232,7 @@ impl DocxDocument {
 
     /// Read DOCX from bytes
     pub fn read_bytes(&self, data: &[u8]) -> DocumentResult<DocumentContent> {
+        ensure_docx_source_size_allowed(data.len() as u64)?;
         let cursor = Cursor::new(data);
         let mut archive = ZipArchive::new(cursor)
             .map_err(|e| DocumentError::Docx(format!("Failed to open DOCX: {}", e)))?;
@@ -226,8 +258,7 @@ impl DocxDocument {
 
         // Try to read core.xml
         if let Ok(mut core_file) = archive.by_name("docProps/core.xml") {
-            let mut xml_content = String::new();
-            core_file.read_to_string(&mut xml_content)?;
+            let xml_content = read_docx_xml_entry(&mut core_file, "docProps/core.xml")?;
 
             let mut reader = Reader::from_str(&xml_content);
             reader.config_mut().trim_text(true);
@@ -268,8 +299,7 @@ impl DocxDocument {
 
         // Try to read app.xml for additional info
         if let Ok(mut app_file) = archive.by_name("docProps/app.xml") {
-            let mut xml_content = String::new();
-            app_file.read_to_string(&mut xml_content)?;
+            let xml_content = read_docx_xml_entry(&mut app_file, "docProps/app.xml")?;
 
             let mut reader = Reader::from_str(&xml_content);
             reader.config_mut().trim_text(true);
@@ -318,8 +348,7 @@ impl DocxDocument {
             .by_name("word/document.xml")
             .map_err(|e| DocumentError::Docx(format!("Missing document.xml: {}", e)))?;
 
-        let mut xml_content = String::new();
-        doc_file.read_to_string(&mut xml_content)?;
+        let xml_content = read_docx_xml_entry(&mut doc_file, "word/document.xml")?;
 
         let mut reader = Reader::from_str(&xml_content);
         reader.config_mut().trim_text(true);
@@ -483,6 +512,32 @@ impl Default for DocxDocument {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn test_read_docx_xml_entry_rejects_oversized_content() {
+        let oversized = std::io::repeat(b'x').take(MAX_DOCX_XML_ENTRY_BYTES + 1);
+
+        let err = read_docx_xml_entry(oversized, "word/document.xml").unwrap_err();
+
+        assert!(err.to_string().contains("exceeds 16 MiB limit"));
+    }
+
+    #[test]
+    fn test_docx_source_size_rejects_oversized_source() {
+        let err = ensure_docx_source_size_allowed(MAX_DOCX_SOURCE_BYTES + 1).unwrap_err();
+
+        assert!(err.to_string().contains("DOCX source exceeds"));
+    }
+
+    #[test]
+    fn test_read_rejects_sparse_oversized_source_before_read() {
+        let file = tempfile::Builder::new().suffix(".docx").tempfile().unwrap();
+        file.as_file().set_len(MAX_DOCX_SOURCE_BYTES + 1).unwrap();
+
+        let err = DocxDocument::new().read(file.path()).unwrap_err();
+
+        assert!(err.to_string().contains("DOCX source exceeds"));
+    }
 
     /// Build a minimal valid DOCX (zip) in memory with the specified XML files.
     fn build_docx_bytes(files: &[(&str, &str)]) -> Vec<u8> {

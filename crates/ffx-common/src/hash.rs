@@ -63,6 +63,8 @@ use tracing::{debug, instrument, trace};
 use xxhash_rust::xxh3::Xxh3;
 use xxhash_rust::xxh64::Xxh64;
 
+use crate::evidence_source::EvidenceByteSource;
+
 use super::{AdaptiveBuffer, IoOperation};
 
 // =============================================================================
@@ -442,17 +444,150 @@ where
         hasher.update(buf);
         reader.consume(len);
 
-        bytes_read_total += len as u64;
+        bytes_read_total =
+            checked_hash_bytes_read_advance(bytes_read_total, len, total_size, "file")?;
         if bytes_read_total - last_report >= report_interval {
             progress_callback(bytes_read_total, total_size);
             last_report = bytes_read_total;
         }
     }
 
+    ensure_hash_bytes_complete(bytes_read_total, total_size, "file")?;
     progress_callback(total_size, total_size);
     let hash = hasher.finalize();
     debug!(hash = %hash, "File hash complete");
     Ok(hash)
+}
+
+/// Hash an arbitrary evidence byte source with progress reporting.
+///
+/// This is the source-oriented counterpart to [`hash_file_with_progress`].
+/// It lets callers hash local files, virtual filesystem entries, or logical
+/// container entries through the same algorithm implementation.
+pub fn hash_byte_source_with_progress<F>(
+    source: &dyn EvidenceByteSource,
+    algorithm: &str,
+    mut progress_callback: F,
+) -> Result<String, ContainerError>
+where
+    F: FnMut(u64, u64),
+{
+    let total_size = source
+        .len()
+        .map_err(|e| ContainerError::IoError(e.to_string()))?;
+    debug!(
+        source = %source.source_ref().display_id(),
+        algorithm,
+        total_size,
+        "Starting evidence byte-source hash"
+    );
+
+    let buffer_size = AdaptiveBuffer::optimal_size(total_size, IoOperation::Hash);
+    let mut hasher: StreamingHasher = algorithm.parse()?;
+    let mut bytes_read_total = 0u64;
+
+    let progress_chunks = AdaptiveBuffer::progress_chunks(total_size);
+    let report_interval = (total_size / progress_chunks).max(buffer_size as u64);
+    let use_parallel_updates = algorithm.eq_ignore_ascii_case("blake3");
+    let mut last_report = 0u64;
+
+    progress_callback(0, total_size);
+
+    while bytes_read_total < total_size {
+        let remaining = total_size - bytes_read_total;
+        let read_size = remaining.min(buffer_size as u64) as usize;
+        let chunk = source
+            .read_range(bytes_read_total, read_size)
+            .map_err(|e| ContainerError::IoError(e.to_string()))?;
+
+        if chunk.is_empty() {
+            return Err(ContainerError::IoError(format!(
+                "Short read hashing {}: source reported {} bytes but returned no data at offset {}",
+                source.source_ref().display_id(),
+                total_size,
+                bytes_read_total
+            )));
+        }
+
+        if use_parallel_updates {
+            hasher.update_parallel(&chunk);
+        } else {
+            hasher.update(&chunk);
+        }
+
+        bytes_read_total = checked_hash_bytes_read_advance(
+            bytes_read_total,
+            chunk.len(),
+            total_size,
+            &source.source_ref().display_id(),
+        )?;
+        if bytes_read_total == total_size || bytes_read_total - last_report >= report_interval {
+            progress_callback(bytes_read_total, total_size);
+            last_report = bytes_read_total;
+        }
+    }
+
+    ensure_hash_bytes_complete(
+        bytes_read_total,
+        total_size,
+        &source.source_ref().display_id(),
+    )?;
+    if last_report != total_size {
+        progress_callback(total_size, total_size);
+    }
+    let hash = hasher.finalize();
+    debug!(
+        source = %source.source_ref().display_id(),
+        hash = %hash,
+        "Evidence byte-source hash complete"
+    );
+    Ok(hash)
+}
+
+/// Hash an arbitrary evidence byte source without progress reporting.
+pub fn hash_byte_source(
+    source: &dyn EvidenceByteSource,
+    algorithm: &str,
+) -> Result<String, ContainerError> {
+    hash_byte_source_with_progress(source, algorithm, |_, _| {})
+}
+
+fn checked_hash_bytes_read_advance(
+    current: u64,
+    chunk_len: usize,
+    total_size: u64,
+    source_id: &str,
+) -> Result<u64, ContainerError> {
+    let chunk_len = u64::try_from(chunk_len).map_err(|_| {
+        ContainerError::IoError(format!(
+            "Hash read chunk length does not fit in u64 for {source_id}"
+        ))
+    })?;
+    let next = current.checked_add(chunk_len).ok_or_else(|| {
+        ContainerError::IoError(format!(
+            "Hash byte counter overflowed while hashing {source_id}: read {current} bytes, next chunk {chunk_len} bytes"
+        ))
+    })?;
+    if next > total_size {
+        return Err(ContainerError::IoError(format!(
+            "Hash read past declared size for {source_id}: processed {next} bytes but expected {total_size}"
+        )));
+    }
+    Ok(next)
+}
+
+fn ensure_hash_bytes_complete(
+    processed: u64,
+    total_size: u64,
+    source_id: &str,
+) -> Result<(), ContainerError> {
+    if processed == total_size {
+        Ok(())
+    } else {
+        Err(ContainerError::IoError(format!(
+            "Short read hashing {source_id}: processed {processed} bytes but expected {total_size}"
+        )))
+    }
 }
 
 /// BLAKE3 optimized path using rayon parallel hashing
@@ -487,13 +622,15 @@ where
         hasher.update_rayon(buf);
         reader.consume(len);
 
-        bytes_read_total += len as u64;
+        bytes_read_total =
+            checked_hash_bytes_read_advance(bytes_read_total, len, total_size, "file")?;
         if bytes_read_total - last_report >= report_interval {
             progress_callback(bytes_read_total, total_size);
             last_report = bytes_read_total;
         }
     }
 
+    ensure_hash_bytes_complete(bytes_read_total, total_size, "file")?;
     progress_callback(total_size, total_size);
     Ok(hasher.finalize().to_hex().to_string())
 }
@@ -511,6 +648,10 @@ pub fn hash_file(path: &Path, algorithm: &str) -> Result<String, ContainerError>
 pub fn is_valid_hash(hash: &str, algorithm: HashAlgorithm) -> bool {
     let expected_len = algorithm.hash_length();
     hash.len() == expected_len && hash.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn is_supported_hash_length(len: usize) -> bool {
+    matches!(len, 8 | 16 | 32 | 40 | 64 | 128)
 }
 
 /// Guess the hash algorithm from a hash string based on length
@@ -561,6 +702,14 @@ pub fn compare_hashes(computed: &str, expected: &str) -> HashMatchResult {
     let computed = computed.trim();
     let expected = expected.trim();
 
+    if computed.is_empty()
+        || expected.is_empty()
+        || !is_supported_hash_length(computed.len())
+        || !is_supported_hash_length(expected.len())
+    {
+        return HashMatchResult::Invalid;
+    }
+
     // Check for invalid characters
     if !computed.chars().all(|c| c.is_ascii_hexdigit())
         || !expected.chars().all(|c| c.is_ascii_hexdigit())
@@ -608,7 +757,13 @@ pub struct HashVerificationResult {
 impl HashVerificationResult {
     /// Create a new verification result
     pub fn new(algorithm: HashAlgorithm, computed: String, expected: String) -> Self {
-        let match_result = compare_hashes(&computed, &expected);
+        let match_result = if !is_valid_hash(computed.trim(), algorithm)
+            || !is_valid_hash(expected.trim(), algorithm)
+        {
+            HashMatchResult::Invalid
+        } else {
+            compare_hashes(&computed, &expected)
+        };
         Self {
             algorithm: algorithm.name().to_string(),
             computed,
@@ -701,6 +856,68 @@ pub fn verify_file_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::evidence_source::{
+        EvidenceSourceError, EvidenceSourceRef, EvidenceSourceResult, LocalFileByteSource,
+    };
+
+    struct TruncatedByteSource {
+        declared_len: u64,
+        data: Vec<u8>,
+    }
+
+    impl EvidenceByteSource for TruncatedByteSource {
+        fn source_ref(&self) -> EvidenceSourceRef {
+            EvidenceSourceRef::LocalFile {
+                path: "truncated-source.bin".to_string(),
+            }
+        }
+
+        fn len(&self) -> EvidenceSourceResult<u64> {
+            Ok(self.declared_len)
+        }
+
+        fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
+            if offset > self.declared_len {
+                return Err(EvidenceSourceError::InvalidRange {
+                    source_id: self.source_ref().display_id(),
+                    offset,
+                    size: self.declared_len,
+                });
+            }
+
+            let start = offset as usize;
+            if start >= self.data.len() {
+                return Ok(Vec::new());
+            }
+            let end = start.saturating_add(size).min(self.data.len());
+            Ok(self.data[start..end].to_vec())
+        }
+    }
+
+    struct OverReturningByteSource {
+        declared_len: u64,
+        data: Vec<u8>,
+    }
+
+    impl EvidenceByteSource for OverReturningByteSource {
+        fn source_ref(&self) -> EvidenceSourceRef {
+            EvidenceSourceRef::LocalFile {
+                path: "over-returning-source.bin".to_string(),
+            }
+        }
+
+        fn len(&self) -> EvidenceSourceResult<u64> {
+            Ok(self.declared_len)
+        }
+
+        fn read_range(&self, offset: u64, _size: usize) -> EvidenceSourceResult<Vec<u8>> {
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            if start >= self.data.len() {
+                return Ok(Vec::new());
+            }
+            Ok(self.data[start..].to_vec())
+        }
+    }
 
     #[test]
     fn test_algorithm_parsing() {
@@ -741,6 +958,93 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_byte_source_sha256() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.bin");
+        std::fs::write(&path, b"hello world").unwrap();
+        let source = LocalFileByteSource::new(&path);
+
+        let hash = hash_byte_source(&source, "sha256").unwrap();
+
+        assert_eq!(hash, compute_hash(b"hello world", HashAlgorithm::Sha256));
+    }
+
+    #[test]
+    fn test_hash_byte_source_blake3_matches_one_shot() {
+        let data = b"byte source hashing test data";
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.bin");
+        std::fs::write(&path, data).unwrap();
+        let source = LocalFileByteSource::new(&path);
+
+        let hash = hash_byte_source(&source, "blake3").unwrap();
+
+        assert_eq!(hash, compute_hash(data, HashAlgorithm::Blake3));
+    }
+
+    #[test]
+    fn test_hash_byte_source_reports_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.bin");
+        std::fs::write(&path, b"progress").unwrap();
+        let source = LocalFileByteSource::new(&path);
+        let mut updates = Vec::new();
+
+        let _ = hash_byte_source_with_progress(&source, "sha256", |current, total| {
+            updates.push((current, total));
+        })
+        .unwrap();
+
+        assert!(updates.contains(&(0, 8)));
+        assert!(updates.contains(&(8, 8)));
+    }
+
+    #[test]
+    fn test_hash_byte_source_rejects_premature_eof() {
+        let source = TruncatedByteSource {
+            declared_len: 12,
+            data: b"short".to_vec(),
+        };
+
+        let error = hash_byte_source(&source, "sha256").unwrap_err();
+
+        assert!(matches!(
+            error,
+            ContainerError::IoError(message)
+                if message.contains("Short read hashing truncated-source.bin")
+                    && message.contains("reported 12 bytes")
+        ));
+    }
+
+    #[test]
+    fn test_hash_byte_source_rejects_over_returned_chunks() {
+        let source = OverReturningByteSource {
+            declared_len: 4,
+            data: b"too much".to_vec(),
+        };
+
+        let error = hash_byte_source(&source, "sha256").unwrap_err();
+
+        assert!(matches!(
+            error,
+            ContainerError::IoError(message)
+                if message.contains("Hash read past declared size for over-returning-source.bin")
+                    && message.contains("expected 4")
+        ));
+    }
+
+    #[test]
+    fn checked_hash_bytes_read_advance_rejects_overflow_and_overshoot() {
+        assert_eq!(
+            checked_hash_bytes_read_advance(2, 2, 4, "source.bin").unwrap(),
+            4
+        );
+        assert!(checked_hash_bytes_read_advance(u64::MAX, 1, u64::MAX, "source.bin").is_err());
+        assert!(checked_hash_bytes_read_advance(3, 2, 4, "source.bin").is_err());
+        assert!(ensure_hash_bytes_complete(3, 4, "source.bin").is_err());
+    }
+
+    #[test]
     fn test_streaming_hasher() {
         let mut hasher = StreamingHasher::new(HashAlgorithm::Md5);
         hasher.update(b"hello ");
@@ -760,6 +1064,24 @@ mod tests {
             "5eb63bbbe01eeed093cb22bb8f5acdc3",
             HashAlgorithm::Sha1
         ));
+    }
+
+    #[test]
+    fn test_compare_hashes_rejects_empty_and_fragment_values() {
+        assert_eq!(compare_hashes("", ""), HashMatchResult::Invalid);
+        assert_eq!(compare_hashes("abc123", "ABC123"), HashMatchResult::Invalid);
+    }
+
+    #[test]
+    fn test_verification_rejects_expected_hash_for_wrong_algorithm() {
+        let result = verify_hash(
+            b"hello world",
+            "5eb63bbbe01eeed093cb22bb8f5acdc3",
+            HashAlgorithm::Sha1,
+        );
+
+        assert!(!result.matches);
+        assert_eq!(result.match_result, HashMatchResult::Invalid);
     }
 
     #[test]

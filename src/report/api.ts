@@ -6,13 +6,25 @@
 
 /**
  * Report API - Tauri command wrappers for report generation
- * 
+ *
  * This module provides TypeScript interfaces for the Rust report commands
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import type { ContainerInfo, DiscoveredFile } from "../types";
+import type {
+  DbNormalizedArtifact,
+  DbSourceAnalysisRecord,
+  ProjectDbAnnotationRecord,
+} from "../api/commands";
 import { formatBytes } from "../utils";
+
+export interface ProjectDbReportAppendix {
+  appendix_id: string;
+  title: string;
+  content_type: "Markdown";
+  content: string;
+}
 
 // =============================================================================
 // Input Types (sent to backend)
@@ -82,6 +94,125 @@ export interface EvidenceItem {
   notes?: string;
 }
 
+export interface ProjectDbReportEvidence {
+  evidenceItems: EvidenceItem[];
+  hashRecords: HashRecord[];
+  hashAlgorithmSummaries: ReportHashAlgorithmSummary[];
+  verificationResultSummaries: ReportVerificationResultSummary[];
+  artifacts: DbNormalizedArtifact[];
+  artifactSummaries: ReportArtifactSummary[];
+  artifactCategories: ReportArtifactCategorySummary[];
+  artifactEvidenceSummaries: ReportArtifactEvidenceSummary[];
+  artifactExtractorSummaries: ReportArtifactExtractorSummary[];
+  sourceAnalyses: DbSourceAnalysisRecord[];
+  sourceAnalysisSummaries: ReportSourceAnalysisSummary[];
+  sourceAnalysisCategorySummaries: ReportSourceAnalysisCategorySummary[];
+  annotations: ProjectDbAnnotationRecord[];
+}
+
+export interface ReportHashAlgorithmSummary {
+  algorithm: string;
+  algorithmLabel: string;
+  count: number;
+  evidenceFileCount: number;
+  sourceCount: number;
+  latestComputedAt?: string | null;
+}
+
+export interface ReportVerificationResultSummary {
+  result: string;
+  count: number;
+  hashCount: number;
+  latestVerifiedAt?: string | null;
+}
+
+export interface ReportArtifactSummary {
+  id: string;
+  evidenceFileId?: string | null;
+  sourceId: string;
+  sourceRef?: unknown | null;
+  name: string;
+  category: string;
+  typeDescription: string;
+  mimeType?: string | null;
+  size: number;
+  sizeDisplay: string;
+  confidence: string;
+  isText: boolean;
+  preview?: string | null;
+  metadata: Record<string, string>;
+  extractor: string;
+  extractedAt: string;
+}
+
+export interface ReportArtifactCategorySummary {
+  category: string;
+  count: number;
+}
+
+export interface ReportArtifactEvidenceSummary {
+  evidenceFileId?: string | null;
+  count: number;
+  totalSize: number;
+  totalSizeDisplay: string;
+  textCount: number;
+  categoryCount: number;
+  latestExtractedAt?: string | null;
+}
+
+export interface ReportArtifactExtractorSummary {
+  extractor: string;
+  count: number;
+  totalSize: number;
+  totalSizeDisplay: string;
+  textCount: number;
+  categoryCount: number;
+  evidenceFileCount: number;
+  latestExtractedAt?: string | null;
+}
+
+export interface ReportSourceAnalysisSummary {
+  id: string;
+  evidenceFileId?: string | null;
+  sourceId: string;
+  sourceRef?: unknown | null;
+  totalSize: number;
+  totalSizeDisplay: string;
+  offset: number;
+  bytesAnalyzed: number;
+  bytesAnalyzedDisplay: string;
+  magicHex: string;
+  signatureCount: number;
+  primarySignature?: string | null;
+  primaryMimeType?: string | null;
+  primaryCategory: string;
+  entropy: number;
+  printableRatio: number;
+  isLikelyText: boolean;
+  indicators: ReportSourceIndicator[];
+  indicatorCount: number;
+  preview?: string | null;
+  analyzedAt: string;
+  analyzer: string;
+}
+
+export interface ReportSourceIndicator {
+  indicatorType: string;
+  value: string;
+  offset: number;
+  length: number;
+  confidence: string;
+}
+
+export interface ReportSourceAnalysisCategorySummary {
+  category: string;
+  count: number;
+  evidenceFileCount: number;
+  avgEntropy: number;
+  textLikeCount: number;
+  latestAnalyzedAt?: string | null;
+}
+
 // =============================================================================
 // Conversion Helpers
 // =============================================================================
@@ -92,16 +223,17 @@ export interface EvidenceItem {
 export function containerToInput(
   file: DiscoveredFile,
   info: ContainerInfo | undefined,
-  hashInfo: { algorithm: string; hash: string; verified?: boolean | null } | undefined
+  hashInfo:
+    { algorithm: string; hash: string; verified?: boolean | null } | undefined,
 ): ContainerInfoInput {
   // Extract data from various container types
   const ewfInfo = info?.e01 || info?.l01;
   const ad1Info = info?.ad1;
   const ufedInfo = info?.ufed;
-  
+
   // Get stored hashes from container
   const storedHashes: StoredHashInput[] = [];
-  
+
   if (ewfInfo?.stored_hashes) {
     for (const h of ewfInfo.stored_hashes) {
       storedHashes.push({
@@ -111,7 +243,7 @@ export function containerToInput(
       });
     }
   }
-  
+
   if (ad1Info?.companion_log) {
     const log = ad1Info.companion_log;
     if (log.md5_hash) {
@@ -121,27 +253,49 @@ export function containerToInput(
       storedHashes.push({ algorithm: "SHA1", hash: log.sha1_hash });
     }
   }
-  
+
   return {
     container_type: file.container_type,
     path: file.path,
     filename: file.filename,
     size: file.size,
-    case_number: ewfInfo?.case_number ?? ad1Info?.companion_log?.case_number ?? ufedInfo?.case_info?.case_identifier ?? undefined,
-    evidence_number: ewfInfo?.evidence_number ?? ad1Info?.companion_log?.evidence_number ?? ufedInfo?.evidence_number ?? undefined,
-    examiner_name: ewfInfo?.examiner_name ?? ad1Info?.companion_log?.examiner ?? ufedInfo?.case_info?.examiner_name ?? undefined,
+    case_number:
+      ewfInfo?.case_number ??
+      ad1Info?.companion_log?.case_number ??
+      ufedInfo?.case_info?.case_identifier ??
+      undefined,
+    evidence_number:
+      ewfInfo?.evidence_number ??
+      ad1Info?.companion_log?.evidence_number ??
+      ufedInfo?.evidence_number ??
+      undefined,
+    examiner_name:
+      ewfInfo?.examiner_name ??
+      ad1Info?.companion_log?.examiner ??
+      ufedInfo?.case_info?.examiner_name ??
+      undefined,
     description: ewfInfo?.description ?? undefined,
     notes: ewfInfo?.notes ?? ad1Info?.companion_log?.notes ?? undefined,
-    acquiry_date: ewfInfo?.acquiry_date ?? ad1Info?.companion_log?.acquisition_date ?? ufedInfo?.extraction_info?.start_time ?? undefined,
+    acquiry_date:
+      ewfInfo?.acquiry_date ??
+      ad1Info?.companion_log?.acquisition_date ??
+      ufedInfo?.extraction_info?.start_time ??
+      undefined,
     model: ewfInfo?.model ?? ufedInfo?.device_info?.model ?? undefined,
-    serial_number: ewfInfo?.serial_number ?? ufedInfo?.device_info?.serial_number ?? undefined,
-    total_size: ewfInfo?.total_size ?? ad1Info?.total_size ?? ufedInfo?.size ?? undefined,
+    serial_number:
+      ewfInfo?.serial_number ??
+      ufedInfo?.device_info?.serial_number ??
+      undefined,
+    total_size:
+      ewfInfo?.total_size ?? ad1Info?.total_size ?? ufedInfo?.size ?? undefined,
     stored_hashes: storedHashes.length > 0 ? storedHashes : undefined,
-    computed_hash: hashInfo ? {
-      algorithm: hashInfo.algorithm,
-      hash: hashInfo.hash,
-      verified: hashInfo.verified ?? undefined,
-    } : undefined,
+    computed_hash: hashInfo
+      ? {
+          algorithm: hashInfo.algorithm,
+          hash: hashInfo.hash,
+          verified: hashInfo.verified ?? undefined,
+        }
+      : undefined,
   };
 }
 
@@ -151,13 +305,18 @@ export function containerToInput(
 export function containersToInputs(
   files: DiscoveredFile[],
   fileInfoMap: Map<string, ContainerInfo>,
-  fileHashMap: Map<string, { algorithm: string; hash: string; verified?: boolean | null }>
+  fileHashMap: Map<
+    string,
+    { algorithm: string; hash: string; verified?: boolean | null }
+  >,
 ): ContainerInfoInput[] {
-  return files.map(file => containerToInput(
-    file,
-    fileInfoMap.get(file.path),
-    fileHashMap.get(file.path)
-  ));
+  return files.map((file) =>
+    containerToInput(
+      file,
+      fileInfoMap.get(file.path),
+      fileHashMap.get(file.path),
+    ),
+  );
 }
 
 // =============================================================================
@@ -166,14 +325,82 @@ export function containersToInputs(
 
 /**
  * Extract evidence items from container info
- * 
+ *
  * This sends container data to the backend for conversion to properly
  * formatted evidence items suitable for reports.
  */
 export async function extractEvidenceFromContainers(
-  containers: ContainerInfoInput[]
+  containers: ContainerInfoInput[],
 ): Promise<EvidenceItem[]> {
-  return invoke<EvidenceItem[]>("extract_evidence_from_containers", { containers });
+  return invoke<EvidenceItem[]>("extract_evidence_from_containers", {
+    containers,
+  });
+}
+
+/**
+ * Extract report-ready evidence, hashes, and normalized artifacts from .ffxdb.
+ */
+export async function extractReportEvidenceFromProjectDb(): Promise<ProjectDbReportEvidence> {
+  return invoke<ProjectDbReportEvidence>(
+    "extract_report_evidence_from_project_db",
+  );
+}
+
+/**
+ * Convert project DB engine facts into report appendices accepted by the
+ * ForensicReport renderers.
+ */
+export function buildProjectDbEvidenceAppendices(
+  evidence: ProjectDbReportEvidence,
+  startIndex = 0,
+): ProjectDbReportAppendix[] {
+  const appendices: ProjectDbReportAppendix[] = [];
+
+  const hashContent = buildHashAppendix(evidence);
+  if (hashContent) {
+    appendices.push(
+      makeAppendix(
+        startIndex + appendices.length,
+        "Project Hash and Verification Summary",
+        hashContent,
+      ),
+    );
+  }
+
+  const artifactContent = buildArtifactAppendix(evidence);
+  if (artifactContent) {
+    appendices.push(
+      makeAppendix(
+        startIndex + appendices.length,
+        "Normalized Artifact Summary",
+        artifactContent,
+      ),
+    );
+  }
+
+  const sourceAnalysisContent = buildSourceAnalysisAppendix(evidence);
+  if (sourceAnalysisContent) {
+    appendices.push(
+      makeAppendix(
+        startIndex + appendices.length,
+        "Source Analysis Summary",
+        sourceAnalysisContent,
+      ),
+    );
+  }
+
+  const annotationContent = buildAnnotationAppendix(evidence);
+  if (annotationContent) {
+    appendices.push(
+      makeAppendix(
+        startIndex + appendices.length,
+        "Hex Review and Annotation Findings",
+        annotationContent,
+      ),
+    );
+  }
+
+  return appendices;
 }
 
 /**
@@ -181,20 +408,296 @@ export async function extractEvidenceFromContainers(
  */
 export async function createEvidenceFromContainer(
   container: ContainerInfoInput,
-  evidenceId: string
+  evidenceId: string,
 ): Promise<EvidenceItem> {
-  return invoke<EvidenceItem>("create_evidence_from_container", { container, evidenceId });
+  return invoke<EvidenceItem>("create_evidence_from_container", {
+    container,
+    evidenceId,
+  });
+}
+
+function makeAppendix(
+  index: number,
+  title: string,
+  content: string,
+): ProjectDbReportAppendix {
+  return {
+    appendix_id: String.fromCharCode("A".charCodeAt(0) + index),
+    title,
+    content_type: "Markdown",
+    content,
+  };
+}
+
+function buildHashAppendix(evidence: ProjectDbReportEvidence): string {
+  const lines: string[] = [];
+
+  if (evidence.hashAlgorithmSummaries.length > 0) {
+    lines.push("### Hash Algorithms");
+    lines.push("");
+    lines.push(
+      "| Algorithm | Hashes | Evidence Files | Sources | Latest Computed |",
+    );
+    lines.push("| --- | ---: | ---: | ---: | --- |");
+    for (const summary of evidence.hashAlgorithmSummaries) {
+      lines.push(
+        `| ${summary.algorithmLabel || summary.algorithm} | ${summary.count} | ${summary.evidenceFileCount} | ${summary.sourceCount} | ${summary.latestComputedAt || "-"} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (evidence.verificationResultSummaries.length > 0) {
+    lines.push("### Verification Results");
+    lines.push("");
+    lines.push("| Result | Checks | Hashes | Latest Verified |");
+    lines.push("| --- | ---: | ---: | --- |");
+    for (const summary of evidence.verificationResultSummaries) {
+      lines.push(
+        `| ${summary.result} | ${summary.count} | ${summary.hashCount} | ${summary.latestVerifiedAt || "-"} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
+
+function buildArtifactAppendix(evidence: ProjectDbReportEvidence): string {
+  const lines: string[] = [];
+
+  if (evidence.artifactCategories.length > 0) {
+    lines.push("### Artifact Categories");
+    lines.push("");
+    lines.push("| Category | Count |");
+    lines.push("| --- | ---: |");
+    for (const summary of evidence.artifactCategories) {
+      lines.push(`| ${summary.category} | ${summary.count} |`);
+    }
+    lines.push("");
+  }
+
+  if (evidence.artifactExtractorSummaries.length > 0) {
+    lines.push("### Extractor Coverage");
+    lines.push("");
+    lines.push(
+      "| Extractor | Artifacts | Total Size | Text | Categories | Evidence Files | Latest Extracted |",
+    );
+    lines.push("| --- | ---: | ---: | ---: | ---: | ---: | --- |");
+    for (const summary of evidence.artifactExtractorSummaries) {
+      lines.push(
+        `| ${summary.extractor} | ${summary.count} | ${summary.totalSizeDisplay} | ${summary.textCount} | ${summary.categoryCount} | ${summary.evidenceFileCount} | ${summary.latestExtractedAt || "-"} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (evidence.artifactSummaries.length > 0) {
+    lines.push("### Extracted Artifacts");
+    lines.push("");
+    lines.push(
+      "| Name | Category | Type | Size | Key Metadata | Source | Extractor |",
+    );
+    lines.push("| --- | --- | --- | ---: | --- | --- | --- |");
+    for (const artifact of evidence.artifactSummaries.slice(0, 250)) {
+      lines.push(
+        `| ${artifact.name} | ${artifact.category} | ${artifact.typeDescription} | ${artifact.sizeDisplay} | ${artifactMetadataSummary(artifact.metadata)} | ${artifact.sourceId} | ${artifact.extractor} |`,
+      );
+    }
+    if (evidence.artifactSummaries.length > 250) {
+      lines.push(
+        `| ... | ... | ... | ... | ... | ${evidence.artifactSummaries.length - 250} additional artifact(s) omitted from appendix preview | ... |`,
+      );
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
+
+function artifactMetadataSummary(metadata: Record<string, string>): string {
+  const pairs = [
+    ["image.dimensions", "dimensions"],
+    ["image.format", "format"],
+    ["exif.make", "make"],
+    ["exif.model", "model"],
+    ["exif.dateTimeOriginal", "captured"],
+    ["exif.dateTime", "modified"],
+    ["exif.lensModel", "lens"],
+    ["exif.bodySerialNumber", "serial"],
+    ["indicators.emailCount", "emails"],
+    ["indicators.emails", "email values"],
+    ["indicators.ipv4Count", "IPv4s"],
+    ["indicators.ipv4", "IPv4 values"],
+    ["indicators.urlCount", "URLs"],
+    ["indicators.urls", "URL values"],
+    ["indicators.windowsPathCount", "Windows paths"],
+    ["indicators.windowsPaths", "Windows path values"],
+    ["gps.latitude", "lat"],
+    ["gps.longitude", "lon"],
+    ["pdf.version", "pdf"],
+    ["sqlite.pageSize", "page size"],
+    ["sqlite.pageCount", "pages"],
+    ["sqlite.textEncoding", "encoding"],
+    ["sqlite.tableCount", "tables"],
+    ["sqlite.viewCount", "views"],
+    ["sqlite.totalRows", "rows"],
+    ["sqlite.tableNames", "table names"],
+    ["sqlite.largestTable", "largest table"],
+    ["email.from", "from"],
+    ["email.to", "to"],
+    ["email.subject", "subject"],
+    ["email.date", "date"],
+    ["email.messageId", "message id"],
+    ["email.attachmentCount", "attachments"],
+    ["email.inlineAttachmentCount", "inline"],
+    ["email.attachmentNames", "attachment names"],
+    ["email.contentTypes", "content types"],
+    ["registry.version", "registry"],
+    ["registry.dirty", "dirty"],
+    ["registry.lastWriteTime", "last write"],
+    ["registry.hiveBinsDataSize", "hive bins"],
+    ["registry.path", "path"],
+    ["plist.format", "plist"],
+    ["plist.rootType", "root"],
+    ["plist.topLevelKeys", "keys"],
+    ["plist.CFBundleIdentifier", "bundle id"],
+    ["plist.CFBundleName", "bundle"],
+    ["plist.Label", "label"],
+    ["plist.Program", "program"],
+    ["plist.ProgramArguments", "arguments"],
+  ]
+    .map(([key, label]) => {
+      const value = metadata[key];
+      return value ? `${label}: ${value}` : null;
+    })
+    .filter((value): value is string => value !== null);
+
+  return pairs.length > 0 ? pairs.slice(0, 6).join("; ") : "-";
+}
+
+function buildSourceAnalysisAppendix(
+  evidence: ProjectDbReportEvidence,
+): string {
+  const lines: string[] = [];
+
+  if (evidence.sourceAnalysisCategorySummaries.length > 0) {
+    lines.push("### Source Analysis Categories");
+    lines.push("");
+    lines.push(
+      "| Category | Analyses | Evidence Files | Average Entropy | Text-like | Latest Analyzed |",
+    );
+    lines.push("| --- | ---: | ---: | ---: | ---: | --- |");
+    for (const summary of evidence.sourceAnalysisCategorySummaries) {
+      lines.push(
+        `| ${summary.category} | ${summary.count} | ${summary.evidenceFileCount} | ${summary.avgEntropy.toFixed(3)} | ${summary.textLikeCount} | ${summary.latestAnalyzedAt || "-"} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (evidence.sourceAnalysisSummaries.length > 0) {
+    lines.push("### Source Analysis Records");
+    lines.push("");
+    lines.push(
+      "| Source | Category | Signature | Bytes Analyzed | Entropy | Printable Ratio | Text-like | Analyzer |",
+    );
+    lines.push("| --- | --- | --- | ---: | ---: | ---: | --- | --- |");
+    for (const summary of evidence.sourceAnalysisSummaries.slice(0, 250)) {
+      lines.push(
+        `| ${summary.sourceId} | ${summary.primaryCategory} | ${summary.primarySignature || "-"} | ${summary.bytesAnalyzedDisplay} | ${summary.entropy.toFixed(3)} | ${(summary.printableRatio * 100).toFixed(1)}% | ${summary.isLikelyText ? "yes" : "no"} | ${summary.analyzer} |`,
+      );
+    }
+    if (evidence.sourceAnalysisSummaries.length > 250) {
+      lines.push(
+        `| ... | ... | ... | ... | ... | ... | ... | ${evidence.sourceAnalysisSummaries.length - 250} additional analysis record(s) omitted from appendix preview |`,
+      );
+    }
+    lines.push("");
+  }
+
+  const indicatorRows = evidence.sourceAnalysisSummaries
+    .flatMap((summary) =>
+      (summary.indicators ?? []).slice(0, 20).map((indicator) => ({
+        sourceId: summary.sourceId,
+        ...indicator,
+      })),
+    )
+    .slice(0, 250);
+  if (indicatorRows.length > 0) {
+    lines.push("### Extracted Source Indicators");
+    lines.push("");
+    lines.push("| Source | Type | Value | Offset | Confidence |");
+    lines.push("| --- | --- | --- | ---: | --- |");
+    for (const indicator of indicatorRows) {
+      lines.push(
+        `| ${indicator.sourceId} | ${indicator.indicatorType} | ${indicator.value} | 0x${indicator.offset.toString(16).toUpperCase()} | ${indicator.confidence} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
+
+function buildAnnotationAppendix(evidence: ProjectDbReportEvidence): string {
+  const lines: string[] = [];
+  const annotations = evidence.annotations ?? [];
+
+  if (annotations.length === 0) return "";
+
+  lines.push("### Offset and Review Annotations");
+  lines.push("");
+  lines.push(
+    "| Source | Type | Range | Label | Finding | Created By | Created At |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+  for (const annotation of annotations.slice(0, 250)) {
+    lines.push(
+      `| ${annotation.filePath} | ${annotation.annotationType} | ${annotationRange(annotation)} | ${annotation.label} | ${annotation.content || "-"} | ${annotation.createdBy} | ${annotation.createdAt} |`,
+    );
+  }
+  if (annotations.length > 250) {
+    lines.push(
+      `| ... | ... | ... | ... | ${annotations.length - 250} additional annotation(s) omitted from appendix preview | ... | ... |`,
+    );
+  }
+  lines.push("");
+
+  return lines.join("\n").trim();
+}
+
+function annotationRange(annotation: ProjectDbAnnotationRecord): string {
+  if (typeof annotation.offsetStart === "number") {
+    const start = `0x${annotation.offsetStart.toString(16).toUpperCase()}`;
+    const end =
+      typeof annotation.offsetEnd === "number"
+        ? `0x${annotation.offsetEnd.toString(16).toUpperCase()}`
+        : "";
+    return end ? `${start}-${end}` : start;
+  }
+
+  if (typeof annotation.lineStart === "number") {
+    const end =
+      typeof annotation.lineEnd === "number" ? `-${annotation.lineEnd}` : "";
+    return `line ${annotation.lineStart}${end}`;
+  }
+
+  return "-";
 }
 
 /**
  * Generate evidence items from current app state
- * 
+ *
  * Convenience function that converts file data and calls the backend.
  */
 export async function generateEvidenceFromFiles(
   files: DiscoveredFile[],
   fileInfoMap: Map<string, ContainerInfo>,
-  fileHashMap: Map<string, { algorithm: string; hash: string; verified?: boolean | null }>
+  fileHashMap: Map<
+    string,
+    { algorithm: string; hash: string; verified?: boolean | null }
+  >,
 ): Promise<EvidenceItem[]> {
   const containers = containersToInputs(files, fileInfoMap, fileHashMap);
   return extractEvidenceFromContainers(containers);
@@ -203,7 +706,9 @@ export async function generateEvidenceFromFiles(
 /**
  * Get a report template for a specific investigation type
  */
-export async function getReportTemplate(investigationType: string): Promise<unknown> {
+export async function getReportTemplate(
+  investigationType: string,
+): Promise<unknown> {
   return invoke("get_report_template", { investigationType });
 }
 
@@ -227,7 +732,7 @@ export interface AiProviderInfo {
   available_models: string[];
 }
 
-export type NarrativeType = 
+export type NarrativeType =
   | "executive_summary"
   | "finding"
   | "timeline"
@@ -261,7 +766,7 @@ export async function generateAiNarrative(
   narrativeType: NarrativeType,
   provider: string,
   model: string,
-  apiKey?: string
+  apiKey?: string,
 ): Promise<string> {
   return invoke<string>("generate_ai_narrative", {
     context,
@@ -277,18 +782,18 @@ export async function generateAiNarrative(
  */
 export function buildEvidenceContext(evidenceItems: EvidenceItem[]): string {
   const lines: string[] = [];
-  
+
   lines.push("=== EVIDENCE ITEMS ===\n");
-  
+
   for (const item of evidenceItems) {
     lines.push(`Evidence ID: ${item.evidence_id}`);
     lines.push(`Description: ${item.description}`);
     lines.push(`Type: ${item.evidence_type}`);
-    
+
     if (item.model) lines.push(`Model: ${item.model}`);
     if (item.serial_number) lines.push(`Serial Number: ${item.serial_number}`);
     if (item.capacity) lines.push(`Capacity: ${item.capacity}`);
-    
+
     if (item.image_info) {
       lines.push(`Image Format: ${item.image_info.format}`);
       lines.push(`Total Size: ${formatBytes(item.image_info.total_size)}`);
@@ -296,7 +801,7 @@ export function buildEvidenceContext(evidenceItems: EvidenceItem[]): string {
         lines.push(`Acquisition Tool: ${item.image_info.acquisition_tool}`);
       }
     }
-    
+
     if (item.acquisition_hashes.length > 0) {
       lines.push("Hash Values:");
       for (const hash of item.acquisition_hashes) {
@@ -304,12 +809,12 @@ export function buildEvidenceContext(evidenceItems: EvidenceItem[]): string {
         lines.push(`  ${hash.algorithm}: ${hash.value}${verified}`);
       }
     }
-    
+
     if (item.notes) lines.push(`Notes: ${item.notes}`);
-    
+
     lines.push(""); // Blank line between items
   }
-  
+
   return lines.join("\n");
 }
 

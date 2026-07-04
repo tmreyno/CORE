@@ -71,6 +71,17 @@ pub use traits::{
 
 use crate::vfs::VfsError;
 
+fn checked_filesystem_probe_offset(
+    base_offset: u64,
+    relative_offset: u64,
+) -> Result<u64, VfsError> {
+    base_offset.checked_add(relative_offset).ok_or_else(|| {
+        VfsError::IoError(format!(
+            "Filesystem probe offset overflow: base {base_offset} + relative {relative_offset}"
+        ))
+    })
+}
+
 /// Detect and mount filesystem from a block device at given offset
 pub fn mount_filesystem(
     device: Box<dyn SeekableBlockDevice>,
@@ -185,10 +196,11 @@ pub fn detect_filesystem_type(
 
     // Check for HFS+/HFSX at offset 1024 (volume header location)
     let mut hfs_buf = vec![0u8; 512];
-    if device.read_at(offset + 1024, &mut hfs_buf).is_ok() {
+    let hfs_probe_offset = checked_filesystem_probe_offset(offset, 1024)?;
+    if device.read_at(hfs_probe_offset, &mut hfs_buf).is_ok() {
         // HFS+ signature 'H+' (0x482B) or HFSX 'HX' (0x4858) at offset 0
         let hfs_sig = u16::from_be_bytes([hfs_buf[0], hfs_buf[1]]);
-        tracing::debug!("detect_filesystem_type: HFS+ signature check at offset {}: 0x{:04X} (want 0x482B or 0x4858)", offset + 1024, hfs_sig);
+        tracing::debug!("detect_filesystem_type: HFS+ signature check at offset {}: 0x{:04X} (want 0x482B or 0x4858)", hfs_probe_offset, hfs_sig);
         if hfs_sig == 0x482B || hfs_sig == 0x4858 {
             tracing::debug!("detect_filesystem_type: detected HFS+");
             return Ok(FilesystemType::HfsPlus);
@@ -199,7 +211,8 @@ pub fn detect_filesystem_type(
     // Superblock is at offset 1024 from partition start
     // Magic is at offset 56 (0x38) within superblock = 1024 + 56 = 1080
     let mut ext_buf = vec![0u8; 128];
-    if device.read_at(offset + 1024, &mut ext_buf).is_ok() {
+    let ext_probe_offset = checked_filesystem_probe_offset(offset, 1024)?;
+    if device.read_at(ext_probe_offset, &mut ext_buf).is_ok() {
         let magic = u16::from_le_bytes([ext_buf[56], ext_buf[57]]);
         if magic == 0xEF53 {
             // Read feature flags to determine ext2/3/4
@@ -277,6 +290,21 @@ mod tests {
     }
 
     // ==================== detect_filesystem_type tests ====================
+
+    #[test]
+    fn test_checked_filesystem_probe_offset_adds_relative_offset() {
+        assert_eq!(checked_filesystem_probe_offset(512, 1024).unwrap(), 1536);
+    }
+
+    #[test]
+    fn test_checked_filesystem_probe_offset_rejects_overflow() {
+        let err = checked_filesystem_probe_offset(u64::MAX, 1024)
+            .expect_err("filesystem probe offset overflow should fail");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("probe offset overflow"))
+        );
+    }
 
     #[test]
     fn test_detect_filesystem_type_unknown_empty() {

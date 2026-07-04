@@ -14,13 +14,19 @@
 //! [`super::ewf_helpers`].
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use tauri::{Emitter, Window};
 use tracing::{debug, info, warn};
 
-use super::ewf_helpers::{format_byte_size, is_system_boot_volume, nix_stat, walk_dir_files};
+use super::ewf_helpers::{
+    checked_segment_write_len, checked_stream_read_size, format_byte_size, is_system_boot_volume,
+    nix_stat, validate_snapshot_byte_count, walk_dir_files,
+};
+
+const MAX_RAW_SOURCE_PATHS: usize = 10_000;
+const MAX_RAW_SOURCE_FILES: usize = 250_000;
 
 // =============================================================================
 // Types
@@ -29,6 +35,48 @@ use super::ewf_helpers::{format_byte_size, is_system_boot_volume, nix_stat, walk
 /// Cancel flags for in-progress raw exports, keyed by output path.
 static RAW_CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[derive(Debug)]
+struct RawCancelRegistration {
+    output_path: String,
+}
+
+impl Drop for RawCancelRegistration {
+    fn drop(&mut self) {
+        cleanup_cancel_flag(&self.output_path);
+    }
+}
+
+#[derive(Debug, Default)]
+struct CreatedRawSegments {
+    paths: Vec<PathBuf>,
+    cleanup_on_drop: bool,
+}
+
+impl CreatedRawSegments {
+    fn new() -> Self {
+        Self {
+            paths: Vec::new(),
+            cleanup_on_drop: true,
+        }
+    }
+
+    fn record(&mut self, path: impl Into<PathBuf>) {
+        self.paths.push(path.into());
+    }
+
+    fn disarm(&mut self) {
+        self.cleanup_on_drop = false;
+    }
+}
+
+impl Drop for CreatedRawSegments {
+    fn drop(&mut self) {
+        if self.cleanup_on_drop {
+            cleanup_created_raw_segments(&self.paths);
+        }
+    }
+}
 
 /// Options for creating a raw disk image
 #[derive(Clone, serde::Deserialize)]
@@ -101,6 +149,106 @@ fn segment_path(base: &str, segment: usize) -> String {
     }
 }
 
+fn checked_raw_total_size_add(total: u64, addition: u64, path: &Path) -> Result<u64, String> {
+    total.checked_add(addition).ok_or_else(|| {
+        format!(
+            "Raw export total size overflow while adding {} bytes from {} to current total {} bytes",
+            addition,
+            path.display(),
+            total
+        )
+    })
+}
+
+fn validate_raw_export_options(options: &RawExportOptions) -> Result<(), String> {
+    if options.output_path.trim().is_empty() {
+        return Err("Raw export output path is required".to_string());
+    }
+    if options.source_paths.is_empty() {
+        return Err("Raw export requires at least one source path".to_string());
+    }
+    if options.source_paths.len() > MAX_RAW_SOURCE_PATHS {
+        return Err(format!(
+            "Raw export requested {} source paths, exceeding limit {}",
+            options.source_paths.len(),
+            MAX_RAW_SOURCE_PATHS
+        ));
+    }
+    if options
+        .source_paths
+        .iter()
+        .any(|source_path| source_path.trim().is_empty())
+    {
+        return Err("Raw export source paths cannot be empty".to_string());
+    }
+
+    Ok(())
+}
+
+fn register_raw_cancel_flag(
+    output_path: &str,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<RawCancelRegistration, String> {
+    let mut flags = RAW_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
+    if flags.contains_key(output_path) {
+        return Err(format!(
+            "A raw export is already running for output path: {}",
+            output_path
+        ));
+    }
+    flags.insert(output_path.to_string(), cancel_flag);
+    Ok(RawCancelRegistration {
+        output_path: output_path.to_string(),
+    })
+}
+
+fn push_raw_source_file(
+    file_sizes: &mut Vec<(String, u64)>,
+    path: String,
+    size: u64,
+) -> Result<(), String> {
+    if file_sizes.len() >= MAX_RAW_SOURCE_FILES {
+        return Err(format!(
+            "Raw export expanded to more than {} source files",
+            MAX_RAW_SOURCE_FILES
+        ));
+    }
+    file_sizes.push((path, size));
+    Ok(())
+}
+
+fn ensure_raw_segment_available(path: &str) -> Result<(), String> {
+    if Path::new(path).exists() {
+        Err(format!(
+            "Raw export output segment already exists and will not be overwritten: {}",
+            path
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn cleanup_created_raw_segments(paths: &[PathBuf]) -> usize {
+    let mut removed = 0usize;
+    for path in paths.iter().rev() {
+        match std::fs::remove_file(path) {
+            Ok(()) => {
+                removed += 1;
+                info!("Removed incomplete raw export segment: {}", path.display());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                warn!(
+                    "Failed to remove incomplete raw export segment {}: {}",
+                    path.display(),
+                    err
+                );
+            }
+        }
+    }
+    removed
+}
+
 // =============================================================================
 // Tauri Commands
 // =============================================================================
@@ -115,6 +263,7 @@ pub async fn raw_create_image(
     window: Window,
 ) -> Result<RawExportResult, String> {
     let start = std::time::Instant::now();
+    validate_raw_export_options(&options)?;
 
     info!(
         "Creating raw image at: {} (sources={}, segment_size={:?})",
@@ -125,10 +274,7 @@ pub async fn raw_create_image(
 
     // Set up cancel flag
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    {
-        let mut flags = RAW_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
-        flags.insert(options.output_path.clone(), cancel_flag.clone());
-    }
+    let _cancel_registration = register_raw_cancel_flag(&options.output_path, cancel_flag.clone())?;
 
     // --- Safety validations ---
 
@@ -182,8 +328,8 @@ pub async fn raw_create_image(
                 warn!("Directory contains no files: {}", path_str);
             }
             for (fpath, fsize) in dir_files {
-                total_bytes += fsize;
-                file_sizes.push((fpath, fsize));
+                total_bytes = checked_raw_total_size_add(total_bytes, fsize, Path::new(&fpath))?;
+                push_raw_source_file(&mut file_sizes, fpath, fsize)?;
             }
             info!(
                 "Expanded directory {} into {} files",
@@ -194,8 +340,8 @@ pub async fn raw_create_image(
             let metadata = std::fs::metadata(path)
                 .map_err(|e| format!("Failed to read metadata for {}: {}", path_str, e))?;
             let size = metadata.len();
-            total_bytes += size;
-            file_sizes.push((path_str.clone(), size));
+            total_bytes = checked_raw_total_size_add(total_bytes, size, path)?;
+            push_raw_source_file(&mut file_sizes, path_str.clone(), size)?;
         }
     }
 
@@ -261,11 +407,14 @@ pub async fn raw_create_image(
     let mut segment_bytes_written: u64 = 0;
 
     // Open first output segment
+    let mut created_segments = CreatedRawSegments::new();
     let first_seg_path = segment_path(&options.output_path, current_segment);
+    ensure_raw_segment_available(&first_seg_path)?;
     let mut output_file = std::fs::File::create(&first_seg_path)
         .map_err(|e| format!("Failed to create output file {}: {}", first_seg_path, e))?;
+    created_segments.record(&first_seg_path);
 
-    for (file_idx, (path_str, _file_size)) in file_sizes.iter().enumerate() {
+    for (file_idx, (path_str, file_size)) in file_sizes.iter().enumerate() {
         if cancel_flag.load(Ordering::Relaxed) {
             warn!("Raw export cancelled");
             cleanup_cancel_flag(&options.output_path);
@@ -309,6 +458,7 @@ pub async fn raw_create_image(
             .map_err(|e| format!("Failed to open {}: {}", path_str, e))?;
         let mut reader = std::io::BufReader::with_capacity(chunk_size, file);
         let mut buf = vec![0u8; chunk_size];
+        let mut file_bytes_written = 0u64;
 
         loop {
             if cancel_flag.load(Ordering::Relaxed) {
@@ -317,11 +467,23 @@ pub async fn raw_create_image(
                 return Err("Export cancelled".to_string());
             }
 
+            let remaining_for_file = file_size.saturating_sub(file_bytes_written);
+            if remaining_for_file == 0 {
+                break;
+            }
+            let read_size = checked_stream_read_size(remaining_for_file, chunk_size)?;
+
             use std::io::Read;
             let bytes_read = reader
-                .read(&mut buf)
+                .read(&mut buf[..read_size])
                 .map_err(|e| format!("Failed to read {}: {}", path_str, e))?;
             if bytes_read == 0 {
+                validate_snapshot_byte_count(
+                    "Raw export",
+                    Path::new(path_str),
+                    *file_size,
+                    file_bytes_written,
+                )?;
                 break;
             }
 
@@ -349,14 +511,20 @@ pub async fn raw_create_image(
                         current_segment += 1;
                         segment_bytes_written = 0;
                         let next_seg = segment_path(&options.output_path, current_segment);
+                        ensure_raw_segment_available(&next_seg)?;
                         output_file = std::fs::File::create(&next_seg).map_err(|e| {
                             format!("Failed to create segment file {}: {}", next_seg, e)
                         })?;
+                        created_segments.record(&next_seg);
                         info!("Opened segment {} at {}", current_segment, next_seg);
                     }
 
                     let space_in_segment = segment_size.saturating_sub(segment_bytes_written);
-                    let write_len = remaining_in_chunk.min(space_in_segment as usize);
+                    let write_len =
+                        checked_segment_write_len(remaining_in_chunk, space_in_segment)?;
+                    if write_len == 0 {
+                        return Err("Raw export segment write made no progress".to_string());
+                    }
 
                     use std::io::Write;
                     output_file
@@ -366,15 +534,19 @@ pub async fn raw_create_image(
                         })?;
 
                     data_offset += write_len;
-                    segment_bytes_written += write_len as u64;
-                    global_bytes_written += write_len as u64;
+                    segment_bytes_written = segment_bytes_written.saturating_add(write_len as u64);
+                    global_bytes_written = global_bytes_written.saturating_add(write_len as u64);
+                    file_bytes_written = file_bytes_written.saturating_add(write_len as u64);
                 } else {
                     // No segmentation — write all at once
                     use std::io::Write;
                     output_file
                         .write_all(&data[data_offset..])
                         .map_err(|e| format!("Failed to write output: {}", e))?;
-                    global_bytes_written += remaining_in_chunk as u64;
+                    global_bytes_written =
+                        global_bytes_written.saturating_add(remaining_in_chunk as u64);
+                    file_bytes_written =
+                        file_bytes_written.saturating_add(remaining_in_chunk as u64);
                     data_offset = bytes_read;
                 }
             }
@@ -401,7 +573,21 @@ pub async fn raw_create_image(
                 );
             }
         }
+
+        validate_snapshot_byte_count(
+            "Raw export",
+            Path::new(path_str),
+            *file_size,
+            file_bytes_written,
+        )?;
     }
+
+    validate_snapshot_byte_count(
+        "Raw export total",
+        Path::new(&options.output_path),
+        total_bytes,
+        global_bytes_written,
+    )?;
 
     // Flush and close last segment
     {
@@ -411,6 +597,7 @@ pub async fn raw_create_image(
             .map_err(|e| format!("Failed to flush output: {}", e))?;
     }
     drop(output_file);
+    created_segments.disarm();
 
     // Compute final hashes
     let md5_hex = md5_hasher.map(|h| hex::encode(h.finalize()));
@@ -492,5 +679,218 @@ pub fn raw_cancel_export(output_path: String) -> Result<bool, String> {
 fn cleanup_cancel_flag(output_path: &str) {
     if let Ok(mut flags) = RAW_CANCEL_FLAGS.lock() {
         flags.remove(output_path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_raw_total_size_add_sums_regular_values() {
+        let path = Path::new("source.bin");
+
+        assert_eq!(checked_raw_total_size_add(40, 2, path).unwrap(), 42);
+    }
+
+    #[test]
+    fn checked_raw_total_size_add_rejects_overflow() {
+        let path = Path::new("overflow-source.bin");
+        let err = checked_raw_total_size_add(u64::MAX, 1, path).unwrap_err();
+
+        assert!(err.contains("Raw export total size overflow"));
+        assert!(err.contains("overflow-source.bin"));
+    }
+
+    #[test]
+    fn validate_raw_export_options_rejects_missing_output_path() {
+        let options = RawExportOptions {
+            source_paths: vec!["source.bin".to_string()],
+            output_path: "  ".to_string(),
+            segment_size: None,
+            compute_md5: None,
+            compute_sha1: None,
+            compute_sha256: None,
+            case_number: None,
+            evidence_number: None,
+            examiner_name: None,
+            description: None,
+            notes: None,
+        };
+
+        let err = validate_raw_export_options(&options).unwrap_err();
+        assert!(err.contains("output path is required"));
+    }
+
+    #[test]
+    fn validate_raw_export_options_rejects_missing_sources() {
+        let options = RawExportOptions {
+            source_paths: Vec::new(),
+            output_path: "/tmp/case/image".to_string(),
+            segment_size: None,
+            compute_md5: None,
+            compute_sha1: None,
+            compute_sha256: None,
+            case_number: None,
+            evidence_number: None,
+            examiner_name: None,
+            description: None,
+            notes: None,
+        };
+
+        let err = validate_raw_export_options(&options).unwrap_err();
+        assert!(err.contains("requires at least one source path"));
+    }
+
+    #[test]
+    fn validate_raw_export_options_rejects_excessive_source_paths() {
+        let options = RawExportOptions {
+            source_paths: vec!["source.bin".to_string(); MAX_RAW_SOURCE_PATHS + 1],
+            output_path: "/tmp/case/image".to_string(),
+            segment_size: None,
+            compute_md5: None,
+            compute_sha1: None,
+            compute_sha256: None,
+            case_number: None,
+            evidence_number: None,
+            examiner_name: None,
+            description: None,
+            notes: None,
+        };
+
+        let err = validate_raw_export_options(&options).unwrap_err();
+        assert!(err.contains("exceeding limit"));
+    }
+
+    #[test]
+    fn validate_raw_export_options_rejects_empty_source_path() {
+        let options = RawExportOptions {
+            source_paths: vec!["source.bin".to_string(), " ".to_string()],
+            output_path: "/tmp/case/image".to_string(),
+            segment_size: None,
+            compute_md5: None,
+            compute_sha1: None,
+            compute_sha256: None,
+            case_number: None,
+            evidence_number: None,
+            examiner_name: None,
+            description: None,
+            notes: None,
+        };
+
+        let err = validate_raw_export_options(&options).unwrap_err();
+        assert!(err.contains("source paths cannot be empty"));
+    }
+
+    #[test]
+    fn push_raw_source_file_rejects_expansion_over_limit() {
+        let mut file_sizes = vec![("source.bin".to_string(), 1); MAX_RAW_SOURCE_FILES];
+
+        let err = push_raw_source_file(&mut file_sizes, "extra.bin".to_string(), 1).unwrap_err();
+
+        assert!(err.contains("expanded to more than"));
+        assert_eq!(file_sizes.len(), MAX_RAW_SOURCE_FILES);
+    }
+
+    #[test]
+    fn register_raw_cancel_flag_rejects_duplicate_output_path() {
+        let output_path = format!(
+            "/tmp/core-ffx-raw-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        cleanup_cancel_flag(&output_path);
+
+        let registration =
+            register_raw_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap();
+        let err =
+            register_raw_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap_err();
+        drop(registration);
+        cleanup_cancel_flag(&output_path);
+
+        assert!(err.contains("already running"));
+    }
+
+    #[test]
+    fn raw_cancel_registration_cleans_up_on_drop() {
+        let output_path = format!(
+            "/tmp/core-ffx-raw-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        cleanup_cancel_flag(&output_path);
+
+        {
+            let _registration =
+                register_raw_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap();
+            assert!(raw_cancel_export(output_path.clone()).unwrap());
+        }
+
+        assert!(!raw_cancel_export(output_path).unwrap());
+    }
+
+    #[test]
+    fn ensure_raw_segment_available_rejects_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_string_lossy().to_string();
+
+        let err = ensure_raw_segment_available(&path).unwrap_err();
+
+        assert!(err.contains("already exists"));
+    }
+
+    #[test]
+    fn cleanup_created_raw_segments_removes_recorded_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let first = dir.path().join("image.dd");
+        let second = dir.path().join("image.002");
+        std::fs::write(&first, b"partial").unwrap();
+        std::fs::write(&second, b"partial").unwrap();
+
+        let removed = cleanup_created_raw_segments(&[first.clone(), second.clone()]);
+
+        assert_eq!(removed, 2);
+        assert!(!first.exists());
+        assert!(!second.exists());
+    }
+
+    #[test]
+    fn created_raw_segments_drop_cleans_when_armed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let segment = dir.path().join("image.dd");
+        std::fs::write(&segment, b"partial").unwrap();
+
+        {
+            let mut created = CreatedRawSegments::new();
+            created.record(&segment);
+        }
+
+        assert!(!segment.exists());
+    }
+
+    #[test]
+    fn created_raw_segments_disarm_preserves_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let segment = dir.path().join("image.dd");
+        std::fs::write(&segment, b"complete").unwrap();
+
+        {
+            let mut created = CreatedRawSegments::new();
+            created.record(&segment);
+            created.disarm();
+        }
+
+        assert!(segment.exists());
+    }
+
+    #[test]
+    fn segment_path_uses_dd_for_first_segment() {
+        assert_eq!(segment_path("/case/image", 1), "/case/image.dd");
+        assert_eq!(segment_path("/case/image", 0), "/case/image.dd");
+        assert_eq!(segment_path("/case/image", 2), "/case/image.002");
     }
 }

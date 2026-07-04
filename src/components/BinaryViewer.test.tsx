@@ -123,6 +123,24 @@ describe("BinaryViewer", () => {
       expect(mockInvoke).toHaveBeenCalledWith("binary_analyze", { path: "/tmp/program.exe" });
     });
 
+    it("calls binary_analyze_source when an evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockPeData,
+        path: "/evidence/image.ad1:/bin/program.exe",
+      });
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "/bin/program.exe",
+        containerType: "ad1",
+        size: 8192,
+      };
+
+      renderComponent(() => <BinaryViewer path="/tmp/program.exe" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", { source });
+    });
+
     it("shows PE-specific information", async () => {
       mockInvoke.mockResolvedValueOnce(mockPeData);
 

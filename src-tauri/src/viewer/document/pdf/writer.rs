@@ -17,6 +17,7 @@ use genpdf::{
 };
 
 use super::PdfDocument;
+use crate::report::format_helpers::appendix_label;
 use crate::report::ForensicReport;
 use crate::viewer::document::error::{DocumentError, DocumentResult};
 
@@ -533,7 +534,7 @@ impl PdfDocument {
             doc.push(
                 Paragraph::new(format!(
                     "Appendix {}: {}",
-                    (b'A' + i as u8) as char,
+                    appendix_label(i),
                     appendix.title
                 ))
                 .styled(style::Style::new().bold().with_font_size(12)),

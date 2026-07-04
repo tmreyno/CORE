@@ -8,8 +8,12 @@
 
 use super::database::ProjectDatabase;
 use super::types::*;
+use crate::common::{hash::is_valid_hash, HashAlgorithm};
 use rusqlite::{params, Connection, Result as SqlResult};
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+
+const MAX_COLLECTED_ITEM_SOURCE_REF_JSON_BYTES: usize = 1024 * 1024;
 
 fn load_id_set(conn: &Connection, sql: &str) -> SqlResult<HashSet<String>> {
     let mut stmt = conn.prepare(sql)?;
@@ -90,6 +94,77 @@ fn normalize_coc_status(status: &str) -> String {
     }
 }
 
+fn validate_collected_item_record(item: &DbCollectedItem) -> SqlResult<()> {
+    if let Some(source_ref_json) = &item.source_ref_json {
+        validate_collected_item_json_field("source_ref_json", source_ref_json)?;
+        if source_ref_json.len() > MAX_COLLECTED_ITEM_SOURCE_REF_JSON_BYTES {
+            return Err(collection_validation_error(format!(
+                "Collected item source_ref_json exceeds {MAX_COLLECTED_ITEM_SOURCE_REF_JSON_BYTES} bytes for {}",
+                item.id
+            )));
+        }
+    }
+
+    validate_collected_item_hash_fields(item)?;
+
+    Ok(())
+}
+
+fn validate_collected_item_json_field(field_name: &str, value: &str) -> SqlResult<()> {
+    serde_json::from_str::<serde_json::Value>(value)
+        .map(|_| ())
+        .map_err(|e| {
+            collection_validation_error(format!("Invalid collected item {field_name}: {e}"))
+        })
+}
+
+fn validate_collected_item_hash_fields(item: &DbCollectedItem) -> SqlResult<()> {
+    let algorithm = item
+        .hash_algorithm
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let hash_value = item
+        .hash_value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match (algorithm, hash_value) {
+        (None, None) => Ok(()),
+        (None, Some(_)) => Err(collection_validation_error(format!(
+            "Collected item hash value requires hash algorithm for {}",
+            item.id
+        ))),
+        (Some(_), None) => Err(collection_validation_error(format!(
+            "Collected item hash algorithm requires hash value for {}",
+            item.id
+        ))),
+        (Some(algorithm), Some(hash_value)) => {
+            let algorithm = HashAlgorithm::from_str(algorithm).map_err(|e| {
+                collection_validation_error(format!(
+                    "Invalid collected item hash algorithm for {}: {}",
+                    item.id, e
+                ))
+            })?;
+
+            if !is_valid_hash(hash_value, algorithm) {
+                return Err(collection_validation_error(format!(
+                    "Collected item hash value is not a valid {} digest for {}",
+                    algorithm.name(),
+                    item.id
+                )));
+            }
+
+            Ok(())
+        }
+    }
+}
+
+fn collection_validation_error(message: String) -> rusqlite::Error {
+    rusqlite::Error::InvalidParameterName(message)
+}
+
 fn resolve_evidence_file_link(
     evidence_file_id: &Option<String>,
     existing_evidence_file_ids: &HashSet<String>,
@@ -155,26 +230,30 @@ fn insert_evidence_collection_row(conn: &Connection, col: &DbEvidenceCollection)
 }
 
 fn insert_collected_item_row(conn: &Connection, item: &DbCollectedItem) -> SqlResult<()> {
+    validate_collected_item_record(item)?;
+
     conn.execute(
         "INSERT INTO collected_items (
-            id, collection_id, coc_item_id, evidence_file_id, item_number, description,
-            found_location, item_type, make, model, serial_number, condition, packaging,
+            id, collection_id, coc_item_id, evidence_file_id, source_id, source_ref_json,
+            item_number, description, found_location, item_type, make, model, serial_number, condition, packaging,
             packaging_type, packaging_detail, photo_refs_json, notes,
             item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
             device_type, device_type_other, storage_interface, storage_interface_other,
             brand, color, imei, other_identifiers,
             building, room, location_other,
             image_format, image_format_other, acquisition_method, acquisition_method_other,
-            storage_notes
+            hash_algorithm, hash_value, hash_computed_at, storage_notes
          )
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
                  ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32,
-                 ?33, ?34, ?35, ?36, ?37)",
+                 ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42)",
         params![
             item.id,
             item.collection_id,
             item.coc_item_id,
             item.evidence_file_id,
+            item.source_id,
+            item.source_ref_json,
             item.item_number,
             item.description,
             item.found_location,
@@ -207,6 +286,9 @@ fn insert_collected_item_row(conn: &Connection, item: &DbCollectedItem) -> SqlRe
             item.image_format_other,
             item.acquisition_method,
             item.acquisition_method_other,
+            item.hash_algorithm,
+            item.hash_value,
+            item.hash_computed_at,
             item.storage_notes,
         ],
     )?;
@@ -701,25 +783,28 @@ impl ProjectDatabase {
 
     /// Upsert a collected item
     pub fn upsert_collected_item(&self, item: &DbCollectedItem) -> SqlResult<()> {
+        validate_collected_item_record(item)?;
+
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO collected_items (
-                id, collection_id, coc_item_id, evidence_file_id, item_number, description,
-            found_location, item_type, make, model, serial_number, condition, packaging,
+                id, collection_id, coc_item_id, evidence_file_id, source_id, source_ref_json,
+                item_number, description, found_location, item_type, make, model, serial_number, condition, packaging,
             packaging_type, packaging_detail, photo_refs_json, notes,
                 item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
                 device_type, device_type_other, storage_interface, storage_interface_other,
                 brand, color, imei, other_identifiers,
                 building, room, location_other,
                 image_format, image_format_other, acquisition_method, acquisition_method_other,
-                storage_notes
+                hash_algorithm, hash_value, hash_computed_at, storage_notes
              )
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
                  ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32,
-                 ?33, ?34, ?35, ?36, ?37)
+                 ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42)
              ON CONFLICT(id) DO UPDATE SET
                 collection_id=excluded.collection_id, coc_item_id=excluded.coc_item_id,
                 evidence_file_id=excluded.evidence_file_id, item_number=excluded.item_number,
+                source_id=excluded.source_id, source_ref_json=excluded.source_ref_json,
                 description=excluded.description, found_location=excluded.found_location,
                 item_type=excluded.item_type, make=excluded.make, model=excluded.model,
                 serial_number=excluded.serial_number, condition=excluded.condition,
@@ -737,9 +822,12 @@ impl ProjectDatabase {
                 building=excluded.building, room=excluded.room, location_other=excluded.location_other,
                 image_format=excluded.image_format, image_format_other=excluded.image_format_other,
                 acquisition_method=excluded.acquisition_method, acquisition_method_other=excluded.acquisition_method_other,
+                hash_algorithm=excluded.hash_algorithm, hash_value=excluded.hash_value,
+                hash_computed_at=excluded.hash_computed_at,
                 storage_notes=excluded.storage_notes",
             params![
                 item.id, item.collection_id, item.coc_item_id, item.evidence_file_id,
+                item.source_id, item.source_ref_json,
                 item.item_number, item.description, item.found_location, item.item_type,
                 item.make, item.model, item.serial_number, item.condition,
                 item.packaging, item.packaging_type, item.packaging_detail,
@@ -752,6 +840,7 @@ impl ProjectDatabase {
                 item.building, item.room, item.location_other,
                 item.image_format, item.image_format_other,
                 item.acquisition_method, item.acquisition_method_other,
+                item.hash_algorithm, item.hash_value, item.hash_computed_at,
                 item.storage_notes,
             ],
         )?;
@@ -762,15 +851,15 @@ impl ProjectDatabase {
     pub fn get_collected_items(&self, collection_id: &str) -> SqlResult<Vec<DbCollectedItem>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, collection_id, coc_item_id, evidence_file_id, item_number, description,
-                    found_location, item_type, make, model, serial_number, condition, packaging,
+            "SELECT id, collection_id, coc_item_id, evidence_file_id, source_id, source_ref_json,
+                    item_number, description, found_location, item_type, make, model, serial_number, condition, packaging,
                     packaging_type, packaging_detail, photo_refs_json, notes,
                     item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
                     device_type, device_type_other, storage_interface, storage_interface_other,
                     brand, color, imei, other_identifiers,
                     building, room, location_other,
                     image_format, image_format_other, acquisition_method, acquisition_method_other,
-                    storage_notes
+                    hash_algorithm, hash_value, hash_computed_at, storage_notes
              FROM collected_items WHERE collection_id = ?1 ORDER BY item_number ASC",
         )?;
         let rows = stmt.query_map(params![collection_id], Self::map_collected_item)?;
@@ -781,15 +870,15 @@ impl ProjectDatabase {
     pub fn get_all_collected_items(&self) -> SqlResult<Vec<DbCollectedItem>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, collection_id, coc_item_id, evidence_file_id, item_number, description,
-                    found_location, item_type, make, model, serial_number, condition, packaging,
+            "SELECT id, collection_id, coc_item_id, evidence_file_id, source_id, source_ref_json,
+                    item_number, description, found_location, item_type, make, model, serial_number, condition, packaging,
                     packaging_type, packaging_detail, photo_refs_json, notes,
                     item_collection_datetime, item_system_datetime, item_collecting_officer, item_authorization,
                     device_type, device_type_other, storage_interface, storage_interface_other,
                     brand, color, imei, other_identifiers,
                     building, room, location_other,
                     image_format, image_format_other, acquisition_method, acquisition_method_other,
-                    storage_notes
+                    hash_algorithm, hash_value, hash_computed_at, storage_notes
              FROM collected_items ORDER BY item_number ASC",
         )?;
         let rows = stmt.query_map([], Self::map_collected_item)?;
@@ -803,46 +892,51 @@ impl ProjectDatabase {
         Ok(())
     }
 
-    /// Row mapper for DbCollectedItem (37 columns)
+    /// Row mapper for DbCollectedItem.
     fn map_collected_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbCollectedItem> {
         Ok(DbCollectedItem {
             id: row.get(0)?,
             collection_id: row.get(1)?,
             coc_item_id: row.get(2)?,
             evidence_file_id: row.get(3)?,
-            item_number: row.get(4)?,
-            description: row.get(5)?,
-            found_location: row.get(6)?,
-            item_type: row.get(7)?,
-            make: row.get(8)?,
-            model: row.get(9)?,
-            serial_number: row.get(10)?,
-            condition: row.get(11)?,
-            packaging: row.get(12)?,
-            packaging_type: row.get(13)?,
-            packaging_detail: row.get(14)?,
-            photo_refs_json: row.get(15)?,
-            notes: row.get(16)?,
-            item_collection_datetime: row.get(17)?,
-            item_system_datetime: row.get(18)?,
-            item_collecting_officer: row.get(19)?,
-            item_authorization: row.get(20)?,
-            device_type: row.get(21)?,
-            device_type_other: row.get(22)?,
-            storage_interface: row.get(23)?,
-            storage_interface_other: row.get(24)?,
-            brand: row.get(25)?,
-            color: row.get(26)?,
-            imei: row.get(27)?,
-            other_identifiers: row.get(28)?,
-            building: row.get(29)?,
-            room: row.get(30)?,
-            location_other: row.get(31)?,
-            image_format: row.get(32)?,
-            image_format_other: row.get(33)?,
-            acquisition_method: row.get(34)?,
-            acquisition_method_other: row.get(35)?,
-            storage_notes: row.get(36)?,
+            source_id: row.get(4)?,
+            source_ref_json: row.get(5)?,
+            item_number: row.get(6)?,
+            description: row.get(7)?,
+            found_location: row.get(8)?,
+            item_type: row.get(9)?,
+            make: row.get(10)?,
+            model: row.get(11)?,
+            serial_number: row.get(12)?,
+            condition: row.get(13)?,
+            packaging: row.get(14)?,
+            packaging_type: row.get(15)?,
+            packaging_detail: row.get(16)?,
+            photo_refs_json: row.get(17)?,
+            notes: row.get(18)?,
+            item_collection_datetime: row.get(19)?,
+            item_system_datetime: row.get(20)?,
+            item_collecting_officer: row.get(21)?,
+            item_authorization: row.get(22)?,
+            device_type: row.get(23)?,
+            device_type_other: row.get(24)?,
+            storage_interface: row.get(25)?,
+            storage_interface_other: row.get(26)?,
+            brand: row.get(27)?,
+            color: row.get(28)?,
+            imei: row.get(29)?,
+            other_identifiers: row.get(30)?,
+            building: row.get(31)?,
+            room: row.get(32)?,
+            location_other: row.get(33)?,
+            image_format: row.get(34)?,
+            image_format_other: row.get(35)?,
+            acquisition_method: row.get(36)?,
+            acquisition_method_other: row.get(37)?,
+            hash_algorithm: row.get(38)?,
+            hash_value: row.get(39)?,
+            hash_computed_at: row.get(40)?,
+            storage_notes: row.get(41)?,
         })
     }
 

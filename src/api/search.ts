@@ -69,12 +69,24 @@ export interface FacetCount {
   count: number;
 }
 
+/** Index-wide aggregate for one stored field value. */
+export interface IndexFacetSummary {
+  label: string;
+  count: number;
+  totalSizeBytes: number;
+  contentIndexedDocs: number;
+}
+
 /** Index statistics. */
 export interface IndexStats {
   numDocs: number;
   numSegments: number;
   indexSizeBytes: number;
+  totalIndexedBytes: number;
   contentIndexedDocs: number;
+  categoryCounts: IndexFacetSummary[];
+  containerTypeCounts: IndexFacetSummary[];
+  extensionCounts: IndexFacetSummary[];
 }
 
 /** Indexing progress event payload. */

@@ -13,7 +13,7 @@ import { usePdfViewer } from "./usePdfViewer";
 import type { PdfViewerProps } from "./types";
 
 export function PdfViewer(props: PdfViewerProps) {
-  const viewer = usePdfViewer(() => props.path);
+  const viewer = usePdfViewer(() => props.path, () => props.source);
 
   return (
     <div

@@ -13,12 +13,27 @@
 //! - System provenance (hostname, OS)
 
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
 use tauri::{Emitter, Window};
 use tracing::info;
 
 use super::{ArchiveCreateProgress, CreateArchiveOptions};
 use crate::common::hash::hash_file;
+
+const ARCHIVE_CREATE_MAX_TRAVERSAL_DEPTH: usize = 128;
+const ARCHIVE_CREATE_MAX_FILES: usize = 250_000;
+
+fn checked_manifest_total_size_add(total: u64, addition: u64, path: &Path) -> Result<u64, String> {
+    total.checked_add(addition).ok_or_else(|| {
+        format!(
+            "Archive manifest total size overflow while adding {} bytes from {} to current total {} bytes",
+            addition,
+            path.display(),
+            total
+        )
+    })
+}
 
 // =============================================================================
 // Forensic Manifest Types
@@ -99,18 +114,31 @@ pub(super) fn collect_files(
     input_paths: &[String],
 ) -> Result<Vec<(String, std::path::PathBuf)>, String> {
     let mut files = Vec::new();
+    let mut used_manifest_paths = HashSet::new();
 
     for input_path in input_paths {
         let path = Path::new(input_path);
         if path.is_file() {
+            if files.len() >= ARCHIVE_CREATE_MAX_FILES {
+                tracing::warn!("Archive manifest file collection reached file cap");
+                break;
+            }
+
             // Use just the filename as the relative path
             let rel = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| input_path.clone());
-            files.push((rel, path.to_path_buf()));
+            files.push((
+                unique_manifest_path(rel, &mut used_manifest_paths),
+                path.to_path_buf(),
+            ));
         } else if path.is_dir() {
-            collect_dir_files(path, path, &mut files)?;
+            collect_dir_files_with_used_paths(path, path, &mut files, &mut used_manifest_paths)?;
+            if files.len() >= ARCHIVE_CREATE_MAX_FILES {
+                tracing::warn!("Archive manifest file collection reached file cap");
+                break;
+            }
         }
     }
 
@@ -119,11 +147,51 @@ pub(super) fn collect_files(
 
 /// Recursively collect files from a directory.
 /// Skips unreadable directories (e.g. macOS TCC-protected folders) with a warning.
+#[cfg(test)]
 pub(super) fn collect_dir_files(
     root: &Path,
     dir: &Path,
     files: &mut Vec<(String, std::path::PathBuf)>,
 ) -> Result<(), String> {
+    let mut used_manifest_paths = files
+        .iter()
+        .map(|(rel_path, _)| rel_path.clone())
+        .collect::<HashSet<_>>();
+    collect_dir_files_with_used_paths(root, dir, files, &mut used_manifest_paths)
+}
+
+fn collect_dir_files_with_used_paths(
+    root: &Path,
+    dir: &Path,
+    files: &mut Vec<(String, std::path::PathBuf)>,
+    used_manifest_paths: &mut HashSet<String>,
+) -> Result<(), String> {
+    collect_dir_files_at_depth(root, dir, files, used_manifest_paths, 0)
+}
+
+fn collect_dir_files_at_depth(
+    root: &Path,
+    dir: &Path,
+    files: &mut Vec<(String, std::path::PathBuf)>,
+    used_manifest_paths: &mut HashSet<String>,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > ARCHIVE_CREATE_MAX_TRAVERSAL_DEPTH {
+        tracing::warn!(
+            "Archive manifest collection reached traversal depth cap at {}",
+            dir.display()
+        );
+        return Ok(());
+    }
+
+    if files.len() >= ARCHIVE_CREATE_MAX_FILES {
+        tracing::warn!(
+            "Archive manifest collection reached file cap while scanning {}",
+            dir.display()
+        );
+        return Ok(());
+    }
+
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) => {
@@ -136,17 +204,67 @@ pub(super) fn collect_dir_files(
         let path = entry.path();
 
         if path.is_file() {
+            if files.len() >= ARCHIVE_CREATE_MAX_FILES {
+                tracing::warn!(
+                    "Archive manifest collection reached file cap while scanning {}",
+                    dir.display()
+                );
+                break;
+            }
+
             let rel = path
                 .strip_prefix(root)
                 .map(|r| r.to_string_lossy().to_string())
                 .unwrap_or_else(|_| path.to_string_lossy().to_string());
-            files.push((rel, path));
+            files.push((unique_manifest_path(rel, used_manifest_paths), path));
         } else if path.is_dir() {
-            collect_dir_files(root, &path, files)?;
+            collect_dir_files_at_depth(root, &path, files, used_manifest_paths, depth + 1)?;
         }
     }
 
     Ok(())
+}
+
+fn unique_manifest_path(rel_path: String, used_manifest_paths: &mut HashSet<String>) -> String {
+    if used_manifest_paths.insert(rel_path.clone()) {
+        return rel_path;
+    }
+
+    for duplicate_index in 2usize.. {
+        let candidate = disambiguated_manifest_path(&rel_path, duplicate_index);
+        if used_manifest_paths.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+
+    unreachable!("usize range is unbounded")
+}
+
+fn disambiguated_manifest_path(rel_path: &str, duplicate_index: usize) -> String {
+    let path = Path::new(rel_path);
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return format!("{rel_path} ({duplicate_index})");
+    };
+
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or(file_name);
+    let file_name = match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) if !extension.is_empty() => {
+            format!("{stem} ({duplicate_index}).{extension}")
+        }
+        _ => format!("{stem} ({duplicate_index})"),
+    };
+
+    match path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        Some(parent) => parent.join(file_name).to_string_lossy().to_string(),
+        None => file_name,
+    }
 }
 
 // =============================================================================
@@ -194,7 +312,7 @@ pub(super) fn generate_forensic_manifest(
             .map_err(|e| format!("Failed to read metadata for {}: {}", abs_path.display(), e))?;
 
         let file_size = metadata.len();
-        total_size += file_size;
+        total_size = checked_manifest_total_size_add(total_size, file_size, abs_path)?;
 
         // Modified time as ISO 8601
         let modified = metadata.modified().ok().map(|t| {
@@ -432,6 +550,28 @@ mod tests {
     }
 
     #[test]
+    fn test_collect_files_disambiguates_duplicate_manifest_paths() {
+        let dir = TempDir::new().unwrap();
+        let first_dir = dir.path().join("first");
+        let second_dir = dir.path().join("second");
+        fs::create_dir_all(&first_dir).unwrap();
+        fs::create_dir_all(&second_dir).unwrap();
+        let first = first_dir.join("same.bin");
+        let second = second_dir.join("same.bin");
+        fs::write(&first, "first").unwrap();
+        fs::write(&second, "second").unwrap();
+
+        let files = collect_files(&[
+            first.to_string_lossy().to_string(),
+            second.to_string_lossy().to_string(),
+        ])
+        .unwrap();
+        let names: Vec<&str> = files.iter().map(|(rel, _)| rel.as_str()).collect();
+
+        assert_eq!(names, vec!["same.bin", "same (2).bin"]);
+    }
+
+    #[test]
     fn test_collect_files_empty_directory() {
         let dir = TempDir::new().unwrap();
         let files = collect_files(&[dir.path().to_string_lossy().to_string()]).unwrap();
@@ -496,6 +636,22 @@ mod tests {
         assert!(json.contains("CASE-001"));
     }
 
+    #[test]
+    fn test_checked_manifest_total_size_add_sums_regular_values() {
+        let path = Path::new("manifest-entry.bin");
+
+        assert_eq!(checked_manifest_total_size_add(12, 30, path).unwrap(), 42);
+    }
+
+    #[test]
+    fn test_checked_manifest_total_size_add_rejects_overflow() {
+        let path = Path::new("manifest-overflow.bin");
+        let err = checked_manifest_total_size_add(u64::MAX, 1, path).unwrap_err();
+
+        assert!(err.contains("manifest total size overflow"));
+        assert!(err.contains("manifest-overflow.bin"));
+    }
+
     // ==================== ChainOfCustody ====================
 
     #[test]
@@ -526,5 +682,37 @@ mod tests {
         assert_eq!(files.len(), 1);
         // Normalize separators for cross-platform compatibility
         assert_eq!(files[0].0.replace('\\', "/"), "level1/level2/deep.bin");
+    }
+
+    #[test]
+    fn test_collect_dir_files_disambiguates_against_existing_manifest_paths() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("evidence.txt"), b"nested").unwrap();
+
+        let mut files = vec![(
+            "evidence.txt".to_string(),
+            dir.path().join("existing-evidence.txt"),
+        )];
+        collect_dir_files(dir.path(), dir.path(), &mut files).unwrap();
+
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[1].0, "evidence (2).txt");
+    }
+
+    #[test]
+    fn test_collect_dir_files_skips_beyond_depth_limit() {
+        let dir = TempDir::new().unwrap();
+        let mut deep = dir.path().to_path_buf();
+
+        for _ in 0..=ARCHIVE_CREATE_MAX_TRAVERSAL_DEPTH {
+            deep = deep.join("d");
+            fs::create_dir(&deep).unwrap();
+        }
+
+        fs::write(deep.join("too-deep.bin"), vec![0u8; 100]).unwrap();
+
+        let mut files = Vec::new();
+        collect_dir_files(dir.path(), dir.path(), &mut files).unwrap();
+        assert!(files.is_empty());
     }
 }

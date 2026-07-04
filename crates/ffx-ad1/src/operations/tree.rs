@@ -183,16 +183,13 @@ pub fn read_entry_chunk(
     offset: u64,
     size: usize,
 ) -> Result<Vec<u8>, ContainerError> {
-    let data = read_entry_data(path, entry_path)?;
-    let start = offset as usize;
-    let end = start + size;
+    let mut session = Session::open(path)?;
 
-    if start >= data.len() {
-        return Ok(Vec::new());
-    }
+    let found = find_item_by_path(&session.root_items, entry_path)
+        .ok_or_else(|| ContainerError::EntryNotFound(entry_path.to_string()))?;
+    let item = found.item.clone();
 
-    let actual_end = end.min(data.len());
-    Ok(data[start..actual_end].to_vec())
+    session.read_file_data_range(&item, offset, size)
 }
 
 // =============================================================================

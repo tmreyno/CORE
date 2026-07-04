@@ -217,13 +217,76 @@ describe("ContainerEntryViewer", () => {
   });
 
   describe("content detection integration", () => {
+    it("persists a normalized artifact when project DB is open", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "project_db_is_open") return true;
+        if (cmd === "project_db_extract_artifact_source") {
+          return {
+            artifact: {
+              id: "artifact-1",
+              sourceId: "ad1:/evidence/container.ad1:/files/test.bin",
+            },
+            record: {
+              id: "artifact-1",
+              sourceId: "ad1:/evidence/container.ad1:/files/test.bin",
+            },
+          };
+        }
+        return null;
+      });
+
+      const entry = makeEntry({ name: "test.bin" });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="hex" />
+      );
+
+      await tick(200);
+
+      expect(mockInvoke).toHaveBeenCalledWith("project_db_extract_artifact_source", {
+        request: {
+          source: {
+            containerPath: "/evidence/container.ad1",
+            entryPath: "/files/test.bin",
+            containerType: "ad1",
+            size: 1024,
+          },
+          extractor: "container-entry-viewer",
+        },
+      });
+      dispose();
+    });
+
+    it("keeps rendering when artifact persistence fails", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "project_db_is_open") return true;
+        if (cmd === "project_db_extract_artifact_source") {
+          throw new Error("artifact extraction unavailable");
+        }
+        return null;
+      });
+
+      const entry = makeEntry({ name: "test.bin" });
+      const { container, dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="hex" />
+      );
+
+      await tick(200);
+
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "project_db_extract_artifact_source",
+        expect.anything(),
+      );
+      expect(container.innerHTML).toBeTruthy();
+      dispose();
+    });
+
     it("triggers content detection for unknown file types in auto mode", async () => {
       // Mock the extract command to return a temp path
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {
           return "/tmp/extracted_file.dat";
         }
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "Sqlite",
             viewerType: "Database",
@@ -249,6 +312,14 @@ describe("ContainerEntryViewer", () => {
         if (container.textContent?.includes("SQLite Database")) break;
       }
       expect(container.textContent).toContain("SQLite Database");
+      expect(mockInvoke).toHaveBeenCalledWith("detect_content_format_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "/files/test.bin",
+          containerType: "ad1",
+          size: 1024,
+        }),
+      });
       dispose();
     });
 
@@ -257,7 +328,7 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "container_extract_entry_to_temp") {
           return "/tmp/NTUSER.DAT";
         }
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "RegistryHive",
             viewerType: "Registry",
@@ -266,7 +337,7 @@ describe("ContainerEntryViewer", () => {
             method: "magic",
           };
         }
-        if (cmd === "registry_get_info") {
+        if (cmd === "registry_get_info" || cmd === "registry_get_info_source") {
           return {
             path: "/tmp/NTUSER.DAT",
             rootKeyName: "CMI-CreateHive",
@@ -278,10 +349,10 @@ describe("ContainerEntryViewer", () => {
             rootValueCount: 0,
           };
         }
-        if (cmd === "registry_get_subkeys") {
+        if (cmd === "registry_get_subkeys" || cmd === "registry_get_subkeys_source") {
           return { parentPath: "", subkeys: [] };
         }
-        if (cmd === "registry_get_key_info") {
+        if (cmd === "registry_get_key_info" || cmd === "registry_get_key_info_source") {
           return {
             name: "CMI-CreateHive",
             path: "CMI-CreateHive",
@@ -314,7 +385,7 @@ describe("ContainerEntryViewer", () => {
 
     it("uses disk file path directly for content detection", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "Pdf",
             viewerType: "Pdf",
@@ -358,7 +429,7 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "container_extract_entry_to_temp") {
           return "/tmp/file.dat";
         }
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           throw new Error("Detection not available");
         }
         return null;
@@ -381,7 +452,7 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "container_extract_entry_to_temp") {
           return "/tmp/photo.jpg";
         }
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           throw new Error("Should not be called for known types");
         }
         // Return empty data for image viewer
@@ -397,7 +468,7 @@ describe("ContainerEntryViewer", () => {
 
       // detect_content_format should NOT have been called
       const detectCalls = mockInvoke.mock.calls.filter(
-        (c: string[]) => c[0] === "detect_content_format"
+        (c: string[]) => c[0] === "detect_content_format" || c[0] === "detect_content_format_source"
       );
       expect(detectCalls).toHaveLength(0);
       dispose();
@@ -407,7 +478,7 @@ describe("ContainerEntryViewer", () => {
       let currentEntry = makeEntry({ name: "data.dat", isArchiveEntry: true });
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") return "/tmp/data.dat";
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "Sqlite",
             viewerType: "Database",
@@ -711,22 +782,40 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "container_extract_entry_to_temp") return extractedPath;
         // Return empty data for any child viewer commands
         if (cmd === "document_read") return { success: true, content: { format: "txt", text: "content", html: "<p>content</p>" }, error: null };
+        if (cmd === "document_read_source") return { success: true, content: { format: "txt", text: "content", html: "<p>content</p>" }, error: null };
         if (cmd === "document_get_metadata") return { success: true, metadata: {}, error: null };
+        if (cmd === "document_get_metadata_source") return { success: true, metadata: {}, error: null };
         if (cmd === "spreadsheet_read") return { success: true, data: { sheets: [] }, error: null };
         if (cmd === "email_read") return { success: true, email: {}, error: null };
+        if (cmd === "email_parse_eml") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
+        if (cmd === "email_parse_eml_source") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
+        if (cmd === "email_parse_mbox") return [];
+        if (cmd === "email_parse_mbox_source") return [];
+        if (cmd === "email_parse_msg") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
+        if (cmd === "email_parse_msg_source") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
         if (cmd === "plist_read") return { success: true, data: {}, error: null };
         if (cmd === "binary_analyze") return { success: true, analysis: {}, error: null };
         if (cmd === "registry_get_info") return { path: extractedPath, rootKeyName: "ROOT", rootKeyPath: "ROOT", rootTimestamp: "", totalKeys: 0, totalValues: 0, rootSubkeyCount: 0, rootValueCount: 0 };
+        if (cmd === "registry_get_info_source") return { path: extractedPath, rootKeyName: "ROOT", rootKeyPath: "ROOT", rootTimestamp: "", totalKeys: 0, totalValues: 0, rootSubkeyCount: 0, rootValueCount: 0 };
         if (cmd === "registry_get_subkeys") return { parentPath: "", subkeys: [] };
+        if (cmd === "registry_get_subkeys_source") return { parentPath: "", subkeys: [] };
         if (cmd === "registry_get_key_info") return { name: "ROOT", path: "ROOT", prettyPath: "ROOT", timestamp: "", subkeyCount: 0, valueCount: 0, values: [], subkeys: [] };
+        if (cmd === "registry_get_key_info_source") return { name: "ROOT", path: "ROOT", prettyPath: "ROOT", timestamp: "", subkeyCount: 0, valueCount: 0, values: [], subkeys: [] };
         if (cmd === "database_get_info") return { tables: [], views: [], path: extractedPath, pageCount: 0, pageSize: 4096, sqliteVersion: "3.39.0", totalSize: 0 };
+        if (cmd === "database_get_info_source") return { tables: [], views: [], path: extractedPath, pageCount: 0, pageSize: 4096, sqliteVersion: "3.39.0", totalSize: 0 };
+        if (cmd === "database_get_table_schema_source") return { name: "items", columns: [], rowCount: 0, createSql: null, indexes: [] };
+        if (cmd === "database_query_table_source") return { tableName: "items", columns: [], rows: [], totalCount: 0, page: 0, pageSize: 100, hasMore: false };
         if (cmd === "exif_read") return { success: false, data: null, error: "No EXIF" };
         // PST viewer commands
         if (cmd === "pst_get_folders") return { path: extractedPath, displayName: "Test PST", folders: [], totalMessages: 0, totalFolders: 0 };
+        if (cmd === "pst_get_folders_source") return { path: extractedPath, displayName: "Test PST", folders: [], totalMessages: 0, totalFolders: 0 };
         if (cmd === "pst_get_messages") return [];
+        if (cmd === "pst_get_messages_source") return [];
         if (cmd === "pst_get_message_detail") return null;
+        if (cmd === "pst_get_message_detail_source") return null;
         // Office viewer command
         if (cmd === "office_read_document") return { format: "docx", formatDescription: "Microsoft Word Document (OOXML)", metadata: {}, sections: [{ label: null, paragraphs: [{ text: "Test content", hint: "normal" }] }], totalChars: 12, totalWords: 2, extractionComplete: true, warnings: [] };
+        if (cmd === "office_read_document_source") return { format: "docx", formatDescription: "Microsoft Word Document (OOXML)", metadata: {}, sections: [{ label: null, paragraphs: [{ text: "Test content", hint: "normal" }] }], totalChars: 12, totalWords: 2, extractionComplete: true, warnings: [] };
         return null;
       });
     }
@@ -891,7 +980,7 @@ describe("ContainerEntryViewer", () => {
     it("delegates to correct viewer based on content detection", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") return "/tmp/mystery.dat";
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "Email",
             viewerType: "Email",
@@ -1037,7 +1126,7 @@ describe("ContainerEntryViewer", () => {
     it("reports detected viewer type from content detection", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") return "/tmp/unknown.dat";
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "Spreadsheet",
             viewerType: "Spreadsheet",
@@ -1166,7 +1255,7 @@ describe("ContainerEntryViewer", () => {
     it("displays detected format badge with description and mimetype", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") return "/tmp/mystery.dat";
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "Jpeg",
             viewerType: "Image",
@@ -1341,7 +1430,7 @@ describe("ContainerEntryViewer", () => {
     it("ignores Binary format detection result without magic method", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") return "/tmp/data.dat";
-        if (cmd === "detect_content_format") {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
           return {
             format: "Binary",
             viewerType: "Hex",

@@ -97,6 +97,25 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Checkout core-shared (local dependency)
+        if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: tmreyno/core-shared
+          ref: main
+          path: core-shared
+          token: ${{ secrets.CORE_SHARED_TOKEN }}
+
+      - name: Symlink core-shared for file deps
+        if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
+        run: ln -s $GITHUB_WORKSPACE/core-shared ../core-shared
+
+      - name: Setup Rust (for Cargo.lock refresh)
+        if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Bump version
         if: steps.check.outputs.skipped != 'true'
         id: bump
@@ -126,7 +145,7 @@ jobs:
 
           if [ "$DRY_RUN" = "true" ]; then
             echo "🏃 DRY RUN — would bump ${CURRENT} → ${NEW_VERSION}"
-            echo "   Files: package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml"
+            echo "   Files: package.json, package-lock.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, Cargo.lock, CHANGELOG.md"
             echo "   Tag: v${NEW_VERSION}"
             exit 0
           fi
@@ -139,6 +158,10 @@ jobs:
           "
           echo "✅ package.json → ${NEW_VERSION}"
 
+          # ── Update package-lock.json ──
+          npm install --package-lock-only --ignore-scripts
+          echo "✅ package-lock.json → ${NEW_VERSION}"
+
           # ── Update src-tauri/tauri.conf.json ──
           node -e "
             const conf = JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json', 'utf8'));
@@ -150,6 +173,10 @@ jobs:
           # ── Update src-tauri/Cargo.toml ──
           sed -i "0,/^version = \".*\"/s/^version = \".*\"/version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
           echo "✅ src-tauri/Cargo.toml → ${NEW_VERSION}"
+
+          # ── Refresh Cargo.lock package metadata ──
+          cargo metadata --format-version=1 --no-deps > /dev/null
+          echo "✅ Cargo.lock → ${NEW_VERSION}"
 
           # ── Update CHANGELOG.md ──
           DATE=$(date -u +"%Y-%m-%d")
@@ -172,8 +199,10 @@ jobs:
           echo ""
           echo "=== Version verification ==="
           echo "package.json:      $(node -e "console.log(require('./package.json').version)")"
+          echo "package-lock.json: $(node -e "const lock=require('./package-lock.json'); console.log(lock.version + ' / ' + lock.packages[''].version)")"
           echo "tauri.conf.json:   $(node -e "console.log(JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version)")"
           echo "Cargo.toml:        $(grep '^version' src-tauri/Cargo.toml | head -1)"
+          echo "Cargo.lock:        $(grep -A1 'name = \"core-ffx\"' Cargo.lock | grep version | head -1)"
 
       - name: Commit version bump
         if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
@@ -183,7 +212,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml CHANGELOG.md
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml Cargo.lock CHANGELOG.md
           git commit -m "chore: bump version to ${NEW_VERSION} [nightly]"
 
           echo "✅ Committed version bump"

@@ -28,6 +28,7 @@ import type {
   UserActivityData,
   TimelineReportData,
 } from "../types";
+import type { ProjectDbReportEvidence } from "../../../report/api";
 import { REPORT_PRESETS, REPORT_TYPE_DEFAULTS, type ReportPreset, type ReportPresetConfig } from "../constants";
 import { getPreference } from "../../preferences";
 import { generateReportNumber } from "./utils/reportNumbering";
@@ -168,6 +169,10 @@ export interface WizardState {
 
   // Derived
   projectTimeline: Accessor<TimelineEvent[]>;
+
+  // Project DB engine evidence
+  projectDbEvidence: Accessor<ProjectDbReportEvidence | null>;
+  setProjectDbEvidence: Setter<ProjectDbReportEvidence | null>;
 }
 
 // =============================================================================
@@ -323,6 +328,9 @@ export function useWizardState(props: ReportWizardProps): WizardState {
       artifact_path: entry.file_path || undefined,
     }));
   });
+
+  const [projectDbEvidence, setProjectDbEvidence] =
+    createSignal<ProjectDbReportEvidence | null>(null);
 
   // ==========================================================================
   // NARRATIVE STATE
@@ -481,5 +489,8 @@ export function useWizardState(props: ReportWizardProps): WizardState {
 
     // Derived
     projectTimeline,
+
+    // Project DB engine evidence
+    projectDbEvidence, setProjectDbEvidence,
   };
 }

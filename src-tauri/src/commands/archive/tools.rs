@@ -19,6 +19,12 @@ use seven_zip::CompressionLevel;
 use seven_zip::EncryptionContext;
 use seven_zip::SevenZip;
 
+const ARCHIVE_TOOL_BUFFER_MAX_BYTES: usize = 64 * 1024 * 1024;
+const ARCHIVE_TOOL_ENCRYPTED_BUFFER_MAX_BYTES: usize = ARCHIVE_TOOL_BUFFER_MAX_BYTES + 4096;
+const ARCHIVE_TOOL_FIELD_MAX_CHARS: usize = 4096;
+const ARCHIVE_TOOL_TEXT_MAX_CHARS: usize = 16_384;
+const ARCHIVE_TOOL_TRUNCATED_SUFFIX: &str = "... [truncated]";
+
 /// Test archive integrity without extracting
 #[tauri::command]
 pub async fn test_7z_archive(
@@ -124,10 +130,10 @@ pub fn get_last_archive_error() -> Result<serde_json::Value, String> {
         .map(|err| {
             serde_json::json!({
                 "code": err.code,
-                "message": err.message,
-                "file_context": err.file_context,
+                "message": truncate_archive_tool_text(&err.message, ARCHIVE_TOOL_TEXT_MAX_CHARS),
+                "file_context": truncate_archive_tool_text(&err.file_context, ARCHIVE_TOOL_FIELD_MAX_CHARS),
                 "position": err.position,
-                "suggestion": err.suggestion,
+                "suggestion": truncate_archive_tool_text(&err.suggestion, ARCHIVE_TOOL_TEXT_MAX_CHARS),
             })
         })
         .map_err(|e| format!("Failed to get error details: {}", e))
@@ -238,21 +244,31 @@ pub async fn decompress_lzma2(xz_path: String, output_path: String) -> Result<St
 /// Encrypt data using native Rust AES-256
 #[tauri::command]
 pub fn encrypt_data_native(data: Vec<u8>, password: String) -> Result<Vec<u8>, String> {
+    checked_archive_tool_buffer_len(data.len(), "Plaintext data")?;
+    let password = truncate_archive_tool_text(&password, ARCHIVE_TOOL_FIELD_MAX_CHARS);
     let mut ctx = EncryptionContext::new(&password)
         .map_err(|e| format!("Failed to initialize encryption: {}", e))?;
 
-    ctx.encrypt(&data)
-        .map_err(|e| format!("Encryption failed: {}", e))
+    let encrypted = ctx
+        .encrypt(&data)
+        .map_err(|e| format!("Encryption failed: {}", e))?;
+    checked_archive_tool_encrypted_buffer_len(encrypted.len(), "Encrypted data")?;
+    Ok(encrypted)
 }
 
 /// Decrypt data using native Rust AES-256
 #[tauri::command]
 pub fn decrypt_data_native(encrypted_data: Vec<u8>, password: String) -> Result<Vec<u8>, String> {
+    checked_archive_tool_encrypted_buffer_len(encrypted_data.len(), "Encrypted data")?;
+    let password = truncate_archive_tool_text(&password, ARCHIVE_TOOL_FIELD_MAX_CHARS);
     let mut ctx = EncryptionContext::new(&password)
         .map_err(|e| format!("Failed to initialize decryption: {}", e))?;
 
-    ctx.decrypt(&encrypted_data)
-        .map_err(|e| format!("Decryption failed: {}", e))
+    let decrypted = ctx
+        .decrypt(&encrypted_data)
+        .map_err(|e| format!("Decryption failed: {}", e))?;
+    checked_archive_tool_buffer_len(decrypted.len(), "Decrypted data")?;
+    Ok(decrypted)
 }
 
 /// Extract split/multi-volume archive
@@ -328,7 +344,7 @@ pub async fn validate_7z_archive(archive_path: String) -> Result<ArchiveValidati
             Err(e) => {
                 // Try to get detailed error info
                 let error_msg = e.to_string();
-                Ok(ArchiveValidationResult {
+                Ok(bounded_archive_validation_result(ArchiveValidationResult {
                     is_valid: false,
                     error_message: Some(error_msg.clone()),
                     file_context: Some(archive_path.clone()),
@@ -344,12 +360,56 @@ pub async fn validate_7z_archive(archive_path: String) -> Result<ArchiveValidati
                         }
                         _ => "Archive validation failed. Check file integrity.".to_string(),
                     }),
-                })
+                }))
             }
         }
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn checked_archive_tool_buffer_len(len: usize, context: &str) -> Result<(), String> {
+    if len > ARCHIVE_TOOL_BUFFER_MAX_BYTES {
+        return Err(format!(
+            "{context} is too large: {len} bytes > {ARCHIVE_TOOL_BUFFER_MAX_BYTES} bytes"
+        ));
+    }
+    Ok(())
+}
+
+fn checked_archive_tool_encrypted_buffer_len(len: usize, context: &str) -> Result<(), String> {
+    if len > ARCHIVE_TOOL_ENCRYPTED_BUFFER_MAX_BYTES {
+        return Err(format!(
+            "{context} is too large: {len} bytes > {ARCHIVE_TOOL_ENCRYPTED_BUFFER_MAX_BYTES} bytes"
+        ));
+    }
+    Ok(())
+}
+
+fn bounded_archive_validation_result(
+    mut result: ArchiveValidationResult,
+) -> ArchiveValidationResult {
+    result.error_message = result
+        .error_message
+        .map(|value| truncate_archive_tool_text(&value, ARCHIVE_TOOL_TEXT_MAX_CHARS));
+    result.file_context = result
+        .file_context
+        .map(|value| truncate_archive_tool_text(&value, ARCHIVE_TOOL_FIELD_MAX_CHARS));
+    result.suggestion = result
+        .suggestion
+        .map(|value| truncate_archive_tool_text(&value, ARCHIVE_TOOL_TEXT_MAX_CHARS));
+    result
+}
+
+fn truncate_archive_tool_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let keep_chars = max_chars.saturating_sub(ARCHIVE_TOOL_TRUNCATED_SUFFIX.chars().count());
+    let mut truncated: String = value.chars().take(keep_chars).collect();
+    truncated.push_str(ARCHIVE_TOOL_TRUNCATED_SUFFIX);
+    truncated
 }
 
 #[cfg(test)]
@@ -456,5 +516,69 @@ mod tests {
         assert!(json.contains("CRC mismatch"));
         assert!(json.contains("\"fileContext\":"));
         assert!(json.contains("\"suggestion\":"));
+    }
+
+    #[test]
+    fn checked_archive_tool_buffer_len_allows_limit() {
+        assert!(checked_archive_tool_buffer_len(ARCHIVE_TOOL_BUFFER_MAX_BYTES, "data").is_ok());
+    }
+
+    #[test]
+    fn checked_archive_tool_buffer_len_rejects_oversized_plaintext() {
+        let err =
+            checked_archive_tool_buffer_len(ARCHIVE_TOOL_BUFFER_MAX_BYTES + 1, "Plaintext data")
+                .unwrap_err();
+
+        assert!(err.contains("Plaintext data is too large"));
+    }
+
+    #[test]
+    fn checked_archive_tool_encrypted_buffer_len_allows_overhead_limit() {
+        assert!(checked_archive_tool_encrypted_buffer_len(
+            ARCHIVE_TOOL_ENCRYPTED_BUFFER_MAX_BYTES,
+            "Encrypted data",
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn checked_archive_tool_encrypted_buffer_len_rejects_oversized_ciphertext() {
+        let err = checked_archive_tool_encrypted_buffer_len(
+            ARCHIVE_TOOL_ENCRYPTED_BUFFER_MAX_BYTES + 1,
+            "Encrypted data",
+        )
+        .unwrap_err();
+
+        assert!(err.contains("Encrypted data is too large"));
+    }
+
+    #[test]
+    fn bounded_archive_validation_result_caps_strings() {
+        let long = "x".repeat(ARCHIVE_TOOL_TEXT_MAX_CHARS + 8);
+        let long_field = "y".repeat(ARCHIVE_TOOL_FIELD_MAX_CHARS + 8);
+        let result = bounded_archive_validation_result(ArchiveValidationResult {
+            is_valid: false,
+            error_message: Some(long.clone()),
+            file_context: Some(long_field),
+            suggestion: Some(long),
+        });
+
+        assert_eq!(
+            result.error_message.unwrap().chars().count(),
+            ARCHIVE_TOOL_TEXT_MAX_CHARS
+        );
+        assert_eq!(
+            result.file_context.unwrap().chars().count(),
+            ARCHIVE_TOOL_FIELD_MAX_CHARS
+        );
+        assert!(result
+            .suggestion
+            .unwrap()
+            .ends_with(ARCHIVE_TOOL_TRUNCATED_SUFFIX));
+    }
+
+    #[test]
+    fn truncate_archive_tool_text_preserves_short_text() {
+        assert_eq!(truncate_archive_tool_text("short", 16), "short");
     }
 }

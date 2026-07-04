@@ -13,7 +13,7 @@
 use std::path::Path;
 
 use super::error::ReportResult;
-use super::format_helpers::{has_text, text_blocks, TextBlock};
+use super::format_helpers::{appendix_label, has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// Markdown generator for forensic reports
@@ -283,29 +283,44 @@ impl MarkdownGenerator {
             md.push_str("|-------|-------|\n");
             md.push_str(&format!(
                 "| Case Number | {} |\n",
-                Self::escape_md(&report.case_info.case_number)
+                Self::escape_md_table_cell(&report.case_info.case_number)
             ));
 
             if let Some(ref name) = report.case_info.case_name {
-                md.push_str(&format!("| Case Name | {} |\n", Self::escape_md(name)));
+                md.push_str(&format!(
+                    "| Case Name | {} |\n",
+                    Self::escape_md_table_cell(name)
+                ));
             }
             if let Some(ref agency) = report.case_info.agency {
-                md.push_str(&format!("| Agency | {} |\n", Self::escape_md(agency)));
+                md.push_str(&format!(
+                    "| Agency | {} |\n",
+                    Self::escape_md_table_cell(agency)
+                ));
             }
             if let Some(ref requestor) = report.case_info.requestor {
-                md.push_str(&format!("| Requestor | {} |\n", Self::escape_md(requestor)));
+                md.push_str(&format!(
+                    "| Requestor | {} |\n",
+                    Self::escape_md_table_cell(requestor)
+                ));
             }
 
             md.push_str(&format!(
                 "| Examiner | {} |\n",
-                Self::escape_md(&report.examiner.name)
+                Self::escape_md_table_cell(&report.examiner.name)
             ));
 
             if let Some(ref title) = report.examiner.title {
-                md.push_str(&format!("| Title | {} |\n", Self::escape_md(title)));
+                md.push_str(&format!(
+                    "| Title | {} |\n",
+                    Self::escape_md_table_cell(title)
+                ));
             }
             if let Some(ref org) = report.examiner.organization {
-                md.push_str(&format!("| Organization | {} |\n", Self::escape_md(org)));
+                md.push_str(&format!(
+                    "| Organization | {} |\n",
+                    Self::escape_md_table_cell(org)
+                ));
             }
         } else {
             md.push_str(&format!(
@@ -364,7 +379,7 @@ impl MarkdownGenerator {
                         md.push_str(&format!(
                             "| {} | `{}` |\n",
                             hash.algorithm.as_str(),
-                            Self::escape_md(&hash.value)
+                            Self::escape_md_table_cell(&hash.value)
                         ));
                     }
                 } else {
@@ -396,23 +411,23 @@ impl MarkdownGenerator {
                 md.push_str(&format!(
                     "| {} | {} | {} | {} | {} | {} | {} |\n",
                     record.timestamp.format("%Y-%m-%d %H:%M"),
-                    Self::escape_md(&record.evidence_id),
-                    Self::escape_md(&record.released_by),
-                    Self::escape_md(&record.received_by),
+                    Self::escape_md_table_cell(&record.evidence_id),
+                    Self::escape_md_table_cell(&record.released_by),
+                    Self::escape_md_table_cell(&record.received_by),
                     record
                         .purpose
                         .as_deref()
-                        .map(Self::escape_md)
+                        .map(Self::escape_md_table_cell)
                         .unwrap_or_default(),
                     record
                         .location
                         .as_deref()
-                        .map(Self::escape_md)
+                        .map(Self::escape_md_table_cell)
                         .unwrap_or_default(),
                     record
                         .notes
                         .as_deref()
-                        .map(Self::escape_md)
+                        .map(Self::escape_md_table_cell)
                         .unwrap_or_default()
                 ));
             }
@@ -500,14 +515,14 @@ impl MarkdownGenerator {
             ));
 
             if self.gfm_tables {
-                md.push_str("| Item # | Description | Device Type | Make/Model | Serial # | Location | Format | Condition |\n");
-                md.push_str("|--------|-------------|-------------|------------|----------|----------|--------|-----------|\n");
+                md.push_str("| Item # | Description | Device Type | Make/Model | Serial # | Location | Format | Condition | Source | Hash |\n");
+                md.push_str("|--------|-------------|-------------|------------|----------|----------|--------|-----------|--------|------|\n");
 
                 for item in &ev.collected_items {
                     let device = if !item.device_type.is_empty() {
-                        Self::escape_md(&item.device_type)
+                        &item.device_type
                     } else {
-                        Self::escape_md(&item.item_type)
+                        &item.item_type
                     };
                     let make_model = format!(
                         "{}{}",
@@ -531,21 +546,23 @@ impl MarkdownGenerator {
                     };
 
                     md.push_str(&format!(
-                        "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
-                        Self::escape_md(&item.item_number),
-                        Self::escape_md(&item.description),
-                        device,
-                        Self::escape_md(&make_model),
+                        "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                        Self::escape_md_table_cell(&item.item_number),
+                        Self::escape_md_table_cell(&item.description),
+                        Self::escape_md_table_cell(device),
+                        Self::escape_md_table_cell(&make_model),
                         item.serial_number
                             .as_deref()
-                            .map(Self::escape_md)
+                            .map(Self::escape_md_table_cell)
                             .unwrap_or_else(|| "-".to_string()),
-                        Self::escape_md(&location),
+                        Self::escape_md_table_cell(&location),
                         item.image_format
                             .as_deref()
-                            .map(Self::escape_md)
+                            .map(Self::escape_md_table_cell)
                             .unwrap_or_else(|| "-".to_string()),
-                        Self::escape_md(&item.condition),
+                        Self::escape_md_table_cell(&item.condition),
+                        Self::escape_md_table_cell(&Self::collection_item_source_summary(item)),
+                        Self::escape_md_table_cell(&Self::collection_item_hash_summary(item)),
                     ));
                 }
             } else {
@@ -569,6 +586,17 @@ impl MarkdownGenerator {
                             "  - Condition: {}\n",
                             Self::escape_md(&item.condition)
                         ));
+                    }
+                    let source_summary = Self::collection_item_source_summary(item);
+                    if source_summary != "-" {
+                        md.push_str(&format!(
+                            "  - Source: {}\n",
+                            Self::escape_md(&source_summary)
+                        ));
+                    }
+                    let hash_summary = Self::collection_item_hash_summary(item);
+                    if hash_summary != "-" {
+                        md.push_str(&format!("  - Hash: {}\n", Self::escape_md(&hash_summary)));
                     }
                     if let Some(ref notes) = item.notes {
                         if !notes.is_empty() {
@@ -646,9 +674,9 @@ impl MarkdownGenerator {
                 md.push_str(&format!(
                     "| {} | {} | {} | {} |\n",
                     event.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                    Self::escape_md(&event.timestamp_type),
-                    Self::escape_md(&event.description),
-                    Self::escape_md(&event.source)
+                    Self::escape_md_table_cell(&event.timestamp_type),
+                    Self::escape_md_table_cell(&event.description),
+                    Self::escape_md_table_cell(&event.source)
                 ));
             }
         } else {
@@ -683,9 +711,9 @@ impl MarkdownGenerator {
                 };
                 md.push_str(&format!(
                     "| {} | {} | `{}` | {} |\n",
-                    Self::escape_md(&record.item),
+                    Self::escape_md_table_cell(&record.item),
                     record.algorithm.as_str(),
-                    Self::escape_md(&record.value),
+                    Self::escape_md_table_cell(&record.value),
                     verified
                 ));
             }
@@ -721,15 +749,15 @@ impl MarkdownGenerator {
             for tool in &report.tools {
                 md.push_str(&format!(
                     "| {} | {} | {} | {} |\n",
-                    Self::escape_md(&tool.name),
-                    Self::escape_md(&tool.version),
+                    Self::escape_md_table_cell(&tool.name),
+                    Self::escape_md_table_cell(&tool.version),
                     tool.vendor
                         .as_deref()
-                        .map(Self::escape_md)
+                        .map(Self::escape_md_table_cell)
                         .unwrap_or_else(|| "-".to_string()),
                     tool.purpose
                         .as_deref()
-                        .map(Self::escape_md)
+                        .map(Self::escape_md_table_cell)
                         .unwrap_or_else(|| "-".to_string())
                 ));
             }
@@ -757,7 +785,7 @@ impl MarkdownGenerator {
         for (i, appendix) in report.appendices.iter().enumerate() {
             md.push_str(&format!(
                 "### Appendix {}: {}\n\n",
-                (b'A' + i as u8) as char,
+                appendix_label(i),
                 Self::escape_md(&appendix.title)
             ));
             md.push_str(&self.render_rich_text_md(&appendix.content));
@@ -842,9 +870,49 @@ impl MarkdownGenerator {
             .replace(']', "\\]")
     }
 
+    fn escape_md_table_cell(s: &str) -> String {
+        let normalized = s.replace("\r\n", "\n").replace('\r', "\n");
+        let cell_text = normalized
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("<br>");
+
+        Self::escape_md(&cell_text)
+    }
+
+    fn collection_item_source_summary(item: &CollectedItem) -> String {
+        item.source_id
+            .as_deref()
+            .or(item.evidence_file_id.as_deref())
+            .unwrap_or("-")
+            .to_string()
+    }
+
+    fn collection_item_hash_summary(item: &CollectedItem) -> String {
+        match (item.hash_algorithm.as_deref(), item.hash_value.as_deref()) {
+            (Some(algorithm), Some(value)) if !algorithm.is_empty() && !value.is_empty() => {
+                match item
+                    .hash_computed_at
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                {
+                    Some(computed_at) => format!("{algorithm}: {value} ({computed_at})"),
+                    None => format!("{algorithm}: {value}"),
+                }
+            }
+            _ => "-".to_string(),
+        }
+    }
+
     /// Escape YAML special characters
     fn escape_yaml(s: &str) -> String {
-        s.replace('\\', "\\\\").replace('"', "\\\"")
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace("\r\n", "\\n")
+            .replace('\r', "\\n")
+            .replace('\n', "\\n")
     }
 
     fn render_rich_text_md(&self, text: &str) -> String {
@@ -889,10 +957,26 @@ mod tests {
     }
 
     #[test]
+    fn markdown_table_cell_escape_keeps_rows_single_line() {
+        assert_eq!(
+            MarkdownGenerator::escape_md_table_cell("first\r\n| second |\n\nthird"),
+            "first<br>\\| second \\|<br>third"
+        );
+    }
+
+    #[test]
     fn test_yaml_escape() {
         assert_eq!(
             MarkdownGenerator::escape_yaml("test \"quote\""),
             "test \\\"quote\\\""
+        );
+    }
+
+    #[test]
+    fn markdown_frontmatter_escapes_newlines() {
+        assert_eq!(
+            MarkdownGenerator::escape_yaml("Case A\nclassification: Public\r\nowner: Bob"),
+            "Case A\\nclassification: Public\\nowner: Bob"
         );
     }
 
@@ -941,6 +1025,98 @@ mod tests {
         assert!(md.contains("CASE-001"));
         assert!(md.contains("Test Examiner"));
         assert!(md.contains("CONFIDENTIAL"));
+    }
+
+    #[test]
+    fn markdown_tables_do_not_allow_multiline_cell_injection() {
+        let report = ForensicReport {
+            metadata: ReportMetadata {
+                title: "Test Report".to_string(),
+                report_number: "TEST-001".to_string(),
+                version: "1.0".to_string(),
+                classification: Classification::Confidential,
+                generated_at: Utc::now(),
+                generated_by: "Test".to_string(),
+            },
+            case_info: CaseInfo {
+                case_number: "CASE-001".to_string(),
+                case_name: Some("Alpha\n| Injected | row |".to_string()),
+                ..Default::default()
+            },
+            examiner: ExaminerInfo {
+                name: "Test Examiner".to_string(),
+                ..Default::default()
+            },
+            executive_summary: None,
+            scope: None,
+            methodology: None,
+            evidence_items: vec![],
+            chain_of_custody: vec![],
+            findings: vec![],
+            timeline: vec![],
+            hash_records: vec![],
+            tools: vec![],
+            conclusions: None,
+            appendices: vec![],
+            signatures: vec![],
+            notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
+        };
+
+        let md = MarkdownGenerator::new().render_markdown(&report);
+
+        assert!(md.contains("| Case Name | Alpha<br>\\| Injected \\| row \\| |"));
+        assert!(!md.contains("\n| Injected | row |"));
+    }
+
+    #[test]
+    fn markdown_appendices_use_stable_labels_after_z() {
+        let appendices = (0..27)
+            .map(|index| Appendix {
+                appendix_id: index.to_string(),
+                title: format!("Appendix {}", index + 1),
+                content_type: AppendixType::Markdown,
+                content: "Content".to_string(),
+            })
+            .collect();
+        let report = ForensicReport {
+            metadata: ReportMetadata {
+                title: "Test Report".to_string(),
+                report_number: "TEST-001".to_string(),
+                version: "1.0".to_string(),
+                classification: Classification::Confidential,
+                generated_at: Utc::now(),
+                generated_by: "Test".to_string(),
+            },
+            case_info: CaseInfo::default(),
+            examiner: ExaminerInfo {
+                name: "Test Examiner".to_string(),
+                ..Default::default()
+            },
+            executive_summary: None,
+            scope: None,
+            methodology: None,
+            evidence_items: vec![],
+            chain_of_custody: vec![],
+            findings: vec![],
+            timeline: vec![],
+            hash_records: vec![],
+            tools: vec![],
+            conclusions: None,
+            appendices,
+            signatures: vec![],
+            notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
+        };
+
+        let md = MarkdownGenerator::new().render_markdown(&report);
+
+        assert!(md.contains("### Appendix Z: Appendix 26"));
+        assert!(md.contains("### Appendix AA: Appendix 27"));
     }
 
     #[test]

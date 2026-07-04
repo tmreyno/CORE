@@ -32,6 +32,8 @@ use tracing::debug;
 use ffx_common::escape_csv;
 use ffx_common::hash::{HashAlgorithm, StreamingHasher};
 
+pub(crate) const MAX_NATIVE_ARCHIVE_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+
 // Re-exports for convenience
 pub use detection::{detect_archive_format, is_7z_segment, is_archive};
 pub use extraction::{
@@ -955,7 +957,7 @@ fn read_zip_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>
         .by_index(entry_index)
         .map_err(|e| format!("Failed to read ZIP entry: {}", e))?;
 
-    let mut data = checked_zip_entry_buffer(entry.size())?;
+    let mut data = checked_native_entry_buffer(entry.size(), "ZIP entry")?;
     entry
         .read_to_end(&mut data)
         .map_err(|e| format!("Failed to decompress ZIP entry: {}", e))?;
@@ -964,12 +966,37 @@ fn read_zip_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>
     Ok(data)
 }
 
-fn checked_zip_entry_buffer(size: u64) -> Result<Vec<u8>, ContainerError> {
-    let capacity = usize::try_from(size)
-        .map_err(|_| ContainerError::InvalidFormat("ZIP entry too large".to_string()))?;
+fn checked_native_entry_buffer(size: u64, context: &str) -> Result<Vec<u8>, ContainerError> {
+    let capacity = checked_native_entry_size(size, context)?;
     let mut data = Vec::new();
     data.try_reserve_exact(capacity)
-        .map_err(|_| ContainerError::InvalidFormat("ZIP entry allocation too large".to_string()))?;
+        .map_err(|_| ContainerError::InvalidFormat(format!("{context} allocation too large")))?;
+    Ok(data)
+}
+
+fn checked_native_entry_size(size: u64, context: &str) -> Result<usize, ContainerError> {
+    if size > MAX_NATIVE_ARCHIVE_ENTRY_BYTES {
+        return Err(ContainerError::InvalidFormat(format!(
+            "{context} too large: {} bytes exceeds {} bytes",
+            size, MAX_NATIVE_ARCHIVE_ENTRY_BYTES
+        )));
+    }
+
+    usize::try_from(size).map_err(|_| ContainerError::InvalidFormat(format!("{context} too large")))
+}
+
+fn read_to_end_limited<R: Read>(reader: R, context: &str) -> Result<Vec<u8>, ContainerError> {
+    let mut limited_reader = reader.take(MAX_NATIVE_ARCHIVE_ENTRY_BYTES + 1);
+    let mut data = Vec::new();
+    limited_reader
+        .read_to_end(&mut data)
+        .map_err(|e| format!("Failed to read {context}: {e}"))?;
+    if data.len() as u64 > MAX_NATIVE_ARCHIVE_ENTRY_BYTES {
+        return Err(ContainerError::InvalidFormat(format!(
+            "{context} exceeds {} bytes",
+            MAX_NATIVE_ARCHIVE_ENTRY_BYTES
+        )));
+    }
     Ok(data)
 }
 
@@ -990,8 +1017,8 @@ fn read_7z_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>,
             let name = entry.name().replace('\\', "/");
             let name = name.trim_start_matches('/').trim_end_matches('/');
             if name == entry_path {
-                let mut data = Vec::new();
-                reader.read_to_end(&mut data)?;
+                let data = read_to_end_limited(reader, "7z entry")
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
                 result_data = Some(data);
             }
             Ok(true)
@@ -1015,14 +1042,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_checked_zip_entry_buffer_allows_small_capacity() {
-        let data = checked_zip_entry_buffer(16).unwrap();
+    fn test_checked_native_entry_buffer_allows_small_capacity() {
+        let data = checked_native_entry_buffer(16, "test entry").unwrap();
         assert!(data.capacity() >= 16);
     }
 
     #[test]
-    fn test_checked_zip_entry_buffer_rejects_huge_capacity() {
-        assert!(checked_zip_entry_buffer(u64::MAX).is_err());
+    fn test_checked_native_entry_buffer_rejects_huge_capacity() {
+        assert!(checked_native_entry_buffer(u64::MAX, "test entry").is_err());
+    }
+
+    #[test]
+    fn test_checked_native_entry_size_rejects_configured_limit() {
+        assert!(
+            checked_native_entry_size(MAX_NATIVE_ARCHIVE_ENTRY_BYTES + 1, "test entry").is_err()
+        );
+    }
+
+    #[test]
+    fn test_read_to_end_limited_allows_small_reader() {
+        let data = read_to_end_limited(&b"archive bytes"[..], "test reader").unwrap();
+        assert_eq!(data, b"archive bytes");
     }
 }
 
@@ -1080,10 +1120,8 @@ fn read_from_tar<R: Read>(reader: R, entry_path: &str) -> Result<Vec<u8>, Contai
             .to_string();
 
         if normalized == entry_path {
-            let mut data = Vec::new();
-            entry
-                .read_to_end(&mut data)
-                .map_err(|e| format!("Failed to read TAR entry data: {}", e))?;
+            checked_native_entry_size(entry.header().size().unwrap_or(0), "TAR entry")?;
+            let data = read_to_end_limited(&mut entry, "TAR entry data")?;
             debug!(path = %entry_path, bytes = data.len(), "Read TAR entry (native)");
             return Ok(data);
         }
@@ -1104,33 +1142,23 @@ fn read_compressed_stream(
     let file =
         File::open(archive_path).map_err(|e| format!("Failed to open {}: {}", archive_path, e))?;
     let reader = BufReader::new(file);
-    let mut data = Vec::new();
-
-    match compression {
+    let data = match compression {
         "gz" => {
-            let mut decoder = flate2::read::GzDecoder::new(reader);
-            decoder
-                .read_to_end(&mut data)
-                .map_err(|e| format!("Failed to decompress gz: {}", e))?;
+            let decoder = flate2::read::GzDecoder::new(reader);
+            read_to_end_limited(decoder, "gz stream")?
         }
         "bz2" => {
-            let mut decoder = bzip2::read::BzDecoder::new(reader);
-            decoder
-                .read_to_end(&mut data)
-                .map_err(|e| format!("Failed to decompress bz2: {}", e))?;
+            let decoder = bzip2::read::BzDecoder::new(reader);
+            read_to_end_limited(decoder, "bz2 stream")?
         }
         "xz" => {
-            let mut decoder = xz2::read::XzDecoder::new(reader);
-            decoder
-                .read_to_end(&mut data)
-                .map_err(|e| format!("Failed to decompress xz: {}", e))?;
+            let decoder = xz2::read::XzDecoder::new(reader);
+            read_to_end_limited(decoder, "xz stream")?
         }
         "zst" => {
-            let mut decoder = zstd::stream::read::Decoder::new(reader)
+            let decoder = zstd::stream::read::Decoder::new(reader)
                 .map_err(|e| format!("Failed to init zstd decoder: {}", e))?;
-            decoder
-                .read_to_end(&mut data)
-                .map_err(|e| format!("Failed to decompress zst: {}", e))?;
+            read_to_end_limited(decoder, "zst stream")?
         }
         _ => {
             return Err(ContainerError::from(format!(
@@ -1138,7 +1166,7 @@ fn read_compressed_stream(
                 compression
             )));
         }
-    }
+    };
 
     debug!(path = %archive_path, bytes = data.len(), "Read compressed stream (native)");
     Ok(data)

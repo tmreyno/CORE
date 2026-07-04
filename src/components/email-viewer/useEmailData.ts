@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { createSignal, createEffect, createMemo, type Accessor } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "../../api/commands";
 import { getBasename } from "../../utils/pathUtils";
 import { logger } from "../../utils/logger";
 import type { EmailMetadataSection } from "../../types/viewerMetadata";
@@ -49,26 +49,30 @@ export function useEmailData(props: EmailViewerProps): UseEmailDataReturn {
 
     try {
       if (isMsg(props.path)) {
-        const info = await invoke<EmailInfo>("email_parse_msg", { path: props.path });
+        const info = props.source
+          ? await commands.email.parseMsgSource<EmailInfo>(props.source)
+          : await commands.email.parseMsg<EmailInfo>(props.path);
         setEmails([info]);
       } else if (isEml(props.path)) {
-        const info = await invoke<EmailInfo>("email_parse_eml", { path: props.path });
+        const info = props.source
+          ? await commands.email.parseEmlSource<EmailInfo>(props.source)
+          : await commands.email.parseEml<EmailInfo>(props.path);
         setEmails([info]);
       } else if (isMbox(props.path)) {
-        const infos = await invoke<EmailInfo[]>("email_parse_mbox", {
-          path: props.path,
-          maxMessages: 200,
-        });
+        const infos = props.source
+          ? await commands.email.parseMboxSource<EmailInfo[]>(props.source, 200)
+          : await commands.email.parseMbox<EmailInfo[]>(props.path, 200);
         setEmails(infos);
       } else {
         try {
-          const info = await invoke<EmailInfo>("email_parse_eml", { path: props.path });
+          const info = props.source
+            ? await commands.email.parseEmlSource<EmailInfo>(props.source)
+            : await commands.email.parseEml<EmailInfo>(props.path);
           setEmails([info]);
         } catch {
-          const infos = await invoke<EmailInfo[]>("email_parse_mbox", {
-            path: props.path,
-            maxMessages: 200,
-          });
+          const infos = props.source
+            ? await commands.email.parseMboxSource<EmailInfo[]>(props.source, 200)
+            : await commands.email.parseMbox<EmailInfo[]>(props.path, 200);
           setEmails(infos);
         }
       }
@@ -81,8 +85,10 @@ export function useEmailData(props: EmailViewerProps): UseEmailDataReturn {
   };
 
   createEffect(() => {
-    if (props.path) {
-      loadEmail();
+    const path = props.path;
+    const source = props.source;
+    if (path || source) {
+      void loadEmail();
     }
   });
 

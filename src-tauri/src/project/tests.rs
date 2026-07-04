@@ -180,4 +180,27 @@ mod project_tests {
         assert_eq!(PROJECT_VERSION, 2);
         assert!(!APP_VERSION.is_empty());
     }
+
+    #[test]
+    fn test_read_project_json_with_limit_rejects_oversized_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("huge.cffx");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(PROJECT_FILE_READ_MAX_BYTES + 1)
+            .unwrap();
+
+        let err = read_project_json_with_limit(&path, "test project").unwrap_err();
+        assert!(err.contains("test project is too large"));
+    }
+
+    #[test]
+    fn test_read_project_json_with_limit_rejects_invalid_utf8() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("invalid.cffx");
+        std::fs::write(&path, [0xff]).unwrap();
+
+        let err = read_project_json_with_limit(&path, "test project").unwrap_err();
+        assert!(err.contains("Failed to decode test project as UTF-8"));
+    }
 }

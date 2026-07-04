@@ -32,6 +32,10 @@ pub struct ProjectMergeSummary {
     pub evidence_file_count: usize,
     /// Number of computed hashes
     pub hash_count: usize,
+    /// Number of normalized artifact records in the project database
+    pub artifact_count: usize,
+    /// Number of persisted source-analysis records in the project database
+    pub source_analysis_count: usize,
     /// Number of sessions
     pub session_count: usize,
     /// Number of activity log entries
@@ -211,6 +215,8 @@ pub struct MergeStats {
     pub activity_entries_merged: usize,
     pub evidence_files_merged: usize,
     pub hashes_merged: usize,
+    pub artifacts_merged: usize,
+    pub source_analyses_merged: usize,
     pub bookmarks_merged: usize,
     pub notes_merged: usize,
     pub tabs_merged: usize,

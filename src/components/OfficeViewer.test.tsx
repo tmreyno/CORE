@@ -83,6 +83,23 @@ describe("OfficeViewer", () => {
       });
     });
 
+    it("calls office_read_document_source when an evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce(mockDocxData);
+      const source = {
+        containerPath: "/evidence/case.ad1",
+        entryPath: "docs/report.docx",
+        containerType: "ad1",
+        size: 4096,
+      };
+
+      renderComponent(() => <OfficeViewer path="/tmp/report.docx" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("office_read_document_source", {
+        source,
+      });
+    });
+
     it("renders document text content", async () => {
       mockInvoke.mockResolvedValueOnce(mockDocxData);
 

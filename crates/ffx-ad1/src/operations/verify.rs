@@ -234,6 +234,15 @@ where
     }
 
     let segment_count = segment_paths.len() as u32;
+    if header_count > segment_count {
+        let missing: Vec<String> = ((segment_count + 1)..=header_count)
+            .map(|index| build_segment_path(path, index))
+            .collect();
+        return Err(ContainerError::SegmentError(format!(
+            "AD1 segment hash refused partial container: header declares {header_count} segments, found {segment_count}; missing {}",
+            missing.join(", ")
+        )));
+    }
 
     // Log segment discovery results — helps diagnose mismatches
     if segment_count != header_count {
@@ -707,6 +716,26 @@ mod tests {
         assert_ne!(
             multi_hash, single_hash,
             "Multi-segment hash must include all segments, not just the first"
+        );
+    }
+
+    #[test]
+    fn test_hash_segments_rejects_missing_declared_segments() {
+        let temp_dir = TempDir::new().unwrap();
+        let payload = b"first segment only";
+        let ad1_path = create_valid_ad1_segment(temp_dir.path(), "evidence.ad1", 0, 3, payload);
+
+        let err = hash_segments(ad1_path.to_str().unwrap(), "md5").unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("refused partial container"),
+            "unexpected error: {}",
+            message
+        );
+        assert!(
+            message.contains("evidence.ad2") && message.contains("evidence.ad3"),
+            "missing segment paths not reported: {}",
+            message
         );
     }
 

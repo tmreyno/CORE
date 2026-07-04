@@ -5,9 +5,9 @@
 // =============================================================================
 
 import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineDocument, HiOutlineExclamationTriangle } from "../icons";
 import { logger } from "../../utils/logger";
+import { commands } from "../../api/commands";
 import { DocumentParagraph } from "./DocumentParagraph";
 import type { OfficeViewerProps, OfficeDocumentInfo } from "./types";
 
@@ -50,9 +50,9 @@ export function OfficeViewer(props: OfficeViewerProps) {
     setError(null);
 
     try {
-      const result = await invoke<OfficeDocumentInfo>("office_read_document", {
-        path: props.path,
-      });
+      const result = props.source
+        ? await commands.office.readDocumentSource<OfficeDocumentInfo>(props.source)
+        : await commands.office.readDocument<OfficeDocumentInfo>(props.path);
       if (gen !== loadGeneration) return; // stale response
       setInfo(result);
 
@@ -90,6 +90,7 @@ export function OfficeViewer(props: OfficeViewerProps) {
 
   createEffect(() => {
     void props.path;
+    void props.source;
     loadDocument();
   });
 

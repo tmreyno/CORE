@@ -19,7 +19,7 @@
  */
 
 import { createSignal, createEffect, createMemo, Show } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type HashSourceInput } from "../api/commands";
 import { formatBytes, getBasename } from "../utils";
 import { HiOutlineExclamationTriangle } from "./icons";
 import { CoreSpinner } from "@core-suite/icons";
@@ -38,6 +38,8 @@ import { getFormatIcon, performSearch, printDocument, downloadHtml } from "./doc
 interface DocumentViewerProps {
   /** Path to the document file */
   path: string;
+  /** Optional evidence source for documents inside containers */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Whether to show metadata panel */
@@ -149,10 +151,15 @@ export function DocumentViewer(props: DocumentViewerProps) {
 
     try {
       // Load content and metadata in parallel
-      const [contentResult, metadataResult] = await Promise.all([
-        invoke<DocumentResponse>("document_read", { path: props.path }),
-        invoke<MetadataResponse>("document_get_metadata", { path: props.path }),
-      ]);
+      const [contentResult, metadataResult] = props.source
+        ? await Promise.all([
+            commands.document.readSource<DocumentResponse>(props.source),
+            commands.document.getMetadataSource<MetadataResponse>(props.source),
+          ])
+        : await Promise.all([
+            commands.document.read<DocumentResponse>(props.path),
+            commands.document.getMetadata<MetadataResponse>(props.path),
+          ]);
 
       // Guard: discard results if a newer load has been triggered
       if (gen !== loadGeneration) return;
@@ -183,6 +190,7 @@ export function DocumentViewer(props: DocumentViewerProps) {
   // Effect to load document when path changes
   createEffect(() => {
     if (props.path) {
+      void props.source;
       loadDocument();
     }
   });

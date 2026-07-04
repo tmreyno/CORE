@@ -24,6 +24,24 @@ use std::io::BufReader;
 use std::path::Path;
 use tracing::{debug, warn};
 
+const AXIOM_XML_MAX_BYTES: u64 = 64 * 1024 * 1024;
+const AXIOM_SCAN_DEF_JSON_MAX_BYTES: usize = 16 * 1024 * 1024;
+const AXIOM_MAX_EVIDENCE_SOURCES: usize = 10_000;
+const AXIOM_MAX_SEARCH_RESULTS: usize = 10_000;
+const AXIOM_MAX_SEARCH_TYPES_PER_SOURCE: usize = 1_000;
+const AXIOM_MAX_KEYWORDS: usize = 10_000;
+const AXIOM_MAX_KEYWORD_FILES: usize = 10_000;
+const AXIOM_MAX_ARTIFACT_CATEGORIES: usize = 10_000;
+const AXIOM_TEXT_FIELD_MAX_CHARS: usize = 4096;
+
+fn non_negative_i64_to_u64(value: i64) -> u64 {
+    u64::try_from(value.max(0)).unwrap_or(0)
+}
+
+fn checked_count_total_add(total: u64, count: u64) -> Option<u64> {
+    total.checked_add(count)
+}
+
 /// AXIOM specific case information
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AxiomCaseInfo {
@@ -296,7 +314,7 @@ pub fn parse_axiom_case(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
             .to_string();
     }
 
-    Ok(case_info)
+    Ok(bounded_axiom_case_info(case_info))
 }
 
 /// Find the Case.mcfc file in an AXIOM case folder
@@ -343,6 +361,7 @@ fn find_mcfc_file(dir: &Path) -> Option<std::path::PathBuf> {
 /// </Case>
 /// ```
 fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
+    ensure_axiom_xml_size(path, ".mcfc file")?;
     let file = fs::File::open(path)
         .map_err(|e| ContainerError::from(format!("Failed to open .mcfc file: {}", e)))?;
     let reader = BufReader::with_capacity(64 * 1024, file);
@@ -375,8 +394,12 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
                 if name == "evidencesources" || name == "evidence_sources" || name == "sources" {
                     in_evidence_sources = false;
                 } else if in_source && (name == "source" || name == "evidencesource") {
-                    if !current_source.name.is_empty() {
-                        case_info.evidence_sources.push(current_source.clone());
+                    if !current_source.name.is_empty()
+                        && case_info.evidence_sources.len() < AXIOM_MAX_EVIDENCE_SOURCES
+                    {
+                        case_info
+                            .evidence_sources
+                            .push(bounded_axiom_evidence_source(current_source.clone()));
                     }
                     in_source = false;
                 }
@@ -384,7 +407,7 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
                 current_element.clear();
             }
             Ok(Event::Text(ref e)) => {
-                let text = e.unescape().unwrap_or_default().trim().to_string();
+                let text = truncate_axiom_text(e.unescape().unwrap_or_default().trim().to_string());
                 if text.is_empty() {
                     continue;
                 }
@@ -435,7 +458,7 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
         buf.clear();
     }
 
-    Ok(case_info)
+    Ok(bounded_axiom_case_info(case_info))
 }
 
 /// Parse AXIOM Case Information.xml file
@@ -478,6 +501,7 @@ fn parse_mcfc_file(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
 /// </CaseSummary>
 /// ```
 fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerError> {
+    ensure_axiom_xml_size(path, "Case Information.xml")?;
     let file = fs::File::open(path)
         .map_err(|e| ContainerError::from(format!("Failed to open Case Information.xml: {}", e)))?;
     let reader = BufReader::with_capacity(64 * 1024, file);
@@ -530,13 +554,16 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
                         let value = String::from_utf8_lossy(&attr.value).to_string();
 
                         match key.as_str() {
-                            "name" => result.artifact_type = value,
+                            "name" => result.artifact_type = truncate_axiom_text(value),
                             "hitcount" => result.hit_count = value.parse().unwrap_or(0),
                             _ => {}
                         }
                     }
 
-                    if !result.artifact_type.is_empty() && result.hit_count > 0 {
+                    if !result.artifact_type.is_empty()
+                        && result.hit_count > 0
+                        && case_info.search_results.len() < AXIOM_MAX_SEARCH_RESULTS
+                    {
                         case_info.search_results.push(result);
                     }
                 }
@@ -549,8 +576,12 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
                     "searchinfo" => in_search_info = false,
                     "sources" => in_sources = false,
                     "source" if in_sources => {
-                        if !current_source.name.is_empty() {
-                            case_info.evidence_sources.push(current_source.clone());
+                        if !current_source.name.is_empty()
+                            && case_info.evidence_sources.len() < AXIOM_MAX_EVIDENCE_SOURCES
+                        {
+                            case_info
+                                .evidence_sources
+                                .push(bounded_axiom_evidence_source(current_source.clone()));
                         }
                         in_source = false;
                     }
@@ -562,7 +593,7 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
                 current_element.clear();
             }
             Ok(Event::Text(ref e)) => {
-                let text = e.unescape().unwrap_or_default().trim().to_string();
+                let text = truncate_axiom_text(e.unescape().unwrap_or_default().trim().to_string());
                 if text.is_empty() {
                     continue;
                 }
@@ -576,7 +607,10 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
                         "name" => current_source.name = text,
                         "evidencenumber" => current_source.evidence_number = Some(text),
                         "searchtype" if in_search_types => {
-                            current_source.search_types.push(text);
+                            if current_source.search_types.len() < AXIOM_MAX_SEARCH_TYPES_PER_SOURCE
+                            {
+                                current_source.search_types.push(text);
+                            }
                         }
                         _ => {}
                     }
@@ -615,7 +649,7 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
         }
     }
 
-    Ok(case_info)
+    Ok(bounded_axiom_case_info(case_info))
 }
 
 /// Find the main .mfdb file in an AXIOM case folder
@@ -779,7 +813,7 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
                         source.hash = row.get::<_, String>(i).ok();
                     }
                     if col_name.contains("size") {
-                        source.size = row.get::<_, i64>(i).ok().map(|s| s as u64);
+                        source.size = row.get::<_, i64>(i).ok().map(non_negative_i64_to_u64);
                     }
                     if col_name.contains("evidence") && col_name.contains("number") {
                         source.evidence_number = row.get::<_, String>(i).ok();
@@ -789,8 +823,8 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
                 Ok(source)
             }) {
                 for row in rows.flatten() {
-                    if !row.name.is_empty() {
-                        sources.push(row);
+                    if !row.name.is_empty() && sources.len() < AXIOM_MAX_EVIDENCE_SOURCES {
+                        sources.push(bounded_axiom_evidence_source(row));
                     }
                 }
             }
@@ -801,7 +835,10 @@ fn query_evidence_sources(conn: &Connection) -> Result<Vec<AxiomEvidenceSource>,
         }
     }
 
-    Ok(sources)
+    Ok(sources
+        .into_iter()
+        .map(bounded_axiom_evidence_source)
+        .collect())
 }
 
 /// Query keyword search information from AXIOM database
@@ -816,17 +853,25 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
         "SELECT attribute_value FROM scan_attribute WHERE attribute_name = 'ScanDef'";
 
     if let Ok(json_str) = conn.query_row(scan_def_query, [], |row| row.get::<_, String>(0)) {
+        if json_str.len() > AXIOM_SCAN_DEF_JSON_MAX_BYTES {
+            return Err(ContainerError::InvalidFormat(format!(
+                "AXIOM ScanDef JSON exceeds {} byte limit",
+                AXIOM_SCAN_DEF_JSON_MAX_BYTES
+            )));
+        }
+
         // Parse the JSON
         if let Ok(scan_def) = serde_json::from_str::<serde_json::Value>(&json_str) {
             // Parse Keywords array
             if let Some(keywords) = scan_def.get("Keywords").and_then(|k| k.as_array()) {
                 for kw in keywords {
                     let keyword = AxiomKeyword {
-                        value: kw
-                            .get("Value")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
+                        value: truncate_axiom_text(
+                            kw.get("Value")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
                         is_regex: kw.get("Regex").and_then(|v| v.as_bool()).unwrap_or(false),
                         is_case_sensitive: kw
                             .get("IsCaseSensitive")
@@ -837,6 +882,7 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
                             .and_then(|v| v.as_array())
                             .map(|arr| {
                                 arr.iter()
+                                    .take(AXIOM_MAX_SEARCH_TYPES_PER_SOURCE)
                                     .filter_map(|e| e.as_i64().map(encoding_type_to_string))
                                     .collect()
                             })
@@ -848,14 +894,15 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
                         file_name: kw
                             .get("FileName")
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
+                            .map(|s| truncate_axiom_text(s.to_string())),
                     };
 
                     if keyword.is_regex {
                         keyword_info.regex_count += 1;
                     }
 
-                    if !keyword.value.is_empty() {
+                    if !keyword.value.is_empty() && keyword_info.keywords.len() < AXIOM_MAX_KEYWORDS
+                    {
                         keyword_info.keywords.push(keyword);
                     }
                 }
@@ -865,20 +912,22 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
             if let Some(files) = scan_def.get("KeywordFiles").and_then(|k| k.as_array()) {
                 for file in files {
                     let kw_file = AxiomKeywordFile {
-                        file_name: file
-                            .get("FileName")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
-                        file_path: file
-                            .get("FilePath")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
+                        file_name: truncate_axiom_text(
+                            file.get("FileName")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
+                        file_path: truncate_axiom_text(
+                            file.get("FilePath")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
                         date_added: file
                             .get("DateAdded")
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
+                            .map(|s| truncate_axiom_text(s.to_string())),
                         record_count: file
                             .get("RecordCount")
                             .and_then(|v| v.as_u64())
@@ -893,7 +942,9 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
                             .unwrap_or(false),
                     };
 
-                    if !kw_file.file_name.is_empty() {
+                    if !kw_file.file_name.is_empty()
+                        && keyword_info.keyword_files.len() < AXIOM_MAX_KEYWORD_FILES
+                    {
                         keyword_info.keyword_files.push(kw_file);
                     }
                 }
@@ -906,11 +957,12 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
             {
                 for kw in priv_keywords {
                     let keyword = AxiomKeyword {
-                        value: kw
-                            .get("Value")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
+                        value: truncate_axiom_text(
+                            kw.get("Value")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
                         is_regex: kw.get("Regex").and_then(|v| v.as_bool()).unwrap_or(false),
                         is_case_sensitive: kw
                             .get("IsCaseSensitive")
@@ -921,6 +973,7 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
                             .and_then(|v| v.as_array())
                             .map(|arr| {
                                 arr.iter()
+                                    .take(AXIOM_MAX_SEARCH_TYPES_PER_SOURCE)
                                     .filter_map(|e| e.as_i64().map(encoding_type_to_string))
                                     .collect()
                             })
@@ -929,10 +982,12 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
                         file_name: kw
                             .get("TagName")
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
+                            .map(|s| truncate_axiom_text(s.to_string())),
                     };
 
-                    if !keyword.value.is_empty() {
+                    if !keyword.value.is_empty()
+                        && keyword_info.privileged_content_keywords.len() < AXIOM_MAX_KEYWORDS
+                    {
                         keyword_info.privileged_content_keywords.push(keyword);
                     }
                 }
@@ -942,12 +997,13 @@ fn query_keyword_info(conn: &Connection) -> Result<AxiomKeywordInfo, ContainerEr
             keyword_info.privileged_content_mode = scan_def
                 .get("PrivilegedContentMode")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .map(|s| truncate_axiom_text(s.to_string()));
         }
     }
 
     // Calculate total keywords entered
     keyword_info.keywords_entered = keyword_info.keywords.len() as u64;
+    keyword_info = bounded_axiom_keyword_info(keyword_info);
 
     debug!(
         "Parsed {} keywords, {} files, {} privileged keywords",
@@ -978,7 +1034,7 @@ fn count_total_artifacts(conn: &Connection) -> Result<u64, ContainerError> {
         row.get::<_, i64>(0)
     }) {
         if count > 0 {
-            return Ok(count as u64);
+            return Ok(non_negative_i64_to_u64(count));
         }
     }
 
@@ -989,7 +1045,13 @@ fn count_total_artifacts(conn: &Connection) -> Result<u64, ContainerError> {
     for table in artifact_tables {
         let query = format!("SELECT COUNT(*) FROM {}", table);
         if let Ok(count) = conn.query_row(&query, [], |row| row.get::<_, i64>(0)) {
-            total += count as u64;
+            let count = non_negative_i64_to_u64(count);
+            let Some(next_total) = checked_count_total_add(total, count) else {
+                return Err(ContainerError::InvalidFormat(
+                    "AXIOM artifact count overflow".to_string(),
+                ));
+            };
+            total = next_total;
         }
     }
 
@@ -1031,11 +1093,11 @@ pub fn get_artifact_categories(
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(ArtifactCategorySummary {
                 category: categorize_artifact_name(&row.get::<_, String>(0).unwrap_or_default()),
-                artifact_type: row.get(0)?,
-                count: row.get::<_, i64>(1)? as u64,
+                artifact_type: truncate_axiom_text(row.get(0)?),
+                count: non_negative_i64_to_u64(row.get::<_, i64>(1)?),
             })
         }) {
-            categories.extend(rows.flatten());
+            categories.extend(rows.flatten().take(AXIOM_MAX_ARTIFACT_CATEGORIES));
         }
     }
 
@@ -1045,7 +1107,7 @@ pub fn get_artifact_categories(
             "Found {} artifact categories from AXIOM schema",
             categories.len()
         );
-        return Ok(categories);
+        return Ok(bounded_axiom_artifact_categories(categories));
     }
 
     // Fallback: try to get from artifact_group with counts
@@ -1065,12 +1127,12 @@ pub fn get_artifact_categories(
     if let Ok(mut stmt) = conn.prepare(group_query) {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(ArtifactCategorySummary {
-                category: row.get(0)?,
-                artifact_type: row.get(1)?,
-                count: row.get::<_, i64>(2)? as u64,
+                category: truncate_axiom_text(row.get(0)?),
+                artifact_type: truncate_axiom_text(row.get(1)?),
+                count: non_negative_i64_to_u64(row.get::<_, i64>(2)?),
             })
         }) {
-            categories.extend(rows.flatten());
+            categories.extend(rows.flatten().take(AXIOM_MAX_ARTIFACT_CATEGORIES));
         }
     }
 
@@ -1079,7 +1141,7 @@ pub fn get_artifact_categories(
             "Found {} artifact categories from artifact_group",
             categories.len()
         );
-        return Ok(categories);
+        return Ok(bounded_axiom_artifact_categories(categories));
     }
 
     // Legacy fallback: try old-style table names
@@ -1092,16 +1154,154 @@ pub fn get_artifact_categories(
     ) {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(ArtifactCategorySummary {
-                category: row.get(0)?,
-                artifact_type: row.get(1)?,
-                count: row.get::<_, i64>(2)? as u64,
+                category: truncate_axiom_text(row.get(0)?),
+                artifact_type: truncate_axiom_text(row.get(1)?),
+                count: non_negative_i64_to_u64(row.get::<_, i64>(2)?),
             })
         }) {
-            categories.extend(rows.flatten());
+            categories.extend(rows.flatten().take(AXIOM_MAX_ARTIFACT_CATEGORIES));
         }
     }
 
-    Ok(categories)
+    Ok(bounded_axiom_artifact_categories(categories))
+}
+
+fn ensure_axiom_xml_size(path: &Path, label: &str) -> Result<(), ContainerError> {
+    let len = fs::metadata(path)?.len();
+    if len > AXIOM_XML_MAX_BYTES {
+        return Err(ContainerError::InvalidFormat(format!(
+            "{} exceeds {} byte limit: {}",
+            label,
+            AXIOM_XML_MAX_BYTES,
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn bounded_axiom_case_info(mut info: AxiomCaseInfo) -> AxiomCaseInfo {
+    info.case_name = truncate_axiom_text(info.case_name);
+    info.case_number = info.case_number.map(truncate_axiom_text);
+    info.case_type = info.case_type.map(truncate_axiom_text);
+    info.description = info.description.map(truncate_axiom_text);
+    info.examiner = info.examiner.map(truncate_axiom_text);
+    info.agency = info.agency.map(truncate_axiom_text);
+    info.user = info.user.map(truncate_axiom_text);
+    info.host_name = info.host_name.map(truncate_axiom_text);
+    info.operating_system = info.operating_system.map(truncate_axiom_text);
+    info.created = info.created.map(truncate_axiom_text);
+    info.modified = info.modified.map(truncate_axiom_text);
+    info.axiom_version = info.axiom_version.map(truncate_axiom_text);
+    info.search_start = info.search_start.map(truncate_axiom_text);
+    info.search_end = info.search_end.map(truncate_axiom_text);
+    info.search_duration = info.search_duration.map(truncate_axiom_text);
+    info.search_outcome = info.search_outcome.map(truncate_axiom_text);
+    info.output_folder = info.output_folder.map(truncate_axiom_text);
+    info.case_path = info.case_path.map(truncate_axiom_text);
+    info.evidence_sources.truncate(AXIOM_MAX_EVIDENCE_SOURCES);
+    info.evidence_sources = info
+        .evidence_sources
+        .into_iter()
+        .map(bounded_axiom_evidence_source)
+        .collect();
+    info.search_results.truncate(AXIOM_MAX_SEARCH_RESULTS);
+    info.search_results = info
+        .search_results
+        .into_iter()
+        .map(|mut result| {
+            result.artifact_type = truncate_axiom_text(result.artifact_type);
+            result
+        })
+        .collect();
+    info.keyword_info = info.keyword_info.map(bounded_axiom_keyword_info);
+    info
+}
+
+fn bounded_axiom_evidence_source(mut source: AxiomEvidenceSource) -> AxiomEvidenceSource {
+    source.name = truncate_axiom_text(source.name);
+    source.evidence_number = source.evidence_number.map(truncate_axiom_text);
+    source.source_type = truncate_axiom_text(source.source_type);
+    source.path = source.path.map(truncate_axiom_text);
+    source.hash = source.hash.map(truncate_axiom_text);
+    source.acquired = source.acquired.map(truncate_axiom_text);
+    source
+        .search_types
+        .truncate(AXIOM_MAX_SEARCH_TYPES_PER_SOURCE);
+    source.search_types = source
+        .search_types
+        .into_iter()
+        .map(truncate_axiom_text)
+        .collect();
+    source
+}
+
+fn bounded_axiom_keyword_info(mut keyword_info: AxiomKeywordInfo) -> AxiomKeywordInfo {
+    keyword_info.keywords.truncate(AXIOM_MAX_KEYWORDS);
+    keyword_info.keywords = keyword_info
+        .keywords
+        .into_iter()
+        .map(bounded_axiom_keyword)
+        .collect();
+    keyword_info.keyword_files.truncate(AXIOM_MAX_KEYWORD_FILES);
+    keyword_info.keyword_files = keyword_info
+        .keyword_files
+        .into_iter()
+        .map(|mut file| {
+            file.file_name = truncate_axiom_text(file.file_name);
+            file.file_path = truncate_axiom_text(file.file_path);
+            file.date_added = file.date_added.map(truncate_axiom_text);
+            file
+        })
+        .collect();
+    keyword_info
+        .privileged_content_keywords
+        .truncate(AXIOM_MAX_KEYWORDS);
+    keyword_info.privileged_content_keywords = keyword_info
+        .privileged_content_keywords
+        .into_iter()
+        .map(bounded_axiom_keyword)
+        .collect();
+    keyword_info.privileged_content_mode = keyword_info
+        .privileged_content_mode
+        .map(truncate_axiom_text);
+    keyword_info.keywords_entered = keyword_info.keywords.len() as u64;
+    keyword_info
+}
+
+fn bounded_axiom_keyword(mut keyword: AxiomKeyword) -> AxiomKeyword {
+    keyword.value = truncate_axiom_text(keyword.value);
+    keyword
+        .encoding_types
+        .truncate(AXIOM_MAX_SEARCH_TYPES_PER_SOURCE);
+    keyword.encoding_types = keyword
+        .encoding_types
+        .into_iter()
+        .map(truncate_axiom_text)
+        .collect();
+    keyword.file_name = keyword.file_name.map(truncate_axiom_text);
+    keyword
+}
+
+fn bounded_axiom_artifact_categories(
+    mut categories: Vec<ArtifactCategorySummary>,
+) -> Vec<ArtifactCategorySummary> {
+    categories.truncate(AXIOM_MAX_ARTIFACT_CATEGORIES);
+    categories
+        .into_iter()
+        .map(|mut category| {
+            category.category = truncate_axiom_text(category.category);
+            category.artifact_type = truncate_axiom_text(category.artifact_type);
+            category
+        })
+        .collect()
+}
+
+fn truncate_axiom_text(value: String) -> String {
+    if value.chars().count() <= AXIOM_TEXT_FIELD_MAX_CHARS {
+        value
+    } else {
+        value.chars().take(AXIOM_TEXT_FIELD_MAX_CHARS).collect()
+    }
 }
 
 /// Categorize an artifact name into a general category
@@ -1187,6 +1387,170 @@ mod tests {
     #[test]
     fn test_encoding_type_utf8() {
         assert_eq!(encoding_type_to_string(1), "UTF-8");
+    }
+
+    #[test]
+    fn non_negative_i64_to_u64_clamps_negative_values() {
+        assert_eq!(non_negative_i64_to_u64(-1), 0);
+        assert_eq!(non_negative_i64_to_u64(42), 42);
+    }
+
+    #[test]
+    fn checked_count_total_add_rejects_overflow() {
+        assert_eq!(checked_count_total_add(u64::MAX, 1), None);
+        assert_eq!(checked_count_total_add(40, 2), Some(42));
+    }
+
+    #[test]
+    fn query_evidence_sources_clamps_negative_size() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE EvidenceSources (name TEXT, source_type TEXT, size INTEGER);
+             INSERT INTO EvidenceSources VALUES ('phone', 'mobile', -42);",
+        )
+        .unwrap();
+
+        let sources = query_evidence_sources(&conn).unwrap();
+
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "phone");
+        assert_eq!(sources[0].size, Some(0));
+    }
+
+    #[test]
+    fn parse_case_information_xml_rejects_oversized_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("Case Information.xml");
+        fs::File::create(&xml_path)
+            .unwrap()
+            .set_len(AXIOM_XML_MAX_BYTES + 1)
+            .unwrap();
+
+        let err = parse_case_information_xml(&xml_path).unwrap_err();
+
+        assert!(err.to_string().contains("Case Information.xml exceeds"));
+    }
+
+    #[test]
+    fn bounded_axiom_case_info_caps_vectors_and_text() {
+        let long_text = "x".repeat(AXIOM_TEXT_FIELD_MAX_CHARS + 1);
+        let mut evidence_sources = Vec::with_capacity(AXIOM_MAX_EVIDENCE_SOURCES + 1);
+        evidence_sources.push(AxiomEvidenceSource {
+            name: long_text.clone(),
+            source_type: long_text.clone(),
+            search_types: (0..AXIOM_MAX_SEARCH_TYPES_PER_SOURCE + 1)
+                .map(|_| long_text.clone())
+                .collect(),
+            ..Default::default()
+        });
+        evidence_sources.extend(
+            (0..AXIOM_MAX_EVIDENCE_SOURCES).map(|index| AxiomEvidenceSource {
+                name: format!("source-{index}"),
+                source_type: "image".to_string(),
+                ..Default::default()
+            }),
+        );
+        let search_results = (0..AXIOM_MAX_SEARCH_RESULTS + 1)
+            .map(|index| AxiomSearchResult {
+                artifact_type: if index == 0 {
+                    long_text.clone()
+                } else {
+                    format!("artifact-{index}")
+                },
+                hit_count: 1,
+            })
+            .collect();
+
+        let info = AxiomCaseInfo {
+            case_name: long_text.clone(),
+            case_number: Some(long_text.clone()),
+            evidence_sources,
+            search_results,
+            ..Default::default()
+        };
+
+        let bounded = bounded_axiom_case_info(info);
+
+        assert_eq!(
+            bounded.case_name.chars().count(),
+            AXIOM_TEXT_FIELD_MAX_CHARS
+        );
+        assert_eq!(bounded.evidence_sources.len(), AXIOM_MAX_EVIDENCE_SOURCES);
+        assert_eq!(bounded.search_results.len(), AXIOM_MAX_SEARCH_RESULTS);
+        assert_eq!(
+            bounded.evidence_sources[0].search_types.len(),
+            AXIOM_MAX_SEARCH_TYPES_PER_SOURCE
+        );
+        assert!(bounded
+            .search_results
+            .iter()
+            .all(|result| result.artifact_type.chars().count() <= AXIOM_TEXT_FIELD_MAX_CHARS));
+    }
+
+    #[test]
+    fn bounded_axiom_keyword_info_caps_vectors_and_text() {
+        let long_text = "x".repeat(AXIOM_TEXT_FIELD_MAX_CHARS + 1);
+        let mut keywords = Vec::with_capacity(AXIOM_MAX_KEYWORDS + 1);
+        keywords.push(AxiomKeyword {
+            value: long_text.clone(),
+            encoding_types: (0..AXIOM_MAX_SEARCH_TYPES_PER_SOURCE + 1)
+                .map(|_| long_text.clone())
+                .collect(),
+            ..Default::default()
+        });
+        keywords.extend((0..AXIOM_MAX_KEYWORDS).map(|index| AxiomKeyword {
+            value: format!("keyword-{index}"),
+            ..Default::default()
+        }));
+
+        let keyword_info = AxiomKeywordInfo {
+            keywords,
+            keyword_files: (0..AXIOM_MAX_KEYWORD_FILES + 1)
+                .map(|index| AxiomKeywordFile {
+                    file_name: if index == 0 {
+                        long_text.clone()
+                    } else {
+                        format!("keywords-{index}.txt")
+                    },
+                    file_path: if index == 0 {
+                        long_text.clone()
+                    } else {
+                        format!("/case/keywords-{index}.txt")
+                    },
+                    ..Default::default()
+                })
+                .collect(),
+            privileged_content_keywords: (0..AXIOM_MAX_KEYWORDS + 1)
+                .map(|index| AxiomKeyword {
+                    value: if index == 0 {
+                        long_text.clone()
+                    } else {
+                        format!("privileged-{index}")
+                    },
+                    ..Default::default()
+                })
+                .collect(),
+            privileged_content_mode: Some(long_text.clone()),
+            ..Default::default()
+        };
+
+        let bounded = bounded_axiom_keyword_info(keyword_info);
+
+        assert_eq!(bounded.keywords.len(), AXIOM_MAX_KEYWORDS);
+        assert_eq!(bounded.keyword_files.len(), AXIOM_MAX_KEYWORD_FILES);
+        assert_eq!(
+            bounded.privileged_content_keywords.len(),
+            AXIOM_MAX_KEYWORDS
+        );
+        assert_eq!(bounded.keywords_entered, AXIOM_MAX_KEYWORDS as u64);
+        assert_eq!(
+            bounded.keywords[0].encoding_types.len(),
+            AXIOM_MAX_SEARCH_TYPES_PER_SOURCE
+        );
+        assert!(bounded
+            .keyword_files
+            .iter()
+            .all(|file| file.file_path.chars().count() <= AXIOM_TEXT_FIELD_MAX_CHARS));
     }
 
     #[test]

@@ -14,6 +14,19 @@ use std::path::Path;
 use super::{OfficeParagraph, OfficeTextSection};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
 
+const MAX_RTF_SOURCE_BYTES: u64 = 50 * 1024 * 1024;
+
+fn ensure_rtf_size_allowed(size: u64) -> DocumentResult<()> {
+    if size > MAX_RTF_SOURCE_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "RTF file too large ({:.1} MiB, max {} MiB)",
+            size as f64 / (1024.0 * 1024.0),
+            MAX_RTF_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
 // =============================================================================
 // RTF Text Extraction
 // =============================================================================
@@ -23,14 +36,25 @@ use crate::viewer::document::error::{DocumentError, DocumentResult};
 /// RTF is a text-based format with backslash control words.
 /// We strip these to extract the readable text content.
 pub(crate) fn extract_rtf_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
-    let data = std::fs::read_to_string(path)?;
+    let size = std::fs::metadata(path)?.len();
+    ensure_rtf_size_allowed(size)?;
 
+    let data = std::fs::read(path)?;
+    extract_rtf_text_from_bytes(&data)
+}
+
+pub(crate) fn extract_rtf_text_from_bytes(data: &[u8]) -> DocumentResult<Vec<OfficeTextSection>> {
+    let text = String::from_utf8_lossy(data);
+    extract_rtf_text_from_str(&text)
+}
+
+fn extract_rtf_text_from_str(data: &str) -> DocumentResult<Vec<OfficeTextSection>> {
     // Verify it's actually RTF
     if !data.starts_with("{\\rtf") {
         return Err(DocumentError::Parse("Not a valid RTF file".to_string()));
     }
 
-    let text = strip_rtf_to_text(&data);
+    let text = strip_rtf_to_text(data);
 
     let paragraphs: Vec<OfficeParagraph> = text
         .split('\n')
@@ -169,6 +193,21 @@ fn strip_rtf_to_text(rtf: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rtf_size_guard_rejects_oversized_file() {
+        let err = ensure_rtf_size_allowed(MAX_RTF_SOURCE_BYTES + 1).unwrap_err();
+
+        assert!(err.to_string().contains("RTF file too large"));
+    }
+
+    #[test]
+    fn test_extract_rtf_text_from_bytes_tolerates_invalid_utf8() {
+        let sections = extract_rtf_text_from_bytes(b"{\\rtf1 Invalid byte: \xff}").unwrap();
+
+        assert_eq!(sections.len(), 1);
+        assert!(sections[0].paragraphs[0].text.contains("Invalid byte"));
+    }
 
     #[test]
     fn test_strip_rtf_basic() {

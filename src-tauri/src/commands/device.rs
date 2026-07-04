@@ -19,7 +19,9 @@
 //! | Device size         | `ioctl(DKIOCGETBLOCKCOUNT × DKIOCGETBLOCKSIZE)` | `ioctl(BLKGETSIZE64)` | `DeviceIoControl(IOCTL_DISK_GET_LENGTH_INFO)` |
 //! | Raw device path     | `/dev/rdiskN`       | `/dev/sdX`          | `\\.\PhysicalDriveN`        |
 
+use super::ewf_helpers::validate_snapshot_byte_count;
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::sync::Mutex as StdMutex;
 use tracing::{debug, info};
 
@@ -37,6 +39,73 @@ const PHYSICAL_DISK_CACHE_TTL: std::time::Duration = std::time::Duration::from_s
 /// Cached mount-point → device-path mapping (populated during disk enumeration).
 /// Eliminates per-volume `diskutil info` calls in `resolve_device_path`.
 static MOUNT_TO_DEVICE: StdMutex<Option<HashMap<String, String>>> = StdMutex::new(None);
+
+fn checked_snapshot_stream_read_size(remaining: u64, chunk_size: usize) -> Result<usize, String> {
+    if chunk_size == 0 {
+        return Err("Device read chunk size must be greater than zero".to_string());
+    }
+
+    let chunk_size_u64 = u64::try_from(chunk_size)
+        .map_err(|_| "Device read chunk size is too large for this platform".to_string())?;
+    let read_size = remaining.min(chunk_size_u64);
+    usize::try_from(read_size)
+        .map_err(|_| "Device read range is too large for this platform".to_string())
+}
+
+fn stream_snapshot_bytes<R, W, F>(
+    reader: &mut R,
+    writer: &mut W,
+    source_label: &str,
+    expected_bytes: u64,
+    chunk_size: usize,
+    mut on_progress: F,
+) -> Result<u64, String>
+where
+    R: Read,
+    W: Write,
+    F: FnMut(u64),
+{
+    checked_snapshot_stream_read_size(expected_bytes.min(1), chunk_size)?;
+    let mut buffer = vec![0u8; chunk_size];
+    let mut bytes_read_total = 0u64;
+
+    loop {
+        let remaining = expected_bytes.saturating_sub(bytes_read_total);
+        if remaining == 0 {
+            break;
+        }
+
+        let read_size = checked_snapshot_stream_read_size(remaining, chunk_size)?;
+        let n = reader
+            .read(&mut buffer[..read_size])
+            .map_err(|e| format!("Read error at byte {}: {}", bytes_read_total, e))?;
+
+        if n == 0 {
+            validate_snapshot_byte_count(
+                "Device read",
+                std::path::Path::new(source_label),
+                expected_bytes,
+                bytes_read_total,
+            )?;
+            break;
+        }
+
+        writer
+            .write_all(&buffer[..n])
+            .map_err(|e| format!("Write error at byte {}: {}", bytes_read_total, e))?;
+
+        bytes_read_total += n as u64;
+        on_progress(bytes_read_total);
+    }
+
+    validate_snapshot_byte_count(
+        "Device read",
+        std::path::Path::new(source_label),
+        expected_bytes,
+        bytes_read_total,
+    )?;
+    Ok(bytes_read_total)
+}
 
 // =============================================================================
 // Privilege Detection
@@ -892,7 +961,6 @@ pub async fn read_raw_device(
     output_path: String,
     window: tauri::Window,
 ) -> Result<u64, String> {
-    use std::io::{Read, Write};
     use tauri::Emitter;
 
     info!(
@@ -930,39 +998,31 @@ pub async fn read_raw_device(
             .map_err(|e| format!("Cannot create output file {}: {}", output, e))?;
 
         const CHUNK_SIZE: usize = 1024 * 1024; // 1 MB chunks
-        let mut buffer = vec![0u8; CHUNK_SIZE];
-        let mut bytes_read_total: u64 = 0;
         let mut last_percent: f64 = -1.0;
 
-        loop {
-            let n = source
-                .read(&mut buffer)
-                .map_err(|e| format!("Read error at byte {}: {}", bytes_read_total, e))?;
-
-            if n == 0 {
-                break;
-            }
-
-            dest.write_all(&buffer[..n])
-                .map_err(|e| format!("Write error at byte {}: {}", bytes_read_total, e))?;
-
-            bytes_read_total += n as u64;
-
-            // Emit progress at 0.5% granularity
-            let percent = (bytes_read_total as f64 / total_bytes as f64 * 100.0).min(100.0);
-            if percent - last_percent >= 0.5 || bytes_read_total >= total_bytes {
-                let _ = window_clone.emit(
-                    "device-read-progress",
-                    DeviceReadProgress {
-                        device_path: device.clone(),
-                        bytes_read: bytes_read_total,
-                        total_bytes,
-                        percent,
-                    },
-                );
-                last_percent = percent;
-            }
-        }
+        let bytes_read_total = stream_snapshot_bytes(
+            &mut source,
+            &mut dest,
+            &device,
+            total_bytes,
+            CHUNK_SIZE,
+            |bytes_read_total| {
+                // Emit progress at 0.5% granularity
+                let percent = (bytes_read_total as f64 / total_bytes as f64 * 100.0).min(100.0);
+                if percent - last_percent >= 0.5 || bytes_read_total >= total_bytes {
+                    let _ = window_clone.emit(
+                        "device-read-progress",
+                        DeviceReadProgress {
+                            device_path: device.clone(),
+                            bytes_read: bytes_read_total,
+                            total_bytes,
+                            percent,
+                        },
+                    );
+                    last_percent = percent;
+                }
+            },
+        )?;
 
         dest.flush().map_err(|e| format!("Flush error: {}", e))?;
 
@@ -1066,6 +1126,78 @@ mod tests {
         assert_eq!(json["bytesRead"], 1_000_000u64);
         assert_eq!(json["totalBytes"], 500_000_000_000u64);
         assert!(json["percent"].as_f64().unwrap() < 1.0);
+    }
+
+    #[test]
+    fn checked_snapshot_stream_read_size_rejects_zero_chunk_size() {
+        let err = checked_snapshot_stream_read_size(10, 0).unwrap_err();
+
+        assert!(err.contains("chunk size must be greater than zero"));
+    }
+
+    #[test]
+    fn checked_snapshot_stream_read_size_clamps_to_chunk_size() {
+        assert_eq!(
+            checked_snapshot_stream_read_size(u64::MAX, 1024).unwrap(),
+            1024
+        );
+    }
+
+    #[test]
+    fn checked_snapshot_stream_read_size_clamps_to_remaining_bytes() {
+        assert_eq!(checked_snapshot_stream_read_size(3, 1024).unwrap(), 3);
+    }
+
+    #[test]
+    fn stream_snapshot_bytes_accepts_exact_reader() {
+        let mut reader = std::io::Cursor::new(b"abcdef".to_vec());
+        let mut writer = Vec::new();
+        let mut progress = Vec::new();
+
+        let copied = stream_snapshot_bytes(&mut reader, &mut writer, "/dev/test", 6, 2, |bytes| {
+            progress.push(bytes);
+        })
+        .unwrap();
+
+        assert_eq!(copied, 6);
+        assert_eq!(writer, b"abcdef");
+        assert_eq!(progress, vec![2, 4, 6]);
+    }
+
+    #[test]
+    fn stream_snapshot_bytes_rejects_short_reader() {
+        let mut reader = std::io::Cursor::new(b"abc".to_vec());
+        let mut writer = Vec::new();
+
+        let err =
+            stream_snapshot_bytes(&mut reader, &mut writer, "/dev/test", 6, 2, |_| {}).unwrap_err();
+
+        assert!(err.contains("Device read incomplete"));
+        assert!(err.contains("expected 6 bytes"));
+    }
+
+    #[test]
+    fn stream_snapshot_bytes_caps_grown_reader_to_snapshot() {
+        let mut reader = std::io::Cursor::new(b"abcdef".to_vec());
+        let mut writer = Vec::new();
+
+        let copied =
+            stream_snapshot_bytes(&mut reader, &mut writer, "/dev/test", 3, 2, |_| {}).unwrap();
+
+        assert_eq!(copied, 3);
+        assert_eq!(writer, b"abc");
+    }
+
+    #[test]
+    fn stream_snapshot_bytes_rejects_zero_chunk_size() {
+        let mut reader = std::io::Cursor::new(b"abcdef".to_vec());
+        let mut writer = Vec::new();
+
+        let err =
+            stream_snapshot_bytes(&mut reader, &mut writer, "/dev/test", 6, 0, |_| {}).unwrap_err();
+
+        assert!(err.contains("chunk size must be greater than zero"));
+        assert!(writer.is_empty());
     }
 
     // -------------------------------------------------------------------------

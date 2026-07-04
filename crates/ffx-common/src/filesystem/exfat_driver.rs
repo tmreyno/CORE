@@ -69,6 +69,11 @@ const ATTR_ARCHIVE: u16 = 0x20;
 // Stream extension flags
 const STREAM_FLAG_NO_FAT_CHAIN: u8 = 0x02;
 
+fn exfat_entry(data: &[u8], offset: usize) -> Option<&[u8]> {
+    let end = offset.checked_add(32)?;
+    data.get(offset..end)
+}
+
 // =============================================================================
 // Boot Sector
 // =============================================================================
@@ -219,6 +224,28 @@ fn checked_exfat_cluster_number(start_cluster: u32, index: usize) -> Result<u32,
     start_cluster
         .checked_add(index)
         .ok_or_else(|| VfsError::IoError("exFAT cluster number overflowed u32".to_string()))
+}
+
+fn checked_exfat_read_bounds(
+    file_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<Option<std::ops::Range<usize>>, VfsError> {
+    if requested_size == 0 || offset >= file_size {
+        return Ok(None);
+    }
+
+    let remaining = file_size
+        .checked_sub(offset)
+        .ok_or_else(|| VfsError::IoError("exFAT read offset exceeded file size".to_string()))?;
+    let actual_size = requested_size.min(usize::try_from(remaining).unwrap_or(usize::MAX));
+    let start = usize::try_from(offset)
+        .map_err(|_| VfsError::IoError("exFAT read offset does not fit in usize".to_string()))?;
+    let end = start
+        .checked_add(actual_size)
+        .ok_or_else(|| VfsError::IoError("exFAT read range overflowed usize".to_string()))?;
+
+    Ok(Some(start..end))
 }
 
 // =============================================================================
@@ -427,15 +454,16 @@ impl ExFatDriver {
     /// Find volume label from root directory entries
     fn find_volume_label(dir_data: &[u8]) -> Option<String> {
         let mut offset = 0;
-        while offset + 32 <= dir_data.len() {
-            let entry_type = dir_data[offset];
+        while let Some(entry) = exfat_entry(dir_data, offset) {
+            let entry_type = entry[0];
             if entry_type == ENTRY_TYPE_END {
                 break;
             }
             if entry_type == ENTRY_TYPE_VOLUME_LABEL {
-                let char_count = dir_data[offset + 1] as usize;
+                let char_count = entry[1] as usize;
                 if char_count > 0 && char_count <= 11 {
-                    let label_bytes = &dir_data[offset + 2..offset + 2 + char_count * 2];
+                    let byte_len = char_count.checked_mul(2)?;
+                    let label_bytes = entry.get(2..2usize.checked_add(byte_len)?)?;
                     let chars: Vec<u16> = label_bytes
                         .chunks(2)
                         .map(|c| u16::from_le_bytes([c[0], c.get(1).copied().unwrap_or(0)]))
@@ -453,8 +481,8 @@ impl ExFatDriver {
         let mut entries = Vec::new();
         let mut offset = 0;
 
-        while offset + 32 <= dir_data.len() {
-            let entry_type = dir_data[offset];
+        while let Some(entry) = exfat_entry(dir_data, offset) {
+            let entry_type = entry[0];
 
             // End of directory
             if entry_type == ENTRY_TYPE_END {
@@ -482,11 +510,7 @@ impl ExFatDriver {
 
     /// Parse a complete File entry set (File + Stream + FileName entries)
     fn parse_file_entry_set(&self, data: &[u8], file_offset: usize) -> Option<ExFatFileEntry> {
-        if file_offset + 32 > data.len() {
-            return None;
-        }
-
-        let entry = &data[file_offset..file_offset + 32];
+        let entry = exfat_entry(data, file_offset)?;
         if entry[0] != ENTRY_TYPE_FILE {
             return None;
         }
@@ -501,12 +525,12 @@ impl ExFatDriver {
         let accessed = Self::parse_dos_timestamp(&entry[20..24]);
 
         // Next entry should be Stream Extension (0xC0)
-        let stream_offset = file_offset + 32;
-        if stream_offset + 32 > data.len() || data[stream_offset] != ENTRY_TYPE_STREAM {
+        let stream_offset = file_offset.checked_add(32)?;
+        let stream = exfat_entry(data, stream_offset)?;
+        if stream[0] != ENTRY_TYPE_STREAM {
             return None;
         }
 
-        let stream = &data[stream_offset..stream_offset + 32];
         let general_flags = stream[1];
         let no_fat_chain = (general_flags & STREAM_FLAG_NO_FAT_CHAIN) != 0;
         let name_length = stream[3] as usize;
@@ -518,16 +542,19 @@ impl ExFatDriver {
 
         // Collect file name from subsequent FileName entries (0xC1)
         let mut name_chars: Vec<u16> = Vec::with_capacity(name_length);
-        let mut fname_offset = stream_offset + 32;
+        let mut fname_offset = stream_offset.checked_add(32)?;
 
         // secondary_count includes stream entry, so remaining = secondary_count - 1
         let name_entries = secondary_count.saturating_sub(1);
         for _ in 0..name_entries {
-            if fname_offset + 32 > data.len() || data[fname_offset] != ENTRY_TYPE_FILENAME {
+            let Some(fname_entry) = exfat_entry(data, fname_offset) else {
+                break;
+            };
+            if fname_entry[0] != ENTRY_TYPE_FILENAME {
                 break;
             }
             // Each FileName entry has 15 UTF-16 characters at offset 2
-            let fname_data = &data[fname_offset + 2..fname_offset + 32];
+            let fname_data = fname_entry.get(2..32)?;
             for chunk in fname_data.chunks(2) {
                 if name_chars.len() >= name_length {
                     break;
@@ -538,7 +565,7 @@ impl ExFatDriver {
                 }
                 name_chars.push(ch);
             }
-            fname_offset += 32;
+            fname_offset = fname_offset.checked_add(32)?;
         }
 
         let name = String::from_utf16_lossy(&name_chars);
@@ -577,6 +604,16 @@ impl ExFatDriver {
         let day = (date & 0x1F) as u64;
         let month = ((date >> 5) & 0x0F) as u64;
         let year = ((date >> 9) & 0x7F) as u64 + 1980;
+        if seconds > 59
+            || minutes > 59
+            || hours > 23
+            || day == 0
+            || day > 31
+            || month == 0
+            || month > 12
+        {
+            return None;
+        }
 
         // Approximate Unix timestamp (not accounting for leap seconds)
         let days_since_epoch = (year - 1970) * 365
@@ -815,13 +852,18 @@ impl FilesystemDriver for ExFatDriver {
             return Err(VfsError::NotAFile(path.to_string()));
         }
 
-        let data = self.read_data(&entry)?;
-        let start = offset as usize;
-        if start >= data.len() {
+        let Some(range) = checked_exfat_read_bounds(entry.size, offset, size)? else {
             return Ok(Vec::new());
+        };
+        let data = self.read_data(&entry)?;
+        if range.end > data.len() {
+            return Err(VfsError::IoError(format!(
+                "exFAT file data is shorter than directory metadata for {path}: needed {} bytes, materialized {} bytes",
+                range.end,
+                data.len()
+            )));
         }
-        let end = (start + size).min(data.len());
-        Ok(data[start..end].to_vec())
+        Ok(data[range].to_vec())
     }
 }
 
@@ -964,6 +1006,44 @@ mod tests {
         assert!(checked_exfat_capacity(usize::MAX, "test").is_err());
     }
 
+    #[test]
+    fn test_checked_exfat_read_bounds_handles_eof_and_zero_size() {
+        assert_eq!(checked_exfat_read_bounds(128, 128, 16).unwrap(), None);
+        assert_eq!(checked_exfat_read_bounds(128, 0, 0).unwrap(), None);
+    }
+
+    #[test]
+    fn test_checked_exfat_read_bounds_clamps_to_remaining() {
+        let range = checked_exfat_read_bounds(128, 120, 16).unwrap().unwrap();
+
+        assert_eq!(range, 120..128);
+    }
+
+    #[test]
+    fn test_checked_exfat_read_bounds_rejects_huge_offset_conversion() {
+        let Some(offset) = (usize::MAX as u64).checked_add(1) else {
+            return;
+        };
+
+        let err = checked_exfat_read_bounds(u64::MAX, offset, 16)
+            .expect_err("offset beyond usize should fail");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("does not fit in usize"))
+        );
+    }
+
+    #[test]
+    fn test_exfat_entry_rejects_overflowing_offset() {
+        assert!(exfat_entry(&[0u8; 32], usize::MAX).is_none());
+    }
+
+    #[test]
+    fn test_exfat_entry_requires_full_directory_entry() {
+        assert!(exfat_entry(&[0u8; 31], 0).is_none());
+        assert!(exfat_entry(&[0u8; 32], 0).is_some());
+    }
+
     // ==================== Volume Label ====================
 
     #[test]
@@ -1013,6 +1093,19 @@ mod tests {
         assert!(result.is_some());
         // Just verify it produces a positive number
         assert!(result.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_parse_dos_timestamp_rejects_invalid_date_fields() {
+        // Nonzero time with a zero day used to underflow day - 1.
+        let zero_day = [0x01, 0x00, 0x20, 0x58];
+        assert_eq!(ExFatDriver::parse_dos_timestamp(&zero_day), None);
+
+        // Month 13 is not valid in DOS date encoding.
+        let bad_month_date = ((44u16 << 9) | (13u16 << 5) | 15u16).to_le_bytes();
+        let time = 0x53C0u16.to_le_bytes();
+        let bad_month = [time[0], time[1], bad_month_date[0], bad_month_date[1]];
+        assert_eq!(ExFatDriver::parse_dos_timestamp(&bad_month), None);
     }
 
     // ==================== Path Normalization ====================

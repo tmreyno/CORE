@@ -19,7 +19,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use ffx_check_lib::common::metrics::{increment_counter, set_gauge, record_histogram, get_metrics_snapshot};
+//! use ffx_common::metrics::{increment_counter, set_gauge, record_histogram, get_metrics_snapshot};
 //!
 //! // Increment operation counter
 //! increment_counter("operations_total", 1.0, &[("type", "hash"), ("status", "success")]);

@@ -5,10 +5,13 @@
 // =============================================================================
 
 import type { PstMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 export interface PstViewerProps {
   /** Path to the PST/OST file */
   path: string;
+  /** Optional evidence source for PST/OST files inside containers */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

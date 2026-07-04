@@ -54,12 +54,17 @@ use std::sync::LazyLock;
 use std::time::SystemTime;
 use tracing::{debug, trace};
 
+use crate::hash::{is_valid_hash, HashAlgorithm};
+
 // =============================================================================
 // Configuration
 // =============================================================================
 
 /// Maximum number of cache entries before LRU eviction
 const MAX_CACHE_ENTRIES: usize = 1000;
+const MAX_CACHE_PATH_CHARS: usize = 4096;
+const MAX_CACHE_SCOPE_CHARS: usize = 128;
+const MAX_CACHE_HASH_CHARS: usize = 256;
 
 // =============================================================================
 // Cache Key and Entry
@@ -117,13 +122,42 @@ impl HashCache {
     ///
     /// Returns `None` if the file doesn't exist or metadata can't be read.
     pub fn make_key(path: &str, algorithm: &str) -> Option<HashCacheKey> {
+        Self::make_key_with_scope(path, algorithm, None)
+    }
+
+    /// Create a cache key with an additional semantic scope.
+    ///
+    /// Use this when the same file path can be hashed through different byte
+    /// streams, such as raw container bytes versus decoded EWF media bytes.
+    pub fn make_scoped_key(path: &str, algorithm: &str, scope: &str) -> Option<HashCacheKey> {
+        let scope = normalize_cache_scope(scope)?;
+        Self::make_key_with_scope(path, algorithm, Some(&scope))
+    }
+
+    fn make_key_with_scope(
+        path: &str,
+        algorithm: &str,
+        scope: Option<&str>,
+    ) -> Option<HashCacheKey> {
+        if path.trim().is_empty() || path.chars().count() > MAX_CACHE_PATH_CHARS {
+            return None;
+        }
+        let algorithm = normalize_hash_cache_algorithm(algorithm)?;
         let path_obj = Path::new(path);
         let canonical = path_obj.canonicalize().ok()?;
         let metadata = fs::metadata(&canonical).ok()?;
+        let canonical = canonical.to_string_lossy().to_string();
+        let path = match scope {
+            Some(scope) => format!("{scope}:{canonical}"),
+            None => canonical,
+        };
+        if path.chars().count() > MAX_CACHE_PATH_CHARS {
+            return None;
+        }
 
         Some(HashCacheKey {
-            path: canonical.to_string_lossy().to_string(),
-            algorithm: algorithm.to_lowercase(),
+            path,
+            algorithm,
             modified: metadata.modified().ok()?,
             size: metadata.len(),
         })
@@ -158,7 +192,15 @@ impl HashCache {
     ///
     /// If the cache is full, evicts the least-recently-used entry first.
     pub fn insert(&self, key: HashCacheKey, hash: String) {
+        if !is_valid_cache_entry(&key, &hash) {
+            debug!(path = %key.path, algorithm = %key.algorithm, "Skipping invalid hash cache entry");
+            return;
+        }
+
         let mut entries = self.entries.write();
+        if self.max_entries == 0 {
+            return;
+        }
 
         // Evict if at capacity
         if entries.len() >= self.max_entries {
@@ -184,9 +226,12 @@ impl HashCache {
 
     /// Clear all entries for a specific file path (all algorithms)
     pub fn invalidate_path(&self, path: &str) {
-        let path_lower = path.to_lowercase();
+        let path_lower = std::fs::canonicalize(path)
+            .ok()
+            .map(|path| path.to_string_lossy().to_lowercase())
+            .unwrap_or_else(|| path.to_lowercase());
         let mut entries = self.entries.write();
-        entries.retain(|k, _| !k.path.to_lowercase().contains(&path_lower));
+        entries.retain(|k, _| k.path.to_lowercase() != path_lower);
         debug!(path = %path, "Invalidated cache entries for path");
     }
 
@@ -231,6 +276,47 @@ impl HashCache {
     }
 }
 
+fn normalize_hash_cache_algorithm(algorithm: &str) -> Option<String> {
+    let algorithm = algorithm.parse::<HashAlgorithm>().ok()?;
+    Some(hash_cache_algorithm_key(algorithm).to_string())
+}
+
+fn normalize_cache_scope(scope: &str) -> Option<String> {
+    let scope = scope.trim().to_lowercase();
+    if scope.is_empty() || scope.chars().count() > MAX_CACHE_SCOPE_CHARS {
+        return None;
+    }
+    Some(scope)
+}
+
+fn hash_cache_algorithm_key(algorithm: HashAlgorithm) -> &'static str {
+    match algorithm {
+        HashAlgorithm::Md5 => "md5",
+        HashAlgorithm::Sha1 => "sha1",
+        HashAlgorithm::Sha256 => "sha256",
+        HashAlgorithm::Sha512 => "sha512",
+        HashAlgorithm::Blake3 => "blake3",
+        HashAlgorithm::Blake2 => "blake2",
+        HashAlgorithm::Xxh3 => "xxh3",
+        HashAlgorithm::Xxh64 => "xxh64",
+        HashAlgorithm::Crc32 => "crc32",
+    }
+}
+
+fn is_valid_cache_entry(key: &HashCacheKey, hash: &str) -> bool {
+    if key.path.trim().is_empty()
+        || key.path.chars().count() > MAX_CACHE_PATH_CHARS
+        || hash.trim().is_empty()
+        || hash.chars().count() > MAX_CACHE_HASH_CHARS
+    {
+        return false;
+    }
+    let Ok(algorithm) = key.algorithm.parse::<HashAlgorithm>() else {
+        return false;
+    };
+    is_valid_hash(hash, algorithm)
+}
+
 impl Default for HashCache {
     fn default() -> Self {
         Self::new(MAX_CACHE_ENTRIES)
@@ -273,12 +359,25 @@ pub fn get_cached_hash(path: &str, algorithm: &str) -> Option<String> {
     GLOBAL_HASH_CACHE.get(&key)
 }
 
+/// Try to get a cached hash for a file and semantic read scope.
+pub fn get_cached_hash_scoped(path: &str, algorithm: &str, scope: &str) -> Option<String> {
+    let key = HashCache::make_scoped_key(path, algorithm, scope)?;
+    GLOBAL_HASH_CACHE.get(&key)
+}
+
 /// Cache a computed hash result
 ///
 /// Convenience function that creates the cache key and stores the hash.
 /// Does nothing if the file doesn't exist.
 pub fn cache_hash(path: &str, algorithm: &str, hash: String) {
     if let Some(key) = HashCache::make_key(path, algorithm) {
+        GLOBAL_HASH_CACHE.insert(key, hash);
+    }
+}
+
+/// Cache a computed hash result for a file and semantic read scope.
+pub fn cache_hash_scoped(path: &str, algorithm: &str, scope: &str, hash: String) {
+    if let Some(key) = HashCache::make_scoped_key(path, algorithm, scope) {
         GLOBAL_HASH_CACHE.insert(key, hash);
     }
 }
@@ -322,6 +421,19 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
+    fn valid_hash_for_algorithm(algorithm: &str) -> String {
+        match algorithm {
+            "md5" => "a".repeat(32),
+            "sha1" => "b".repeat(40),
+            "sha256" | "blake3" => "c".repeat(64),
+            "sha512" | "blake2" => "d".repeat(128),
+            "xxh3" => "e".repeat(32),
+            "xxh64" => "f".repeat(16),
+            "crc32" => "1".repeat(8),
+            _ => panic!("unsupported test algorithm: {algorithm}"),
+        }
+    }
+
     #[test]
     fn test_cache_basic_operations() {
         let cache = HashCache::new(10);
@@ -337,8 +449,9 @@ mod tests {
         assert!(cache.get(&key).is_none());
 
         // Insert and retrieve
-        cache.insert(key.clone(), "abc123".to_string());
-        assert_eq!(cache.get(&key), Some("abc123".to_string()));
+        let hash = valid_hash_for_algorithm("sha256");
+        cache.insert(key.clone(), hash.clone());
+        assert_eq!(cache.get(&key), Some(hash));
 
         // Remove
         cache.remove(&key);
@@ -362,7 +475,7 @@ mod tests {
         for (i, f) in files.iter().take(3).enumerate() {
             let path = f.path().to_string_lossy().to_string();
             let key = HashCache::make_key(&path, "md5").unwrap();
-            cache.insert(key, format!("hash{}", i));
+            cache.insert(key, format!("{:032x}", i));
         }
 
         // Access first entry to increase its count
@@ -373,7 +486,7 @@ mod tests {
         // Insert 4th entry - should evict entry with lowest access count
         let path3 = files[3].path().to_string_lossy().to_string();
         let key3 = HashCache::make_key(&path3, "md5").unwrap();
-        cache.insert(key3, "hash3".to_string());
+        cache.insert(key3, "3".repeat(32));
 
         // Entry 0 should still exist (high access count)
         assert!(cache.get(&key0).is_some());
@@ -398,7 +511,7 @@ mod tests {
         // Insert with multiple algorithms
         for algo in ["md5", "sha256", "blake3"] {
             let key = HashCache::make_key(&path, algo).unwrap();
-            cache.insert(key, format!("hash_{}", algo));
+            cache.insert(key, valid_hash_for_algorithm(algo));
         }
 
         assert_eq!(cache.len(), 3);
@@ -407,5 +520,100 @@ mod tests {
         cache.invalidate_path(&path);
 
         assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_make_key_normalizes_algorithm_aliases() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "test").unwrap();
+        let path = temp.path().to_string_lossy().to_string();
+
+        let plain = HashCache::make_key(&path, "sha256").unwrap();
+        let dashed = HashCache::make_key(&path, "SHA-256").unwrap();
+
+        assert_eq!(plain.algorithm, "sha256");
+        assert_eq!(plain, dashed);
+    }
+
+    #[test]
+    fn test_make_scoped_key_separates_same_file_and_algorithm() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "test").unwrap();
+        let path = temp.path().to_string_lossy().to_string();
+
+        let raw = HashCache::make_scoped_key(&path, "sha256", "raw-file").unwrap();
+        let decoded = HashCache::make_scoped_key(&path, "sha256", "decoded-ewf").unwrap();
+
+        assert_ne!(raw, decoded);
+        assert!(raw.path.starts_with("raw-file:"));
+        assert!(decoded.path.starts_with("decoded-ewf:"));
+        assert_eq!(raw.algorithm, decoded.algorithm);
+        assert_eq!(raw.modified, decoded.modified);
+        assert_eq!(raw.size, decoded.size);
+    }
+
+    #[test]
+    fn test_make_key_rejects_invalid_algorithm_and_path() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "test").unwrap();
+        let path = temp.path().to_string_lossy().to_string();
+
+        assert!(HashCache::make_key(&path, "rot13").is_none());
+        assert!(HashCache::make_scoped_key(&path, "sha256", " ").is_none());
+        assert!(HashCache::make_key(" ", "sha256").is_none());
+        assert!(HashCache::make_key(&"a".repeat(MAX_CACHE_PATH_CHARS + 1), "sha256").is_none());
+    }
+
+    #[test]
+    fn test_insert_rejects_invalid_hash_value() {
+        let cache = HashCache::new(10);
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "test").unwrap();
+        let path = temp.path().to_string_lossy().to_string();
+        let key = HashCache::make_key(&path, "sha256").unwrap();
+
+        cache.insert(key.clone(), "abc123".to_string());
+
+        assert!(cache.get(&key).is_none());
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_insert_noops_when_capacity_is_zero() {
+        let cache = HashCache::new(0);
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "test").unwrap();
+        let path = temp.path().to_string_lossy().to_string();
+        let key = HashCache::make_key(&path, "md5").unwrap();
+
+        cache.insert(key, valid_hash_for_algorithm("md5"));
+
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_invalidate_path_uses_exact_canonical_path() {
+        let cache = HashCache::new(10);
+        let mut first = NamedTempFile::new().unwrap();
+        let mut second = NamedTempFile::new().unwrap();
+        writeln!(first, "first").unwrap();
+        writeln!(second, "second").unwrap();
+        let first_path = std::fs::canonicalize(first.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let second_path = std::fs::canonicalize(second.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let first_key = HashCache::make_key(&first_path, "md5").unwrap();
+        let second_key = HashCache::make_key(&second_path, "md5").unwrap();
+
+        cache.insert(first_key.clone(), valid_hash_for_algorithm("md5"));
+        cache.insert(second_key.clone(), valid_hash_for_algorithm("md5"));
+        cache.invalidate_path(&first_path);
+
+        assert!(cache.get(&first_key).is_none());
+        assert!(cache.get(&second_key).is_some());
     }
 }

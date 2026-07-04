@@ -14,6 +14,7 @@
 import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
 import { CoreSpinner } from "@core-suite/icons";
 import { invoke } from "@tauri-apps/api/core";
+import { commands } from "../../api/commands";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   HiOutlineTableCells,
@@ -95,9 +96,9 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     setError(null);
 
     try {
-      const result = await invoke<SpreadsheetInfo>("spreadsheet_info", {
-        path: props.path,
-      });
+      const result = props.source
+        ? await commands.spreadsheet.infoSource<SpreadsheetInfo>(props.source)
+        : await commands.spreadsheet.info<SpreadsheetInfo>(props.path);
       setInfo(result);
 
       // Load first sheet
@@ -124,12 +125,19 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     setSortAsc(true);
     try {
       const sheetName = sheetInfo.sheets[sheetIndex].name;
-      const data = await invoke<CellValue[][]>("spreadsheet_read_sheet", {
-        path: props.path,
-        sheetName,
-        startRow: 0,
-        maxRows: 500, // Limit for performance
-      });
+      const data = props.source
+        ? await commands.spreadsheet.readSheetSource<CellValue[][]>(
+            props.source,
+            sheetName,
+            0,
+            500
+          )
+        : await commands.spreadsheet.readSheet<CellValue[][]>(
+            props.path,
+            sheetName,
+            0,
+            500
+          );
       setRows(data);
       setActiveSheet(sheetIndex);
     } catch (e) {
@@ -212,10 +220,12 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     printDocument(html);
   };
 
-  // Effect to load when path changes
+  // Effect to load when path/source changes
   createEffect(() => {
-    if (props.path) {
-      loadInfo();
+    const path = props.path;
+    const source = props.source;
+    if (path || source) {
+      void loadInfo();
     }
   });
 

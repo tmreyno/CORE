@@ -116,6 +116,24 @@ pub trait ArchiveOps: Send + Sync {
         archive_path: &str,
         entry_path: &str,
     ) -> Result<Vec<u8>, ContainerError>;
+
+    /// Read a byte range from a single file in an archive.
+    fn read_archive_file_range(
+        &self,
+        archive_path: &str,
+        entry_path: &str,
+        offset: u64,
+        size: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
+        let data = self.read_archive_file(archive_path, entry_path)?;
+        let start = usize::try_from(offset)
+            .map_err(|_| ContainerError::InvalidFormat("Archive range offset too large".into()))?;
+        if start >= data.len() {
+            return Ok(Vec::new());
+        }
+        let end = start.saturating_add(size).min(data.len());
+        Ok(data[start..end].to_vec())
+    }
 }
 
 // =============================================================================
@@ -179,4 +197,67 @@ pub fn extract_archive(
 /// Read a single file from an archive
 pub fn read_archive_file(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
     ops().read_archive_file(archive_path, entry_path)
+}
+
+/// Read a byte range from a single file in an archive
+pub fn read_archive_file_range(
+    archive_path: &str,
+    entry_path: &str,
+    offset: u64,
+    size: usize,
+) -> Result<Vec<u8>, ContainerError> {
+    ops().read_archive_file_range(archive_path, entry_path, offset, size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct StubArchiveOps;
+
+    impl ArchiveOps for StubArchiveOps {
+        fn get_zip_index(&self, _path: &str) -> Result<ZipTreeIndex, ContainerError> {
+            Err(ContainerError::UnsupportedOperation("unused".to_string()))
+        }
+
+        fn list_zip_entries(&self, _path: &str) -> Result<Vec<ArchiveListEntry>, ContainerError> {
+            Err(ContainerError::UnsupportedOperation("unused".to_string()))
+        }
+
+        fn get_zip_entry_count(&self, _path: &str) -> Result<usize, ContainerError> {
+            Err(ContainerError::UnsupportedOperation("unused".to_string()))
+        }
+
+        fn extract_archive(
+            &self,
+            _path: &str,
+            _output_dir: &str,
+        ) -> Result<ArchiveExtractResult, ContainerError> {
+            Err(ContainerError::UnsupportedOperation("unused".to_string()))
+        }
+
+        fn read_archive_file(
+            &self,
+            _archive_path: &str,
+            _entry_path: &str,
+        ) -> Result<Vec<u8>, ContainerError> {
+            Ok(b"abcdef".to_vec())
+        }
+    }
+
+    #[test]
+    fn default_archive_range_reader_slices_full_entry() {
+        if !is_registered() {
+            register(Box::new(StubArchiveOps));
+        }
+
+        assert_eq!(
+            read_archive_file_range("case.ufdr", "files/report.txt", 2, 3).unwrap(),
+            b"cde"
+        );
+        assert_eq!(
+            read_archive_file_range("case.ufdr", "files/report.txt", 99, 3).unwrap(),
+            b""
+        );
+    }
 }

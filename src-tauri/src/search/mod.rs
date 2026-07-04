@@ -24,8 +24,9 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use tantivy::directory::MmapDirectory;
+use tantivy::query::AllQuery;
 use tantivy::schema::*;
-use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy};
+use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 use tracing::{info, warn};
 
 // =============================================================================
@@ -348,20 +349,63 @@ impl SearchIndex {
         let num_segments = searcher.segment_readers().len() as u64;
         let index_size = dir_size(&self.index_path);
 
-        // Count documents with non-empty content field
-        let content_docs = {
-            use tantivy::query::AllQuery;
-            let count = searcher
-                .search(&AllQuery, &tantivy::collector::Count)
-                .unwrap_or(0);
-            count as u64
-        };
+        let mut total_indexed_bytes = 0u64;
+        let mut content_docs = 0u64;
+        let mut category_counts = HashMap::new();
+        let mut container_type_counts = HashMap::new();
+        let mut extension_counts = HashMap::new();
+
+        if num_docs > 0 {
+            let limit = usize::try_from(num_docs).unwrap_or(usize::MAX);
+            if let Ok(doc_addrs) =
+                searcher.search(&AllQuery, &tantivy::collector::TopDocs::with_limit(limit))
+            {
+                for (_score, doc_addr) in doc_addrs {
+                    let Ok(doc) = searcher.doc::<TantivyDocument>(doc_addr) else {
+                        continue;
+                    };
+
+                    let size = get_u64_field(&doc, self.fields.size);
+                    let has_content = get_text_field(&doc, self.fields.content)
+                        .map(|content| !content.trim().is_empty())
+                        .unwrap_or(false);
+
+                    total_indexed_bytes = total_indexed_bytes.saturating_add(size);
+                    if has_content {
+                        content_docs = content_docs.saturating_add(1);
+                    }
+
+                    add_summary(
+                        &mut category_counts,
+                        get_text_field(&doc, self.fields.file_category),
+                        size,
+                        has_content,
+                    );
+                    add_summary(
+                        &mut container_type_counts,
+                        get_text_field(&doc, self.fields.container_type),
+                        size,
+                        has_content,
+                    );
+                    add_summary(
+                        &mut extension_counts,
+                        get_text_field(&doc, self.fields.extension),
+                        size,
+                        has_content,
+                    );
+                }
+            }
+        }
 
         IndexStats {
             num_docs,
             num_segments,
             index_size_bytes: index_size,
+            total_indexed_bytes,
             content_indexed_docs: content_docs,
+            category_counts: sorted_summaries(category_counts),
+            container_type_counts: sorted_summaries(container_type_counts),
+            extension_counts: sorted_summaries(extension_counts),
         }
     }
 }
@@ -373,6 +417,20 @@ pub struct IndexStats {
     pub num_docs: u64,
     pub num_segments: u64,
     pub index_size_bytes: u64,
+    pub total_indexed_bytes: u64,
+    pub content_indexed_docs: u64,
+    pub category_counts: Vec<IndexFacetSummary>,
+    pub container_type_counts: Vec<IndexFacetSummary>,
+    pub extension_counts: Vec<IndexFacetSummary>,
+}
+
+/// Aggregate coverage for one indexed field value.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexFacetSummary {
+    pub label: String,
+    pub count: u64,
+    pub total_size_bytes: u64,
     pub content_indexed_docs: u64,
 }
 
@@ -397,6 +455,47 @@ fn dir_size(path: &Path) -> u64 {
                 .sum()
         })
         .unwrap_or(0)
+}
+
+fn get_text_field(doc: &TantivyDocument, field: Field) -> Option<String> {
+    doc.get_first(field)
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn get_u64_field(doc: &TantivyDocument, field: Field) -> u64 {
+    doc.get_first(field)
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0)
+}
+
+fn add_summary(
+    summaries: &mut HashMap<String, IndexFacetSummary>,
+    label: Option<String>,
+    size: u64,
+    has_content: bool,
+) {
+    let Some(label) = label else {
+        return;
+    };
+    let summary = summaries
+        .entry(label.clone())
+        .or_insert_with(|| IndexFacetSummary {
+            label,
+            ..Default::default()
+        });
+    summary.count = summary.count.saturating_add(1);
+    summary.total_size_bytes = summary.total_size_bytes.saturating_add(size);
+    if has_content {
+        summary.content_indexed_docs = summary.content_indexed_docs.saturating_add(1);
+    }
+}
+
+fn sorted_summaries(summaries: HashMap<String, IndexFacetSummary>) -> Vec<IndexFacetSummary> {
+    let mut summaries: Vec<_> = summaries.into_values().collect();
+    summaries.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.label.cmp(&b.label)));
+    summaries
 }
 
 // =============================================================================
@@ -774,6 +873,80 @@ mod tests {
 
         let stats = idx.stats();
         assert_eq!(stats.num_docs, 1);
+        assert_eq!(stats.total_indexed_bytes, 1024);
+        assert_eq!(stats.content_indexed_docs, 1);
+        assert_eq!(stats.category_counts.len(), 1);
+        assert_eq!(stats.category_counts[0].label, "document");
+        assert_eq!(stats.category_counts[0].count, 1);
+        assert_eq!(stats.category_counts[0].total_size_bytes, 1024);
+        assert_eq!(stats.category_counts[0].content_indexed_docs, 1);
+        assert_eq!(stats.container_type_counts[0].label, "ad1");
+        assert_eq!(stats.extension_counts[0].label, "pdf");
+
+        idx.destroy().unwrap();
+    }
+
+    #[test]
+    fn search_index_stats_distinguishes_metadata_from_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let idx = SearchIndex::open_or_create(tmp.path()).unwrap();
+
+        idx.add_document(
+            "c:a.txt",
+            "c.ad1",
+            "ad1",
+            "a.txt",
+            "a.txt",
+            "txt",
+            "indexed text",
+            100,
+            0,
+            false,
+            "text",
+        )
+        .unwrap();
+        idx.add_document(
+            "c:b.jpg", "c.ad1", "ad1", "b.jpg", "b.jpg", "jpg", "", 300, 0, false, "image",
+        )
+        .unwrap();
+        idx.add_document(
+            "c:c.jpg", "c.e01", "e01", "c.jpg", "c.jpg", "jpg", "", 500, 0, false, "image",
+        )
+        .unwrap();
+        idx.commit().unwrap();
+        idx.reader.reload().unwrap();
+
+        let stats = idx.stats();
+        assert_eq!(stats.num_docs, 3);
+        assert_eq!(stats.total_indexed_bytes, 900);
+        assert_eq!(stats.content_indexed_docs, 1);
+
+        let image = stats
+            .category_counts
+            .iter()
+            .find(|summary| summary.label == "image")
+            .unwrap();
+        assert_eq!(image.count, 2);
+        assert_eq!(image.total_size_bytes, 800);
+        assert_eq!(image.content_indexed_docs, 0);
+
+        let ad1 = stats
+            .container_type_counts
+            .iter()
+            .find(|summary| summary.label == "ad1")
+            .unwrap();
+        assert_eq!(ad1.count, 2);
+        assert_eq!(ad1.total_size_bytes, 400);
+        assert_eq!(ad1.content_indexed_docs, 1);
+
+        let jpg = stats
+            .extension_counts
+            .iter()
+            .find(|summary| summary.label == "jpg")
+            .unwrap();
+        assert_eq!(jpg.count, 2);
+        assert_eq!(jpg.total_size_bytes, 800);
+        assert_eq!(jpg.content_indexed_docs, 0);
 
         idx.destroy().unwrap();
     }

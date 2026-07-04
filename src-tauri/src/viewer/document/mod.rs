@@ -88,7 +88,11 @@ pub use pdf::PdfDocument;
 pub use types::*;
 pub use universal::{FileInfo, UniversalFormat, ViewerHint, ViewerType};
 
+use std::io::Read;
 use std::path::Path;
+
+const MAX_ARCHIVE_DOCUMENT_SOURCE_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_ARCHIVE_XML_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Supported document formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -219,6 +223,38 @@ impl DocumentService {
         }
     }
 
+    fn read_limited_prefix<R: Read>(reader: R, max_bytes: u64) -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        reader.take(max_bytes).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    fn ensure_archive_document_size_allowed(size: u64, format: &str) -> DocumentResult<()> {
+        if size > MAX_ARCHIVE_DOCUMENT_SOURCE_BYTES {
+            return Err(DocumentError::Parse(format!(
+                "{} file too large ({:.1} MB, max {} MB)",
+                format,
+                size as f64 / (1024.0 * 1024.0),
+                MAX_ARCHIVE_DOCUMENT_SOURCE_BYTES / (1024 * 1024)
+            )));
+        }
+        Ok(())
+    }
+
+    fn read_limited_xml_entry<R: Read>(reader: R, entry_name: &str) -> DocumentResult<String> {
+        let bytes = Self::read_limited_prefix(reader, MAX_ARCHIVE_XML_ENTRY_BYTES + 1)?;
+        if bytes.len() as u64 > MAX_ARCHIVE_XML_ENTRY_BYTES {
+            return Err(DocumentError::Parse(format!(
+                "{} XML entry too large (max {} MB)",
+                entry_name,
+                MAX_ARCHIVE_XML_ENTRY_BYTES / (1024 * 1024)
+            )));
+        }
+        String::from_utf8(bytes).map_err(|e| {
+            DocumentError::Parse(format!("{} is not valid UTF-8 XML: {}", entry_name, e))
+        })
+    }
+
     /// Read a document and extract its content
     pub fn read(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
         let path = path.as_ref();
@@ -227,11 +263,11 @@ impl DocumentService {
         // content-detected text files with non-standard extensions (e.g., .PRV, .DAT, .1ST, .TMP).
         let format = DocumentFormat::from_extension(path).unwrap_or(DocumentFormat::Text);
 
-        match format {
-            DocumentFormat::Pdf => self.pdf.read(path),
-            DocumentFormat::Docx => self.docx.read(path),
-            DocumentFormat::Html => self.html.read(path),
-            DocumentFormat::Markdown => self.markdown.read(path),
+        let content = match format {
+            DocumentFormat::Pdf => self.pdf.read(path)?,
+            DocumentFormat::Docx => self.docx.read(path)?,
+            DocumentFormat::Html => self.html.read(path)?,
+            DocumentFormat::Markdown => self.markdown.read(path)?,
             DocumentFormat::Spreadsheet => {
                 // Convert spreadsheet to a simple DocumentContent (tables per sheet)
                 use crate::viewer::document::spreadsheet as ss;
@@ -283,13 +319,15 @@ impl DocumentService {
                     content.add_page(page);
                 }
 
-                Ok(content)
+                content
             }
-            DocumentFormat::Text => self.read_text(path),
-            DocumentFormat::Rtf => self.read_rtf(path),
-            DocumentFormat::Pptx => self.read_pptx(path),
-            DocumentFormat::Odt => self.read_odt(path),
-        }
+            DocumentFormat::Text => self.read_text(path)?,
+            DocumentFormat::Rtf => self.read_rtf(path)?,
+            DocumentFormat::Pptx => self.read_pptx(path)?,
+            DocumentFormat::Odt => self.read_odt(path)?,
+        };
+
+        Ok(content.normalize_for_response())
     }
 
     /// Read a document from bytes
@@ -298,25 +336,29 @@ impl DocumentService {
         data: &[u8],
         format: DocumentFormat,
     ) -> DocumentResult<DocumentContent> {
-        match format {
-            DocumentFormat::Pdf => self.pdf.read_bytes(data),
-            DocumentFormat::Docx => self.docx.read_bytes(data),
-            DocumentFormat::Html => self.html.read_bytes(data),
-            DocumentFormat::Markdown => self.markdown.read_bytes(data),
-            DocumentFormat::Text => Ok(DocumentContent::from_text(
-                String::from_utf8_lossy(data).to_string(),
-            )),
+        let content = match format {
+            DocumentFormat::Pdf => self.pdf.read_bytes(data)?,
+            DocumentFormat::Docx => self.docx.read_bytes(data)?,
+            DocumentFormat::Html => self.html.read_bytes(data)?,
+            DocumentFormat::Markdown => self.markdown.read_bytes(data)?,
+            DocumentFormat::Text => {
+                DocumentContent::from_text(String::from_utf8_lossy(data).to_string())
+            }
             DocumentFormat::Rtf => {
                 let text = String::from_utf8_lossy(data).to_string();
                 let plain = Self::strip_rtf(&text);
-                Ok(DocumentContent::from_text(plain))
+                DocumentContent::from_text(plain)
             }
-            DocumentFormat::Spreadsheet => Err(DocumentError::UnsupportedFormat(
-                "spreadsheet_bytes".to_string(),
-            )),
-            DocumentFormat::Pptx => Self::extract_pptx_from_bytes(data),
-            DocumentFormat::Odt => Self::extract_odt_from_bytes(data),
-        }
+            DocumentFormat::Spreadsheet => {
+                return Err(DocumentError::UnsupportedFormat(
+                    "spreadsheet_bytes".to_string(),
+                ))
+            }
+            DocumentFormat::Pptx => Self::extract_pptx_from_bytes(data)?,
+            DocumentFormat::Odt => Self::extract_odt_from_bytes(data)?,
+        };
+
+        Ok(content.normalize_for_response())
     }
 
     /// Extract plain text from a document
@@ -421,10 +463,8 @@ impl DocumentService {
         // Cap text reads at 50 MB to prevent OOM on huge log/text files
         const MAX_TEXT_SIZE: u64 = 50 * 1024 * 1024;
         let bytes = if file_size > MAX_TEXT_SIZE {
-            let mut f = std::fs::File::open(&path)?;
-            let mut buf = vec![0u8; MAX_TEXT_SIZE as usize];
-            std::io::Read::read(&mut f, &mut buf)?;
-            buf
+            let file = std::fs::File::open(&path)?;
+            Self::read_limited_prefix(file, MAX_TEXT_SIZE)?
         } else {
             std::fs::read(&path)?
         };
@@ -663,6 +703,10 @@ impl DocumentService {
     /// ODP files use `content.xml` with OpenDocument namespaces.
     /// Legacy PPT files are OLE compound documents — we extract text heuristically.
     fn read_pptx(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
+        Self::ensure_archive_document_size_allowed(
+            std::fs::metadata(&path)?.len(),
+            "Presentation",
+        )?;
         let data = std::fs::read(&path)?;
 
         // Check for OLE compound document (legacy .ppt)
@@ -678,6 +722,7 @@ impl DocumentService {
         use std::io::Cursor;
         use zip::ZipArchive;
 
+        Self::ensure_archive_document_size_allowed(data.len() as u64, "Presentation")?;
         let cursor = Cursor::new(data);
         let mut archive = ZipArchive::new(cursor).map_err(|e| {
             DocumentError::InvalidDocument(format!("Not a valid OOXML/ODP archive: {}", e))
@@ -771,13 +816,11 @@ impl DocumentService {
     ) -> DocumentResult<String> {
         use quick_xml::events::Event;
         use quick_xml::Reader;
-        use std::io::Read;
 
         let mut file = archive
             .by_name(name)
             .map_err(|e| DocumentError::InvalidDocument(format!("Cannot read {}: {}", name, e)))?;
-        let mut xml = String::new();
-        file.read_to_string(&mut xml)?;
+        let xml = Self::read_limited_xml_entry(&mut file, name)?;
 
         let mut reader = Reader::from_str(&xml);
         reader.config_mut().trim_text(true);
@@ -831,13 +874,11 @@ impl DocumentService {
     ) -> DocumentResult<String> {
         use quick_xml::events::Event;
         use quick_xml::Reader;
-        use std::io::Read;
 
         let mut file = archive.by_name("content.xml").map_err(|e| {
             DocumentError::InvalidDocument(format!("Cannot read content.xml: {}", e))
         })?;
-        let mut xml = String::new();
-        file.read_to_string(&mut xml)?;
+        let xml = Self::read_limited_xml_entry(&mut file, "content.xml")?;
 
         let mut reader = Reader::from_str(&xml);
         reader.config_mut().trim_text(true);
@@ -931,6 +972,7 @@ impl DocumentService {
 
     /// Read ODT (OpenDocument Text) file and extract content
     fn read_odt(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
+        Self::ensure_archive_document_size_allowed(std::fs::metadata(&path)?.len(), "ODT")?;
         let data = std::fs::read(&path)?;
         Self::extract_odt_from_bytes(&data)
     }
@@ -940,6 +982,7 @@ impl DocumentService {
         use std::io::Cursor;
         use zip::ZipArchive;
 
+        Self::ensure_archive_document_size_allowed(data.len() as u64, "ODT")?;
         let cursor = Cursor::new(data);
         let mut archive = ZipArchive::new(cursor).map_err(|e| {
             DocumentError::InvalidDocument(format!("Not a valid ODT archive: {}", e))
@@ -986,13 +1029,11 @@ impl DocumentService {
     ) -> DocumentResult<String> {
         use quick_xml::events::Event;
         use quick_xml::Reader;
-        use std::io::Read;
 
         let mut file = archive.by_name("content.xml").map_err(|e| {
             DocumentError::InvalidDocument(format!("Cannot read content.xml: {}", e))
         })?;
-        let mut xml = String::new();
-        file.read_to_string(&mut xml)?;
+        let xml = Self::read_limited_xml_entry(&mut file, "content.xml")?;
 
         let mut reader = Reader::from_str(&xml);
         reader.config_mut().trim_text(true);
@@ -1162,6 +1203,19 @@ impl Default for DocumentService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    fn zip_with_entry(entry_name: &str, data: &[u8]) -> Vec<u8> {
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut cursor);
+            zip.start_file(entry_name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(data).unwrap();
+            zip.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
 
     #[test]
     fn test_strip_rtf_basic() {
@@ -1282,6 +1336,64 @@ mod tests {
     fn test_document_format_rtf() {
         let format = DocumentFormat::from_extension("document.rtf");
         assert_eq!(format, Some(DocumentFormat::Rtf));
+    }
+
+    #[test]
+    fn test_limited_prefix_assembles_short_reads_without_padding() {
+        struct OneByteReader {
+            data: Vec<u8>,
+            position: usize,
+        }
+
+        impl std::io::Read for OneByteReader {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.position >= self.data.len() || buf.is_empty() {
+                    return Ok(0);
+                }
+                buf[0] = self.data[self.position];
+                self.position += 1;
+                Ok(1)
+            }
+        }
+
+        let reader = OneByteReader {
+            data: b"abcdef".to_vec(),
+            position: 0,
+        };
+
+        let bytes = DocumentService::read_limited_prefix(reader, 4).unwrap();
+
+        assert_eq!(bytes, b"abcd");
+        assert_eq!(bytes.len(), 4);
+    }
+
+    #[test]
+    fn test_archive_document_size_rejects_sparse_presentation() {
+        let tmp = tempfile::Builder::new().suffix(".pptx").tempfile().unwrap();
+        tmp.as_file()
+            .set_len(MAX_ARCHIVE_DOCUMENT_SOURCE_BYTES + 1)
+            .unwrap();
+
+        let err = DocumentService::new().read_pptx(tmp.path()).unwrap_err();
+
+        assert!(matches!(err, DocumentError::Parse(message) if message.contains("too large")));
+    }
+
+    #[test]
+    fn test_limited_xml_entry_rejects_oversized_member() {
+        let archive = zip_with_entry(
+            "content.xml",
+            &vec![b'a'; MAX_ARCHIVE_XML_ENTRY_BYTES as usize + 1],
+        );
+        let cursor = std::io::Cursor::new(archive.as_slice());
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+        let mut entry = archive.by_name("content.xml").unwrap();
+
+        let err = DocumentService::read_limited_xml_entry(&mut entry, "content.xml").unwrap_err();
+
+        assert!(
+            matches!(err, DocumentError::Parse(message) if message.contains("XML entry too large"))
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@
  */
 
 import type { RegistryMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 export interface RegistryKey {
   name: string;
@@ -56,6 +57,8 @@ export interface RegistryKeyInfo {
 export interface RegistryViewerProps {
   /** Path to the registry hive file */
   path: string;
+  /** Optional evidence source for registry hives inside containers */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

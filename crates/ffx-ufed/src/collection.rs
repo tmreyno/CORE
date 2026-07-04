@@ -15,6 +15,9 @@ use super::detection::is_ufed;
 use super::parsing::parse_ufdx_file;
 use super::types::{AssociatedFile, CollectionInfo, StoredHash, UfedFormat};
 
+const MAX_UFED_SCAN_DEPTH: usize = 128;
+const MAX_UFED_SCAN_RESULTS: usize = 250_000;
+
 /// Find and parse EvidenceCollection.ufdx in parent directories
 ///
 /// Walks up the directory tree (up to 3 levels) looking for the collection file.
@@ -85,10 +88,7 @@ pub fn find_associated_files(
             let stored_hash = stored_hashes.and_then(|hashes| {
                 hashes
                     .iter()
-                    .find(|h| {
-                        h.filename.to_lowercase() == entry_lower
-                            || entry_lower.contains(&h.filename.to_lowercase())
-                    })
+                    .find(|h| stored_hash_filename_matches(&h.filename, &entry_lower))
                     .map(|h| h.hash.clone())
             });
 
@@ -165,6 +165,21 @@ fn determine_file_type(filename_lower: &str) -> String {
     }
 }
 
+fn stored_hash_filename_matches(stored_filename: &str, entry_lower: &str) -> bool {
+    let candidate = stored_filename
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(stored_filename)
+        .trim()
+        .to_lowercase();
+
+    if candidate.is_empty() {
+        return false;
+    }
+
+    entry_lower == candidate || entry_lower.contains(&candidate)
+}
+
 /// Check if the associated files form a complete extraction set
 ///
 /// A complete set typically has:
@@ -190,16 +205,34 @@ pub fn check_extraction_set(associated: &[AssociatedFile], format: UfedFormat) -
 /// Returns list of UFED file paths found
 pub fn scan_for_ufed_files(dir: &Path, recursive: bool) -> Vec<String> {
     let mut ufed_files = Vec::new();
-    scan_directory_for_ufed(dir, recursive, &mut ufed_files);
+    scan_directory_for_ufed(dir, recursive, &mut ufed_files, 0);
     ufed_files
 }
 
-fn scan_directory_for_ufed(dir: &Path, recursive: bool, results: &mut Vec<String>) {
+fn scan_directory_for_ufed(dir: &Path, recursive: bool, results: &mut Vec<String>, depth: usize) {
+    if depth > MAX_UFED_SCAN_DEPTH {
+        tracing::warn!(
+            "Skipping UFED scan directory {}: maximum traversal depth {} exceeded",
+            dir.display(),
+            MAX_UFED_SCAN_DEPTH
+        );
+        return;
+    }
+
+    if results.len() >= MAX_UFED_SCAN_RESULTS {
+        return;
+    }
+
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
 
     for entry in entries.flatten() {
+        if results.len() >= MAX_UFED_SCAN_RESULTS {
+            tracing::warn!("Stopping UFED scan at {} results", MAX_UFED_SCAN_RESULTS);
+            return;
+        }
+
         let path = entry.path();
 
         if path.is_file() {
@@ -209,7 +242,7 @@ fn scan_directory_for_ufed(dir: &Path, recursive: bool, results: &mut Vec<String
                 }
             }
         } else if recursive && path.is_dir() {
-            scan_directory_for_ufed(&path, recursive, results);
+            scan_directory_for_ufed(&path, recursive, results, depth + 1);
         }
     }
 }
@@ -419,6 +452,52 @@ mod tests {
     }
 
     #[test]
+    fn test_find_associated_files_matches_stored_hash_windows_leaf_name() {
+        let temp = TempDir::new().unwrap();
+        let main_file = temp.path().join("evidence.ufd");
+        let sibling_zip = temp.path().join("evidence.zip");
+
+        File::create(&main_file).unwrap();
+        File::create(&sibling_zip).unwrap();
+
+        let stored_hashes = vec![StoredHash {
+            filename: r"C:\cases\device\evidence.zip".to_string(),
+            algorithm: "SHA256".to_string(),
+            hash: "abc123".to_string(),
+            timestamp: None,
+        }];
+
+        let files = find_associated_files(&main_file, Some(&stored_hashes));
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "evidence.zip");
+        assert_eq!(files[0].stored_hash, Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_find_associated_files_ignores_blank_stored_hash_filename() {
+        let temp = TempDir::new().unwrap();
+        let main_file = temp.path().join("evidence.ufd");
+        let sibling_zip = temp.path().join("evidence.zip");
+
+        File::create(&main_file).unwrap();
+        File::create(&sibling_zip).unwrap();
+
+        let stored_hashes = vec![StoredHash {
+            filename: "   ".to_string(),
+            algorithm: "SHA256".to_string(),
+            hash: "abc123".to_string(),
+            timestamp: None,
+        }];
+
+        let files = find_associated_files(&main_file, Some(&stored_hashes));
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "evidence.zip");
+        assert_eq!(files[0].stored_hash, None);
+    }
+
+    #[test]
     fn test_find_associated_files_sorted_by_type_and_name() {
         let temp = TempDir::new().unwrap();
         let main_file = temp.path().join("evidence.ufd");
@@ -489,6 +568,20 @@ mod tests {
         // Recursive should find both
         let files_recursive = scan_for_ufed_files(temp.path(), true);
         assert_eq!(files_recursive.len(), 2);
+    }
+
+    #[test]
+    fn test_scan_for_ufed_files_skips_beyond_depth_limit() {
+        let temp = TempDir::new().unwrap();
+        let mut current = temp.path().to_path_buf();
+        for index in 0..=MAX_UFED_SCAN_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            fs::create_dir(&current).unwrap();
+        }
+        File::create(current.join("too-deep.ufdr")).unwrap();
+
+        let files = scan_for_ufed_files(temp.path(), true);
+        assert!(files.is_empty());
     }
 
     #[test]

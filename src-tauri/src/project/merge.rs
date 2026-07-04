@@ -108,7 +108,7 @@ pub fn analyze_projects(cffx_paths: &[String]) -> Vec<ProjectMergeSummary> {
             let ffxdb_path = cffx_path.with_extension("ffxdb");
             let project_dir = cffx_path.parent().unwrap_or(Path::new("."));
 
-            match std::fs::read_to_string(cffx_path) {
+            match super::read_project_json_with_limit(cffx_path, "merge source project") {
                 Ok(json) => match serde_json::from_str::<FFXProject>(&json) {
                     Ok(mut project) => {
                         // Resolve relative paths so summaries show absolute paths
@@ -154,11 +154,16 @@ pub fn analyze_projects(cffx_paths: &[String]) -> Vec<ProjectMergeSummary> {
                         let mut coc_items_list = Vec::new();
                         let mut form_submissions = Vec::new();
                         let mut evidence_files = Vec::new();
+                        let mut artifact_count = 0usize;
+                        let mut source_analysis_count = 0usize;
 
                         if ffxdb_exists {
                             match open_ffxdb_for_analysis(&ffxdb_path) {
                             Ok(db) => {
                                 let conn = &db.conn;
+                                artifact_count = count_ffxdb_table(conn, "artifacts");
+                                source_analysis_count =
+                                    count_ffxdb_table(conn, "source_analyses");
                                 // Users/examiners from ffxdb
                                 query_ffxdb_examiners(conn, &mut examiners);
                                 // Evidence collections
@@ -226,13 +231,15 @@ pub fn analyze_projects(cffx_paths: &[String]) -> Vec<ProjectMergeSummary> {
                                 query_ffxdb_additional_clues(conn, &mut examiners);
 
                                 info!(
-                                    "Merge analyze ffxdb {}: {} examiners, {} collections, {} COC, {} forms, {} evidence files",
+                                    "Merge analyze ffxdb {}: {} examiners, {} collections, {} COC, {} forms, {} evidence files, {} artifacts, {} source analyses",
                                     ffxdb_path.display(),
                                     examiners.len(),
                                     collections.len(),
                                     coc_items_list.len(),
                                     form_submissions.len(),
                                     evidence_files.len(),
+                                    artifact_count,
+                                    source_analysis_count,
                                 );
                             }
                             Err(e) => {
@@ -256,6 +263,8 @@ pub fn analyze_projects(cffx_paths: &[String]) -> Vec<ProjectMergeSummary> {
                             saved_at: project.saved_at.clone(),
                             evidence_file_count: evidence_count,
                             hash_count,
+                            artifact_count,
+                            source_analysis_count,
                             session_count: project.sessions.len(),
                             activity_count: project.activity_log.len(),
                             bookmark_count: project.bookmarks.len(),
@@ -762,7 +771,7 @@ pub fn execute_merge(
         let cffx_path = Path::new(path_str);
         let project_dir = cffx_path.parent().unwrap_or(Path::new("."));
 
-        match std::fs::read_to_string(cffx_path) {
+        match super::read_project_json_with_limit(cffx_path, "merge source project") {
             Ok(json) => match serde_json::from_str::<FFXProject>(&json) {
                 Ok(mut project) => {
                     // Resolve relative paths to absolute for merging
@@ -899,6 +908,8 @@ pub fn execute_merge(
         activity_entries_merged: 0,
         evidence_files_merged: 0,
         hashes_merged: 0,
+        artifacts_merged: 0,
+        source_analyses_merged: 0,
         bookmarks_merged: 0,
         notes_merged: 0,
         tabs_merged: 0,

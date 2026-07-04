@@ -78,6 +78,8 @@ impl ProjectDatabase {
             CREATE TABLE IF NOT EXISTS hashes (
                 id TEXT PRIMARY KEY,
                 file_id TEXT NOT NULL,
+                source_id TEXT,
+                source_ref_json TEXT,
                 algorithm TEXT NOT NULL,
                 hash_value TEXT NOT NULL,
                 computed_at TEXT NOT NULL,
@@ -96,6 +98,54 @@ impl ProjectDatabase {
                 expected_hash TEXT NOT NULL,
                 actual_hash TEXT NOT NULL,
                 FOREIGN KEY (hash_id) REFERENCES hashes(id) ON DELETE CASCADE
+            );
+
+            -- Normalized artifacts extracted from evidence byte sources
+            CREATE TABLE IF NOT EXISTS artifacts (
+                id TEXT PRIMARY KEY,
+                evidence_file_id TEXT,
+                source_id TEXT NOT NULL,
+                source_ref_json TEXT NOT NULL,
+                name TEXT NOT NULL,
+                extension TEXT,
+                size INTEGER NOT NULL,
+                mime_type TEXT,
+                type_description TEXT NOT NULL,
+                category TEXT NOT NULL,
+                confidence TEXT NOT NULL,
+                is_text INTEGER NOT NULL DEFAULT 0,
+                content_preview TEXT,
+                metadata_json TEXT,
+                extracted_at TEXT NOT NULL,
+                extractor TEXT NOT NULL,
+                FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+            );
+
+            -- Bounded source byte-analysis facts for hex/data review engines
+            CREATE TABLE IF NOT EXISTS source_analyses (
+                id TEXT PRIMARY KEY,
+                evidence_file_id TEXT,
+                source_id TEXT NOT NULL,
+                source_ref_json TEXT NOT NULL,
+                total_size INTEGER NOT NULL,
+                offset INTEGER NOT NULL,
+                bytes_analyzed INTEGER NOT NULL,
+                magic_hex TEXT NOT NULL,
+                signature_count INTEGER NOT NULL DEFAULT 0,
+                primary_signature TEXT,
+                primary_mime_type TEXT,
+                primary_category TEXT,
+                entropy REAL NOT NULL,
+                printable_ratio REAL NOT NULL,
+                is_likely_text INTEGER NOT NULL DEFAULT 0,
+                ascii_preview TEXT,
+                signatures_json TEXT,
+                entropy_windows_json TEXT,
+                histogram_json TEXT,
+                indicators_json TEXT,
+                analyzed_at TEXT NOT NULL,
+                analyzer TEXT NOT NULL,
+                FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
             );
 
             -- Bookmarks
@@ -363,8 +413,15 @@ impl ProjectDatabase {
             CREATE INDEX IF NOT EXISTS idx_evidence_type ON evidence_files(container_type);
             CREATE INDEX IF NOT EXISTS idx_evidence_path ON evidence_files(path);
             CREATE INDEX IF NOT EXISTS idx_hashes_file ON hashes(file_id);
+            CREATE INDEX IF NOT EXISTS idx_hashes_source ON hashes(source_id);
             CREATE INDEX IF NOT EXISTS idx_hashes_algorithm ON hashes(algorithm);
             CREATE INDEX IF NOT EXISTS idx_verifications_hash ON verifications(hash_id);
+            CREATE INDEX IF NOT EXISTS idx_artifacts_evidence ON artifacts(evidence_file_id);
+            CREATE INDEX IF NOT EXISTS idx_artifacts_source ON artifacts(source_id);
+            CREATE INDEX IF NOT EXISTS idx_artifacts_category ON artifacts(category);
+            CREATE INDEX IF NOT EXISTS idx_source_analyses_evidence ON source_analyses(evidence_file_id);
+            CREATE INDEX IF NOT EXISTS idx_source_analyses_source ON source_analyses(source_id);
+            CREATE INDEX IF NOT EXISTS idx_source_analyses_category ON source_analyses(primary_category);
             CREATE INDEX IF NOT EXISTS idx_bookmarks_target ON bookmarks(target_path);
             CREATE INDEX IF NOT EXISTS idx_notes_target ON notes(target_path);
             CREATE INDEX IF NOT EXISTS idx_tag_assignments_target ON tag_assignments(target_type, target_id);
@@ -481,6 +538,8 @@ impl ProjectDatabase {
                 collection_id TEXT NOT NULL,
                 coc_item_id TEXT,
                 evidence_file_id TEXT,
+                source_id TEXT,
+                source_ref_json TEXT,
                 item_number TEXT NOT NULL,
                 description TEXT NOT NULL,
                 found_location TEXT NOT NULL,
@@ -513,6 +572,9 @@ impl ProjectDatabase {
                 image_format_other TEXT,
                 acquisition_method TEXT,
                 acquisition_method_other TEXT,
+                hash_algorithm TEXT,
+                hash_value TEXT,
+                hash_computed_at TEXT,
                 storage_notes TEXT,
                 FOREIGN KEY (collection_id) REFERENCES evidence_collections(id) ON DELETE CASCADE,
                 FOREIGN KEY (coc_item_id) REFERENCES coc_items(id) ON DELETE SET NULL,
@@ -524,6 +586,7 @@ impl ProjectDatabase {
             CREATE INDEX IF NOT EXISTS idx_coc_transfers_item ON coc_transfers(coc_item_id);
             CREATE INDEX IF NOT EXISTS idx_collected_items_collection ON collected_items(collection_id);
             CREATE INDEX IF NOT EXISTS idx_collected_items_coc ON collected_items(coc_item_id);
+            CREATE INDEX IF NOT EXISTS idx_collected_items_source ON collected_items(source_id);
             CREATE INDEX IF NOT EXISTS idx_evidence_collections_case ON evidence_collections(case_number);
 
             -- =================================================================
@@ -606,16 +669,33 @@ impl ProjectDatabase {
         conn.execute_batch(
             r#"
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_notes USING fts5(
-                target_path, title, content, tags,
+                target_path, title, content, priority,
                 content='notes', content_rowid='rowid'
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_bookmarks USING fts5(
-                target_path, label, description,
+                target_path, name, notes, context,
                 content='bookmarks', content_rowid='rowid'
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_activity_log USING fts5(
                 action, description, file_path, details,
                 content='activity_log', content_rowid='rowid'
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_annotations USING fts5(
+                id, file_path, container_path, annotation_type, label, content,
+                created_by,
+                content='annotations', content_rowid='rowid'
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_artifacts USING fts5(
+                id, source_id, source_ref_json, name, extension, mime_type,
+                type_description, category, confidence, content_preview,
+                metadata_json, extractor,
+                content='artifacts', content_rowid='rowid'
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_source_analyses USING fts5(
+                id, source_id, source_ref_json, magic_hex, primary_signature,
+                primary_mime_type, primary_category, ascii_preview, signatures_json,
+                indicators_json, analyzer,
+                content='source_analyses', content_rowid='rowid'
             );
             "#,
         )

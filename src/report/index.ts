@@ -37,6 +37,8 @@ export {
   containerToInput,
   containersToInputs,
   extractEvidenceFromContainers,
+  extractReportEvidenceFromProjectDb,
+  buildProjectDbEvidenceAppendices,
   createEvidenceFromContainer,
   generateEvidenceFromFiles,
   getReportTemplate,
@@ -48,4 +50,6 @@ export {
   type EvidenceItem as BackendEvidenceItem,
   type HashRecord as BackendHashRecord,
   type ImageInfo,
+  type ProjectDbReportEvidence,
+  type ProjectDbReportAppendix,
 } from "./api";

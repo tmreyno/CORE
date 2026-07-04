@@ -32,6 +32,7 @@ import { getPreference } from "../../preferences";
 import type { WizardStep, ReportWizardProps } from "./types";
 import type { WizardState } from "./useWizardState";
 import { buildForensicReport } from "./utils/reportBuilder";
+import { extractReportEvidenceFromProjectDb } from "../../../report/api";
 import { dbSync } from "../../../hooks/project/useProjectDbSync";
 import { persistCocItemsToDb, loadCocItemsFromDb } from "./cocDbSync";
 import { generateId, nowISO } from "../../../types/project";
@@ -265,6 +266,7 @@ export function useWizardActions(
       fileInfoMap: props.fileInfoMap,
       fileHashMap: props.fileHashMap,
       projectTimeline: state.projectTimeline,
+      projectDbEvidence: state.projectDbEvidence,
     });
 
     // Attach report type and type-specific data
@@ -432,6 +434,25 @@ export function useWizardActions(
       custodyRecords: state.chainOfCustody().length,
       findingsSeeded: state.findings().length,
     });
+  });
+
+  // ==========================================================================
+  // LIFECYCLE: LOAD PROJECT DB ENGINE EVIDENCE
+  // ==========================================================================
+
+  onMount(async () => {
+    try {
+      const projectDbEvidence = await extractReportEvidenceFromProjectDb();
+      state.setProjectDbEvidence(projectDbEvidence);
+      log.info("Loaded project DB engine evidence for report appendices", {
+        hashRecords: projectDbEvidence.hashRecords.length,
+        artifacts: projectDbEvidence.artifacts.length,
+        sourceAnalyses: projectDbEvidence.sourceAnalyses.length,
+      });
+    } catch (e) {
+      log.warn("Could not load project DB engine evidence for report appendices:", e);
+      state.setProjectDbEvidence(null);
+    }
   });
 
   // ==========================================================================

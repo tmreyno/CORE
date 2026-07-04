@@ -21,6 +21,7 @@ import type { DatabaseViewerProps } from "./types";
 export function DatabaseViewer(props: DatabaseViewerProps) {
   const db = useDatabaseData({
     path: () => props.path,
+    source: () => props.source,
     onMetadata: props.onMetadata,
   });
 

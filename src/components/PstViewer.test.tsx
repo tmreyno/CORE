@@ -80,6 +80,23 @@ describe("PstViewer", () => {
       });
     });
 
+    it("calls pst_get_folders_source when an evidence source is provided", async () => {
+      const source = {
+        containerPath: "/evidence/case.ad1",
+        entryPath: "mail/outlook.pst",
+        containerType: "ad1",
+        size: 1024,
+      };
+      mockInvoke.mockResolvedValueOnce(mockPstInfo);
+
+      renderComponent(() => <PstViewer path="/tmp/outlook.pst" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("pst_get_folders_source", {
+        source,
+      });
+    });
+
     it("renders folder names", async () => {
       mockInvoke.mockResolvedValueOnce(mockPstInfo);
 

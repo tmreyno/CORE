@@ -22,6 +22,8 @@ export interface ProjectMergeSummary {
   savedAt: string;
   evidenceFileCount: number;
   hashCount: number;
+  artifactCount: number;
+  sourceAnalysisCount: number;
   sessionCount: number;
   activityCount: number;
   bookmarkCount: number;
@@ -150,7 +152,7 @@ export interface MergeCategoryInfo {
 
 /** Ordered list of all merge categories with display info */
 export const MERGE_CATEGORIES: MergeCategoryInfo[] = [
-  { id: "evidence", label: "Evidence Files & Hashes", description: "Evidence containers, computed hashes, and verifications", statKeys: ["evidenceFileCount", "hashCount"] },
+  { id: "evidence", label: "Evidence & Engine Data", description: "Evidence containers, hashes, verifications, normalized artifacts, and source-analysis records", statKeys: ["evidenceFileCount", "hashCount", "artifactCount", "sourceAnalysisCount"] },
   { id: "bookmarks_notes", label: "Bookmarks & Notes", description: "Bookmarks, notes, and annotations", statKeys: ["bookmarkCount", "noteCount"] },
   { id: "activity", label: "Activity & Sessions", description: "User sessions, activity log, and user records", statKeys: ["sessionCount", "activityCount"] },
   { id: "coc", label: "Chain of Custody", description: "COC items, amendments, audit log, and transfers", statKeys: [] },
@@ -185,6 +187,8 @@ export interface MergeStats {
   activityEntriesMerged: number;
   evidenceFilesMerged: number;
   hashesMerged: number;
+  artifactsMerged: number;
+  sourceAnalysesMerged: number;
   bookmarksMerged: number;
   notesMerged: number;
   tabsMerged: number;

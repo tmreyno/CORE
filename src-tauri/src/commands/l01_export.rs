@@ -16,13 +16,45 @@ use crate::l01_writer::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use tauri::{Emitter, Window};
 use tracing::{debug, info};
 
 use super::ewf_helpers::{is_system_boot_volume, nix_stat};
+
+const MAX_L01_TRAVERSAL_DEPTH: usize = 128;
+const MAX_L01_SOURCE_PATHS: usize = 10_000;
+const MAX_L01_LOGICAL_ENTRIES: usize = 250_000;
+const MAX_L01_FILTER_EXTENSIONS: usize = 10_000;
+
+fn checked_l01_total_size_add(
+    total: u64,
+    addition: u64,
+    path: &Path,
+) -> Result<u64, std::io::Error> {
+    total.checked_add(addition).ok_or_else(|| {
+        std::io::Error::other(format!(
+            "L01 total size overflow while adding {} bytes from {} to current total {} bytes",
+            addition,
+            path.display(),
+            total
+        ))
+    })
+}
+
+fn checked_l01_entry_count_add(count: &mut usize, path: &Path) -> Result<(), String> {
+    if *count >= MAX_L01_LOGICAL_ENTRIES {
+        return Err(format!(
+            "L01 export expanded to more than {} logical entries while adding {}",
+            MAX_L01_LOGICAL_ENTRIES,
+            path.display()
+        ));
+    }
+    *count += 1;
+    Ok(())
+}
 
 // =============================================================================
 // Types
@@ -112,9 +144,105 @@ impl From<L01WriteResult> for L01ExportResponse {
 static L01_CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+#[derive(Debug)]
+struct L01CancelRegistration {
+    output_path: String,
+}
+
+impl Drop for L01CancelRegistration {
+    fn drop(&mut self) {
+        cleanup_l01_cancel_flag(&self.output_path);
+    }
+}
+
 // =============================================================================
 // Helper functions
 // =============================================================================
+
+fn validate_l01_source_paths(source_paths: &[String]) -> Result<(), String> {
+    if source_paths.is_empty() {
+        return Err("L01 export requires at least one source path".to_string());
+    }
+    if source_paths.len() > MAX_L01_SOURCE_PATHS {
+        return Err(format!(
+            "L01 export requested {} source paths, exceeding limit {}",
+            source_paths.len(),
+            MAX_L01_SOURCE_PATHS
+        ));
+    }
+    if source_paths
+        .iter()
+        .any(|source_path| source_path.trim().is_empty())
+    {
+        return Err("L01 export source paths cannot be empty".to_string());
+    }
+    Ok(())
+}
+
+fn validate_l01_export_options(options: &L01ExportOptions) -> Result<(), String> {
+    if options.output_path.trim().is_empty() {
+        return Err("L01 export output path is required".to_string());
+    }
+    validate_l01_source_paths(&options.source_paths)?;
+    validate_l01_filter_extensions(options.filter_extensions.as_deref(), "include")?;
+    validate_l01_filter_extensions(options.exclude_extensions.as_deref(), "exclude")?;
+    if let (Some(min_size), Some(max_size)) = (options.min_file_size, options.max_file_size) {
+        if min_size > max_size {
+            return Err(format!(
+                "L01 export minFileSize ({min_size}) cannot exceed maxFileSize ({max_size})"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_l01_filter_extensions(
+    extensions: Option<&[String]>,
+    label: &str,
+) -> Result<(), String> {
+    let Some(extensions) = extensions else {
+        return Ok(());
+    };
+    if extensions.len() > MAX_L01_FILTER_EXTENSIONS {
+        return Err(format!(
+            "L01 export {label} extension filter has {} entries, exceeding limit {}",
+            extensions.len(),
+            MAX_L01_FILTER_EXTENSIONS
+        ));
+    }
+    if extensions
+        .iter()
+        .any(|extension| extension.trim().is_empty())
+    {
+        return Err(format!(
+            "L01 export {label} extension filter cannot contain empty entries"
+        ));
+    }
+    Ok(())
+}
+
+fn register_l01_cancel_flag(
+    output_path: &str,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<L01CancelRegistration, String> {
+    let mut flags = L01_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
+    if flags.contains_key(output_path) {
+        return Err(format!(
+            "An L01 export is already running for output path: {}",
+            output_path
+        ));
+    }
+    flags.insert(output_path.to_string(), cancel_flag);
+    Ok(L01CancelRegistration {
+        output_path: output_path.to_string(),
+    })
+}
+
+fn cleanup_l01_cancel_flag(output_path: &str) {
+    if let Ok(mut flags) = L01_CANCEL_FLAGS.lock() {
+        flags.remove(output_path);
+    }
+}
 
 fn parse_l01_compression(compression: &str) -> Result<CompressionLevel, String> {
     match compression.to_lowercase().as_str() {
@@ -211,6 +339,23 @@ impl FileFilter {
 /// Recursively compute total file size in a directory.
 /// Skips unreadable directories (e.g. macOS TCC-protected folders) with a warning.
 fn walk_dir_size(dir: &std::path::Path, filter: &FileFilter) -> Result<u64, std::io::Error> {
+    walk_dir_size_at_depth(dir, filter, 0)
+}
+
+fn walk_dir_size_at_depth(
+    dir: &std::path::Path,
+    filter: &FileFilter,
+    depth: usize,
+) -> Result<u64, std::io::Error> {
+    if depth > MAX_L01_TRAVERSAL_DEPTH {
+        tracing::warn!(
+            "Skipping directory {}: maximum L01 traversal depth {} exceeded",
+            dir.display(),
+            MAX_L01_TRAVERSAL_DEPTH
+        );
+        return Ok(0);
+    }
+
     let mut total: u64 = 0;
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -232,9 +377,10 @@ fn walk_dir_size(dir: &std::path::Path, filter: &FileFilter) -> Result<u64, std:
                     continue;
                 }
             }
-            total += size;
+            total = checked_l01_total_size_add(total, size, &entry.path())?;
         } else if ft.is_dir() {
-            total += walk_dir_size(&entry.path(), filter)?;
+            let dir_size = walk_dir_size_at_depth(&entry.path(), filter, depth + 1)?;
+            total = checked_l01_total_size_add(total, dir_size, &entry.path())?;
         }
     }
     Ok(total)
@@ -248,7 +394,28 @@ fn walk_dir_into_writer(
     dir_path: &std::path::Path,
     parent_id: u64,
     filter: &FileFilter,
+    entry_count: &mut usize,
 ) -> Result<usize, String> {
+    walk_dir_into_writer_at_depth(writer, dir_path, parent_id, filter, entry_count, 0)
+}
+
+fn walk_dir_into_writer_at_depth(
+    writer: &mut L01Writer,
+    dir_path: &std::path::Path,
+    parent_id: u64,
+    filter: &FileFilter,
+    entry_count: &mut usize,
+    depth: usize,
+) -> Result<usize, String> {
+    if depth > MAX_L01_TRAVERSAL_DEPTH {
+        tracing::warn!(
+            "Skipping directory {}: maximum L01 traversal depth {} exceeded",
+            dir_path.display(),
+            MAX_L01_TRAVERSAL_DEPTH
+        );
+        return Ok(0);
+    }
+
     let mut count = 0;
 
     let mut entries: Vec<std::fs::DirEntry> = match std::fs::read_dir(dir_path) {
@@ -280,14 +447,23 @@ fn walk_dir_into_writer(
             .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?;
 
         if metadata.is_dir() {
+            checked_l01_entry_count_add(entry_count, &path)?;
             let dir_id = writer.add_directory(file_name, parent_id);
             count += 1;
-            count += walk_dir_into_writer(writer, &path, dir_id, filter)?;
+            count += walk_dir_into_writer_at_depth(
+                writer,
+                &path,
+                dir_id,
+                filter,
+                entry_count,
+                depth + 1,
+            )?;
         } else if metadata.is_file() {
             let size = metadata.len();
             if !filter.is_empty() && !filter.matches(&file_name, size) {
                 continue;
             }
+            checked_l01_entry_count_add(entry_count, &path)?;
             writer.add_file(file_name, size, path.clone(), parent_id);
             count += 1;
         }
@@ -310,6 +486,7 @@ pub async fn l01_create_image(
     window: Window,
 ) -> Result<L01ExportResponse, String> {
     let start = std::time::Instant::now();
+    validate_l01_export_options(&options)?;
 
     // Parse options
     let compression = match &options.compression {
@@ -377,10 +554,7 @@ pub async fn l01_create_image(
 
     // Set up cancel flag
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    {
-        let mut flags = L01_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
-        flags.insert(options.output_path.clone(), cancel_flag.clone());
-    }
+    let _cancel_registration = register_l01_cancel_flag(&options.output_path, cancel_flag.clone())?;
 
     // Build config
     let config = L01WriterConfig {
@@ -401,6 +575,7 @@ pub async fn l01_create_image(
     // Create writer and add sources
     let mut writer = L01Writer::new(config);
     let filter = FileFilter::from_options(&options);
+    let mut planned_entry_count = 0usize;
 
     for path_str in &options.source_paths {
         let path = PathBuf::from(path_str);
@@ -411,10 +586,17 @@ pub async fn l01_create_image(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+            checked_l01_entry_count_add(&mut planned_entry_count, &path)?;
             let parent_id = writer.add_directory(dir_name, 0);
 
             // Walk the directory contents and add under the parent directory entry
-            let count = walk_dir_into_writer(&mut writer, &path, parent_id, &filter)?;
+            let count = walk_dir_into_writer(
+                &mut writer,
+                &path,
+                parent_id,
+                &filter,
+                &mut planned_entry_count,
+            )?;
             info!(
                 "Added directory {} ({} entries, parent_id={})",
                 path_str,
@@ -430,6 +612,7 @@ pub async fn l01_create_image(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+            checked_l01_entry_count_add(&mut planned_entry_count, &path)?;
             writer.add_file(file_name, metadata.len(), path.clone(), 0);
             debug!("Added file {} ({} bytes)", path_str, metadata.len());
         }
@@ -488,11 +671,7 @@ pub async fn l01_create_image(
             .map_err(|e| format!("L01 write task panicked: {}", e))?
             .map_err(format_write_error)?;
 
-    // Clean up cancel flag
-    {
-        let mut flags = L01_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
-        flags.remove(&output_path_for_cleanup);
-    }
+    cleanup_l01_cancel_flag(&output_path_for_cleanup);
 
     let duration = start.elapsed();
     info!(
@@ -532,6 +711,7 @@ pub fn l01_estimate_size(
     source_paths: Vec<String>,
     compression: Option<String>,
 ) -> Result<u64, String> {
+    validate_l01_source_paths(&source_paths)?;
     let mut total_source_bytes: u64 = 0;
 
     for path_str in &source_paths {
@@ -541,12 +721,16 @@ pub fn l01_estimate_size(
         }
         if path.is_dir() {
             // Walk directory recursively
-            total_source_bytes += walk_dir_size(path, &FileFilter::default())
+            let dir_size = walk_dir_size(path, &FileFilter::default())
                 .map_err(|e| format!("Failed to walk directory {}: {}", path_str, e))?;
+            total_source_bytes = checked_l01_total_size_add(total_source_bytes, dir_size, path)
+                .map_err(|e| e.to_string())?;
         } else {
             let metadata = std::fs::metadata(path)
                 .map_err(|e| format!("Failed to read metadata for {}: {}", path_str, e))?;
-            total_source_bytes += metadata.len();
+            total_source_bytes =
+                checked_l01_total_size_add(total_source_bytes, metadata.len(), path)
+                    .map_err(|e| e.to_string())?;
         }
     }
 
@@ -556,27 +740,46 @@ pub fn l01_estimate_size(
         None => CompressionLevel::Fast,
     };
 
-    let estimated = match compression_level {
-        CompressionLevel::None => {
-            // No compression: data + ~5% overhead for headers/tables
-            (total_source_bytes as f64 * 1.05) as u64
-        }
-        CompressionLevel::Fast => {
-            // Fast compression: rough estimate ~70% of original + overhead
-            (total_source_bytes as f64 * 0.75) as u64
-        }
-        CompressionLevel::Best => {
-            // Best compression: rough estimate ~55% of original + overhead
-            (total_source_bytes as f64 * 0.60) as u64
-        }
-    };
+    let estimated = estimate_l01_output_size(total_source_bytes, compression_level);
 
     Ok(estimated)
+}
+
+fn estimate_l01_output_size(total_source_bytes: u64, compression_level: CompressionLevel) -> u64 {
+    match compression_level {
+        // No compression: data + ~5% overhead for headers/tables.
+        CompressionLevel::None => {
+            total_source_bytes.saturating_add(total_source_bytes.saturating_div(20))
+        }
+        // Fast compression: rough estimate ~75% of original.
+        CompressionLevel::Fast => total_source_bytes.saturating_mul(75).saturating_div(100),
+        // Best compression: rough estimate ~60% of original.
+        CompressionLevel::Best => total_source_bytes.saturating_mul(60).saturating_div(100),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn minimal_options() -> L01ExportOptions {
+        L01ExportOptions {
+            source_paths: vec!["source.bin".to_string()],
+            output_path: "/tmp/case/logical.L01".to_string(),
+            compression: None,
+            hash_algorithm: None,
+            segment_size: None,
+            case_number: None,
+            evidence_number: None,
+            examiner_name: None,
+            description: None,
+            notes: None,
+            filter_extensions: None,
+            exclude_extensions: None,
+            min_file_size: None,
+            max_file_size: None,
+        }
+    }
 
     #[test]
     fn test_parse_compression() {
@@ -647,5 +850,175 @@ mod tests {
         assert_eq!(response.compression_ratio, 0.5);
         assert_eq!(response.md5_hash, Some("abc123".to_string()));
         assert_eq!(response.duration_ms, 0); // not yet set
+    }
+
+    #[test]
+    fn test_estimate_l01_output_size_none_adds_overhead() {
+        assert_eq!(estimate_l01_output_size(100, CompressionLevel::None), 105);
+    }
+
+    #[test]
+    fn test_estimate_l01_output_size_fast_uses_integer_ratio() {
+        assert_eq!(estimate_l01_output_size(100, CompressionLevel::Fast), 75);
+    }
+
+    #[test]
+    fn test_estimate_l01_output_size_saturates_no_compression() {
+        assert_eq!(
+            estimate_l01_output_size(u64::MAX, CompressionLevel::None),
+            u64::MAX
+        );
+    }
+
+    #[test]
+    fn test_checked_l01_total_size_add_sums_regular_values() {
+        let path = Path::new("source.bin");
+
+        assert_eq!(checked_l01_total_size_add(40, 2, path).unwrap(), 42);
+    }
+
+    #[test]
+    fn test_checked_l01_total_size_add_rejects_overflow() {
+        let path = Path::new("overflow-source.bin");
+        let err = checked_l01_total_size_add(u64::MAX, 1, path).unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("L01 total size overflow"));
+        assert!(message.contains("overflow-source.bin"));
+    }
+
+    #[test]
+    fn test_checked_l01_entry_count_add_rejects_over_limit() {
+        let path = Path::new("too-many.bin");
+        let mut count = MAX_L01_LOGICAL_ENTRIES;
+
+        let err = checked_l01_entry_count_add(&mut count, path).unwrap_err();
+
+        assert!(err.contains("expanded to more than"));
+        assert_eq!(count, MAX_L01_LOGICAL_ENTRIES);
+    }
+
+    #[test]
+    fn test_validate_l01_export_options_rejects_missing_output_path() {
+        let mut options = minimal_options();
+        options.output_path = " ".to_string();
+
+        let err = validate_l01_export_options(&options).unwrap_err();
+
+        assert!(err.contains("output path is required"));
+    }
+
+    #[test]
+    fn test_validate_l01_export_options_rejects_missing_sources() {
+        let mut options = minimal_options();
+        options.source_paths.clear();
+
+        let err = validate_l01_export_options(&options).unwrap_err();
+
+        assert!(err.contains("requires at least one source path"));
+    }
+
+    #[test]
+    fn test_validate_l01_export_options_rejects_excessive_source_paths() {
+        let mut options = minimal_options();
+        options.source_paths = vec!["source.bin".to_string(); MAX_L01_SOURCE_PATHS + 1];
+
+        let err = validate_l01_export_options(&options).unwrap_err();
+
+        assert!(err.contains("exceeding limit"));
+    }
+
+    #[test]
+    fn test_validate_l01_export_options_rejects_empty_source_path() {
+        let mut options = minimal_options();
+        options.source_paths.push(" ".to_string());
+
+        let err = validate_l01_export_options(&options).unwrap_err();
+
+        assert!(err.contains("source paths cannot be empty"));
+    }
+
+    #[test]
+    fn test_validate_l01_export_options_rejects_invalid_size_filter() {
+        let mut options = minimal_options();
+        options.min_file_size = Some(100);
+        options.max_file_size = Some(10);
+
+        let err = validate_l01_export_options(&options).unwrap_err();
+
+        assert!(err.contains("minFileSize"));
+    }
+
+    #[test]
+    fn test_validate_l01_export_options_rejects_excessive_filter_extensions() {
+        let mut options = minimal_options();
+        options.filter_extensions = Some(vec!["pdf".to_string(); MAX_L01_FILTER_EXTENSIONS + 1]);
+
+        let err = validate_l01_export_options(&options).unwrap_err();
+
+        assert!(err.contains("extension filter"));
+        assert!(err.contains("exceeding limit"));
+    }
+
+    #[test]
+    fn test_validate_l01_export_options_rejects_empty_filter_extension() {
+        let mut options = minimal_options();
+        options.exclude_extensions = Some(vec!["tmp".to_string(), " ".to_string()]);
+
+        let err = validate_l01_export_options(&options).unwrap_err();
+
+        assert!(err.contains("extension filter cannot contain empty entries"));
+    }
+
+    #[test]
+    fn test_register_l01_cancel_flag_rejects_duplicate_output_path() {
+        let output_path = unique_output_path();
+        cleanup_l01_cancel_flag(&output_path);
+
+        let registration =
+            register_l01_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap();
+        let err =
+            register_l01_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap_err();
+        drop(registration);
+
+        assert!(err.contains("already running"));
+    }
+
+    #[test]
+    fn test_l01_cancel_registration_cleans_up_on_drop() {
+        let output_path = unique_output_path();
+        cleanup_l01_cancel_flag(&output_path);
+
+        {
+            let _registration =
+                register_l01_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap();
+            assert!(l01_cancel_export(output_path.clone()).unwrap());
+        }
+
+        assert!(!l01_cancel_export(output_path).unwrap());
+    }
+
+    #[test]
+    fn test_walk_dir_size_skips_beyond_depth_limit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut current = dir.path().to_path_buf();
+        for index in 0..=MAX_L01_TRAVERSAL_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            std::fs::create_dir(&current).unwrap();
+        }
+        std::fs::write(current.join("too-deep.bin"), b"data").unwrap();
+
+        let size = walk_dir_size(dir.path(), &FileFilter::default()).unwrap();
+        assert_eq!(size, 0);
+    }
+
+    fn unique_output_path() -> String {
+        format!(
+            "/tmp/core-ffx-l01-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
     }
 }

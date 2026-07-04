@@ -9,6 +9,36 @@
 use super::merge_types::*;
 use tracing::warn;
 
+/// Count rows in a merge-analysis table if that table exists.
+pub(super) fn count_ffxdb_table(conn: &rusqlite::Connection, table: &str) -> usize {
+    if !table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        warn!("merge: refusing to count invalid table name: {}", table);
+        return 0;
+    }
+
+    let table_exists = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+            [table],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|count| count > 0)
+        .unwrap_or(false);
+
+    if !table_exists {
+        return 0;
+    }
+
+    conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map(|count| count.max(0) as usize)
+    .unwrap_or_else(|e| {
+        warn!("merge: count {} failed: {}", table, e);
+        0
+    })
+}
+
 /// Query users table from .ffxdb and add to examiners list
 pub(super) fn query_ffxdb_examiners(
     conn: &rusqlite::Connection,
@@ -74,6 +104,27 @@ pub(super) fn query_ffxdb_collections(conn: &rusqlite::Connection) -> Vec<MergeC
         Err(e) => warn!("merge: prepare evidence_collections query failed: {}", e),
     }
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_ffxdb_table_returns_zero_for_missing_or_invalid_table() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE artifacts (id TEXT PRIMARY KEY)", [])
+            .unwrap();
+        conn.execute("INSERT INTO artifacts (id) VALUES ('a1'), ('a2')", [])
+            .unwrap();
+
+        assert_eq!(count_ffxdb_table(&conn, "artifacts"), 2);
+        assert_eq!(count_ffxdb_table(&conn, "source_analyses"), 0);
+        assert_eq!(
+            count_ffxdb_table(&conn, "artifacts; DROP TABLE artifacts"),
+            0
+        );
+    }
 }
 
 /// Query coc_items from .ffxdb

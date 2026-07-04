@@ -32,6 +32,8 @@ export interface DedupOptions {
   categories?: string[];
   /** Filter to a specific container path */
   containerPath?: string;
+  /** Stored hash algorithm used for project DB source-hash enrichment */
+  hashAlgorithm?: string;
 }
 
 /** Complete deduplication analysis results */

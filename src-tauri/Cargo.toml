@@ -5,7 +5,7 @@ description = "CORE-FFX - Case Organization & Reporting Ecosystem: Forensic File
 authors = ["CORE-FFX Project Contributors"]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/CORE/AD1-tools"
+repository = "https://github.com/tmreyno/CORE"
 
 [lib]
 name = "ffx_check_lib"

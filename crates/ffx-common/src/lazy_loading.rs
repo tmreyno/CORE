@@ -323,12 +323,18 @@ pub struct LazyLoadResult {
 impl LazyLoadResult {
     /// Create a new lazy load result
     pub fn new(entries: Vec<LazyTreeEntry>, total_count: usize) -> Self {
+        Self::new_with_offset(entries, total_count, 0)
+    }
+
+    /// Create a new lazy load result for a page that started at `offset`.
+    pub fn new_with_offset(entries: Vec<LazyTreeEntry>, total_count: usize, offset: usize) -> Self {
         let entry_count = entries.len();
+        let next_offset = offset.saturating_add(entry_count);
         Self {
             entries,
             total_count,
-            has_more: entry_count < total_count,
-            next_offset: entry_count,
+            has_more: next_offset < total_count,
+            next_offset,
             lazy_loaded: true,
             config: LazyLoadConfig::get(),
         }
@@ -529,6 +535,20 @@ mod tests {
         assert_eq!(result.total_count, 10);
         assert!(result.has_more);
         assert_eq!(result.next_offset, 2);
+    }
+
+    #[test]
+    fn test_lazy_load_result_uses_absolute_next_offset() {
+        let entries = vec![
+            LazyTreeEntry::file("3", "b.txt", "/b.txt", 100),
+            LazyTreeEntry::file("4", "c.txt", "/c.txt", 100),
+        ];
+
+        let result = LazyLoadResult::new_with_offset(entries, 10, 4);
+
+        assert_eq!(result.entries.len(), 2);
+        assert!(result.has_more);
+        assert_eq!(result.next_offset, 6);
     }
 
     #[test]

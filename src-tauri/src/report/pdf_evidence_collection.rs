@@ -65,6 +65,9 @@ const IMAGE_METHODS: &[&str] = &[
     "Other",
 ];
 
+const MAX_PDF_NOTES_CHARS: usize = 16_000;
+const TRUNCATED_PDF_NOTES_SUFFIX: &str = "\n[Notes truncated by CORE-FFX before PDF generation]";
+
 /// Generate the Evidence Collection Form PDF
 pub fn generate_evidence_collection(
     report: &ForensicReport,
@@ -415,16 +418,12 @@ fn add_forensic_image_section(
     row1.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
 
     let sn = item.and_then(|i| i.serial_number.as_deref()).unwrap_or("");
-    let last6 = if sn.len() >= 6 {
-        &sn[sn.len() - 6..]
-    } else {
-        sn
-    };
+    let last6 = last_chars(sn, 6);
 
     row1.row()
         .element(label_value("Case#:", &report.case_info.case_number))
         .element(label_value("Site:", ""))
-        .element(label_value("Last 6 of Container S/N:", last6))
+        .element(label_value("Last 6 of Container S/N:", &last6))
         .element(label_value("IMG#:", &img_num.to_string()))
         .push()
         .map_err(|e| ReportError::Pdf(e.to_string()))?;
@@ -531,51 +530,7 @@ fn add_notes_section(
 ) -> ReportResult<()> {
     doc.push(Paragraph::new("Notes:").styled(style::Style::new().bold().with_font_size(9)));
 
-    let mut notes_parts = Vec::new();
-    if let Some(ref doc_notes) = ev_data.documentation_notes {
-        if !doc_notes.is_empty() {
-            notes_parts.push(doc_notes.clone());
-        }
-    }
-    if let Some(ref conditions) = ev_data.conditions {
-        if !conditions.is_empty() {
-            notes_parts.push(format!("Conditions: {}", conditions));
-        }
-    }
-    if let Some(i) = item {
-        if let Some(ref n) = i.notes {
-            if !n.is_empty() {
-                notes_parts.push(n.clone());
-            }
-        }
-        if !i.packaging.is_empty() {
-            notes_parts.push(format!("Packaging: {}", i.packaging));
-        }
-        if let Some(ref sn) = i.storage_notes {
-            if !sn.is_empty() {
-                notes_parts.push(format!("Storage Notes: {}", sn));
-            }
-        }
-        if let Some(ref imei) = i.imei {
-            if !imei.is_empty() {
-                notes_parts.push(format!("IMEI: {}", imei));
-            }
-        }
-        if let Some(ref other_id) = i.other_identifiers {
-            if !other_id.is_empty() {
-                notes_parts.push(format!("Other IDs: {}", other_id));
-            }
-        }
-        if !i.photo_refs.is_empty() {
-            notes_parts.push(format!("Photo Refs: {}", i.photo_refs.join(", ")));
-        }
-    }
-
-    let notes_text = if notes_parts.is_empty() {
-        " ".to_string()
-    } else {
-        notes_parts.join("\n")
-    };
+    let notes_text = notes_text_for_item(item, ev_data);
 
     let mut notes_box = TableLayout::new(vec![1]);
     notes_box.set_cell_decorator(genpdf::elements::FrameCellDecorator::new(true, true, false));
@@ -626,4 +581,140 @@ fn add_form_footer(doc: &mut Document, page_num: usize) -> ReportResult<()> {
 /// Create a paragraph with a bold label followed by the value
 fn label_value(label: &str, value: &str) -> StyledElement<Paragraph> {
     Paragraph::new(format!("{} {}", label, value)).styled(style::Style::new().with_font_size(9))
+}
+
+fn notes_text_for_item(item: Option<&CollectedItem>, ev_data: &EvidenceCollectionData) -> String {
+    let mut notes_parts = Vec::new();
+    if let Some(ref doc_notes) = ev_data.documentation_notes {
+        if !doc_notes.is_empty() {
+            notes_parts.push(doc_notes.clone());
+        }
+    }
+    if let Some(ref conditions) = ev_data.conditions {
+        if !conditions.is_empty() {
+            notes_parts.push(format!("Conditions: {}", conditions));
+        }
+    }
+    if let Some(i) = item {
+        if let Some(ref n) = i.notes {
+            if !n.is_empty() {
+                notes_parts.push(n.clone());
+            }
+        }
+        if !i.packaging.is_empty() {
+            notes_parts.push(format!("Packaging: {}", i.packaging));
+        }
+        if let Some(ref sn) = i.storage_notes {
+            if !sn.is_empty() {
+                notes_parts.push(format!("Storage Notes: {}", sn));
+            }
+        }
+        if let Some(ref imei) = i.imei {
+            if !imei.is_empty() {
+                notes_parts.push(format!("IMEI: {}", imei));
+            }
+        }
+        if let Some(ref other_id) = i.other_identifiers {
+            if !other_id.is_empty() {
+                notes_parts.push(format!("Other IDs: {}", other_id));
+            }
+        }
+        if !i.photo_refs.is_empty() {
+            notes_parts.push(format!("Photo Refs: {}", i.photo_refs.join(", ")));
+        }
+    }
+
+    let notes_text = if notes_parts.is_empty() {
+        " ".to_string()
+    } else {
+        notes_parts.join("\n")
+    };
+    truncate_chars(&notes_text, MAX_PDF_NOTES_CHARS, TRUNCATED_PDF_NOTES_SUFFIX)
+}
+
+fn truncate_chars(value: &str, max_chars: usize, suffix: &str) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let suffix_chars = suffix.chars().count();
+    let keep_chars = max_chars.saturating_sub(suffix_chars);
+    let end = value
+        .char_indices()
+        .nth(keep_chars)
+        .map(|(idx, _)| idx)
+        .unwrap_or(value.len());
+    let mut truncated = String::with_capacity(end + suffix.len());
+    truncated.push_str(&value[..end]);
+    truncated.push_str(suffix);
+    truncated
+}
+
+fn last_chars(value: &str, max_chars: usize) -> String {
+    let char_count = value.chars().count();
+    if char_count <= max_chars {
+        return value.to_string();
+    }
+
+    value.chars().skip(char_count - max_chars).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notes_text_preserves_normal_fields() {
+        let ev_data = EvidenceCollectionData {
+            documentation_notes: Some("Documented at intake".to_string()),
+            conditions: Some("Powered off".to_string()),
+            ..Default::default()
+        };
+        let item = CollectedItem {
+            notes: Some("PIN provided".to_string()),
+            packaging: "Faraday bag".to_string(),
+            storage_notes: Some("NVMe adapter".to_string()),
+            imei: Some("123456789012345".to_string()),
+            other_identifiers: Some("Asset 42".to_string()),
+            photo_refs: vec!["IMG-001".to_string(), "IMG-002".to_string()],
+            ..Default::default()
+        };
+
+        let notes = notes_text_for_item(Some(&item), &ev_data);
+
+        assert!(notes.contains("Documented at intake"));
+        assert!(notes.contains("Conditions: Powered off"));
+        assert!(notes.contains("PIN provided"));
+        assert!(notes.contains("Packaging: Faraday bag"));
+        assert!(notes.contains("Photo Refs: IMG-001, IMG-002"));
+        assert!(!notes.contains(TRUNCATED_PDF_NOTES_SUFFIX));
+    }
+
+    #[test]
+    fn notes_text_truncates_oversized_values_on_char_boundary() {
+        let ev_data = EvidenceCollectionData {
+            documentation_notes: Some("é".repeat(MAX_PDF_NOTES_CHARS + 64)),
+            ..Default::default()
+        };
+
+        let notes = notes_text_for_item(None, &ev_data);
+
+        assert_eq!(notes.chars().count(), MAX_PDF_NOTES_CHARS);
+        assert!(notes.ends_with(TRUNCATED_PDF_NOTES_SUFFIX));
+    }
+
+    #[test]
+    fn last_chars_returns_ascii_suffix() {
+        assert_eq!(last_chars("ABC123456", 6), "123456");
+    }
+
+    #[test]
+    fn last_chars_keeps_short_values() {
+        assert_eq!(last_chars("A12", 6), "A12");
+    }
+
+    #[test]
+    fn last_chars_preserves_utf8_boundaries() {
+        assert_eq!(last_chars("SN-éééééé", 6), "éééééé");
+    }
 }

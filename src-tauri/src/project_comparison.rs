@@ -192,10 +192,6 @@ pub fn compare_projects(project_a: &FFXProject, project_b: &FFXProject) -> Proje
     let activity_diff = compare_activity(project_a, project_b);
 
     // Calculate summary
-    let total_a =
-        project_a.bookmarks.len() + project_a.notes.len() + project_a.open_directories.len();
-    let total_b =
-        project_b.bookmarks.len() + project_b.notes.len() + project_b.open_directories.len();
     let unique_to_a =
         bookmark_diff.only_in_a.len() + note_diff.only_in_a.len() + evidence_diff.only_in_a.len();
     let unique_to_b =
@@ -204,8 +200,10 @@ pub fn compare_projects(project_a: &FFXProject, project_b: &FFXProject) -> Proje
     let modified = bookmark_diff.modified.len() + note_diff.modified.len();
     let total_differences = unique_to_a + unique_to_b + modified;
 
+    let total_a = unique_to_a + common + modified;
+    let total_b = unique_to_b + common + modified;
     let similarity = if total_a + total_b > 0 {
-        ((common * 2) as f64 / (total_a + total_b) as f64) * 100.0
+        (((common * 2) as f64 / (total_a + total_b) as f64) * 100.0).min(100.0)
     } else {
         100.0
     };
@@ -517,6 +515,11 @@ pub fn merge_projects(
     // Merge bookmarks - collect decisions first, then apply
     let mut bookmarks_to_add = Vec::new();
     let mut bookmarks_to_update: Vec<(usize, ProjectBookmark)> = Vec::new();
+    let mut bookmark_names: HashSet<String> = merged
+        .bookmarks
+        .iter()
+        .map(|bookmark| bookmark.name.clone())
+        .collect();
 
     for bookmark_b in &project_b.bookmarks {
         if let Some(pos) = merged
@@ -536,7 +539,8 @@ pub fn merge_projects(
                     }
                     MergeStrategy::KeepBoth => {
                         let mut new_bookmark = bookmark_b.clone();
-                        new_bookmark.name = format!("{} (from B)", bookmark_b.name);
+                        new_bookmark.name =
+                            unique_merge_name(&bookmark_b.name, &mut bookmark_names);
                         bookmarks_to_add.push(new_bookmark);
                         items_merged += 1;
                     }
@@ -565,6 +569,7 @@ pub fn merge_projects(
                 }
             }
         } else {
+            bookmark_names.insert(bookmark_b.name.clone());
             bookmarks_to_add.push(bookmark_b.clone());
             items_merged += 1;
         }
@@ -579,6 +584,8 @@ pub fn merge_projects(
     // Merge notes - collect decisions first, then apply
     let mut notes_to_add = Vec::new();
     let mut notes_to_update: Vec<(usize, ProjectNote)> = Vec::new();
+    let mut note_titles: HashSet<String> =
+        merged.notes.iter().map(|note| note.title.clone()).collect();
 
     for note_b in &project_b.notes {
         if let Some(pos) = merged.notes.iter().position(|n| n.title == note_b.title) {
@@ -594,7 +601,7 @@ pub fn merge_projects(
                     }
                     MergeStrategy::KeepBoth => {
                         let mut new_note = note_b.clone();
-                        new_note.title = format!("{} (from B)", note_b.title);
+                        new_note.title = unique_merge_name(&note_b.title, &mut note_titles);
                         notes_to_add.push(new_note);
                         items_merged += 1;
                     }
@@ -618,6 +625,7 @@ pub fn merge_projects(
                 }
             }
         } else {
+            note_titles.insert(note_b.title.clone());
             notes_to_add.push(note_b.clone());
             items_merged += 1;
         }
@@ -645,6 +653,22 @@ pub fn merge_projects(
     })
 }
 
+fn unique_merge_name(base: &str, existing: &mut HashSet<String>) -> String {
+    let candidate = format!("{base} (from B)");
+    if existing.insert(candidate.clone()) {
+        return candidate;
+    }
+
+    for index in 2usize.. {
+        let candidate = format!("{base} (from B {index})");
+        if existing.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+
+    unreachable!("unbounded suffix search should return");
+}
+
 // =============================================================================
 // TESTS
 // =============================================================================
@@ -652,6 +676,48 @@ pub fn merge_projects(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::OpenDirectory;
+
+    fn open_directory(path: &str) -> OpenDirectory {
+        OpenDirectory {
+            path: path.to_string(),
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            recursive: true,
+            file_count: 1,
+            total_size: 1,
+            last_scanned: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn bookmark(name: &str, target_path: &str, notes: &str) -> ProjectBookmark {
+        ProjectBookmark {
+            id: format!("bookmark-{name}-{target_path}"),
+            target_type: "file".to_string(),
+            target_path: target_path.to_string(),
+            name: name.to_string(),
+            created_by: "user".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            color: None,
+            tags: vec![],
+            notes: Some(notes.to_string()),
+            context: None,
+        }
+    }
+
+    fn note(title: &str, content: &str) -> ProjectNote {
+        ProjectNote {
+            id: format!("note-{title}-{content}"),
+            target_type: "file".to_string(),
+            target_path: None,
+            title: title.to_string(),
+            content: content.to_string(),
+            created_by: "user".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            modified_at: "2026-01-01T00:00:00Z".to_string(),
+            tags: vec![],
+            priority: Some("normal".to_string()),
+        }
+    }
 
     #[test]
     fn test_compare_empty_projects() {
@@ -661,6 +727,45 @@ mod tests {
         let comparison = compare_projects(&project_a, &project_b);
         assert_eq!(comparison.summary.similarity_percent, 100.0);
         assert_eq!(comparison.summary.total_differences, 0);
+    }
+
+    #[test]
+    fn compare_projects_similarity_counts_common_evidence_in_denominator() {
+        let mut project_a = FFXProject::new("/tmp/test_project_a");
+        let mut project_b = FFXProject::new("/tmp/test_project_b");
+        project_a
+            .open_directories
+            .push(open_directory("/evidence/common.E01"));
+        project_b
+            .open_directories
+            .push(open_directory("/evidence/common.E01"));
+
+        let comparison = compare_projects(&project_a, &project_b);
+
+        assert_eq!(comparison.summary.common, 1);
+        assert_eq!(comparison.summary.similarity_percent, 100.0);
+    }
+
+    #[test]
+    fn compare_projects_similarity_never_exceeds_one_hundred() {
+        let mut project_a = FFXProject::new("/tmp/test_project_a");
+        let mut project_b = FFXProject::new("/tmp/test_project_b");
+        project_a
+            .open_directories
+            .push(open_directory("/evidence/common.E01"));
+        project_b
+            .open_directories
+            .push(open_directory("/evidence/common.E01"));
+        project_b
+            .open_directories
+            .push(open_directory("/evidence/extra.E01"));
+
+        let comparison = compare_projects(&project_a, &project_b);
+
+        assert_eq!(comparison.summary.common, 1);
+        assert_eq!(comparison.summary.unique_to_b, 1);
+        assert!(comparison.summary.similarity_percent <= 100.0);
+        assert!((comparison.summary.similarity_percent - 66.66666666666666).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -700,5 +805,55 @@ mod tests {
             result.merged_project.bookmarks[0].notes,
             Some("From A".to_string())
         );
+    }
+
+    #[test]
+    fn merge_keep_both_generates_unique_bookmark_name() {
+        let mut project_a = FFXProject::new("/tmp/test_project_a");
+        let mut project_b = FFXProject::new("/tmp/test_project_b");
+        project_a
+            .bookmarks
+            .push(bookmark("Test", "path_a", "From A"));
+        project_a
+            .bookmarks
+            .push(bookmark("Test (from B)", "existing", "Existing"));
+        project_b
+            .bookmarks
+            .push(bookmark("Test", "path_b", "From B"));
+
+        let result = merge_projects(&project_a, &project_b, MergeStrategy::KeepBoth).unwrap();
+        let names: HashSet<_> = result
+            .merged_project
+            .bookmarks
+            .iter()
+            .map(|bookmark| bookmark.name.as_str())
+            .collect();
+
+        assert_eq!(result.merged_project.bookmarks.len(), 3);
+        assert!(names.contains("Test"));
+        assert!(names.contains("Test (from B)"));
+        assert!(names.contains("Test (from B 2)"));
+    }
+
+    #[test]
+    fn merge_keep_both_generates_unique_note_title() {
+        let mut project_a = FFXProject::new("/tmp/test_project_a");
+        let mut project_b = FFXProject::new("/tmp/test_project_b");
+        project_a.notes.push(note("Finding", "From A"));
+        project_a.notes.push(note("Finding (from B)", "Existing"));
+        project_b.notes.push(note("Finding", "From B"));
+
+        let result = merge_projects(&project_a, &project_b, MergeStrategy::KeepBoth).unwrap();
+        let titles: HashSet<_> = result
+            .merged_project
+            .notes
+            .iter()
+            .map(|note| note.title.as_str())
+            .collect();
+
+        assert_eq!(result.merged_project.notes.len(), 3);
+        assert!(titles.contains("Finding"));
+        assert!(titles.contains("Finding (from B)"));
+        assert!(titles.contains("Finding (from B 2)"));
     }
 }

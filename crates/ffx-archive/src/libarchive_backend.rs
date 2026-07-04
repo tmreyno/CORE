@@ -31,6 +31,8 @@ use std::path::Path;
 use ffx_common::lazy_loading::ContainerSummary;
 use ffx_errors::ContainerError;
 
+const LIBARCHIVE_READ_BUFFER_BYTES: usize = 64 * 1024;
+
 // Re-export libarchive types
 pub use libarchive2::{ArchiveFormat, FileType, ReadArchive};
 
@@ -215,7 +217,11 @@ impl LibarchiveHandler {
             };
 
             let is_dir = entry.file_type() == FileType::Directory;
-            let size = if is_dir { 0 } else { entry.size() as u64 };
+            let size = if is_dir {
+                0
+            } else {
+                checked_libarchive_entry_size(entry.size(), &path)?
+            };
 
             // Convert SystemTime to Unix timestamp
             let mtime = entry.mtime().and_then(|st| {
@@ -324,9 +330,16 @@ impl LibarchiveHandler {
                     return Err(ContainerError::from("Cannot read directory as file"));
                 }
 
-                let data = archive.read_data_to_vec().map_err(|e| {
-                    ContainerError::from(format!("Failed to read entry data: {}", e))
-                })?;
+                let declared_size = checked_libarchive_entry_size(entry.size(), search_path)?;
+                if declared_size > crate::MAX_NATIVE_ARCHIVE_ENTRY_BYTES {
+                    return Err(ContainerError::InvalidFormat(format!(
+                        "libarchive entry too large: {} bytes exceeds {} bytes",
+                        declared_size,
+                        crate::MAX_NATIVE_ARCHIVE_ENTRY_BYTES
+                    )));
+                }
+
+                let data = read_libarchive_entry_limited(&mut archive, search_path)?;
 
                 return Ok(data);
             }
@@ -434,6 +447,61 @@ pub fn read_file_encrypted(
     handler.read_entry(entry_path)
 }
 
+fn checked_libarchive_entry_size(size: i64, context: &str) -> Result<u64, ContainerError> {
+    u64::try_from(size).map_err(|_| {
+        ContainerError::InvalidFormat(format!(
+            "Invalid negative libarchive entry size for {}: {}",
+            context, size
+        ))
+    })
+}
+
+fn add_libarchive_read_bytes(total: u64, bytes_read: usize) -> Result<u64, ContainerError> {
+    let bytes_read = u64::try_from(bytes_read).map_err(|_| {
+        ContainerError::InvalidFormat("libarchive read byte count overflow".to_string())
+    })?;
+    total.checked_add(bytes_read).ok_or_else(|| {
+        ContainerError::InvalidFormat("libarchive entry read size overflow".to_string())
+    })
+}
+
+fn read_libarchive_entry_limited(
+    archive: &mut ReadArchive<'_>,
+    context: &str,
+) -> Result<Vec<u8>, ContainerError> {
+    let mut data = Vec::new();
+    let mut total = 0u64;
+    let mut buffer = vec![0u8; LIBARCHIVE_READ_BUFFER_BYTES];
+
+    loop {
+        let bytes_read = archive
+            .read_data(&mut buffer)
+            .map_err(|e| ContainerError::from(format!("Failed to read entry data: {}", e)))?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        total = add_libarchive_read_bytes(total, bytes_read)?;
+        if total > crate::MAX_NATIVE_ARCHIVE_ENTRY_BYTES {
+            return Err(ContainerError::InvalidFormat(format!(
+                "libarchive entry data for {} exceeds {} bytes",
+                context,
+                crate::MAX_NATIVE_ARCHIVE_ENTRY_BYTES
+            )));
+        }
+
+        data.try_reserve(bytes_read).map_err(|_| {
+            ContainerError::InvalidFormat(format!(
+                "libarchive entry allocation too large for {}",
+                context
+            ))
+        })?;
+        data.extend_from_slice(&buffer[..bytes_read]);
+    }
+
+    Ok(data)
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -490,5 +558,29 @@ mod tests {
         assert!(format_from_extension("/path/to/file.zip").is_some());
         assert!(format_from_extension("/path/to/file.7z").is_some());
         assert!(format_from_extension("/path/to/file.txt").is_none());
+    }
+
+    #[test]
+    fn test_checked_libarchive_entry_size_rejects_negative() {
+        let err = checked_libarchive_entry_size(-1, "entry.bin")
+            .expect_err("negative libarchive entry size should fail");
+
+        assert!(err.to_string().contains("negative libarchive entry size"));
+    }
+
+    #[test]
+    fn test_checked_libarchive_entry_size_accepts_positive() {
+        assert_eq!(
+            checked_libarchive_entry_size(1024, "entry.bin").unwrap(),
+            1024
+        );
+    }
+
+    #[test]
+    fn test_add_libarchive_read_bytes_rejects_overflow() {
+        let err = add_libarchive_read_bytes(u64::MAX, 1)
+            .expect_err("overflowing libarchive read total should fail");
+
+        assert!(err.to_string().contains("read size overflow"));
     }
 }

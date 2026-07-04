@@ -26,6 +26,41 @@ use super::DocumentFormat;
 
 pub mod writer;
 
+const MAX_PDF_SOURCE_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_PDF_EXTRACTED_TEXT_CHARS: usize = 5_000_000;
+const MAX_PDF_RESPONSE_PAGES: usize = 2_000;
+const MAX_PDF_ELEMENTS_PER_PAGE: usize = 5_000;
+const MAX_PDF_ELEMENT_TEXT_CHARS: usize = 16_384;
+const MAX_PDF_METADATA_CHARS: usize = 4_096;
+const MAX_PDF_KEYWORDS: usize = 512;
+
+fn ensure_pdf_size_allowed(size: u64) -> DocumentResult<()> {
+    if size > MAX_PDF_SOURCE_BYTES {
+        return Err(DocumentError::Pdf(format!(
+            "PDF file too large for extraction ({:.1} MiB, max {} MiB)",
+            size as f64 / (1024.0 * 1024.0),
+            MAX_PDF_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
+fn truncate_pdf_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let mut truncated: String = value.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+fn truncate_option_string(value: &mut Option<String>, max_chars: usize) {
+    if let Some(text) = value {
+        *text = truncate_pdf_text(text, max_chars);
+    }
+}
+
 /// PDF document handler with read/write capabilities
 pub struct PdfDocument {
     /// Cached font family for writing (currently unused, reserved for future caching)
@@ -46,14 +81,20 @@ impl PdfDocument {
     /// Read PDF from file path
     pub fn read(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentContent> {
         let path = path.as_ref();
+        ensure_pdf_size_allowed(std::fs::metadata(path)?.len())?;
         let data = std::fs::read(path)?;
         self.read_bytes(&data)
     }
 
     /// Read PDF from bytes
     pub fn read_bytes(&self, data: &[u8]) -> DocumentResult<DocumentContent> {
+        ensure_pdf_size_allowed(data.len() as u64)?;
+
         // Extract text using pdf-extract crate
-        let text = self.extract_text_from_bytes(data)?;
+        let text = truncate_pdf_text(
+            &self.extract_text_from_bytes(data)?,
+            MAX_PDF_EXTRACTED_TEXT_CHARS,
+        );
 
         // Try to parse structure with lopdf for better formatting
         let (metadata, pages) = self.parse_structure(data, &text)?;
@@ -79,7 +120,8 @@ impl PdfDocument {
             .map_err(|e| DocumentError::Pdf(format!("Failed to parse PDF: {}", e)))?;
 
         // Extract metadata from document info dictionary
-        let metadata = self.extract_metadata(&doc)?;
+        let mut metadata = self.extract_metadata(&doc)?;
+        Self::normalize_metadata(&mut metadata);
 
         // Get page count
         let page_count = doc.get_pages().len();
@@ -105,26 +147,28 @@ impl PdfDocument {
                     if let Ok(dict) = info.as_dict() {
                         // Extract standard PDF metadata fields
                         if let Ok(title) = dict.get(b"Title") {
-                            metadata.title = Self::pdf_string_to_string(title);
+                            metadata.title = Self::pdf_metadata_string_to_string(title);
                         }
                         if let Ok(author) = dict.get(b"Author") {
-                            metadata.author = Self::pdf_string_to_string(author);
+                            metadata.author = Self::pdf_metadata_string_to_string(author);
                         }
                         if let Ok(subject) = dict.get(b"Subject") {
-                            metadata.subject = Self::pdf_string_to_string(subject);
+                            metadata.subject = Self::pdf_metadata_string_to_string(subject);
                         }
                         if let Ok(creator) = dict.get(b"Creator") {
-                            metadata.creator = Self::pdf_string_to_string(creator);
+                            metadata.creator = Self::pdf_metadata_string_to_string(creator);
                         }
                         if let Ok(producer) = dict.get(b"Producer") {
-                            metadata.producer = Self::pdf_string_to_string(producer);
+                            metadata.producer = Self::pdf_metadata_string_to_string(producer);
                         }
                         if let Ok(keywords) = dict.get(b"Keywords") {
-                            if let Some(kw) = Self::pdf_string_to_string(keywords) {
+                            if let Some(kw) = Self::pdf_metadata_string_to_string(keywords) {
                                 metadata.keywords = kw
                                     .split(',')
+                                    .take(MAX_PDF_KEYWORDS)
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty())
+                                    .map(|s| truncate_pdf_text(&s, MAX_PDF_METADATA_CHARS))
                                     .collect();
                             }
                         }
@@ -134,6 +178,25 @@ impl PdfDocument {
         }
 
         Ok(metadata)
+    }
+
+    fn normalize_metadata(metadata: &mut DocumentMetadata) {
+        truncate_option_string(&mut metadata.title, MAX_PDF_METADATA_CHARS);
+        truncate_option_string(&mut metadata.author, MAX_PDF_METADATA_CHARS);
+        truncate_option_string(&mut metadata.subject, MAX_PDF_METADATA_CHARS);
+        truncate_option_string(&mut metadata.creator, MAX_PDF_METADATA_CHARS);
+        truncate_option_string(&mut metadata.producer, MAX_PDF_METADATA_CHARS);
+        metadata.keywords = metadata
+            .keywords
+            .iter()
+            .take(MAX_PDF_KEYWORDS)
+            .map(|keyword| truncate_pdf_text(keyword, MAX_PDF_METADATA_CHARS))
+            .collect();
+    }
+
+    fn pdf_metadata_string_to_string(obj: &lopdf::Object) -> Option<String> {
+        Self::pdf_string_to_string(obj)
+            .map(|value| truncate_pdf_text(&value, MAX_PDF_METADATA_CHARS))
     }
 
     /// Convert PDF string object to Rust String
@@ -171,7 +234,7 @@ impl PdfDocument {
             return vec![DocumentPage {
                 page_number: 1,
                 elements: vec![DocumentElement::Paragraph(ParagraphElement {
-                    text: text.to_string(),
+                    text: truncate_pdf_text(text, MAX_PDF_ELEMENT_TEXT_CHARS),
                     style: TextStyle::default(),
                 })],
             }];
@@ -196,6 +259,7 @@ impl PdfDocument {
             // Use form feed splits
             return pages_by_ff
                 .into_iter()
+                .take(MAX_PDF_RESPONSE_PAGES)
                 .enumerate()
                 .map(|(i, page_text)| DocumentPage {
                     page_number: i + 1,
@@ -205,13 +269,14 @@ impl PdfDocument {
         }
 
         // Approximate split by text length while honoring UTF-8 character boundaries.
-        let bytes_per_page = (text.len() / page_count).max(1);
-        let mut pages = Vec::with_capacity(page_count);
+        let response_page_count = page_count.clamp(1, MAX_PDF_RESPONSE_PAGES);
+        let bytes_per_page = (text.len() / response_page_count).max(1);
+        let mut pages = Vec::with_capacity(response_page_count);
         let mut remaining = text;
         let mut page_num = 1;
 
-        while !remaining.is_empty() && page_num <= page_count {
-            let split_at = if page_num == page_count {
+        while !remaining.is_empty() && page_num <= response_page_count {
+            let split_at = if page_num == response_page_count {
                 remaining.len()
             } else {
                 // Try to split at paragraph boundary
@@ -236,7 +301,7 @@ impl PdfDocument {
             pages.push(DocumentPage {
                 page_number: 1,
                 elements: vec![DocumentElement::Paragraph(ParagraphElement {
-                    text: text.to_string(),
+                    text: truncate_pdf_text(text, MAX_PDF_ELEMENT_TEXT_CHARS),
                     style: TextStyle::default(),
                 })],
             });
@@ -249,7 +314,7 @@ impl PdfDocument {
     fn parse_text_elements(&self, text: &str) -> Vec<DocumentElement> {
         let mut elements = Vec::new();
 
-        for paragraph in text.split("\n\n") {
+        for paragraph in text.split("\n\n").take(MAX_PDF_ELEMENTS_PER_PAGE) {
             let trimmed = paragraph.trim();
             if trimmed.is_empty() {
                 continue;
@@ -264,12 +329,12 @@ impl PdfDocument {
                 && trimmed.chars().any(|c| c.is_alphabetic())
             {
                 elements.push(DocumentElement::Heading(HeadingElement {
-                    text: trimmed.to_string(),
+                    text: truncate_pdf_text(trimmed, MAX_PDF_ELEMENT_TEXT_CHARS),
                     level: 2,
                 }));
             } else {
                 elements.push(DocumentElement::Paragraph(ParagraphElement {
-                    text: trimmed.to_string(),
+                    text: truncate_pdf_text(trimmed, MAX_PDF_ELEMENT_TEXT_CHARS),
                     style: TextStyle::default(),
                 }));
             }
@@ -277,7 +342,7 @@ impl PdfDocument {
 
         if elements.is_empty() {
             elements.push(DocumentElement::Paragraph(ParagraphElement {
-                text: text.trim().to_string(),
+                text: truncate_pdf_text(text.trim(), MAX_PDF_ELEMENT_TEXT_CHARS),
                 style: TextStyle::default(),
             }));
         }
@@ -287,12 +352,17 @@ impl PdfDocument {
 
     /// Get metadata without reading full document
     pub fn get_metadata(&self, path: impl AsRef<Path>) -> DocumentResult<DocumentMetadata> {
-        let data = std::fs::read(path.as_ref())?;
+        let path = path.as_ref();
+        let file_size = std::fs::metadata(path)?.len();
+        ensure_pdf_size_allowed(file_size)?;
+
+        let data = std::fs::read(path)?;
         let doc = lopdf::Document::load_mem(&data)
             .map_err(|e| DocumentError::Pdf(format!("Failed to parse PDF: {}", e)))?;
 
         let mut metadata = self.extract_metadata(&doc)?;
-        metadata.file_size = data.len() as u64;
+        Self::normalize_metadata(&mut metadata);
+        metadata.file_size = file_size;
         Ok(metadata)
     }
 }
@@ -310,6 +380,7 @@ impl Default for PdfDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     // =========================================================================
     // Constructor / Default
@@ -325,6 +396,37 @@ mod tests {
     fn test_default_creates_instance() {
         let doc = PdfDocument::default();
         assert!(doc.font_family.is_none());
+    }
+
+    #[test]
+    fn test_pdf_size_guard_rejects_oversized_source() {
+        let err = ensure_pdf_size_allowed(MAX_PDF_SOURCE_BYTES + 1).unwrap_err();
+
+        assert!(err.to_string().contains("too large for extraction"));
+    }
+
+    #[test]
+    fn test_pdf_read_rejects_sparse_oversized_file_before_full_read() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"%PDF-1.7\n").unwrap();
+        tmp.as_file_mut().set_len(MAX_PDF_SOURCE_BYTES + 1).unwrap();
+
+        let err = PdfDocument::new().read(tmp.path()).unwrap_err();
+
+        assert!(err.to_string().contains("too large for extraction"));
+    }
+
+    #[test]
+    fn truncate_pdf_text_is_unicode_safe() {
+        let value = "é".repeat(MAX_PDF_METADATA_CHARS + 1);
+
+        let truncated = truncate_pdf_text(&value, MAX_PDF_METADATA_CHARS);
+
+        assert!(truncated.ends_with("..."));
+        assert_eq!(
+            truncated.trim_end_matches("...").chars().count(),
+            MAX_PDF_METADATA_CHARS
+        );
     }
 
     // =========================================================================
@@ -411,6 +513,31 @@ mod tests {
         assert_eq!(result, Some("Simple ASCII text 123!@#".to_string()));
     }
 
+    #[test]
+    fn normalize_metadata_caps_fields_and_keywords() {
+        let mut metadata = DocumentMetadata {
+            title: Some("é".repeat(MAX_PDF_METADATA_CHARS + 1)),
+            keywords: vec!["é".repeat(MAX_PDF_METADATA_CHARS + 1); MAX_PDF_KEYWORDS + 8],
+            ..Default::default()
+        };
+
+        PdfDocument::normalize_metadata(&mut metadata);
+
+        let title = metadata.title.as_deref().unwrap();
+        assert!(title.ends_with("..."));
+        assert_eq!(
+            title.trim_end_matches("...").chars().count(),
+            MAX_PDF_METADATA_CHARS
+        );
+
+        assert_eq!(metadata.keywords.len(), MAX_PDF_KEYWORDS);
+        assert!(metadata.keywords[0].ends_with("..."));
+        assert_eq!(
+            metadata.keywords[0].trim_end_matches("...").chars().count(),
+            MAX_PDF_METADATA_CHARS
+        );
+    }
+
     // =========================================================================
     // split_into_pages
     // =========================================================================
@@ -451,6 +578,29 @@ mod tests {
         let text = "Part A\x0CPart B\x0CPart C";
         let pages = doc.split_into_pages(text, 5);
         assert_eq!(pages.len(), 3);
+    }
+
+    #[test]
+    fn test_split_into_pages_caps_form_feed_pages() {
+        let doc = PdfDocument::new();
+        let text = std::iter::repeat("page")
+            .take(MAX_PDF_RESPONSE_PAGES + 8)
+            .collect::<Vec<_>>()
+            .join("\x0C");
+
+        let pages = doc.split_into_pages(&text, MAX_PDF_RESPONSE_PAGES + 8);
+
+        assert_eq!(pages.len(), MAX_PDF_RESPONSE_PAGES);
+    }
+
+    #[test]
+    fn test_split_into_pages_caps_approximate_pages() {
+        let doc = PdfDocument::new();
+        let text = "word ".repeat(MAX_PDF_RESPONSE_PAGES + 8);
+
+        let pages = doc.split_into_pages(&text, MAX_PDF_RESPONSE_PAGES + 8);
+
+        assert_eq!(pages.len(), MAX_PDF_RESPONSE_PAGES);
     }
 
     #[test]
@@ -530,6 +680,38 @@ mod tests {
                 DocumentElement::Paragraph(_) => {}
                 _ => panic!("Expected Paragraph elements"),
             }
+        }
+    }
+
+    #[test]
+    fn test_parse_text_elements_caps_element_count() {
+        let doc = PdfDocument::new();
+        let text = std::iter::repeat("paragraph")
+            .take(MAX_PDF_ELEMENTS_PER_PAGE + 8)
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let elements = doc.parse_text_elements(&text);
+
+        assert_eq!(elements.len(), MAX_PDF_ELEMENTS_PER_PAGE);
+    }
+
+    #[test]
+    fn test_parse_text_elements_truncates_long_paragraph() {
+        let doc = PdfDocument::new();
+        let text = "é".repeat(MAX_PDF_ELEMENT_TEXT_CHARS + 1);
+
+        let elements = doc.parse_text_elements(&text);
+
+        match &elements[0] {
+            DocumentElement::Paragraph(p) => {
+                assert!(p.text.ends_with("..."));
+                assert_eq!(
+                    p.text.trim_end_matches("...").chars().count(),
+                    MAX_PDF_ELEMENT_TEXT_CHARS
+                );
+            }
+            _ => panic!("Expected Paragraph element"),
         }
     }
 

@@ -11,13 +11,25 @@
  * metadata parsing, goto-offset, scroll-driven loading, and hex-line memoization.
  */
 
-import { createSignal, createEffect, createMemo, createResource, on } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  createSignal,
+  createEffect,
+  createMemo,
+  createResource,
+  on,
+} from "solid-js";
 import type { HeaderRegion, ParsedMetadata, FileTypeInfo } from "../../types";
 import type { SelectedEntry } from "../EvidenceTree/types";
 import type { DiscoveredFile } from "../../types";
+import {
+  commands,
+  type ProjectDbEvidenceFile,
+  type SourceAnalysis,
+  type SourceAnalysisOptions,
+} from "../../api/commands";
 import { logger } from "../../utils/logger";
 import { readBytesFromSource, getSourceKey } from "../../hooks";
+import { buildEvidenceSourceInput } from "../evidenceSourceInput";
 import {
   BYTES_PER_LINE,
   INITIAL_LOAD_SIZE,
@@ -26,14 +38,88 @@ import {
   getMaxLoadedBytes,
   getRegionColor,
 } from "./constants";
+import { buildHexAnalysisAnnotations } from "./hexAnalysisAnnotations";
 
 const log = logger.scope("HexViewer");
+const ANALYSIS_SAMPLE_BYTES = 64 * 1024;
+const ANALYSIS_ENTROPY_WINDOW_BYTES = 4096;
 
 export interface UseHexDataOptions {
   file: () => DiscoveredFile | null | undefined;
   entry: () => SelectedEntry | undefined;
   onMetadataLoaded?: (metadata: ParsedMetadata | null) => void;
-  onNavigatorReady?: (navigateTo: (offset: number, size?: number) => void) => void;
+  onNavigatorReady?: (
+    navigateTo: (offset: number, size?: number) => void,
+  ) => void;
+}
+
+function evidenceFileFromDiscoveredFile(
+  file: DiscoveredFile | null | undefined,
+): ProjectDbEvidenceFile | undefined {
+  if (!file) return undefined;
+
+  return {
+    id: file.path,
+    path: file.path,
+    filename: file.filename,
+    containerType: file.container_type,
+    totalSize: file.size,
+    segmentCount: file.segment_count ?? 1,
+    discoveredAt: new Date().toISOString(),
+    created: file.created ?? null,
+    modified: file.modified ?? null,
+  };
+}
+
+async function analyzeSourceWithPersistence(
+  source: NonNullable<ReturnType<typeof buildEvidenceSourceInput>>,
+  file: DiscoveredFile | null | undefined,
+  options: SourceAnalysisOptions,
+): Promise<SourceAnalysis> {
+  const analyzeTransient = () => {
+    if (source.containerType === "disk" && source.path) {
+      return commands.viewer.analyzePath(source.path, options);
+    }
+
+    return commands.viewer.analyzeSource(source, options);
+  };
+
+  try {
+    if (await commands.projectDb.isOpen()) {
+      const result = await commands.sourceAnalysis.analyzeSourceAndInsert({
+        source,
+        options,
+        evidenceFile: evidenceFileFromDiscoveredFile(file),
+        analyzer: "hex-viewer",
+      });
+      await persistHexAnalysisAnnotations(result.analysis);
+      return result.analysis;
+    }
+  } catch (e) {
+    log.warn("Persisted source analysis failed; using transient analysis:", e);
+  }
+
+  return analyzeTransient();
+}
+
+async function persistHexAnalysisAnnotations(
+  analysis: SourceAnalysis,
+): Promise<void> {
+  const annotations = buildHexAnalysisAnnotations(analysis);
+  if (annotations.length === 0) return;
+
+  try {
+    const existing = await commands.projectDb.annotations.getForPath(
+      analysis.sourceId,
+    );
+    const existingIds = new Set(existing.map((annotation) => annotation.id));
+    for (const annotation of annotations) {
+      if (existingIds.has(annotation.id)) continue;
+      await commands.projectDb.annotations.insert(annotation);
+    }
+  } catch (e) {
+    log.warn("Hex analysis annotation persistence failed:", e);
+  }
 }
 
 export function useHexData(opts: UseHexDataOptions) {
@@ -55,7 +141,9 @@ export function useHexData(opts: UseHexDataOptions) {
   const [showAscii, setShowAscii] = createSignal(true);
   const [highlightRegions, setHighlightRegions] = createSignal(true);
   const [showAddress, _setShowAddress] = createSignal(true);
-  const [selectedRegion, setSelectedRegion] = createSignal<HeaderRegion | null>(null);
+  const [selectedRegion, setSelectedRegion] = createSignal<HeaderRegion | null>(
+    null,
+  );
   const [hoveredOffset, setHoveredOffset] = createSignal<number | null>(null);
   const [navigatedRange, setNavigatedRange] = createSignal<{
     offset: number;
@@ -100,7 +188,12 @@ export function useHexData(opts: UseHexDataOptions) {
     });
 
     try {
-      const result = await readBytesFromSource(file ?? null, entry, 0, INITIAL_LOAD_SIZE);
+      const result = await readBytesFromSource(
+        file ?? null,
+        entry,
+        0,
+        INITIAL_LOAD_SIZE,
+      );
       log.debug(
         " loadInitialData success, bytes:",
         result.bytes.length,
@@ -128,7 +221,11 @@ export function useHexData(opts: UseHexDataOptions) {
 
     setLoadingMore(true);
     try {
-      const sizeToLoad = Math.min(LOAD_MORE_SIZE, total - currentLoaded, maxBytes - currentLoaded);
+      const sizeToLoad = Math.min(
+        LOAD_MORE_SIZE,
+        total - currentLoaded,
+        maxBytes - currentLoaded,
+      );
       const result = await readBytesFromSource(
         opts.file() ?? null,
         opts.entry(),
@@ -173,7 +270,12 @@ export function useHexData(opts: UseHexDataOptions) {
       const targetOffset = Math.min(offset + LOAD_MORE_SIZE, totalFileSize());
       setLoadingMore(true);
       try {
-        const result = await readBytesFromSource(opts.file() ?? null, opts.entry(), 0, targetOffset);
+        const result = await readBytesFromSource(
+          opts.file() ?? null,
+          opts.entry(),
+          0,
+          targetOffset,
+        );
         setLoadedBytes(result.bytes);
         setLoadedUpTo(result.bytes.length);
       } catch (e) {
@@ -208,7 +310,12 @@ export function useHexData(opts: UseHexDataOptions) {
       const targetOffset = Math.min(offset + LOAD_MORE_SIZE, totalFileSize());
       setLoadingMore(true);
       try {
-        const result = await readBytesFromSource(opts.file() ?? null, opts.entry(), 0, targetOffset);
+        const result = await readBytesFromSource(
+          opts.file() ?? null,
+          opts.entry(),
+          0,
+          targetOffset,
+        );
         setLoadedBytes(result.bytes);
         setLoadedUpTo(result.bytes.length);
       } catch (e) {
@@ -229,12 +336,23 @@ export function useHexData(opts: UseHexDataOptions) {
     if (!regions[idx]) return;
     const region = regions[idx];
     setSelectedRegion(region);
-    setNavigatedRange({ offset: region.start, size: region.end - region.start });
+    setNavigatedRange({
+      offset: region.start,
+      size: region.end - region.start,
+    });
     if (region.start >= loadedUpTo()) {
-      const targetOffset = Math.min(region.end + LOAD_MORE_SIZE, totalFileSize());
+      const targetOffset = Math.min(
+        region.end + LOAD_MORE_SIZE,
+        totalFileSize(),
+      );
       setLoadingMore(true);
       try {
-        const result = await readBytesFromSource(opts.file() ?? null, opts.entry(), 0, targetOffset);
+        const result = await readBytesFromSource(
+          opts.file() ?? null,
+          opts.entry(),
+          0,
+          targetOffset,
+        );
         setLoadedBytes(result.bytes);
         setLoadedUpTo(result.bytes.length);
       } catch (err) {
@@ -255,7 +373,11 @@ export function useHexData(opts: UseHexDataOptions) {
 
     const lines: {
       offset: number;
-      bytes: { value: number; color: string | null; region: HeaderRegion | null }[];
+      bytes: {
+        value: number;
+        color: string | null;
+        region: HeaderRegion | null;
+      }[];
     }[] = [];
     for (let i = 0; i < bytes.length; i += BYTES_PER_LINE) {
       const lineBytes = bytes.slice(i, i + BYTES_PER_LINE);
@@ -289,44 +411,75 @@ export function useHexData(opts: UseHexDataOptions) {
       scrollContainerRef?.scrollTo({ top: 0, behavior: "smooth" });
     } else if (e.key === "End" && e.ctrlKey) {
       e.preventDefault();
-      scrollContainerRef?.scrollTo({ top: scrollContainerRef.scrollHeight, behavior: "smooth" });
+      scrollContainerRef?.scrollTo({
+        top: scrollContainerRef.scrollHeight,
+        behavior: "smooth",
+      });
     }
   };
 
-  // ── Resources: detect file type & parse metadata (disk files only) ──
-  const [fileTypeResource] = createResource(
-    () => {
-      const f = opts.file();
-      return f?.path;
-    },
-    async (path) => {
-      if (!path) return null;
-      try {
-        return await invoke<FileTypeInfo>("viewer_detect_type", { path });
-      } catch (e) {
-        log.warn("Failed to detect file type:", e);
-        return null;
-      }
-    },
-  );
+  // ── Resources: detect file type, parse headers, and run source analysis ──
+  const [sourceAnalysisResource] = createResource(sourceKey, async (key) => {
+    if (!key) return null;
 
-  const [metadataResource] = createResource(
-    () => {
-      const f = opts.file();
-      return f?.path;
-    },
-    async (path) => {
-      if (!path) return null;
-      try {
-        const meta = await invoke<ParsedMetadata>("viewer_parse_header", { path });
-        opts.onMetadataLoaded?.(meta);
-        return meta;
-      } catch {
-        opts.onMetadataLoaded?.(null);
-        return null;
+    try {
+      const source = buildEvidenceSourceInput(
+        opts.file() ?? null,
+        opts.entry(),
+      );
+      if (!source) return null;
+
+      const options = {
+        offset: 0,
+        length: ANALYSIS_SAMPLE_BYTES,
+        entropyWindowBytes: ANALYSIS_ENTROPY_WINDOW_BYTES,
+      };
+
+      return await analyzeSourceWithPersistence(
+        source,
+        opts.file() ?? null,
+        options,
+      );
+    } catch (e) {
+      log.warn("Failed to analyze source:", e);
+      return null;
+    }
+  });
+
+  const [fileTypeResource] = createResource(sourceKey, async (key) => {
+    if (!key) return null;
+    try {
+      const source = buildEvidenceSourceInput(
+        opts.file() ?? null,
+        opts.entry(),
+      );
+      if (!source) return null;
+      if (source.containerType === "disk" && source.path) {
+        return await commands.viewer.detectType(source.path);
       }
-    },
-  );
+      return await commands.viewer.detectTypeSource(source);
+    } catch (e) {
+      log.warn("Failed to detect file type:", e);
+      return null;
+    }
+  });
+
+  const [metadataResource] = createResource(sourceKey, async (key) => {
+    if (!key) return null;
+    try {
+      const source = buildEvidenceSourceInput(
+        opts.file() ?? null,
+        opts.entry(),
+      );
+      if (!source) return null;
+      if (source.containerType === "disk" && source.path) {
+        return await commands.viewer.parseHeader(source.path);
+      }
+      return await commands.viewer.parseHeaderSource(source);
+    } catch {
+      return null;
+    }
+  });
 
   createEffect(() => {
     const type = fileTypeResource();
@@ -334,8 +487,36 @@ export function useHexData(opts: UseHexDataOptions) {
   });
 
   createEffect(() => {
+    const analysis = sourceAnalysisResource();
+    if (analysis === undefined) return;
+
+    if (!analysis) {
+      if (opts.entry()) {
+        setFileType(null);
+        setMetadata(null);
+        opts.onMetadataLoaded?.(null);
+      }
+      return;
+    }
+
+    const analysisMetadata = sourceAnalysisToMetadata(analysis);
+    setMetadata((current) => mergeMetadata(analysisMetadata, current));
+    setFileType((current) => current ?? sourceAnalysisToFileType(analysis));
+    opts.onMetadataLoaded?.(mergeMetadata(analysisMetadata, metadata()));
+  });
+
+  createEffect(() => {
     const meta = metadataResource();
-    if (meta !== undefined) setMetadata(meta);
+    if (meta !== undefined) {
+      const analysisMetadata = sourceAnalysisResource()
+        ? sourceAnalysisToMetadata(sourceAnalysisResource()!)
+        : null;
+      const merged = analysisMetadata
+        ? mergeMetadata(analysisMetadata, meta)
+        : meta;
+      setMetadata(merged);
+      opts.onMetadataLoaded?.(merged);
+    }
   });
 
   // ── Effect: Load byte data when source changes ──
@@ -349,10 +530,10 @@ export function useHexData(opts: UseHexDataOptions) {
         setLoadedUpTo(0);
         setTotalFileSize(0);
         setNavigatedRange(null);
-
-        if (!opts.file() && opts.entry()) {
-          opts.onMetadataLoaded?.(null);
-        }
+        setSelectedRegion(null);
+        setMetadata(null);
+        setFileType(null);
+        opts.onMetadataLoaded?.(null);
 
         loadInitialData();
       },
@@ -410,4 +591,239 @@ export function useHexData(opts: UseHexDataOptions) {
     handleSelectRegion,
     handleKeyDown,
   };
+}
+
+function sourceAnalysisToFileType(analysis: SourceAnalysis): FileTypeInfo {
+  const signature = analysis.signatures?.[0];
+  return {
+    mime_type: signature?.mimeType ?? null,
+    description:
+      signature?.description ??
+      (analysis.isLikelyText ? "Text Data" : "Binary Data"),
+    extension: signature?.extensions?.[0] ?? "",
+    is_text: analysis.isLikelyText,
+    is_forensic_format: signature?.category === "forensic",
+    magic_hex: analysis.magicHex,
+  };
+}
+
+function sourceAnalysisToMetadata(analysis: SourceAnalysis): ParsedMetadata {
+  const signature = analysis.signatures?.[0];
+  const totalSize = analysis.totalSize ?? 0;
+  const offset = analysis.offset ?? 0;
+  const bytesAnalyzed = analysis.bytesAnalyzed ?? 0;
+  const printableRatio = analysis.printableRatio ?? 0;
+  const fields = [
+    {
+      key: "Source",
+      value: analysis.sourceId ?? "Unknown source",
+      category: "Analysis",
+    },
+    {
+      key: "Total Size",
+      value: `${totalSize.toLocaleString()} bytes`,
+      category: "Analysis",
+    },
+    {
+      key: "Analyzed Range",
+      value: `0x${offset.toString(16).toUpperCase()} - 0x${(offset + bytesAnalyzed).toString(16).toUpperCase()} (${bytesAnalyzed.toLocaleString()} bytes)`,
+      category: "Analysis",
+      source_offset: offset,
+    },
+    {
+      key: "Magic Bytes",
+      value: analysis.magicHex || "None",
+      category: "Signature",
+      linked_region: "Magic Bytes",
+      source_offset: 0,
+    },
+    {
+      key: "Entropy",
+      value: `${(analysis.entropy ?? 0).toFixed(3)} bits/byte`,
+      category: "Byte Statistics",
+    },
+    {
+      key: "Printable Bytes",
+      value: `${(analysis.printableBytes ?? 0).toLocaleString()} (${(printableRatio * 100).toFixed(1)}%)`,
+      category: "Byte Statistics",
+    },
+    {
+      key: "NUL Bytes",
+      value: (analysis.nulBytes ?? 0).toLocaleString(),
+      category: "Byte Statistics",
+    },
+    {
+      key: "High-bit Bytes",
+      value: (analysis.highBitBytes ?? 0).toLocaleString(),
+      category: "Byte Statistics",
+    },
+    {
+      key: "Text Likelihood",
+      value: analysis.isLikelyText ? "Likely text" : "Likely binary",
+      category: "Byte Statistics",
+    },
+  ];
+
+  if (signature) {
+    fields.push(
+      {
+        key: "Detected Type",
+        value: signature.description,
+        category: "Signature",
+      },
+      {
+        key: "MIME Type",
+        value: signature.mimeType,
+        category: "Signature",
+      },
+      {
+        key: "Category",
+        value: signature.category,
+        category: "Signature",
+      },
+      {
+        key: "Confidence",
+        value: signature.confidence,
+        category: "Signature",
+      },
+    );
+  }
+
+  const embeddedSignatures = (analysis.signatures ?? []).filter(
+    (item) => item.offset > 0,
+  );
+  if (embeddedSignatures.length > 0) {
+    fields.push({
+      key: "Embedded Signatures",
+      value: embeddedSignatures
+        .slice(0, 12)
+        .map(
+          (item) =>
+            `${item.description} @ 0x${item.offset.toString(16).toUpperCase()}`,
+        )
+        .join(", "),
+      category: "Signature",
+    });
+  }
+
+  const indicators = analysis.indicators ?? [];
+  if (indicators.length > 0) {
+    fields.push({
+      key: "Extracted Indicators",
+      value: indicators
+        .slice(0, 16)
+        .map(
+          (item) =>
+            `${item.indicatorType}: ${item.value} @ 0x${item.offset.toString(16).toUpperCase()}`,
+        )
+        .join(", "),
+      category: "Indicators",
+    });
+  }
+
+  if (analysis.asciiPreview) {
+    fields.push({
+      key: "ASCII Preview",
+      value: analysis.asciiPreview,
+      category: "Preview",
+    });
+  }
+
+  return {
+    format:
+      signature?.description ??
+      (analysis.isLikelyText ? "Text Data" : "Binary Data"),
+    version: null,
+    fields,
+    regions: sourceAnalysisToRegions(analysis),
+  };
+}
+
+function sourceAnalysisToRegions(analysis: SourceAnalysis): HeaderRegion[] {
+  const regions: HeaderRegion[] = [];
+  const totalSize = analysis.totalSize ?? 0;
+  const offset = analysis.offset ?? 0;
+  const bytesAnalyzed = analysis.bytesAnalyzed ?? 0;
+
+  if (analysis.magicHex && totalSize > 0) {
+    regions.push({
+      start: 0,
+      end: Math.min(16, totalSize),
+      name: "Magic Bytes",
+      color_class: "region-magic",
+      description: "Initial bytes used for file signature detection",
+    });
+  }
+
+  (analysis.signatures ?? [])
+    .filter((signature) => signature.offset > 0)
+    .slice(0, 24)
+    .forEach((signature, index) => {
+      const signatureLength = Math.max(
+        1,
+        signature.magicHex.split(/\s+/).filter(Boolean).length,
+      );
+      regions.push({
+        start: signature.offset,
+        end: Math.min(totalSize, signature.offset + signatureLength),
+        name: `Embedded Signature ${index + 1}`,
+        color_class: "region-metadata",
+        description: `${signature.description} (${signature.mimeType}) at 0x${signature.offset.toString(16).toUpperCase()}`,
+      });
+    });
+
+  if (offset > 0 && bytesAnalyzed > 0) {
+    regions.push({
+      start: offset,
+      end: offset + Math.min(bytesAnalyzed, 256),
+      name: "Analysis Window",
+      color_class: "region-header",
+      description: "Sampled byte range used for source analysis",
+    });
+  }
+
+  (analysis.entropyWindows ?? [])
+    .filter((window) => window.entropy >= 7.5 || window.entropy <= 1.0)
+    .slice(0, 8)
+    .forEach((window, index) => {
+      const high = window.entropy >= 7.5;
+      regions.push({
+        start: window.offset,
+        end: window.offset + window.length,
+        name: `${high ? "High" : "Low"} Entropy ${index + 1}`,
+        color_class: high ? "region-data" : "region-metadata",
+        description: `${high ? "High" : "Low"} entropy window (${window.entropy.toFixed(3)} bits/byte)`,
+      });
+    });
+
+  return regions;
+}
+
+function mergeMetadata(
+  primary: ParsedMetadata,
+  secondary: ParsedMetadata | null,
+): ParsedMetadata {
+  if (!secondary) return primary;
+
+  return {
+    format: secondary.format || primary.format,
+    version: secondary.version ?? primary.version,
+    fields: [...primary.fields, ...secondary.fields],
+    regions: mergeRegions(primary.regions, secondary.regions),
+  };
+}
+
+function mergeRegions(
+  primary: HeaderRegion[],
+  secondary: HeaderRegion[],
+): HeaderRegion[] {
+  const seen = new Set<string>();
+  const merged: HeaderRegion[] = [];
+  for (const region of [...primary, ...secondary]) {
+    const key = `${region.start}:${region.end}:${region.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(region);
+  }
+  return merged;
 }

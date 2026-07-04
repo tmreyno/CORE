@@ -27,6 +27,7 @@ pub use ffx_raw as raw;
 pub use ffx_ufed as ufed;
 
 // Crate modules
+pub mod byte_source;
 pub mod case_documents;
 pub mod companion;
 #[allow(deprecated)]
@@ -38,6 +39,7 @@ mod traits;
 mod types;
 
 // Re-exports
+pub use byte_source::*;
 pub use case_documents::*;
 #[allow(deprecated)]
 pub use impls::*;

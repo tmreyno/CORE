@@ -10,6 +10,13 @@ use crate::common::format_size;
 use crate::containers::ContainerError;
 use crate::viewer::types::{HeaderRegion, MetadataField, ParsedMetadata};
 
+fn bounded_region_end(header: &[u8], start: u64, len: u64) -> u64 {
+    start
+        .checked_add(len)
+        .map(|end| end.min(header.len() as u64))
+        .unwrap_or(header.len() as u64)
+}
+
 /// Parse ZIP header and extract metadata
 pub fn parse_zip_header(
     header: &[u8],
@@ -21,7 +28,7 @@ pub fn parse_zip_header(
 
     regions.push(HeaderRegion::new(
         0,
-        4,
+        bounded_region_end(header, 0, 4),
         "Signature",
         "region-signature",
         "ZIP local file header signature (PK\\x03\\x04)",
@@ -152,7 +159,7 @@ pub fn parse_7z_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata, 
 
     regions.push(HeaderRegion::new(
         0,
-        6,
+        bounded_region_end(header, 0, 6),
         "Signature",
         "region-signature",
         "7-Zip magic signature (37 7A BC AF 27 1C)",
@@ -211,13 +218,15 @@ pub fn parse_7z_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata, 
             "Offset to next header (relative to byte 0x20)",
         ));
 
+        let offset_value = match next_offset.checked_add(32) {
+            Some(absolute_offset) => {
+                format!("0x{:X} (absolute: 0x{:X})", next_offset, absolute_offset)
+            }
+            None => format!("0x{:X} (absolute offset invalid: overflow)", next_offset),
+        };
+
         fields.push(
-            MetadataField::new(
-                "Next Header Offset",
-                format!("0x{:X} (absolute: 0x{:X})", next_offset, next_offset + 32),
-                "Structure",
-            )
-            .with_offset(12),
+            MetadataField::new("Next Header Offset", offset_value, "Structure").with_offset(12),
         );
     }
 
@@ -289,7 +298,7 @@ pub fn parse_rar_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
     let sig_len = if is_rar5 { 8 } else { 7 };
     regions.push(HeaderRegion::new(
         0,
-        sig_len,
+        bounded_region_end(header, 0, sig_len),
         "Signature",
         "region-signature",
         format!("{} magic signature", format_name),
@@ -316,7 +325,7 @@ pub fn parse_rar_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
                     .with_offset(8),
             );
         }
-    } else if header.len() >= 13 {
+    } else if header.len() >= 14 {
         let head_crc = u16::from_le_bytes([header[7], header[8]]);
         let head_type = header[9];
         let head_flags = u16::from_le_bytes([header[10], header[11]]);
@@ -395,7 +404,7 @@ pub fn parse_gzip_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata
 
     regions.push(HeaderRegion::new(
         0,
-        2,
+        bounded_region_end(header, 0, 2),
         "Signature",
         "region-signature",
         "GZIP magic (1F 8B)",
@@ -749,6 +758,19 @@ mod tests {
         assert_eq!(sig.end, 4);
     }
 
+    #[test]
+    fn zip_short_header_bounds_signature_region() {
+        let header = [0x50, 0x4B];
+        let result = parse_zip_header(&header, "zip", 0).unwrap();
+        let sig = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
+
+        assert_eq!(sig.end, header.len() as u64);
+    }
+
     // =========================================================================
     // 7-Zip parser tests
     // =========================================================================
@@ -822,6 +844,19 @@ mod tests {
     }
 
     #[test]
+    fn sevenz_next_header_offset_overflow_is_reported() {
+        let header = make_7z_header(0, 4, 0, u64::MAX - 16, 0, 0);
+        let result = parse_7z_header(&header, 0).unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "Next Header Offset")
+            .unwrap();
+
+        assert!(field.value.contains("overflow"));
+    }
+
+    #[test]
     fn sevenz_next_header_crc() {
         let header = make_7z_header(0, 4, 0, 0, 0, 0xCAFEBABE);
         let result = parse_7z_header(&header, 0).unwrap();
@@ -844,6 +879,19 @@ mod tests {
             .unwrap();
         assert_eq!(sig.start, 0);
         assert_eq!(sig.end, 6);
+    }
+
+    #[test]
+    fn sevenz_short_header_bounds_signature_region() {
+        let header = [0x37, 0x7A, 0xBC];
+        let result = parse_7z_header(&header, 0).unwrap();
+        let sig = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
+
+        assert_eq!(sig.end, header.len() as u64);
     }
 
     // =========================================================================
@@ -892,6 +940,35 @@ mod tests {
         let result = parse_rar_header(&header, 5000).unwrap();
         assert_eq!(result.format, "RAR4");
         assert_eq!(result.version.as_deref(), Some("4.x"));
+    }
+
+    #[test]
+    fn rar4_thirteen_byte_header_does_not_panic() {
+        let mut header = make_rar4_header(0, 0x73, 0, 13);
+        header.truncate(13);
+
+        let result = parse_rar_header(&header, 0).unwrap();
+        let sig = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
+
+        assert_eq!(sig.end, 7);
+        assert!(!result.fields.iter().any(|f| f.key == "Header Size"));
+    }
+
+    #[test]
+    fn rar_short_header_bounds_signature_region() {
+        let header = [0x52, 0x61, 0x72];
+        let result = parse_rar_header(&header, 0).unwrap();
+        let sig = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
+
+        assert_eq!(sig.end, header.len() as u64);
     }
 
     #[test]
@@ -1159,5 +1236,18 @@ mod tests {
             .unwrap();
         assert_eq!(sig.start, 0);
         assert_eq!(sig.end, 2);
+    }
+
+    #[test]
+    fn gzip_short_header_bounds_signature_region() {
+        let header = [0x1F];
+        let result = parse_gzip_header(&header, 0).unwrap();
+        let sig = result
+            .regions
+            .iter()
+            .find(|r| r.name == "Signature")
+            .unwrap();
+
+        assert_eq!(sig.end, header.len() as u64);
     }
 }

@@ -168,8 +168,7 @@ pub fn create_backup(
     }
 
     // Read project file
-    let content =
-        fs::read_to_string(project_path).map_err(|e| format!("Failed to read project: {}", e))?;
+    let content = crate::project::read_project_json_with_limit(project_path, "project file")?;
 
     let project: FFXProject =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse project: {}", e))?;
@@ -416,8 +415,7 @@ pub fn recover_from_autosave(project_path: &Path) -> Result<FFXProject, String> 
         return Err("No autosave file found".to_string());
     }
 
-    let content = fs::read_to_string(&autosave_path)
-        .map_err(|e| format!("Failed to read autosave: {}", e))?;
+    let content = crate::project::read_project_json_with_limit(&autosave_path, "autosave file")?;
 
     let project: FFXProject =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse autosave: {}", e))?;
@@ -456,8 +454,7 @@ pub fn check_project_health(project_path: &Path) -> Result<ProjectHealth, String
         return Err("Project file does not exist".to_string());
     }
 
-    let content =
-        fs::read_to_string(project_path).map_err(|e| format!("Failed to read project: {}", e))?;
+    let content = crate::project::read_project_json_with_limit(project_path, "project file")?;
 
     let project: FFXProject =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse project: {}", e))?;

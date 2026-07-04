@@ -15,6 +15,11 @@ use tracing::debug;
 use crate::archive;
 use crate::common::filesystem::FilesystemDriver;
 
+const ARCHIVE_TREE_MAX_ENTRIES: usize = 100_000;
+const ARCHIVE_TREE_FIELD_MAX_CHARS: usize = 4096;
+const ARCHIVE_TREE_ERROR_MAX_CHARS: usize = 8192;
+const ARCHIVE_TREE_TRUNCATED_SUFFIX: &str = "... [truncated]";
+
 /// Archive entry for tree display (matches ArchiveEntry from extraction.rs)
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,7 +112,10 @@ pub async fn archive_get_metadata(
                         archive_size,
                         format: "zip".to_string(),
                         encrypted: false,
-                        error: Some(e.to_string()),
+                        error: Some(truncate_archive_tree_text(
+                            &e.to_string(),
+                            ARCHIVE_TREE_ERROR_MAX_CHARS,
+                        )),
                     }),
                 }
             }
@@ -125,7 +133,10 @@ pub async fn archive_get_metadata(
                         archive_size,
                         format: format.clone(),
                         encrypted: false,
-                        error: Some(e.to_string()),
+                        error: Some(truncate_archive_tree_text(
+                            &e.to_string(),
+                            ARCHIVE_TREE_ERROR_MAX_CHARS,
+                        )),
                     }),
                 }
             }
@@ -179,7 +190,10 @@ pub async fn archive_get_metadata(
                             archive_size,
                             format: "dmg".to_string(),
                             encrypted: false,
-                            error: Some(e.to_string()),
+                            error: Some(truncate_archive_tree_text(
+                                &e.to_string(),
+                                ARCHIVE_TREE_ERROR_MAX_CHARS,
+                            )),
                         }),
                     }
                 }
@@ -196,10 +210,13 @@ pub async fn archive_get_metadata(
                 archive_size,
                 format: "unknown".to_string(),
                 encrypted: false,
-                error: Some(format!(
-                    "Unknown archive format: .{}. Supported archive formats: ZIP, 7z, TAR, GZ, BZ2, XZ, RAR, DMG, ISO. \
+                error: Some(truncate_archive_tree_text(
+                    &format!(
+                        "Unknown archive format: .{}. Supported archive formats: ZIP, 7z, TAR, GZ, BZ2, XZ, RAR, DMG, ISO. \
                      The file may be corrupted, encrypted, or use an unsupported archive format.",
-                    extension
+                        extension
+                    ),
+                    ARCHIVE_TREE_ERROR_MAX_CHARS,
                 )),
             }),
         }
@@ -235,7 +252,7 @@ pub async fn archive_get_tree(
 
         // Helper to convert ArchiveEntry to ArchiveTreeEntry
         let convert_entries = |entries: Vec<archive::ArchiveEntry>| -> Vec<ArchiveTreeEntry> {
-            entries.into_iter().map(|e| {
+            bounded_archive_tree_entries(entries.into_iter().map(|e| {
                 let name = std::path::Path::new(&e.path)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
@@ -249,7 +266,7 @@ pub async fn archive_get_tree(
                     crc32: e.crc32,
                     modified: e.last_modified,
                 }
-            }).collect()
+            }))
         };
 
         // Detect archive format and handle accordingly
@@ -276,7 +293,7 @@ pub async fn archive_get_tree(
                 }
                 Err(e) => {
                     debug!("archive_get_tree: segmented 7z listing failed: {}", e);
-                    return Ok(vec![ArchiveTreeEntry {
+                    return Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                         path: format!("(Segmented 7z archive: {})", e),
                         name: "(Listing failed)".to_string(),
                         is_dir: false,
@@ -284,7 +301,7 @@ pub async fn archive_get_tree(
                         compressed_size: 0,
                         crc32: 0,
                         modified: String::new(),
-                    }]);
+                    }]));
                 }
             }
         }
@@ -319,7 +336,7 @@ pub async fn archive_get_tree(
                             "listing failed"
                         };
 
-                        Ok(vec![ArchiveTreeEntry {
+                        Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                             path: format!("(7z archive v{}: {})", version_str, status),
                             name: format!("({})", status),
                             is_dir: false,
@@ -327,7 +344,7 @@ pub async fn archive_get_tree(
                             compressed_size: 0,
                             crc32: 0,
                             modified: String::new(),
-                        }])
+                        }]))
                     }
                 }
             }
@@ -359,7 +376,7 @@ pub async fn archive_get_tree(
                     Ok(entries) => Ok(convert_entries(entries)),
                     Err(_) => {
                         // Single compressed file
-                        Ok(vec![ArchiveTreeEntry {
+                        Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                             path: format!("(Compressed {} file)", extension.to_uppercase()),
                             name: "(Single compressed file - not a TAR archive)".to_string(),
                             is_dir: false,
@@ -367,7 +384,7 @@ pub async fn archive_get_tree(
                             compressed_size: 0,
                             crc32: 0,
                             modified: String::new(),
-                        }])
+                        }]))
                     }
                 }
             }
@@ -389,7 +406,7 @@ pub async fn archive_get_tree(
                             "listing failed"
                         };
 
-                        Ok(vec![ArchiveTreeEntry {
+                        Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                             path: format!("(RAR archive: {})", message),
                             name: format!("({})", message),
                             is_dir: false,
@@ -397,7 +414,7 @@ pub async fn archive_get_tree(
                             compressed_size: 0,
                             crc32: 0,
                             modified: String::new(),
-                        }])
+                        }]))
                     }
                 }
             }
@@ -433,7 +450,7 @@ pub async fn archive_get_tree(
                                             let mut all_entries = Vec::new();
                                             let mut dirs_to_process = vec![("/".to_string(), 0u32)]; // (path, depth)
                                             let max_depth = 50; // Prevent infinite recursion
-                                            let max_entries = 100_000; // Prevent memory issues
+                                            let max_entries = ARCHIVE_TREE_MAX_ENTRIES; // Prevent memory issues
                                             let mut dirs_processed = 0;
 
                                             while let Some((current_dir, depth)) = dirs_to_process.pop() {
@@ -510,11 +527,11 @@ pub async fn archive_get_tree(
                                             let elapsed = start_time.elapsed();
                                             debug!("archive_get_tree: DMG scan complete - {} entries, {} directories, {:.2}s",
                                                    all_entries.len(), dirs_processed, elapsed.as_secs_f32());
-                                            Ok(all_entries)
+                                            Ok(bounded_archive_tree_entries(all_entries))
                                         }
                                         Err(e) => {
                                             debug!("archive_get_tree: failed to mount HFS+: {}", e);
-                                            Ok(vec![ArchiveTreeEntry {
+                                            Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                                                 path: format!("(DMG: HFS+ mount failed - {})", e),
                                                 name: "(HFS+ mount failed)".to_string(),
                                                 is_dir: false,
@@ -522,13 +539,13 @@ pub async fn archive_get_tree(
                                                 compressed_size: 0,
                                                 crc32: 0,
                                                 modified: String::new(),
-                                            }])
+                                            }]))
                                         }
                                     }
                                 }
                                 Err(e) => {
                                     debug!("archive_get_tree: failed to get partition device: {}", e);
-                                    Ok(vec![ArchiveTreeEntry {
+                                    Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                                         path: format!("(DMG: partition read failed - {})", e),
                                         name: "(Partition read failed)".to_string(),
                                         is_dir: false,
@@ -536,7 +553,7 @@ pub async fn archive_get_tree(
                                         compressed_size: 0,
                                         crc32: 0,
                                         modified: String::new(),
-                                    }])
+                                    }]))
                                 }
                             }
                         } else {
@@ -559,7 +576,7 @@ pub async fn archive_get_tree(
                                 .collect();
 
                             if partition_entries.is_empty() {
-                                Ok(vec![ArchiveTreeEntry {
+                                Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                                     path: "(DMG: no partitions found)".to_string(),
                                     name: "(No partitions)".to_string(),
                                     is_dir: false,
@@ -567,15 +584,15 @@ pub async fn archive_get_tree(
                                     compressed_size: 0,
                                     crc32: 0,
                                     modified: String::new(),
-                                }])
+                                }]))
                             } else {
-                                Ok(partition_entries)
+                                Ok(bounded_archive_tree_entries(partition_entries))
                             }
                         }
                     }
                     Err(e) => {
                         debug!("archive_get_tree: failed to open DMG: {}", e);
-                        Ok(vec![ArchiveTreeEntry {
+                        Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                             path: format!("(DMG: failed to open - {})", e),
                             name: "(DMG open failed)".to_string(),
                             is_dir: false,
@@ -583,7 +600,7 @@ pub async fn archive_get_tree(
                             compressed_size: 0,
                             crc32: 0,
                             modified: String::new(),
-                        }])
+                        }]))
                     }
                 }
             }
@@ -591,9 +608,7 @@ pub async fn archive_get_tree(
                 debug!("archive_get_tree: handling ISO format");
                 let entries = archive::libarchive_list_all(&containerPath)
                     .map_err(|e| e.to_string())?;
-                Ok(entries
-                    .into_iter()
-                    .map(|entry| ArchiveTreeEntry {
+                Ok(bounded_archive_tree_entries(entries.into_iter().map(|entry| ArchiveTreeEntry {
                         path: entry.path,
                         name: entry.name,
                         is_dir: entry.is_dir,
@@ -605,8 +620,7 @@ pub async fn archive_get_tree(
                             .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
                             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
                             .unwrap_or_default(),
-                    })
-                            .collect::<Vec<ArchiveTreeEntry>>())
+                    })))
             }
             _ => {
                 // Try ZIP format as fallback (some archives use non-standard extensions)
@@ -615,7 +629,7 @@ pub async fn archive_get_tree(
                     Ok(entries) => Ok(convert_entries(entries)),
                     Err(_) => {
                         // Return empty with helpful message
-                        Ok(vec![ArchiveTreeEntry {
+                        Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                             path: format!("(Unsupported archive format: .{})", extension),
                             name: format!(
                                 "(Unable to read archive contents — .{} is not a recognized format. \
@@ -627,7 +641,7 @@ pub async fn archive_get_tree(
                             compressed_size: 0,
                             crc32: 0,
                             modified: String::new(),
-                        }])
+                        }]))
                     }
                 }
             }
@@ -635,4 +649,85 @@ pub async fn archive_get_tree(
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn bounded_archive_tree_entries(
+    entries: impl IntoIterator<Item = ArchiveTreeEntry>,
+) -> Vec<ArchiveTreeEntry> {
+    entries
+        .into_iter()
+        .take(ARCHIVE_TREE_MAX_ENTRIES)
+        .map(bounded_archive_tree_entry)
+        .collect()
+}
+
+fn bounded_archive_tree_entry(mut entry: ArchiveTreeEntry) -> ArchiveTreeEntry {
+    entry.path = truncate_archive_tree_text(&entry.path, ARCHIVE_TREE_FIELD_MAX_CHARS);
+    entry.name = truncate_archive_tree_text(&entry.name, ARCHIVE_TREE_FIELD_MAX_CHARS);
+    entry.modified = truncate_archive_tree_text(&entry.modified, ARCHIVE_TREE_FIELD_MAX_CHARS);
+    entry
+}
+
+fn truncate_archive_tree_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let keep_chars = max_chars.saturating_sub(ARCHIVE_TREE_TRUNCATED_SUFFIX.chars().count());
+    let mut truncated: String = value.chars().take(keep_chars).collect();
+    truncated.push_str(ARCHIVE_TREE_TRUNCATED_SUFFIX);
+    truncated
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_entry(index: usize) -> ArchiveTreeEntry {
+        ArchiveTreeEntry {
+            path: format!("folder/file-{index}.txt"),
+            name: format!("file-{index}.txt"),
+            is_dir: false,
+            size: index as u64,
+            compressed_size: 0,
+            crc32: 0,
+            modified: "2026-02-16 10:00:00".to_string(),
+        }
+    }
+
+    #[test]
+    fn bounded_archive_tree_entries_caps_result_count() {
+        let entries = (0..ARCHIVE_TREE_MAX_ENTRIES + 1).map(test_entry);
+        let bounded = bounded_archive_tree_entries(entries);
+
+        assert_eq!(bounded.len(), ARCHIVE_TREE_MAX_ENTRIES);
+        assert_eq!(bounded.last().unwrap().path, "folder/file-99999.txt");
+    }
+
+    #[test]
+    fn bounded_archive_tree_entry_caps_long_strings() {
+        let long = "x".repeat(ARCHIVE_TREE_FIELD_MAX_CHARS + 8);
+        let bounded = bounded_archive_tree_entry(ArchiveTreeEntry {
+            path: long.clone(),
+            name: long.clone(),
+            is_dir: false,
+            size: 1,
+            compressed_size: 0,
+            crc32: 0,
+            modified: long,
+        });
+
+        assert_eq!(bounded.path.chars().count(), ARCHIVE_TREE_FIELD_MAX_CHARS);
+        assert_eq!(bounded.name.chars().count(), ARCHIVE_TREE_FIELD_MAX_CHARS);
+        assert_eq!(
+            bounded.modified.chars().count(),
+            ARCHIVE_TREE_FIELD_MAX_CHARS
+        );
+        assert!(bounded.path.ends_with(ARCHIVE_TREE_TRUNCATED_SUFFIX));
+    }
+
+    #[test]
+    fn truncate_archive_tree_text_preserves_short_text() {
+        assert_eq!(truncate_archive_tree_text("short", 16), "short");
+    }
 }

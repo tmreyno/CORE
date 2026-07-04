@@ -92,6 +92,24 @@ describe("ExifPanel", () => {
       expect(mockInvoke).toHaveBeenCalledWith("exif_extract", { path: "/tmp/photo.jpg" });
     });
 
+    it("calls exif_extract_source when an evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockExifData,
+        path: "/evidence/image.ad1:photos/photo.jpg",
+      });
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "photos/photo.jpg",
+        containerType: "ad1",
+        size: 4096,
+      };
+
+      renderComponent(() => <ExifPanel path="/tmp/photo.jpg" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("exif_extract_source", { source });
+    });
+
     it("renders capture settings", async () => {
       mockInvoke.mockResolvedValueOnce(mockExifData);
 

@@ -7,12 +7,12 @@
 //! Schema migration logic for the project database.
 //!
 //! Contains the `check_migrations()` method that upgrades `.ffxdb` databases
-//! from older schema versions to the current version (v12).
+//! from older schema versions to the current version.
 
 use super::database::ProjectDatabase;
 use super::types::SCHEMA_VERSION;
 use rusqlite::{params, Result as SqlResult};
-use tracing::info;
+use tracing::{info, warn};
 
 impl ProjectDatabase {
     /// Run schema migrations if needed (future-proofing)
@@ -685,6 +685,230 @@ impl ProjectDatabase {
                         "v11 → v12 migration: additive packaging/storage columns already exist, skipping"
                     );
                 }
+            }
+
+            // v12 → v13: Normalized artifacts extracted by backend engines
+            if current_version < 13 {
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS artifacts (
+                        id TEXT PRIMARY KEY,
+                        evidence_file_id TEXT,
+                        source_id TEXT NOT NULL,
+                        source_ref_json TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        extension TEXT,
+                        size INTEGER NOT NULL,
+                        mime_type TEXT,
+                        type_description TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        confidence TEXT NOT NULL,
+                        is_text INTEGER NOT NULL DEFAULT 0,
+                        content_preview TEXT,
+                        metadata_json TEXT,
+                        extracted_at TEXT NOT NULL,
+                        extractor TEXT NOT NULL,
+                        FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_artifacts_evidence ON artifacts(evidence_file_id);
+                    CREATE INDEX IF NOT EXISTS idx_artifacts_source ON artifacts(source_id);
+                    CREATE INDEX IF NOT EXISTS idx_artifacts_category ON artifacts(category);
+                    "#,
+                )?;
+                info!("Running v12 → v13 migration: created normalized artifacts table");
+            }
+
+            // v13 → v14: Persisted source byte-analysis records
+            if current_version < 14 {
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS source_analyses (
+                        id TEXT PRIMARY KEY,
+                        evidence_file_id TEXT,
+                        source_id TEXT NOT NULL,
+                        source_ref_json TEXT NOT NULL,
+                        total_size INTEGER NOT NULL,
+                        offset INTEGER NOT NULL,
+                        bytes_analyzed INTEGER NOT NULL,
+                        magic_hex TEXT NOT NULL,
+                        signature_count INTEGER NOT NULL DEFAULT 0,
+                        primary_signature TEXT,
+                        primary_mime_type TEXT,
+                        primary_category TEXT,
+                        entropy REAL NOT NULL,
+                        printable_ratio REAL NOT NULL,
+                        is_likely_text INTEGER NOT NULL DEFAULT 0,
+                        ascii_preview TEXT,
+                        signatures_json TEXT,
+                        entropy_windows_json TEXT,
+                        histogram_json TEXT,
+                        indicators_json TEXT,
+                        analyzed_at TEXT NOT NULL,
+                        analyzer TEXT NOT NULL,
+                        FOREIGN KEY (evidence_file_id) REFERENCES evidence_files(id) ON DELETE SET NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_source_analyses_evidence ON source_analyses(evidence_file_id);
+                    CREATE INDEX IF NOT EXISTS idx_source_analyses_source ON source_analyses(source_id);
+                    CREATE INDEX IF NOT EXISTS idx_source_analyses_category ON source_analyses(primary_category);
+                    "#,
+                )?;
+                info!("Running v13 → v14 migration: created source analysis table");
+            }
+
+            // v14 → v15: Source identity columns on hash records
+            if current_version < 15 {
+                let existing_hash_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('hashes')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                if !existing_hash_cols.iter().any(|c| c == "source_id") {
+                    conn.execute("ALTER TABLE hashes ADD COLUMN source_id TEXT", [])?;
+                }
+                if !existing_hash_cols.iter().any(|c| c == "source_ref_json") {
+                    conn.execute("ALTER TABLE hashes ADD COLUMN source_ref_json TEXT", [])?;
+                }
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_hashes_source ON hashes(source_id)",
+                    [],
+                )?;
+                info!("Running v14 → v15 migration: added source identity columns to hashes");
+            }
+
+            // v15 → v16: FTS5 search over source byte-analysis records
+            if current_version < 16 {
+                conn.execute_batch(
+                    r#"
+                    DROP TABLE IF EXISTS fts_notes;
+                    CREATE VIRTUAL TABLE IF NOT EXISTS fts_notes USING fts5(
+                        target_path, title, content, priority,
+                        content='notes', content_rowid='rowid'
+                    );
+                    DROP TABLE IF EXISTS fts_bookmarks;
+                    CREATE VIRTUAL TABLE IF NOT EXISTS fts_bookmarks USING fts5(
+                        target_path, name, notes, context,
+                        content='bookmarks', content_rowid='rowid'
+                    );
+                    CREATE VIRTUAL TABLE IF NOT EXISTS fts_source_analyses USING fts5(
+                        id, source_id, source_ref_json, magic_hex, primary_signature,
+                        primary_mime_type, primary_category, ascii_preview, signatures_json,
+                        indicators_json, analyzer,
+                        content='source_analyses', content_rowid='rowid'
+                    );
+                    "#,
+                )
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "FTS5 source-analysis table could not be created (may not be available in this SQLite build): {}",
+                        e
+                    );
+                });
+                info!("Running v15 → v16 migration: refreshed FTS tables for source analysis");
+            }
+
+            // v16 → v17: FTS5 search over normalized artifact records
+            if current_version < 17 {
+                conn.execute_batch(
+                    r#"
+                    CREATE VIRTUAL TABLE IF NOT EXISTS fts_artifacts USING fts5(
+                        id, source_id, source_ref_json, name, extension, mime_type,
+                        type_description, category, confidence, content_preview,
+                        metadata_json, extractor,
+                        content='artifacts', content_rowid='rowid'
+                    );
+                    "#,
+                )
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "FTS5 artifact table could not be created (may not be available in this SQLite build): {}",
+                        e
+                    );
+                });
+                info!("Running v16 → v17 migration: added artifact FTS table");
+            }
+
+            // v17 → v18: FTS5 search over annotations and hex review findings
+            if current_version < 18 {
+                conn.execute_batch(
+                    r#"
+                    CREATE VIRTUAL TABLE IF NOT EXISTS fts_annotations USING fts5(
+                        id, file_path, container_path, annotation_type, label, content,
+                        created_by,
+                        content='annotations', content_rowid='rowid'
+                    );
+                    "#,
+                )
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "FTS5 annotation table could not be created (may not be available in this SQLite build): {}",
+                        e
+                    );
+                });
+                info!("Running v17 → v18 migration: added annotation FTS table");
+            }
+
+            // v18 → v19: Persisted source-analysis text indicators
+            if current_version < 19 {
+                let existing_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('source_analyses')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                if !existing_cols.iter().any(|c| c == "indicators_json") {
+                    conn.execute(
+                        "ALTER TABLE source_analyses ADD COLUMN indicators_json TEXT",
+                        [],
+                    )?;
+                }
+                conn.execute_batch(
+                    r#"
+                    DROP TABLE IF EXISTS fts_source_analyses;
+                    CREATE VIRTUAL TABLE IF NOT EXISTS fts_source_analyses USING fts5(
+                        id, source_id, source_ref_json, magic_hex, primary_signature,
+                        primary_mime_type, primary_category, ascii_preview, signatures_json,
+                        indicators_json, analyzer,
+                        content='source_analyses', content_rowid='rowid'
+                    );
+                    "#,
+                )
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "FTS5 source-analysis table could not be refreshed for indicators: {}",
+                        e
+                    );
+                });
+                info!("Running v18 → v19 migration: added source analysis indicators");
+            }
+
+            // v19 → v20: Collected item source/hash snapshots
+            if current_version < 20 {
+                let existing_cols: Vec<String> = conn
+                    .prepare("SELECT name FROM pragma_table_info('collected_items')")?
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                for col in [
+                    "source_id",
+                    "source_ref_json",
+                    "hash_algorithm",
+                    "hash_value",
+                    "hash_computed_at",
+                ] {
+                    if !existing_cols.iter().any(|existing| existing == col) {
+                        conn.execute(
+                            &format!("ALTER TABLE collected_items ADD COLUMN {} TEXT", col),
+                            [],
+                        )?;
+                    }
+                }
+
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_collected_items_source ON collected_items(source_id)",
+                    [],
+                )?;
+                info!("Running v19 → v20 migration: added collected item source/hash snapshots");
             }
 
             conn.execute(

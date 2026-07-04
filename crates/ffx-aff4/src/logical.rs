@@ -28,7 +28,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::io::{Seek, Write};
+use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -38,7 +38,7 @@ use zip::ZipWriter;
 use crate::bevy::BevyWriter;
 use crate::error::{Aff4Error, Aff4Result};
 use crate::hashing::StreamHasher;
-use crate::helpers::{emit_progress, ensure_aff4_extension, read_exact_or_eof};
+use crate::helpers::{emit_progress, ensure_aff4_extension};
 use crate::rdf::{self, RdfGraph};
 use crate::types::*;
 use crate::uri;
@@ -307,8 +307,15 @@ fn write_small_file<W: Write + Seek>(
     volume_urn: &str,
     source_path: &PathBuf,
 ) -> Aff4Result<()> {
-    // Read entire file into memory (it's small)
-    let data = std::fs::read(source_path).map_err(Aff4Error::Io)?;
+    // Read the snapshotted file length. Do not chase bytes appended after
+    // enumeration, and do not accept sources that became shorter.
+    let mut source_file = std::fs::File::open(source_path).map_err(Aff4Error::Io)?;
+    let mut data = Vec::with_capacity(entry.size as usize);
+    Read::by_ref(&mut source_file)
+        .take(entry.size)
+        .read_to_end(&mut data)
+        .map_err(Aff4Error::Io)?;
+    validate_logical_entry_size(source_path, entry.size, data.len() as u64)?;
 
     // Compute per-file hashes
     let hash_algos: Vec<Aff4HashAlgorithm> = if config.linear_hashes.is_empty() {
@@ -352,6 +359,23 @@ fn write_small_file<W: Write + Seek>(
     Ok(())
 }
 
+fn validate_logical_entry_size(
+    source_path: &PathBuf,
+    expected: u64,
+    actual: u64,
+) -> Aff4Result<()> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    Err(Aff4Error::WriteError(format!(
+        "AFF4 logical export incomplete for {}: expected {} bytes from snapshot, processed {} bytes",
+        source_path.display(),
+        expected,
+        actual
+    )))
+}
+
 // ─── Large File Writer (Bevy ImageStream) ────────────────────────────────────
 
 /// Write a large file as a full bevy ImageStream with chunked compression.
@@ -393,24 +417,36 @@ fn write_large_file<W: Write + Seek>(
     let mut bevy_data_written: u64 = 0;
     let mut map_writer = crate::map::MapWriter::new();
 
-    loop {
+    while total_bytes_read < entry.size {
         if let Some(flag) = cancel_flag {
             if flag.load(Ordering::Relaxed) {
                 return Err(Aff4Error::Cancelled);
             }
         }
 
-        let n = read_exact_or_eof(&mut source_file, &mut chunk_buf)?;
-        if n == 0 {
-            break;
-        }
+        let remaining = entry.size - total_bytes_read;
+        let to_read = chunk_size.min(remaining as usize);
+        source_file
+            .read_exact(&mut chunk_buf[..to_read])
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    Aff4Error::WriteError(format!(
+                        "AFF4 logical export incomplete for {}: expected {} bytes from snapshot, processed {} bytes",
+                        source_path.display(),
+                        entry.size,
+                        total_bytes_read
+                    ))
+                } else {
+                    Aff4Error::Io(e)
+                }
+            })?;
 
-        let chunk = &chunk_buf[..n];
+        let chunk = &chunk_buf[..to_read];
         linear_hasher.update(chunk);
         bevy_writer.add_chunk(chunk)?;
         chunks_in_current += 1;
-        bevy_data_written += n as u64;
-        total_bytes_read += n as u64;
+        bevy_data_written += to_read as u64;
+        total_bytes_read += to_read as u64;
 
         // Flush bevy when segment is full
         if chunks_in_current >= chunks_per_segment {
@@ -430,6 +466,8 @@ fn write_large_file<W: Write + Seek>(
             bevy_writer = BevyWriter::new(config.compression, chunk_size as u32, &block_hashes);
         }
     }
+
+    validate_logical_entry_size(source_path, entry.size, total_bytes_read)?;
 
     // Flush remaining bevy data
     if chunks_in_current > 0 {
@@ -681,5 +719,101 @@ mod tests {
             Aff4Error::Cancelled => {}
             other => panic!("Expected Cancelled, got: {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_logical_small_file_rejects_short_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("small.txt");
+        std::fs::write(&file_path, b"snapshot").unwrap();
+        let mut entries = vec![Aff4LogicalEntry::from_source(
+            file_path.clone(),
+            "small.txt".to_string(),
+        )];
+        std::fs::write(&file_path, b"short").unwrap();
+
+        let config = Aff4WriterConfig {
+            output_path: dir.path().join("small-short"),
+            ..Default::default()
+        };
+
+        let result = Aff4LogicalWriter::write_logical(&config, &mut entries, None, None);
+
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("AFF4 logical export incomplete"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_logical_small_file_caps_grown_snapshot() {
+        use std::io::Read as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("small.txt");
+        std::fs::write(&file_path, b"orig").unwrap();
+        let mut entries = vec![Aff4LogicalEntry::from_source(
+            file_path.clone(),
+            "small.txt".to_string(),
+        )];
+        std::fs::write(&file_path, b"orig-extra").unwrap();
+
+        let config = Aff4WriterConfig {
+            output_path: dir.path().join("small-grown"),
+            compression: Aff4Compression::Stored,
+            ..Default::default()
+        };
+
+        let result = Aff4LogicalWriter::write_logical(&config, &mut entries, None, None).unwrap();
+        assert_eq!(result.total_bytes, 4);
+
+        let mut archive =
+            zip::ZipArchive::new(std::fs::File::open(&result.output_path).unwrap()).unwrap();
+        let file_urn = file_urn(&result.volume_urn, "small.txt");
+        let volume_path = uri::urn_to_zip_path(&result.volume_urn, &result.volume_urn);
+        let zip_path = uri::urn_to_zip_path(&file_urn, &result.volume_urn);
+        let zip_member = if zip_path.starts_with(&format!("{}/", volume_path)) {
+            zip_path
+        } else {
+            format!("{}/{}", volume_path, zip_path)
+        };
+        let mut member = archive.by_name(&zip_member).unwrap();
+        let mut data = Vec::new();
+        member.read_to_end(&mut data).unwrap();
+        assert_eq!(data, b"orig");
+    }
+
+    #[test]
+    fn test_logical_large_file_rejects_short_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("large.bin");
+        std::fs::write(
+            &file_path,
+            vec![0x42; (LOGICAL_SMALL_FILE_THRESHOLD + 1024) as usize],
+        )
+        .unwrap();
+        let mut entries = vec![Aff4LogicalEntry::from_source(
+            file_path.clone(),
+            "large.bin".to_string(),
+        )];
+        std::fs::write(&file_path, vec![0x42; 1024]).unwrap();
+
+        let config = Aff4WriterConfig {
+            output_path: dir.path().join("large-short"),
+            chunk_size: 4096,
+            chunks_per_segment: 2,
+            ..Default::default()
+        };
+
+        let result = Aff4LogicalWriter::write_logical(&config, &mut entries, None, None);
+
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("AFF4 logical export incomplete"),
+            "unexpected error: {}",
+            err
+        );
     }
 }

@@ -140,6 +140,65 @@ pub fn hash_segment(segment_path: &str, algorithm: &str) -> Result<String, Conta
 // Implementation Details
 // =============================================================================
 
+fn total_segment_size(segment_paths: &[std::path::PathBuf]) -> Result<u64, ContainerError> {
+    segment_paths.iter().try_fold(0u64, |total, segment_path| {
+        let len = std::fs::metadata(segment_path)
+            .map_err(|e| {
+                ContainerError::IoError(format!(
+                    "Failed to get segment metadata {}: {}",
+                    segment_path.display(),
+                    e
+                ))
+            })?
+            .len();
+        checked_segment_total_add(total, len, segment_path)
+    })
+}
+
+fn checked_segment_total_add(
+    total: u64,
+    len: u64,
+    segment_path: &Path,
+) -> Result<u64, ContainerError> {
+    total.checked_add(len).ok_or_else(|| {
+        ContainerError::InvalidFormat(format!(
+            "Combined segment size exceeds u64 while adding {}",
+            segment_path.display()
+        ))
+    })
+}
+
+fn checked_hash_progress_increment(
+    current: u64,
+    len: usize,
+    total_size: u64,
+) -> Result<u64, ContainerError> {
+    let len = u64::try_from(len).map_err(|_| {
+        ContainerError::IoError("Hash read chunk length does not fit in u64".to_string())
+    })?;
+    let next = current.checked_add(len).ok_or_else(|| {
+        ContainerError::IoError("Hash byte counter overflowed while reading segment".to_string())
+    })?;
+
+    if next > total_size {
+        return Err(ContainerError::IoError(format!(
+            "Segment changed while hashing: processed {next} bytes but expected {total_size}"
+        )));
+    }
+
+    Ok(next)
+}
+
+fn ensure_hash_complete(processed: u64, total_size: u64) -> Result<(), ContainerError> {
+    if processed == total_size {
+        Ok(())
+    } else {
+        Err(ContainerError::IoError(format!(
+            "Segment changed while hashing: processed {processed} bytes but expected {total_size}"
+        )))
+    }
+}
+
 /// BLAKE3 hashing with memory-mapped I/O and parallel processing
 fn hash_blake3_mmap<F>(
     file: &File,
@@ -158,10 +217,12 @@ where
 
     for chunk in mmap.chunks(chunk_size) {
         hasher.update_rayon(chunk);
-        bytes_processed += chunk.len() as u64;
+        bytes_processed =
+            checked_hash_progress_increment(bytes_processed, chunk.len(), total_size)?;
         progress_callback(bytes_processed, total_size);
     }
 
+    ensure_hash_complete(bytes_processed, total_size)?;
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -184,10 +245,12 @@ where
 
     for chunk in mmap.chunks(chunk_size) {
         hasher.update(chunk);
-        bytes_processed += chunk.len() as u64;
+        bytes_processed =
+            checked_hash_progress_increment(bytes_processed, chunk.len(), total_size)?;
         progress_callback(bytes_processed, total_size);
     }
 
+    ensure_hash_complete(bytes_processed, total_size)?;
     Ok(hasher.finalize())
 }
 
@@ -218,13 +281,14 @@ where
         hasher.update_rayon(buf);
         reader.consume(len);
 
-        bytes_read_total += len as u64;
+        bytes_read_total = checked_hash_progress_increment(bytes_read_total, len, total_size)?;
         if bytes_read_total - last_report >= report_interval {
             progress_callback(bytes_read_total, total_size);
             last_report = bytes_read_total;
         }
     }
 
+    ensure_hash_complete(bytes_read_total, total_size)?;
     progress_callback(total_size, total_size);
     Ok(hasher.finalize().to_hex().to_string())
 }
@@ -256,7 +320,7 @@ where
 
         hasher.update(buf);
         reader.consume(len);
-        bytes_read_total += len as u64;
+        bytes_read_total = checked_hash_progress_increment(bytes_read_total, len, total_size)?;
 
         if bytes_read_total - last_report >= report_interval {
             progress_callback(bytes_read_total, total_size);
@@ -264,6 +328,7 @@ where
         }
     }
 
+    ensure_hash_complete(bytes_read_total, total_size)?;
     progress_callback(total_size, total_size);
     Ok(hasher.finalize())
 }
@@ -301,11 +366,7 @@ where
         ));
     }
 
-    // Calculate total size across all segments
-    let total_size: u64 = segment_paths
-        .iter()
-        .map(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
-        .sum();
+    let total_size = total_segment_size(segment_paths)?;
 
     debug!(
         segments = segment_paths.len(),
@@ -341,11 +402,13 @@ where
                 hasher.update_rayon(buf);
                 reader.consume(len);
 
-                bytes_processed += len as u64;
+                bytes_processed =
+                    checked_hash_progress_increment(bytes_processed, len, total_size)?;
                 progress_callback(bytes_processed, total_size);
             }
         }
 
+        ensure_hash_complete(bytes_processed, total_size)?;
         return Ok(hasher.finalize().to_hex().to_string());
     }
 
@@ -374,11 +437,12 @@ where
             hasher.update(buf);
             reader.consume(len);
 
-            bytes_processed += len as u64;
+            bytes_processed = checked_hash_progress_increment(bytes_processed, len, total_size)?;
             progress_callback(bytes_processed, total_size);
         }
     }
 
+    ensure_hash_complete(bytes_processed, total_size)?;
     Ok(hasher.finalize())
 }
 
@@ -447,5 +511,45 @@ mod tests {
 
         assert_eq!(hash.len(), 64);
         assert!(progress_calls > 0);
+    }
+
+    #[test]
+    fn checked_segment_total_add_rejects_overflow() {
+        let err = checked_segment_total_add(u64::MAX, 1, Path::new("segment.E01")).unwrap_err();
+
+        assert!(err.to_string().contains("exceeds u64"));
+    }
+
+    #[test]
+    fn checked_hash_progress_increment_rejects_changed_input() {
+        let err = checked_hash_progress_increment(10, 1, 10).unwrap_err();
+
+        assert!(err.to_string().contains("Segment changed while hashing"));
+    }
+
+    #[test]
+    fn ensure_hash_complete_rejects_short_input() {
+        let err = ensure_hash_complete(9, 10).unwrap_err();
+
+        assert!(err.to_string().contains("Segment changed while hashing"));
+    }
+
+    #[test]
+    fn test_hash_segments_combined_missing_segment_fails_before_hashing() {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(b"segment").unwrap();
+        file.flush().unwrap();
+
+        let missing = file.path().with_extension("missing");
+        let paths = vec![file.path().to_path_buf(), missing];
+        let mut progress_calls = 0;
+
+        let err = hash_segments_combined(&paths, "sha256", |_, _| {
+            progress_calls += 1;
+        })
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Failed to get segment metadata"));
+        assert_eq!(progress_calls, 0);
     }
 }

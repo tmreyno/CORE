@@ -16,12 +16,49 @@ use crate::common::lazy_loading::{
 };
 use crate::ufed;
 
+const LAZY_LOAD_MAX_BATCH_SIZE: usize = 10_000;
+const LAZY_LOAD_MAX_THRESHOLD: usize = 1_000_000;
+
 /// Format a POSIX timestamp (i64 seconds) to ISO-like string
 fn format_timestamp(secs: i64) -> String {
     use chrono::{DateTime, Utc};
     DateTime::<Utc>::from_timestamp(secs, 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| "Unknown".to_string())
+}
+
+fn usize_from_u64_saturating(value: u64) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+fn bounded_batch_size(limit: Option<u64>, config: LazyLoadConfig) -> usize {
+    limit
+        .map(usize_from_u64_saturating)
+        .unwrap_or(config.batch_size)
+        .clamp(1, LAZY_LOAD_MAX_BATCH_SIZE)
+}
+
+fn bounded_threshold(value: u64) -> usize {
+    usize_from_u64_saturating(value).clamp(1, LAZY_LOAD_MAX_THRESHOLD)
+}
+
+fn lazy_page_params(
+    offset: Option<u64>,
+    limit: Option<u64>,
+    config: LazyLoadConfig,
+) -> (usize, usize) {
+    (
+        usize_from_u64_saturating(offset.unwrap_or(0)),
+        bounded_batch_size(limit, config),
+    )
+}
+
+fn lazy_page_result(
+    entries: Vec<LazyTreeEntry>,
+    total_count: usize,
+    offset: usize,
+) -> LazyLoadResult {
+    LazyLoadResult::new_with_offset(entries, total_count, offset)
 }
 
 /// Detect container type from file extension and path
@@ -223,8 +260,7 @@ pub async fn lazy_get_root_children(
     tauri::async_runtime::spawn_blocking(move || {
         let container_type = detect_container_type(&containerPath);
         let config = crate::common::lazy_loading::get_config();
-        let batch_size = limit.map(|l| l as usize).unwrap_or(config.batch_size);
-        let skip = offset.unwrap_or(0) as usize;
+        let (skip, batch_size) = lazy_page_params(offset, limit, config);
 
         match container_type {
             "ad1" => {
@@ -266,7 +302,7 @@ pub async fn lazy_get_root_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "ufed" => {
                 let children =
@@ -298,7 +334,7 @@ pub async fn lazy_get_root_children(
                     "lazy_get_root_children: returning {} entries",
                     entries.len()
                 );
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "zip" => {
                 // Use fast ZipIndex for O(1) lookups
@@ -325,7 +361,7 @@ pub async fn lazy_get_root_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "7z" | "rar" | "tar" => {
                 // Use libarchive for non-ZIP archive formats
@@ -357,7 +393,7 @@ pub async fn lazy_get_root_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "ewf" => {
                 // EWF containers - use VFS to list root
@@ -390,7 +426,7 @@ pub async fn lazy_get_root_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "l01" => {
                 // L01 logical evidence - parse ltree for file tree
@@ -432,7 +468,7 @@ pub async fn lazy_get_root_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "memory" => {
                 // Memory dumps are flat binary blobs — no directory structure to browse.
@@ -445,13 +481,17 @@ pub async fn lazy_get_root_children(
                 let total_size = std::fs::metadata(&containerPath)
                     .map(|m| m.len())
                     .unwrap_or(0);
-                let entry = LazyTreeEntry::file(
-                    containerPath.clone(),
-                    filename,
-                    "/".to_string(),
-                    total_size,
-                );
-                Ok(LazyLoadResult::new(vec![entry], 1))
+                let entries = if skip == 0 && batch_size > 0 {
+                    vec![LazyTreeEntry::file(
+                        containerPath.clone(),
+                        filename,
+                        "/".to_string(),
+                        total_size,
+                    )]
+                } else {
+                    Vec::new()
+                };
+                Ok(lazy_page_result(entries, 1, skip))
             }
             _ => {
                 // Unknown format — return empty result rather than an error
@@ -460,7 +500,7 @@ pub async fn lazy_get_root_children(
                     "lazy_get_root_children: unknown container type '{}' for {}",
                     container_type, containerPath
                 );
-                Ok(LazyLoadResult::new(Vec::new(), 0))
+                Ok(lazy_page_result(Vec::new(), 0, skip))
             }
         }
     })
@@ -485,8 +525,7 @@ pub async fn lazy_get_children(
     tauri::async_runtime::spawn_blocking(move || {
         let container_type = detect_container_type(&containerPath);
         let config = crate::common::lazy_loading::get_config();
-        let batch_size = limit.map(|l| l as usize).unwrap_or(config.batch_size);
-        let skip = offset.unwrap_or(0) as usize;
+        let (skip, batch_size) = lazy_page_params(offset, limit, config);
 
         match container_type {
             "ad1" => {
@@ -528,7 +567,7 @@ pub async fn lazy_get_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "ufed" => {
                 let children =
@@ -553,7 +592,7 @@ pub async fn lazy_get_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "zip" => {
                 // Use fast ZipIndex for O(1) lookups
@@ -581,7 +620,7 @@ pub async fn lazy_get_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "7z" | "rar" | "tar" => {
                 // Use libarchive for non-ZIP archive formats
@@ -619,7 +658,7 @@ pub async fn lazy_get_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "ewf" => {
                 // EWF - use VFS for children
@@ -644,7 +683,7 @@ pub async fn lazy_get_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             "l01" => {
                 // L01 logical evidence - parse ltree for children at path
@@ -686,14 +725,14 @@ pub async fn lazy_get_children(
                     })
                     .collect();
 
-                Ok(LazyLoadResult::new(entries, total))
+                Ok(lazy_page_result(entries, total, skip))
             }
             _ => {
                 debug!(
                     "lazy_get_children: no children for type '{}' at {}",
                     container_type, parentPath
                 );
-                Ok(LazyLoadResult::new(Vec::new(), 0))
+                Ok(lazy_page_result(Vec::new(), 0, skip))
             }
         }
     })
@@ -717,15 +756,60 @@ pub async fn lazy_update_settings(
     let mut config = crate::common::lazy_loading::get_config();
 
     if let Some(v) = batchSize {
-        config.batch_size = v as usize;
+        config.batch_size = bounded_batch_size(Some(v), config);
     }
     if let Some(v) = largeContainerThreshold {
-        config.large_container_threshold = v as usize;
+        config.large_container_threshold = bounded_threshold(v);
     }
     if let Some(v) = paginationThreshold {
-        config.pagination_threshold = v as usize;
+        config.pagination_threshold = bounded_threshold(v);
     }
 
     crate::common::lazy_loading::update_config(config);
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lazy_page_params_clamps_large_limits_and_preserves_offset() {
+        let config = LazyLoadConfig::default();
+
+        let (offset, batch_size) = lazy_page_params(Some(42), Some(u64::MAX), config);
+
+        assert_eq!(offset, 42);
+        assert_eq!(batch_size, LAZY_LOAD_MAX_BATCH_SIZE);
+    }
+
+    #[test]
+    fn lazy_page_params_uses_bounded_config_batch_size() {
+        let mut config = LazyLoadConfig::default();
+        config.batch_size = 0;
+
+        let (offset, batch_size) = lazy_page_params(None, None, config);
+
+        assert_eq!(offset, 0);
+        assert_eq!(batch_size, 1);
+    }
+
+    #[test]
+    fn lazy_page_result_reports_next_absolute_offset() {
+        let entries = vec![
+            LazyTreeEntry::file("a", "a.txt", "/a.txt", 1),
+            LazyTreeEntry::file("b", "b.txt", "/b.txt", 1),
+        ];
+
+        let result = lazy_page_result(entries, 10, 5);
+
+        assert_eq!(result.next_offset, 7);
+        assert!(result.has_more);
+    }
+
+    #[test]
+    fn bounded_threshold_clamps_extreme_settings() {
+        assert_eq!(bounded_threshold(0), 1);
+        assert_eq!(bounded_threshold(u64::MAX), LAZY_LOAD_MAX_THRESHOLD);
+    }
 }

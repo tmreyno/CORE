@@ -40,6 +40,10 @@ pub struct DedupOptions {
 
     /// Filter to a specific container path (None = all containers)
     pub container_path: Option<String>,
+
+    /// Stored hash algorithm to use when enriching from project DB source hashes.
+    /// Defaults to SHA-256 when omitted by callers that support DB enrichment.
+    pub hash_algorithm: Option<String>,
 }
 
 // =============================================================================

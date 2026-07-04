@@ -19,18 +19,24 @@ interface SearchResultItemProps {
 
 /** Map FTS source types to badge styling */
 const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
+  annotations: { label: "Annotation", color: "bg-cyan-500/20 text-cyan-300" },
+  artifacts: { label: "Artifact", color: "bg-emerald-500/20 text-emerald-300" },
   bookmarks: { label: "Bookmark", color: "bg-accent/20 text-accent" },
   notes: { label: "Note", color: "bg-info/20 text-info" },
   activity: { label: "Activity", color: "bg-warning/20 text-warning" },
+  source_analysis: { label: "Analysis", color: "bg-violet-500/20 text-violet-300" },
 };
 
 /** Pick icon based on result source */
 const ResultIcon: Component<{ result: SearchResult }> = (props) => {
   if (props.result.id.startsWith("fts:")) {
     const source = props.result.matchType || "";
+    if (source === "annotations") return <HiOutlineDocumentText class="w-5 h-5 text-cyan-300" />;
+    if (source === "artifacts") return <HiOutlineDocument class="w-5 h-5 text-emerald-300" />;
     if (source === "bookmarks") return <HiOutlineBookmark class="w-5 h-5 text-accent" />;
     if (source === "notes") return <HiOutlineDocumentText class="w-5 h-5 text-info" />;
     if (source === "activity") return <HiOutlineClock class="w-5 h-5 text-warning" />;
+    if (source === "source_analysis") return <HiOutlineDocument class="w-5 h-5 text-violet-300" />;
     return <HiOutlineDocument class="w-5 h-5 text-txt-secondary" />;
   }
   if (props.result.isDir) return <HiOutlineFolder class="w-5 h-5 text-amber-400" />;

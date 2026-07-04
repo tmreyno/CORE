@@ -28,8 +28,19 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use rusqlite::{Connection, OpenFlags};
 use std::fs;
+use std::io::BufReader;
 use std::path::Path;
 use tracing::{debug, warn};
+
+const CELLEBRITE_XML_MAX_BYTES: u64 = 64 * 1024 * 1024;
+const CELLEBRITE_MAX_DATABASE_FILES: usize = 10_000;
+const CELLEBRITE_MAX_ARTIFACT_CATEGORIES: usize = 10_000;
+const CELLEBRITE_MAX_DATA_SOURCES: usize = 10_000;
+const CELLEBRITE_TEXT_FIELD_MAX_CHARS: usize = 4096;
+
+fn non_negative_i64_to_u64(value: i64) -> u64 {
+    u64::try_from(value.max(0)).unwrap_or(0)
+}
 
 // =============================================================================
 // Types
@@ -159,10 +170,14 @@ pub fn parse_cellebrite_case(path: &Path) -> Result<CellebriteCaseInfo, Containe
 
     // 4. Calculate total from categories
     if info.total_artifacts == 0 && !info.artifact_categories.is_empty() {
-        info.total_artifacts = info.artifact_categories.iter().map(|c| c.count).sum();
+        info.total_artifacts = info
+            .artifact_categories
+            .iter()
+            .map(|c| c.count)
+            .fold(0u64, u64::saturating_add);
     }
 
-    Ok(info)
+    Ok(bounded_cellebrite_case_info(info))
 }
 
 /// Get artifact category summary from a Cellebrite database
@@ -181,7 +196,7 @@ pub fn get_cellebrite_categories(
     for db_path in &db_files {
         if let Ok(categories) = query_artifact_categories_from_db(db_path) {
             if !categories.is_empty() {
-                return Ok(categories);
+                return Ok(bounded_cellebrite_artifact_categories(categories));
             }
         }
     }
@@ -216,8 +231,10 @@ struct XmlCaseInfo {
 
 /// Parse report.xml for case metadata
 fn parse_report_xml(path: &Path) -> Result<XmlCaseInfo, ContainerError> {
-    let content = fs::read_to_string(path)?;
-    let mut reader = Reader::from_str(&content);
+    ensure_cellebrite_xml_size(path, "Cellebrite report.xml")?;
+    let file = fs::File::open(path)?;
+    let reader = BufReader::with_capacity(64 * 1024, file);
+    let mut reader = Reader::from_reader(reader);
     reader.config_mut().trim_text(true);
 
     let mut info = XmlCaseInfo::default();
@@ -255,7 +272,8 @@ fn parse_report_xml(path: &Path) -> Result<XmlCaseInfo, ContainerError> {
                 current_element.clear();
             }
             Ok(Event::Text(ref e)) => {
-                let text = e.unescape().unwrap_or_default().trim().to_string();
+                let text =
+                    truncate_cellebrite_text(e.unescape().unwrap_or_default().trim().to_string());
                 if text.is_empty() {
                     buf.clear();
                     continue;
@@ -334,7 +352,7 @@ fn parse_report_xml(path: &Path) -> Result<XmlCaseInfo, ContainerError> {
         buf.clear();
     }
 
-    Ok(info)
+    Ok(bounded_xml_case_info(info))
 }
 
 // =============================================================================
@@ -358,6 +376,9 @@ fn find_cellebrite_databases(dir: &Path) -> Vec<std::path::PathBuf> {
         let db_path = dir.join(name);
         if db_path.exists() {
             dbs.push(db_path);
+            if dbs.len() >= CELLEBRITE_MAX_DATABASE_FILES {
+                return dbs;
+            }
         }
     }
 
@@ -373,6 +394,9 @@ fn find_cellebrite_databases(dir: &Path) -> Vec<std::path::PathBuf> {
                     .to_lowercase();
                 if name.contains("cellebrite") && !dbs.contains(&path) {
                     dbs.push(path);
+                    if dbs.len() >= CELLEBRITE_MAX_DATABASE_FILES {
+                        break;
+                    }
                 }
             }
         }
@@ -428,7 +452,12 @@ fn parse_cellebrite_db(path: &Path) -> Result<DbCaseInfo, ContainerError> {
 
     // Try to get artifact categories
     info.categories = query_artifact_categories_from_conn(&conn);
-    info.total_artifacts = info.categories.iter().map(|c| c.count).sum();
+    info.categories = bounded_cellebrite_artifact_categories(info.categories);
+    info.total_artifacts = info
+        .categories
+        .iter()
+        .map(|c| c.count)
+        .fold(0u64, u64::saturating_add);
 
     Ok(info)
 }
@@ -452,17 +481,18 @@ fn query_artifact_categories_from_conn(conn: &Connection) -> Vec<CellebriteArtif
             let mut categories = Vec::new();
             if let Ok(rows) = stmt.query_map([], |row| {
                 Ok(CellebriteArtifactCategory {
-                    name: row.get::<_, String>(0).unwrap_or_default(),
-                    count: row.get::<_, i64>(1).unwrap_or(0) as u64,
+                    name: truncate_cellebrite_text(row.get::<_, String>(0).unwrap_or_default()),
+                    count: non_negative_i64_to_u64(row.get::<_, i64>(1).unwrap_or(0)),
                 })
             }) {
                 for row in rows.flatten() {
-                    if !row.name.is_empty() {
+                    if !row.name.is_empty() && categories.len() < CELLEBRITE_MAX_ARTIFACT_CATEGORIES
+                    {
                         categories.push(row);
                     }
                 }
                 if !categories.is_empty() {
-                    return categories;
+                    return bounded_cellebrite_artifact_categories(categories);
                 }
             }
         }
@@ -501,54 +531,175 @@ fn query_single_string(
 ) -> Result<String, ContainerError> {
     let sql = format!("SELECT {} FROM {} LIMIT 1", column, table);
     let val = conn.query_row(&sql, [], |row| row.get::<_, String>(0))?;
-    Ok(val)
+    Ok(truncate_cellebrite_text(val))
 }
 
 /// Merge XML-parsed info into the main struct
 fn merge_xml_info(mut base: CellebriteCaseInfo, xml: XmlCaseInfo) -> CellebriteCaseInfo {
     if !xml.case_name.is_empty() {
-        base.case_name = xml.case_name;
+        base.case_name = truncate_cellebrite_text(xml.case_name);
     }
-    base.case_number = base.case_number.or(xml.case_number);
-    base.examiner = base.examiner.or(xml.examiner);
-    base.device_name = base.device_name.or(xml.device_name);
-    base.device_model = base.device_model.or(xml.device_model);
-    base.os_version = base.os_version.or(xml.os_version);
-    base.imei = base.imei.or(xml.imei);
-    base.serial_number = base.serial_number.or(xml.serial_number);
-    base.iccid = base.iccid.or(xml.iccid);
-    base.msisdn = base.msisdn.or(xml.msisdn);
-    base.extraction_type = base.extraction_type.or(xml.extraction_type);
-    base.extraction_date = base.extraction_date.or(xml.extraction_date);
-    base.pa_version = base.pa_version.or(xml.pa_version);
-    base.ufed_version = base.ufed_version.or(xml.ufed_version);
+    base.case_number = base
+        .case_number
+        .or(xml.case_number.map(truncate_cellebrite_text));
+    base.examiner = base.examiner.or(xml.examiner.map(truncate_cellebrite_text));
+    base.device_name = base
+        .device_name
+        .or(xml.device_name.map(truncate_cellebrite_text));
+    base.device_model = base
+        .device_model
+        .or(xml.device_model.map(truncate_cellebrite_text));
+    base.os_version = base
+        .os_version
+        .or(xml.os_version.map(truncate_cellebrite_text));
+    base.imei = base.imei.or(xml.imei.map(truncate_cellebrite_text));
+    base.serial_number = base
+        .serial_number
+        .or(xml.serial_number.map(truncate_cellebrite_text));
+    base.iccid = base.iccid.or(xml.iccid.map(truncate_cellebrite_text));
+    base.msisdn = base.msisdn.or(xml.msisdn.map(truncate_cellebrite_text));
+    base.extraction_type = base
+        .extraction_type
+        .or(xml.extraction_type.map(truncate_cellebrite_text));
+    base.extraction_date = base
+        .extraction_date
+        .or(xml.extraction_date.map(truncate_cellebrite_text));
+    base.pa_version = base
+        .pa_version
+        .or(xml.pa_version.map(truncate_cellebrite_text));
+    base.ufed_version = base
+        .ufed_version
+        .or(xml.ufed_version.map(truncate_cellebrite_text));
 
     if !xml.artifact_categories.is_empty() {
-        base.artifact_categories = xml.artifact_categories;
+        base.artifact_categories = bounded_cellebrite_artifact_categories(xml.artifact_categories);
     }
     if !xml.data_sources.is_empty() {
-        base.data_sources = xml.data_sources;
+        base.data_sources = bounded_cellebrite_data_sources(xml.data_sources);
     }
 
-    base
+    bounded_cellebrite_case_info(base)
 }
 
 /// Merge database info into the main struct (only fill blanks)
 fn merge_db_info(mut base: CellebriteCaseInfo, db: DbCaseInfo) -> CellebriteCaseInfo {
-    base.device_name = base.device_name.or(db.device_name);
-    base.device_model = base.device_model.or(db.device_model);
-    base.os_version = base.os_version.or(db.os_version);
-    base.imei = base.imei.or(db.imei);
-    base.extraction_type = base.extraction_type.or(db.extraction_type);
+    base.device_name = base
+        .device_name
+        .or(db.device_name.map(truncate_cellebrite_text));
+    base.device_model = base
+        .device_model
+        .or(db.device_model.map(truncate_cellebrite_text));
+    base.os_version = base
+        .os_version
+        .or(db.os_version.map(truncate_cellebrite_text));
+    base.imei = base.imei.or(db.imei.map(truncate_cellebrite_text));
+    base.extraction_type = base
+        .extraction_type
+        .or(db.extraction_type.map(truncate_cellebrite_text));
 
     if base.artifact_categories.is_empty() && !db.categories.is_empty() {
-        base.artifact_categories = db.categories;
+        base.artifact_categories = bounded_cellebrite_artifact_categories(db.categories);
     }
     if base.total_artifacts == 0 && db.total_artifacts > 0 {
         base.total_artifacts = db.total_artifacts;
     }
 
-    base
+    bounded_cellebrite_case_info(base)
+}
+
+fn ensure_cellebrite_xml_size(path: &Path, label: &str) -> Result<(), ContainerError> {
+    let len = fs::metadata(path)?.len();
+    if len > CELLEBRITE_XML_MAX_BYTES {
+        return Err(ContainerError::InvalidFormat(format!(
+            "{} exceeds {} byte limit: {}",
+            label,
+            CELLEBRITE_XML_MAX_BYTES,
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn bounded_xml_case_info(mut info: XmlCaseInfo) -> XmlCaseInfo {
+    info.case_name = truncate_cellebrite_text(info.case_name);
+    info.case_number = info.case_number.map(truncate_cellebrite_text);
+    info.examiner = info.examiner.map(truncate_cellebrite_text);
+    info.device_name = info.device_name.map(truncate_cellebrite_text);
+    info.device_model = info.device_model.map(truncate_cellebrite_text);
+    info.os_version = info.os_version.map(truncate_cellebrite_text);
+    info.imei = info.imei.map(truncate_cellebrite_text);
+    info.serial_number = info.serial_number.map(truncate_cellebrite_text);
+    info.iccid = info.iccid.map(truncate_cellebrite_text);
+    info.msisdn = info.msisdn.map(truncate_cellebrite_text);
+    info.extraction_type = info.extraction_type.map(truncate_cellebrite_text);
+    info.extraction_date = info.extraction_date.map(truncate_cellebrite_text);
+    info.pa_version = info.pa_version.map(truncate_cellebrite_text);
+    info.ufed_version = info.ufed_version.map(truncate_cellebrite_text);
+    info.artifact_categories = bounded_cellebrite_artifact_categories(info.artifact_categories);
+    info.data_sources = bounded_cellebrite_data_sources(info.data_sources);
+    info
+}
+
+fn bounded_cellebrite_case_info(mut info: CellebriteCaseInfo) -> CellebriteCaseInfo {
+    info.case_name = truncate_cellebrite_text(info.case_name);
+    info.case_number = info.case_number.map(truncate_cellebrite_text);
+    info.examiner = info.examiner.map(truncate_cellebrite_text);
+    info.agency = info.agency.map(truncate_cellebrite_text);
+    info.device_name = info.device_name.map(truncate_cellebrite_text);
+    info.device_model = info.device_model.map(truncate_cellebrite_text);
+    info.os_version = info.os_version.map(truncate_cellebrite_text);
+    info.imei = info.imei.map(truncate_cellebrite_text);
+    info.serial_number = info.serial_number.map(truncate_cellebrite_text);
+    info.iccid = info.iccid.map(truncate_cellebrite_text);
+    info.msisdn = info.msisdn.map(truncate_cellebrite_text);
+    info.extraction_type = info.extraction_type.map(truncate_cellebrite_text);
+    info.extraction_date = info.extraction_date.map(truncate_cellebrite_text);
+    info.pa_version = info.pa_version.map(truncate_cellebrite_text);
+    info.ufed_version = info.ufed_version.map(truncate_cellebrite_text);
+    info.case_path = info.case_path.map(truncate_cellebrite_text);
+    info.artifact_categories = bounded_cellebrite_artifact_categories(info.artifact_categories);
+    info.data_sources = bounded_cellebrite_data_sources(info.data_sources);
+    info
+}
+
+fn bounded_cellebrite_artifact_categories(
+    mut categories: Vec<CellebriteArtifactCategory>,
+) -> Vec<CellebriteArtifactCategory> {
+    categories.truncate(CELLEBRITE_MAX_ARTIFACT_CATEGORIES);
+    categories
+        .into_iter()
+        .map(|mut category| {
+            category.name = truncate_cellebrite_text(category.name);
+            category
+        })
+        .collect()
+}
+
+fn bounded_cellebrite_data_sources(
+    mut sources: Vec<CellebriteDataSource>,
+) -> Vec<CellebriteDataSource> {
+    sources.truncate(CELLEBRITE_MAX_DATA_SOURCES);
+    sources
+        .into_iter()
+        .map(|mut source| {
+            source.name = truncate_cellebrite_text(source.name);
+            source.source_type = truncate_cellebrite_text(source.source_type);
+            source.timestamp = source.timestamp.map(truncate_cellebrite_text);
+            source.path = source.path.map(truncate_cellebrite_text);
+            source
+        })
+        .collect()
+}
+
+fn truncate_cellebrite_text(value: String) -> String {
+    if value.chars().count() <= CELLEBRITE_TEXT_FIELD_MAX_CHARS {
+        value
+    } else {
+        value
+            .chars()
+            .take(CELLEBRITE_TEXT_FIELD_MAX_CHARS)
+            .collect()
+    }
 }
 
 // =============================================================================
@@ -567,6 +718,123 @@ mod tests {
         assert_eq!(info.total_artifacts, 0);
         assert!(!info.has_report_xml);
         assert!(!info.has_database);
+    }
+
+    #[test]
+    fn non_negative_i64_to_u64_clamps_negative_values() {
+        assert_eq!(non_negative_i64_to_u64(-1), 0);
+        assert_eq!(non_negative_i64_to_u64(42), 42);
+    }
+
+    #[test]
+    fn query_artifact_categories_clamps_negative_counts() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE categories (name TEXT, item_count INTEGER);
+             INSERT INTO categories VALUES ('Messages', -5);",
+        )
+        .unwrap();
+
+        let cats = query_artifact_categories_from_conn(&conn);
+
+        assert_eq!(cats.len(), 1);
+        assert_eq!(cats[0].name, "Messages");
+        assert_eq!(cats[0].count, 0);
+    }
+
+    #[test]
+    fn parse_report_xml_rejects_oversized_file() {
+        let dir = TempDir::new().unwrap();
+        let xml_path = dir.path().join("report.xml");
+        fs::File::create(&xml_path)
+            .unwrap()
+            .set_len(CELLEBRITE_XML_MAX_BYTES + 1)
+            .unwrap();
+
+        match parse_report_xml(&xml_path) {
+            Ok(_) => panic!("oversized report.xml should fail"),
+            Err(err) => assert!(err.to_string().contains("Cellebrite report.xml exceeds")),
+        }
+    }
+
+    #[test]
+    fn bounded_cellebrite_case_info_caps_vectors_and_text() {
+        let long_text = "x".repeat(CELLEBRITE_TEXT_FIELD_MAX_CHARS + 1);
+        let info = CellebriteCaseInfo {
+            case_name: long_text.clone(),
+            case_number: Some(long_text.clone()),
+            artifact_categories: (0..CELLEBRITE_MAX_ARTIFACT_CATEGORIES + 1)
+                .map(|index| CellebriteArtifactCategory {
+                    name: if index == 0 {
+                        long_text.clone()
+                    } else {
+                        format!("category-{index}")
+                    },
+                    count: 1,
+                })
+                .collect(),
+            data_sources: (0..CELLEBRITE_MAX_DATA_SOURCES + 1)
+                .map(|index| CellebriteDataSource {
+                    name: if index == 0 {
+                        long_text.clone()
+                    } else {
+                        format!("source-{index}")
+                    },
+                    source_type: long_text.clone(),
+                    timestamp: Some(long_text.clone()),
+                    path: Some(long_text.clone()),
+                })
+                .collect(),
+            ..Default::default()
+        };
+
+        let bounded = bounded_cellebrite_case_info(info);
+
+        assert_eq!(
+            bounded.case_name.chars().count(),
+            CELLEBRITE_TEXT_FIELD_MAX_CHARS
+        );
+        assert_eq!(
+            bounded.artifact_categories.len(),
+            CELLEBRITE_MAX_ARTIFACT_CATEGORIES
+        );
+        assert_eq!(bounded.data_sources.len(), CELLEBRITE_MAX_DATA_SOURCES);
+        assert!(bounded
+            .artifact_categories
+            .iter()
+            .all(|category| category.name.chars().count() <= CELLEBRITE_TEXT_FIELD_MAX_CHARS));
+        assert!(bounded
+            .data_sources
+            .iter()
+            .all(|source| source.source_type.chars().count() <= CELLEBRITE_TEXT_FIELD_MAX_CHARS));
+    }
+
+    #[test]
+    fn query_artifact_categories_caps_result_count_and_text() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE categories (name TEXT, item_count INTEGER);")
+            .unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        for index in 0..CELLEBRITE_MAX_ARTIFACT_CATEGORIES + 1 {
+            let name = if index == 0 {
+                "x".repeat(CELLEBRITE_TEXT_FIELD_MAX_CHARS + 1)
+            } else {
+                format!("Category {index}")
+            };
+            tx.execute(
+                "INSERT INTO categories VALUES (?1, ?2)",
+                (&name, i64::try_from(index + 1).unwrap()),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+
+        let categories = query_artifact_categories_from_conn(&conn);
+
+        assert_eq!(categories.len(), CELLEBRITE_MAX_ARTIFACT_CATEGORIES);
+        assert!(categories
+            .iter()
+            .all(|category| category.name.chars().count() <= CELLEBRITE_TEXT_FIELD_MAX_CHARS));
     }
 
     #[test]

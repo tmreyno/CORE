@@ -289,7 +289,7 @@ jobs:
           echo "Checking for Tauri plugin version mismatches..."
           # Extract Rust crate versions from Cargo.lock and align NPM packages
           for plugin in dialog updater process; do
-            RUST_VER=$(grep -A1 "name = \"tauri-plugin-${plugin}\"" src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+            RUST_VER=$(grep -A1 "name = \"tauri-plugin-${plugin}\"" Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
             NPM_PKG="@tauri-apps/plugin-${plugin}"
             NPM_VER=$(node -e "try{console.log(require('./node_modules/${NPM_PKG}/package.json').version)}catch{console.log('none')}")
             if [ "$NPM_VER" = "none" ]; then
@@ -306,7 +306,7 @@ jobs:
             fi
           done
           # Also align core @tauri-apps/api with tauri crate
-          TAURI_RUST=$(grep -A1 'name = "tauri"' src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAURI_RUST=$(grep -A1 'name = "tauri"' Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
           TAURI_NPM=$(node -e "console.log(require('./node_modules/@tauri-apps/api/package.json').version)")
           TAURI_RUST_MINOR="${TAURI_RUST%.*}"
           TAURI_NPM_MINOR="${TAURI_NPM%.*}"
@@ -490,7 +490,7 @@ jobs:
         run: |
           echo "Checking for Tauri plugin version mismatches..."
           for plugin in dialog updater process; do
-            RUST_VER=$(grep -A1 "name = \"tauri-plugin-${plugin}\"" src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+            RUST_VER=$(grep -A1 "name = \"tauri-plugin-${plugin}\"" Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
             NPM_PKG="@tauri-apps/plugin-${plugin}"
             NPM_VER=$(node -e "try{console.log(require('./node_modules/${NPM_PKG}/package.json').version)}catch{console.log('none')}")
             if [ "$NPM_VER" = "none" ]; then
@@ -506,7 +506,7 @@ jobs:
               echo "✅ ${plugin}: Rust ${RUST_VER} ↔ NPM ${NPM_VER}"
             fi
           done
-          TAURI_RUST=$(grep -A1 'name = "tauri"' src-tauri/Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAURI_RUST=$(grep -A1 'name = "tauri"' Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
           TAURI_NPM=$(node -e "console.log(require('./node_modules/@tauri-apps/api/package.json').version)")
           TAURI_RUST_MINOR="${TAURI_RUST%.*}"
           TAURI_NPM_MINOR="${TAURI_NPM%.*}"
@@ -778,8 +778,8 @@ jobs:
         run: |
           Write-Host "Checking for Tauri plugin version mismatches..."
           $plugins = @("dialog", "updater", "process")
+          $lockContent = Get-Content "Cargo.lock" -Raw
           foreach ($plugin in $plugins) {
-            $lockContent = Get-Content "src-tauri\Cargo.lock" -Raw
             if ($lockContent -match "name = `"tauri-plugin-$plugin`"\s*\nversion = `"([^`"]+)`"") {
               $rustVer = $matches[1]
             } else { continue }

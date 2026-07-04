@@ -17,6 +17,43 @@ use std::path::Path;
 use super::{UniversalFormat, ViewerType};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
 
+const MAX_DATA_URL_SOURCE_BYTES: u64 = 100 * 1024 * 1024;
+
+fn read_limited_prefix<R: Read>(reader: R, max_bytes: u64) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.take(max_bytes).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn read_with_limit<R: Read>(reader: R, max_bytes: u64) -> std::io::Result<(Vec<u8>, bool)> {
+    let read_limit = max_bytes.saturating_add(1);
+    let mut bytes = read_limited_prefix(reader, read_limit)?;
+    let truncated = bytes.len() as u64 > max_bytes;
+    if truncated {
+        bytes.truncate(max_bytes as usize);
+    }
+    Ok((bytes, truncated))
+}
+
+fn ensure_data_url_size_allowed(size: u64) -> DocumentResult<()> {
+    if size > MAX_DATA_URL_SOURCE_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "File too large for data URL rendering ({:.1} MiB, max {} MiB)",
+            size as f64 / (1024.0 * 1024.0),
+            MAX_DATA_URL_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
+fn truncate_to_utf8_boundary(bytes: &mut Vec<u8>) {
+    if let Err(err) = std::str::from_utf8(bytes) {
+        if err.error_len().is_none() {
+            bytes.truncate(err.valid_up_to());
+        }
+    }
+}
+
 // =============================================================================
 // FILE INFO (READ-ONLY)
 // =============================================================================
@@ -116,8 +153,16 @@ fn format_timestamp(secs: u64) -> String {
 /// Read file as base64 data URL (for images)
 pub fn read_as_data_url(path: impl AsRef<Path>) -> DocumentResult<String> {
     let path = path.as_ref();
+    ensure_data_url_size_allowed(fs::metadata(path)?.len())?;
     let format = UniversalFormat::from_path(path).unwrap_or(UniversalFormat::Binary);
-    let data = fs::read(path)?;
+    let file = fs::File::open(path)?;
+    let (data, exceeded_limit) = read_with_limit(file, MAX_DATA_URL_SOURCE_BYTES)?;
+    if exceeded_limit {
+        return Err(DocumentError::Parse(format!(
+            "File too large for data URL rendering (actual read exceeded max {} MiB)",
+            MAX_DATA_URL_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
     let mime = format.mime_type();
     Ok(format!("data:{};base64,{}", mime, BASE64.encode(&data)))
 }
@@ -126,37 +171,77 @@ pub fn read_as_data_url(path: impl AsRef<Path>) -> DocumentResult<String> {
 pub fn read_as_text(path: impl AsRef<Path>, max_bytes: usize) -> DocumentResult<(String, bool)> {
     let path = path.as_ref();
     let meta = fs::metadata(path)?;
-
-    let truncated = meta.len() > max_bytes as u64;
-
-    if truncated {
-        let mut file = fs::File::open(path)?;
-        let mut buffer = vec![0u8; max_bytes];
-        let n = file.read(&mut buffer)?;
-        buffer.truncate(n);
-        let text = String::from_utf8_lossy(&buffer).to_string();
-        Ok((text, true))
-    } else {
-        let text = fs::read_to_string(path)?;
-        Ok((text, false))
-    }
+    let file = fs::File::open(path)?;
+    let (mut buffer, read_truncated) = read_with_limit(file, max_bytes as u64)?;
+    truncate_to_utf8_boundary(&mut buffer);
+    let text = String::from_utf8_lossy(&buffer).to_string();
+    Ok((text, meta.len() > max_bytes as u64 || read_truncated))
 }
 
 /// Read file bytes (with size limit)
 pub fn read_bytes(path: impl AsRef<Path>, max_bytes: usize) -> DocumentResult<(Vec<u8>, bool)> {
     let path = path.as_ref();
     let meta = fs::metadata(path)?;
+    let file = fs::File::open(path)?;
+    let (data, read_truncated) = read_with_limit(file, max_bytes as u64)?;
+    Ok((data, meta.len() > max_bytes as u64 || read_truncated))
+}
 
-    let truncated = meta.len() > max_bytes as u64;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
 
-    if truncated {
-        let mut file = fs::File::open(path)?;
-        let mut buffer = vec![0u8; max_bytes];
-        let n = file.read(&mut buffer)?;
-        buffer.truncate(n);
-        Ok((buffer, true))
-    } else {
-        let data = fs::read(path)?;
-        Ok((data, false))
+    #[test]
+    fn read_as_data_url_encodes_small_file() {
+        let mut file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+        file.write_all(b"png-bytes").unwrap();
+
+        let data_url = read_as_data_url(file.path()).unwrap();
+
+        assert!(data_url.starts_with("data:image/png;base64,"));
+        assert!(data_url.ends_with("cG5nLWJ5dGVz"));
+    }
+
+    #[test]
+    fn read_as_data_url_rejects_sparse_oversized_file() {
+        let file = tempfile::Builder::new().suffix(".jpg").tempfile().unwrap();
+        file.as_file()
+            .set_len(MAX_DATA_URL_SOURCE_BYTES + 1)
+            .unwrap();
+
+        let err = read_as_data_url(file.path()).unwrap_err();
+
+        assert!(err.to_string().contains("File too large for data URL"));
+    }
+
+    #[test]
+    fn read_with_limit_reports_truncation_from_actual_bytes_read() {
+        let (bytes, truncated) = read_with_limit(&b"abcdef"[..], 3).unwrap();
+
+        assert_eq!(bytes, b"abc");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn read_as_text_enforces_actual_read_limit() {
+        let mut file = tempfile::Builder::new().suffix(".txt").tempfile().unwrap();
+        file.write_all("abcdef".as_bytes()).unwrap();
+
+        let (text, truncated) = read_as_text(file.path(), 3).unwrap();
+
+        assert_eq!(text, "abc");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn read_bytes_enforces_actual_read_limit() {
+        let mut file = tempfile::Builder::new().suffix(".bin").tempfile().unwrap();
+        file.write_all(b"abcdef").unwrap();
+
+        let (bytes, truncated) = read_bytes(file.path(), 3).unwrap();
+
+        assert_eq!(bytes, b"abc");
+        assert!(truncated);
     }
 }

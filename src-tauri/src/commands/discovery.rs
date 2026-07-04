@@ -7,13 +7,25 @@
 //! Path utilities and evidence discovery commands for Project Setup Wizard.
 
 use std::path::PathBuf;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use tauri::Emitter;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 use crate::containers;
 #[cfg(feature = "flavor-review")]
 use crate::processed;
+
+const DISCOVERY_MAX_DIR_ENTRIES: usize = 20_000;
+const DISCOVERY_MAX_SCAN_RESULTS: usize = 100_000;
+const DISCOVERY_MAX_CASE_DOCUMENTS: usize = 10_000;
+const DISCOVERY_MAX_TEMPLATE_PATHS: usize = 10_000;
+const DISCOVERY_TEMPLATE_JSON_MAX_BYTES: usize = 4 * 1024 * 1024;
+const DISCOVERY_TEXT_FIELD_MAX_CHARS: usize = 4096;
+const DISCOVERY_STREAM_CHANNEL_CAPACITY: usize = 1024;
 
 // =============================================================================
 // Filesystem directory listing (host filesystem)
@@ -47,6 +59,15 @@ pub fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
 
     let mut entries = Vec::new();
     for entry in read_dir {
+        if entries.len() >= DISCOVERY_MAX_DIR_ENTRIES {
+            warn!(
+                "Directory listing capped at {} entries for {}",
+                DISCOVERY_MAX_DIR_ENTRIES,
+                dir.display()
+            );
+            break;
+        }
+
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
@@ -84,7 +105,7 @@ pub fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
-    Ok(entries)
+    Ok(bounded_dir_entries(entries))
 }
 
 /// Check if a path exists (file or directory)
@@ -124,7 +145,10 @@ pub fn discover_evidence_files(
         containers::scan_directory(&dirPath)?
     };
 
-    Ok(files.into_iter().map(|f| f.path).collect())
+    Ok(bounded_discovered_files(files)
+        .into_iter()
+        .map(|f| f.path)
+        .collect())
 }
 
 /// Scan for processed databases (AXIOM, Cellebrite, etc.) and return them
@@ -152,14 +176,18 @@ pub fn scan_for_processed_databases(
 pub fn scan_directory(
     #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<containers::DiscoveredFile>, String> {
-    containers::scan_directory(&dirPath).map_err(|e| e.to_string())
+    containers::scan_directory(&dirPath)
+        .map(bounded_discovered_files)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn scan_directory_recursive(
     #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<containers::DiscoveredFile>, String> {
-    containers::scan_directory_recursive(&dirPath).map_err(|e| e.to_string())
+    containers::scan_directory_recursive(&dirPath)
+        .map(bounded_discovered_files)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -172,13 +200,19 @@ pub async fn scan_directory_streaming(
     use tokio::sync::mpsc;
 
     info!("Starting directory scan");
-    let (tx, mut rx) = mpsc::unbounded_channel::<containers::DiscoveredFile>();
+    let (tx, mut rx) =
+        mpsc::channel::<containers::DiscoveredFile>(DISCOVERY_STREAM_CHANNEL_CAPACITY);
+    let callback_emitted = Arc::new(AtomicUsize::new(0));
 
     // Spawn blocking directory scan in background thread
     let dir_path_clone = dirPath.clone();
+    let callback_emitted_clone = Arc::clone(&callback_emitted);
     let scan_handle = tauri::async_runtime::spawn_blocking(move || {
         containers::scan_directory_streaming(&dir_path_clone, recursive, |file| {
-            let _ = tx.send(file.clone());
+            let current = callback_emitted_clone.fetch_add(1, Ordering::Relaxed);
+            if current < DISCOVERY_MAX_SCAN_RESULTS {
+                let _ = tx.blocking_send(bounded_discovered_file(file.clone()));
+            }
         })
     });
 
@@ -193,7 +227,8 @@ pub async fn scan_directory_streaming(
     // Wait for scan to complete and return count
     let result = scan_handle.await.map_err(|e| format!("Task failed: {e}"))?;
     info!(count = emitted, "Scan complete");
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| e.to_string())?;
+    Ok(emitted)
 }
 
 // =============================================================================
@@ -213,7 +248,9 @@ pub fn find_case_documents(
         preview_only: true, // Default to preview mode for speed
     };
 
-    Ok(containers::find_case_documents(&dirPath, &config))
+    Ok(bounded_case_documents(containers::find_case_documents(
+        &dirPath, &config,
+    )))
 }
 
 /// Find Chain of Custody (COC) forms specifically
@@ -222,7 +259,9 @@ pub fn find_coc_forms(
     #[allow(non_snake_case)] dirPath: String,
     recursive: bool,
 ) -> Result<Vec<containers::CaseDocument>, String> {
-    Ok(containers::find_coc_forms(&dirPath, recursive))
+    Ok(bounded_case_documents(containers::find_coc_forms(
+        &dirPath, recursive,
+    )))
 }
 
 /// Find case document folders relative to an evidence path
@@ -236,7 +275,9 @@ pub fn find_case_document_folders(
     let folders = containers::find_case_document_folders(&evidencePath);
     Ok(folders
         .into_iter()
+        .take(DISCOVERY_MAX_CASE_DOCUMENTS)
         .filter_map(|p| p.to_str().map(|s| s.to_string()))
+        .map(truncate_discovery_text)
         .collect())
 }
 
@@ -277,9 +318,17 @@ pub fn discover_case_documents(
 
     for folder in &doc_folders {
         if let Some(path_str) = folder.to_str() {
-            let docs = containers::find_case_documents(path_str, &config);
+            let docs = bounded_case_documents(containers::find_case_documents(path_str, &config));
             info!("Found {} documents in {:?}", docs.len(), folder);
             all_documents.extend(docs);
+            all_documents.truncate(DISCOVERY_MAX_CASE_DOCUMENTS);
+            if all_documents.len() >= DISCOVERY_MAX_CASE_DOCUMENTS {
+                warn!(
+                    "Case document discovery capped at {} documents",
+                    DISCOVERY_MAX_CASE_DOCUMENTS
+                );
+                break;
+            }
         }
     }
 
@@ -308,9 +357,20 @@ pub fn discover_case_documents(
                         max_depth: 0,
                         preview_only,
                     };
-                    let docs = containers::find_case_documents(path_str, &shallow_config);
+                    let docs = bounded_case_documents(containers::find_case_documents(
+                        path_str,
+                        &shallow_config,
+                    ));
                     info!("Fallback found {} documents at level {}", docs.len(), level);
                     all_documents.extend(docs);
+                    all_documents.truncate(DISCOVERY_MAX_CASE_DOCUMENTS);
+                    if all_documents.len() >= DISCOVERY_MAX_CASE_DOCUMENTS {
+                        warn!(
+                            "Case document discovery capped at {} documents",
+                            DISCOVERY_MAX_CASE_DOCUMENTS
+                        );
+                        break;
+                    }
                 }
 
                 // Move up one directory
@@ -326,6 +386,7 @@ pub fn discover_case_documents(
     // Remove duplicates by path
     all_documents.sort_by(|a, b| a.path.cmp(&b.path));
     all_documents.dedup_by(|a, b| a.path == b.path);
+    all_documents = bounded_case_documents(all_documents);
 
     info!("Returning {} total case documents", all_documents.len());
     Ok(all_documents)
@@ -390,6 +451,13 @@ pub fn create_folders_from_template(
     root_path: String,
     case_name: Option<String>,
 ) -> Result<CreateFoldersResult, String> {
+    if template_json.len() > DISCOVERY_TEMPLATE_JSON_MAX_BYTES {
+        return Err(format!(
+            "Template JSON exceeds maximum size of {} bytes",
+            DISCOVERY_TEMPLATE_JSON_MAX_BYTES
+        ));
+    }
+
     let template: ProjectFolderTemplate =
         serde_json::from_str(&template_json).map_err(|e| format!("Invalid template JSON: {e}"))?;
 
@@ -439,11 +507,18 @@ pub fn create_folders_from_template(
             }
 
             let abs_path = full_path.to_string_lossy().to_string();
-            all.push(abs_path.clone());
+            if all.len() < DISCOVERY_MAX_TEMPLATE_PATHS {
+                all.push(truncate_discovery_text(abs_path.clone()));
+            }
 
             // Track role → path mapping
             if let Some(ref role) = entry.role {
-                roles.insert(role.clone(), abs_path);
+                if roles.len() < DISCOVERY_MAX_TEMPLATE_PATHS {
+                    roles.insert(
+                        truncate_discovery_text(role.clone()),
+                        truncate_discovery_text(abs_path),
+                    );
+                }
             }
 
             // Recursively create children
@@ -485,7 +560,8 @@ pub fn create_folders_from_template(
         existing_count,
         role_paths,
         all_paths,
-    })
+    }
+    .bounded())
 }
 
 /// Create a single directory (including parent directories).
@@ -498,5 +574,246 @@ pub fn create_directory(path: String) -> Result<String, String> {
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create directory {}: {e}", dir.display()))?;
     info!("Created directory: {}", dir.display());
-    Ok(path)
+    Ok(truncate_discovery_text(path))
+}
+
+fn bounded_dir_entries(mut entries: Vec<DirEntry>) -> Vec<DirEntry> {
+    entries.truncate(DISCOVERY_MAX_DIR_ENTRIES);
+    entries
+        .into_iter()
+        .map(|entry| DirEntry {
+            name: truncate_discovery_text(entry.name),
+            path: truncate_discovery_text(entry.path),
+            is_dir: entry.is_dir,
+            size: entry.size,
+            modified: entry.modified,
+        })
+        .collect()
+}
+
+fn bounded_discovered_files(
+    mut files: Vec<containers::DiscoveredFile>,
+) -> Vec<containers::DiscoveredFile> {
+    files.truncate(DISCOVERY_MAX_SCAN_RESULTS);
+    files.into_iter().map(bounded_discovered_file).collect()
+}
+
+fn bounded_discovered_file(mut file: containers::DiscoveredFile) -> containers::DiscoveredFile {
+    file.path = truncate_discovery_text(file.path);
+    file.filename = truncate_discovery_text(file.filename);
+    file.container_type = truncate_discovery_text(file.container_type);
+    file.segment_files = file.segment_files.map(|mut segments| {
+        segments.truncate(DISCOVERY_MAX_SCAN_RESULTS);
+        segments.into_iter().map(truncate_discovery_text).collect()
+    });
+    file.created = file.created.map(truncate_discovery_text);
+    file.modified = file.modified.map(truncate_discovery_text);
+    file
+}
+
+fn bounded_case_documents(
+    mut documents: Vec<containers::CaseDocument>,
+) -> Vec<containers::CaseDocument> {
+    documents.truncate(DISCOVERY_MAX_CASE_DOCUMENTS);
+    documents
+        .into_iter()
+        .map(|mut document| {
+            document.path = truncate_discovery_text(document.path);
+            document.filename = truncate_discovery_text(document.filename);
+            document.format = truncate_discovery_text(document.format);
+            document.case_number = document.case_number.map(truncate_discovery_text);
+            document.evidence_id = document.evidence_id.map(truncate_discovery_text);
+            document.modified = document.modified.map(truncate_discovery_text);
+            document
+        })
+        .collect()
+}
+
+trait BoundedCreateFoldersResult {
+    fn bounded(self) -> Self;
+}
+
+impl BoundedCreateFoldersResult for CreateFoldersResult {
+    fn bounded(mut self) -> Self {
+        self.all_paths.truncate(DISCOVERY_MAX_TEMPLATE_PATHS);
+        self.all_paths = self
+            .all_paths
+            .into_iter()
+            .map(truncate_discovery_text)
+            .collect();
+        self.role_paths = self
+            .role_paths
+            .into_iter()
+            .take(DISCOVERY_MAX_TEMPLATE_PATHS)
+            .map(|(role, path)| (truncate_discovery_text(role), truncate_discovery_text(path)))
+            .collect();
+        self
+    }
+}
+
+fn truncate_discovery_text(value: String) -> String {
+    if value.chars().count() <= DISCOVERY_TEXT_FIELD_MAX_CHARS {
+        value
+    } else {
+        value.chars().take(DISCOVERY_TEXT_FIELD_MAX_CHARS).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::containers::{CaseDocument, CaseDocumentType, DiscoveredFile};
+
+    fn discovered_file(path: String) -> DiscoveredFile {
+        DiscoveredFile {
+            path: path.clone(),
+            filename: path,
+            container_type: "E01".to_string(),
+            size: 42,
+            segment_count: None,
+            segment_files: None,
+            segment_sizes: None,
+            total_segment_size: None,
+            created: None,
+            modified: None,
+        }
+    }
+
+    fn case_document(path: String) -> CaseDocument {
+        CaseDocument {
+            path: path.clone(),
+            filename: path,
+            document_type: CaseDocumentType::ChainOfCustody,
+            size: 42,
+            format: "PDF".to_string(),
+            case_number: None,
+            evidence_id: None,
+            modified: None,
+        }
+    }
+
+    #[test]
+    fn bounded_dir_entries_caps_count_and_text() {
+        let long_text = "x".repeat(DISCOVERY_TEXT_FIELD_MAX_CHARS + 1);
+        let mut entries = vec![DirEntry {
+            name: long_text.clone(),
+            path: long_text.clone(),
+            is_dir: false,
+            size: 1,
+            modified: Some(2),
+        }];
+        for index in 0..DISCOVERY_MAX_DIR_ENTRIES {
+            entries.push(DirEntry {
+                name: format!("entry-{index}"),
+                path: format!("/case/entry-{index}"),
+                is_dir: false,
+                size: 1,
+                modified: None,
+            });
+        }
+
+        let bounded = bounded_dir_entries(entries);
+
+        assert_eq!(bounded.len(), DISCOVERY_MAX_DIR_ENTRIES);
+        assert_eq!(
+            bounded[0].name.chars().count(),
+            DISCOVERY_TEXT_FIELD_MAX_CHARS
+        );
+        assert_eq!(
+            bounded[0].path.chars().count(),
+            DISCOVERY_TEXT_FIELD_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn bounded_discovered_files_caps_count_and_segment_paths() {
+        let long_text = "x".repeat(DISCOVERY_TEXT_FIELD_MAX_CHARS + 1);
+        let mut first = discovered_file(long_text.clone());
+        first.segment_files = Some(
+            (0..DISCOVERY_MAX_SCAN_RESULTS + 1)
+                .map(|index| format!("/case/segment-{index}.E01"))
+                .collect(),
+        );
+        let mut files = vec![first];
+        for index in 0..DISCOVERY_MAX_SCAN_RESULTS {
+            files.push(discovered_file(format!("/case/file-{index}.E01")));
+        }
+
+        let bounded = bounded_discovered_files(files);
+
+        assert_eq!(bounded.len(), DISCOVERY_MAX_SCAN_RESULTS);
+        assert_eq!(
+            bounded[0].path.chars().count(),
+            DISCOVERY_TEXT_FIELD_MAX_CHARS
+        );
+        assert_eq!(
+            bounded[0].segment_files.as_ref().unwrap().len(),
+            DISCOVERY_MAX_SCAN_RESULTS
+        );
+    }
+
+    #[test]
+    fn bounded_case_documents_caps_count_and_text() {
+        let long_text = "x".repeat(DISCOVERY_TEXT_FIELD_MAX_CHARS + 1);
+        let mut documents = vec![CaseDocument {
+            case_number: Some(long_text.clone()),
+            evidence_id: Some(long_text.clone()),
+            modified: Some(long_text.clone()),
+            ..case_document(long_text.clone())
+        }];
+        for index in 0..DISCOVERY_MAX_CASE_DOCUMENTS {
+            documents.push(case_document(format!("/case/doc-{index}.pdf")));
+        }
+
+        let bounded = bounded_case_documents(documents);
+
+        assert_eq!(bounded.len(), DISCOVERY_MAX_CASE_DOCUMENTS);
+        assert_eq!(
+            bounded[0].path.chars().count(),
+            DISCOVERY_TEXT_FIELD_MAX_CHARS
+        );
+        assert_eq!(
+            bounded[0].case_number.as_ref().unwrap().chars().count(),
+            DISCOVERY_TEXT_FIELD_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn create_folders_from_template_rejects_oversized_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let oversized = "x".repeat(DISCOVERY_TEMPLATE_JSON_MAX_BYTES + 1);
+
+        let err =
+            create_folders_from_template(oversized, dir.path().to_string_lossy().to_string(), None)
+                .unwrap_err();
+
+        assert!(err.contains("Template JSON exceeds maximum size"));
+    }
+
+    #[test]
+    fn create_folders_result_bounded_caps_paths_and_roles() {
+        let long_text = "x".repeat(DISCOVERY_TEXT_FIELD_MAX_CHARS + 1);
+        let result = CreateFoldersResult {
+            created_count: 0,
+            existing_count: 0,
+            role_paths: (0..DISCOVERY_MAX_TEMPLATE_PATHS + 1)
+                .map(|index| (format!("role-{index}"), long_text.clone()))
+                .collect(),
+            all_paths: (0..DISCOVERY_MAX_TEMPLATE_PATHS + 1)
+                .map(|_| long_text.clone())
+                .collect(),
+        }
+        .bounded();
+
+        assert_eq!(result.all_paths.len(), DISCOVERY_MAX_TEMPLATE_PATHS);
+        assert_eq!(result.role_paths.len(), DISCOVERY_MAX_TEMPLATE_PATHS);
+        assert!(result
+            .all_paths
+            .iter()
+            .all(|path| path.chars().count() <= DISCOVERY_TEXT_FIELD_MAX_CHARS));
+        assert!(result
+            .role_paths
+            .values()
+            .all(|path| path.chars().count() <= DISCOVERY_TEXT_FIELD_MAX_CHARS));
+    }
 }

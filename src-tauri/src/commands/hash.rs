@@ -13,8 +13,12 @@ use tauri::Emitter;
 use tracing::{debug, info, instrument, warn};
 
 use crate::ad1;
-use crate::common::hash_cache;
 use crate::common::health::QUEUE_METRICS;
+use crate::common::{
+    hash_byte_source_with_progress, hash_cache, EvidenceByteSource, EvidenceSourceError,
+    EvidenceSourceRef, HashAlgorithm, LocalFileByteSource,
+};
+use crate::containers::open_container_entry_source;
 use crate::ewf;
 use crate::raw;
 use ffx_aff4::Aff4Reader;
@@ -27,6 +31,14 @@ use ffx_aff4::Aff4Reader;
 /// When set to true, the `batch_hash_smart` worker loop will wait before
 /// starting new jobs, effectively pausing the queue.
 static QUEUE_PAUSED: AtomicBool = AtomicBool::new(false);
+
+const MAX_HASH_SOURCE_FIELD_CHARS: usize = 4096;
+const MAX_HASH_SOURCE_CONTAINER_TYPE_CHARS: usize = 128;
+const MAX_HASH_SOURCE_ID_CHARS: usize = 16_384;
+const MAX_BATCH_HASH_FILES: usize = 50_000;
+const MAX_BATCH_HASH_OVERRIDE_ENTRIES: usize = 16;
+const MAX_BATCH_HASH_CONCURRENCY_OVERRIDE: usize = 128;
+const MAX_EFFECTIVE_BATCH_HASH_CONCURRENCY: usize = 64;
 
 /// Check if the queue is currently paused
 pub fn is_queue_paused() -> bool {
@@ -77,6 +89,53 @@ pub struct BatchFileInput {
     pub container_type: String,
 }
 
+/// Hash input that can describe either a normal filesystem file or a file-like
+/// entry inside a supported container.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HashSourceInput {
+    /// Plain filesystem path. Used for local files and as a fallback source id.
+    pub path: Option<String>,
+    /// Container path for entries inside AD1, L01, archives, E01/RAW VFS views.
+    pub container_path: Option<String>,
+    /// Entry path inside the container, or a local file path when
+    /// `container_type` is `"disk"`.
+    pub entry_path: Option<String>,
+    /// Path to a nested container inside `container_path`. When present, the
+    /// `entry_path` is resolved inside this nested container.
+    pub nested_archive_path: Option<String>,
+    /// Container type identifier such as `"ad1"`, `"l01"`, `"zip"`, `"e01"`,
+    /// `"raw"`, or `"disk"`.
+    pub container_type: Option<String>,
+    /// Optional known byte size. Avoids metadata reads for some container types.
+    pub size: Option<u64>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HashSourceResult {
+    pub source_ref: EvidenceSourceRef,
+    pub source_id: String,
+    pub path: Option<String>,
+    pub container_path: Option<String>,
+    pub entry_path: Option<String>,
+    pub container_type: Option<String>,
+    pub algorithm: String,
+    pub hash: String,
+    pub bytes_hashed: u64,
+    pub duration_ms: u64,
+    pub throughput_mbs: Option<f64>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HashSourceProgress {
+    pub source_id: String,
+    pub current: u64,
+    pub total: u64,
+    pub percent: f64,
+}
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
@@ -99,6 +158,363 @@ fn is_aff4_type(container_type: &str) -> bool {
     container_type.contains("aff4") || container_type.contains("aff")
 }
 
+#[derive(Clone, Debug)]
+struct NestedArchiveEntryByteSource {
+    container_path: String,
+    nested_archive_path: String,
+    entry_path: String,
+    container_type: Option<String>,
+    known_size: Option<u64>,
+}
+
+impl NestedArchiveEntryByteSource {
+    fn new(
+        container_path: String,
+        nested_archive_path: String,
+        entry_path: String,
+        container_type: Option<String>,
+        known_size: Option<u64>,
+    ) -> Self {
+        Self {
+            container_path,
+            nested_archive_path,
+            entry_path,
+            container_type,
+            known_size,
+        }
+    }
+
+    fn nested_entry_size(&self) -> Result<u64, EvidenceSourceError> {
+        crate::commands::archive::nested::nested_container_entry_size(
+            &self.container_path,
+            &self.nested_archive_path,
+            &self.entry_path,
+        )
+        .map_err(|message| EvidenceSourceError::Container {
+            source_id: self.source_ref().display_id(),
+            message,
+        })
+    }
+
+    fn read_nested_range(&self, offset: u64, size: usize) -> Result<Vec<u8>, EvidenceSourceError> {
+        crate::commands::archive::nested::read_nested_container_entry_range(
+            &self.container_path,
+            &self.nested_archive_path,
+            &self.entry_path,
+            offset,
+            size,
+        )
+        .map_err(|message| EvidenceSourceError::Container {
+            source_id: self.source_ref().display_id(),
+            message,
+        })
+    }
+}
+
+impl EvidenceByteSource for NestedArchiveEntryByteSource {
+    fn source_ref(&self) -> EvidenceSourceRef {
+        EvidenceSourceRef::NestedContainerEntry {
+            container_path: self.container_path.clone(),
+            nested_container_path: self.nested_archive_path.clone(),
+            entry_path: self.entry_path.clone(),
+            container_type: self.container_type.clone(),
+        }
+    }
+
+    fn len(&self) -> Result<u64, EvidenceSourceError> {
+        if let Some(size) = self.known_size {
+            return Ok(size);
+        }
+        self.nested_entry_size()
+    }
+
+    fn read_range(&self, offset: u64, size: usize) -> Result<Vec<u8>, EvidenceSourceError> {
+        let total_size = self.len()?;
+        let read_size =
+            crate::common::bounded_read_size(&self.source_ref(), total_size, offset, size)?;
+        if read_size == 0 {
+            return Ok(Vec::new());
+        }
+        self.read_nested_range(offset, read_size)
+    }
+}
+
+fn split_nested_entry_path(
+    nested_archive_path: Option<&str>,
+    entry_path: &str,
+) -> Option<(String, String)> {
+    if let Some(nested_archive_path) = nested_archive_path {
+        if nested_archive_path.is_empty() || entry_path.is_empty() {
+            return None;
+        }
+        return Some((nested_archive_path.to_string(), entry_path.to_string()));
+    }
+
+    let (nested, entry) = entry_path.split_once("::")?;
+    if nested.is_empty() || entry.is_empty() {
+        return None;
+    }
+    Some((nested.to_string(), entry.to_string()))
+}
+
+fn validate_hash_source_request(
+    source: &HashSourceInput,
+    algorithm: &str,
+) -> Result<String, String> {
+    validate_hash_source_field(source.path.as_deref(), "path", MAX_HASH_SOURCE_FIELD_CHARS)?;
+    validate_hash_source_field(
+        source.container_path.as_deref(),
+        "containerPath",
+        MAX_HASH_SOURCE_FIELD_CHARS,
+    )?;
+    validate_hash_source_field(
+        source.entry_path.as_deref(),
+        "entryPath",
+        MAX_HASH_SOURCE_FIELD_CHARS,
+    )?;
+    validate_hash_source_field(
+        source.nested_archive_path.as_deref(),
+        "nestedArchivePath",
+        MAX_HASH_SOURCE_FIELD_CHARS,
+    )?;
+    validate_hash_source_field(
+        source.container_type.as_deref(),
+        "containerType",
+        MAX_HASH_SOURCE_CONTAINER_TYPE_CHARS,
+    )?;
+
+    let container_type = source
+        .container_type
+        .as_deref()
+        .unwrap_or("disk")
+        .trim()
+        .to_lowercase();
+
+    if container_type == "disk" {
+        if source
+            .entry_path
+            .as_deref()
+            .or(source.path.as_deref())
+            .is_none()
+        {
+            return Err("Hash source requires a path or entryPath".to_string());
+        }
+    } else {
+        if source
+            .container_path
+            .as_deref()
+            .or(source.path.as_deref())
+            .is_none()
+        {
+            return Err("Container hash source requires containerPath".to_string());
+        }
+        if source.entry_path.is_none() {
+            return Err("Container hash source requires entryPath".to_string());
+        }
+    }
+
+    if source.nested_archive_path.is_some() {
+        let entry_path = source
+            .entry_path
+            .as_deref()
+            .ok_or_else(|| "Nested hash source requires entryPath".to_string())?;
+        if split_nested_entry_path(source.nested_archive_path.as_deref(), entry_path).is_none() {
+            return Err(
+                "Nested hash source requires non-empty nestedArchivePath and entryPath".to_string(),
+            );
+        }
+    } else if let Some(entry_path) = source.entry_path.as_deref() {
+        if entry_path.contains("::") && split_nested_entry_path(None, entry_path).is_none() {
+            return Err(
+                "Nested hash source compact entryPath must be '<nested>::<entry>'".to_string(),
+            );
+        }
+    }
+
+    let algorithm = algorithm
+        .parse::<HashAlgorithm>()
+        .map_err(|e| e.to_string())?;
+    Ok(algorithm.name().to_string())
+}
+
+fn validate_hash_source_field(
+    value: Option<&str>,
+    field_name: &str,
+    max_chars: usize,
+) -> Result<(), String> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if value.trim().is_empty() {
+        return Err(format!("Hash source {field_name} cannot be empty"));
+    }
+    if value.chars().count() > max_chars {
+        return Err(format!(
+            "Hash source {field_name} exceeds limit of {max_chars} characters"
+        ));
+    }
+    Ok(())
+}
+
+fn bounded_hash_source_id(source_id: String) -> String {
+    truncate_hash_source_text(source_id, MAX_HASH_SOURCE_ID_CHARS)
+}
+
+fn truncate_hash_source_text(value: String, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value;
+    }
+    value.chars().take(max_chars).collect()
+}
+
+pub(crate) fn open_hash_source(
+    input: &HashSourceInput,
+) -> Result<Box<dyn EvidenceByteSource>, String> {
+    let container_type = input
+        .container_type
+        .as_deref()
+        .unwrap_or("disk")
+        .trim()
+        .to_lowercase();
+
+    if container_type == "disk" {
+        let path = input
+            .entry_path
+            .as_deref()
+            .or(input.path.as_deref())
+            .ok_or_else(|| "Hash source requires a path or entryPath".to_string())?;
+        return Ok(Box::new(LocalFileByteSource::new(path)));
+    }
+
+    let container_path = input
+        .container_path
+        .as_deref()
+        .or(input.path.as_deref())
+        .ok_or_else(|| "Container hash source requires containerPath".to_string())?;
+    let entry_path = input
+        .entry_path
+        .as_deref()
+        .ok_or_else(|| "Container hash source requires entryPath".to_string())?;
+
+    if let Some((nested_archive_path, nested_entry_path)) =
+        split_nested_entry_path(input.nested_archive_path.as_deref(), entry_path)
+    {
+        return Ok(Box::new(NestedArchiveEntryByteSource::new(
+            container_path.to_string(),
+            nested_archive_path,
+            nested_entry_path,
+            input.container_type.clone(),
+            input.size,
+        )));
+    }
+
+    open_container_entry_source(container_path, entry_path, &container_type, input.size)
+        .map_err(|e| e.to_string())
+}
+
+fn hash_source_id(input: &HashSourceInput, source_ref: Option<&EvidenceSourceRef>) -> String {
+    if let Some(source_ref) = source_ref {
+        match source_ref {
+            EvidenceSourceRef::LocalFile { path } => path.clone(),
+            EvidenceSourceRef::ContainerEntry {
+                container_path,
+                entry_path,
+                container_type,
+            } => format!("{container_type}:{container_path}:{entry_path}"),
+            EvidenceSourceRef::NestedContainerEntry {
+                container_path,
+                nested_container_path,
+                entry_path,
+                container_type,
+            } => format!(
+                "nested:{}:{container_path}:{nested_container_path}::{entry_path}",
+                container_type.as_deref().unwrap_or("container")
+            ),
+            EvidenceSourceRef::VfsEntry {
+                container_path,
+                entry_path,
+                container_type,
+            } => format!(
+                "vfs:{}:{container_path}:{entry_path}",
+                container_type.as_deref().unwrap_or("container")
+            ),
+        }
+    } else if let Some(path) = &input.path {
+        path.clone()
+    } else if let (Some(container), Some(entry)) = (&input.container_path, &input.entry_path) {
+        bounded_hash_source_id(format!("{}:{}", container, entry))
+    } else {
+        "unknown-source".to_string()
+    }
+}
+
+/// Hash a local file or supported container entry through the common
+/// byte-source layer.
+#[tauri::command]
+pub async fn hash_source(
+    source: HashSourceInput,
+    algorithm: String,
+    app: tauri::AppHandle,
+) -> Result<HashSourceResult, String> {
+    let canonical_algorithm = validate_hash_source_request(&source, &algorithm)?;
+    let source_for_worker = source.clone();
+    let algorithm_for_worker = canonical_algorithm.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let start_time = std::time::Instant::now();
+        let byte_source = open_hash_source(&source_for_worker)?;
+        let source_ref = byte_source.source_ref();
+        let source_id =
+            bounded_hash_source_id(hash_source_id(&source_for_worker, Some(&source_ref)));
+        let total_size = byte_source.len().map_err(|e| e.to_string())?;
+
+        let hash = hash_byte_source_with_progress(
+            byte_source.as_ref(),
+            &algorithm_for_worker,
+            |current, total| {
+                let percent = if total > 0 {
+                    (current as f64 / total as f64 * 100.0).min(100.0)
+                } else {
+                    100.0
+                };
+                let _ = app.emit(
+                    "hash-source-progress",
+                    HashSourceProgress {
+                        source_id: source_id.clone(),
+                        current,
+                        total,
+                        percent,
+                    },
+                );
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+        let duration_ms = start_time.elapsed().as_millis() as u64;
+        let throughput_mbs = if duration_ms > 0 && total_size > 0 {
+            Some((total_size as f64 / (1024.0 * 1024.0)) / (duration_ms as f64 / 1000.0))
+        } else {
+            None
+        };
+
+        Ok(HashSourceResult {
+            source_ref,
+            source_id,
+            path: source_for_worker.path,
+            container_path: source_for_worker.container_path,
+            entry_path: source_for_worker.entry_path,
+            container_type: source_for_worker.container_type,
+            algorithm: canonical_algorithm,
+            hash,
+            bytes_hashed: total_size,
+            duration_ms,
+            throughput_mbs,
+        })
+    })
+    .await
+    .map_err(|e| format!("Internal hash source error: {e}"))?
+}
+
 /// Verify an AFF4 container by reading the decoded image stream and computing
 /// a hash with the user-selected algorithm.  This decompresses bevy data
 /// through the AFF4 reader (like EWF verify decompresses chunks), so the
@@ -109,10 +525,6 @@ fn aff4_verify_with_progress(
     algorithm: &str,
     progress_cb: &mut dyn FnMut(u64, u64),
 ) -> Result<String, String> {
-    use md5::Md5;
-    use sha1::Sha1;
-    use sha2::{Digest, Sha256};
-
     let mut reader = Aff4Reader::open(path).map_err(|e| format!("Failed to open AFF4: {e}"))?;
     let info = reader.info();
     let stream = info
@@ -126,52 +538,188 @@ fn aff4_verify_with_progress(
     let mut buf = vec![0u8; chunk_size];
     let mut bytes_read: u64 = 0;
 
-    // Use an enum-dispatch approach to avoid trait objects for Digest
-    enum Hasher {
-        Md5(Md5),
-        Sha1(Sha1),
-        Sha256(Sha256),
-    }
-
-    let algo_lower = algorithm.to_lowercase().replace("-", "");
-    let mut hasher = match algo_lower.as_str() {
-        "md5" => Hasher::Md5(Md5::new()),
-        "sha1" => Hasher::Sha1(Sha1::new()),
-        "sha256" => Hasher::Sha256(Sha256::new()),
-        _ => return Err(format!("Unsupported hash algorithm for AFF4: {algorithm}")),
-    };
+    let mut hasher: crate::common::StreamingHasher = algorithm
+        .parse()
+        .map_err(|e| format!("Unsupported hash algorithm for AFF4: {e}"))?;
+    let use_parallel_updates = algorithm.eq_ignore_ascii_case("blake3");
 
     progress_cb(0, total);
 
     while bytes_read < total {
-        let remaining = (total - bytes_read) as usize;
-        let to_read = std::cmp::min(remaining, chunk_size);
+        let Some(to_read) = aff4_read_chunk_size(total, bytes_read, chunk_size)? else {
+            break;
+        };
         let read_buf = &mut buf[..to_read];
 
         let n = reader
             .read_at(&stream.urn, bytes_read, read_buf)
             .map_err(|e| format!("AFF4 read error at offset {bytes_read}: {e}"))?;
         if n == 0 {
-            break;
+            return Err(format!(
+                "AFF4 short read at offset {bytes_read}: expected {total} bytes from stream {}, hashed {bytes_read} bytes",
+                stream.urn
+            ));
         }
 
-        match &mut hasher {
-            Hasher::Md5(h) => h.update(&read_buf[..n]),
-            Hasher::Sha1(h) => h.update(&read_buf[..n]),
-            Hasher::Sha256(h) => h.update(&read_buf[..n]),
+        if use_parallel_updates {
+            hasher.update_parallel(&read_buf[..n]);
+        } else {
+            hasher.update(&read_buf[..n]);
         }
 
-        bytes_read += n as u64;
+        bytes_read = checked_aff4_bytes_read_advance(bytes_read, n, &stream.urn)?;
         progress_cb(bytes_read, total);
     }
 
-    let hash_hex = match hasher {
-        Hasher::Md5(h) => format!("{:x}", h.finalize()),
-        Hasher::Sha1(h) => format!("{:x}", h.finalize()),
-        Hasher::Sha256(h) => format!("{:x}", h.finalize()),
-    };
+    Ok(hasher.finalize())
+}
 
-    Ok(hash_hex)
+fn aff4_read_chunk_size(
+    total: u64,
+    bytes_read: u64,
+    chunk_size: usize,
+) -> Result<Option<usize>, String> {
+    if chunk_size == 0 {
+        return Err("AFF4 read chunk size cannot be zero".to_string());
+    }
+
+    let remaining = total.checked_sub(bytes_read).ok_or_else(|| {
+        format!(
+            "AFF4 byte counter exceeded stream size: read {} bytes > expected {} bytes",
+            bytes_read, total
+        )
+    })?;
+    if remaining == 0 {
+        return Ok(None);
+    }
+
+    let chunk_size = u64::try_from(chunk_size)
+        .map_err(|_| "AFF4 read chunk size does not fit in u64".to_string())?;
+    usize::try_from(remaining.min(chunk_size))
+        .map(Some)
+        .map_err(|_| "AFF4 read chunk length does not fit in usize".to_string())
+}
+
+fn checked_aff4_bytes_read_advance(
+    bytes_read: u64,
+    chunk_read: usize,
+    stream_urn: &str,
+) -> Result<u64, String> {
+    let chunk_read = u64::try_from(chunk_read)
+        .map_err(|_| "AFF4 read byte count does not fit in u64".to_string())?;
+    bytes_read.checked_add(chunk_read).ok_or_else(|| {
+        format!(
+            "AFF4 byte counter overflowed while hashing stream {stream_urn}: read {bytes_read} bytes, next chunk {chunk_read} bytes"
+        )
+    })
+}
+
+fn progress_counter_value(value: u64) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+fn batch_hash_cache_scope(container_type: &str) -> String {
+    let normalized = container_type.trim().to_lowercase();
+    if is_ewf_type(&normalized) {
+        "decoded-ewf".to_string()
+    } else if is_ad1_type(&normalized) {
+        "ad1-segments".to_string()
+    } else if is_aff4_type(&normalized) {
+        "decoded-aff4".to_string()
+    } else if normalized.is_empty() {
+        "raw-file:disk".to_string()
+    } else {
+        format!("raw-file:{normalized}")
+    }
+}
+
+fn hash_algorithm_worker_name(algorithm: HashAlgorithm) -> &'static str {
+    match algorithm {
+        HashAlgorithm::Md5 => "md5",
+        HashAlgorithm::Sha1 => "sha1",
+        HashAlgorithm::Sha256 => "sha256",
+        HashAlgorithm::Sha512 => "sha512",
+        HashAlgorithm::Blake3 => "blake3",
+        HashAlgorithm::Blake2 => "blake2",
+        HashAlgorithm::Xxh3 => "xxh3",
+        HashAlgorithm::Xxh64 => "xxh64",
+        HashAlgorithm::Crc32 => "crc32",
+    }
+}
+
+fn validate_batch_hash_request(
+    files: &[BatchFileInput],
+    algorithm: &str,
+    concurrency_overrides: Option<HashMap<String, usize>>,
+) -> Result<(String, String, HashMap<String, usize>), String> {
+    if files.len() > MAX_BATCH_HASH_FILES {
+        return Err(format!(
+            "Batch hash requested {} files, exceeding limit {}",
+            files.len(),
+            MAX_BATCH_HASH_FILES
+        ));
+    }
+    for file in files {
+        validate_batch_file_input(file)?;
+    }
+
+    let algorithm = algorithm
+        .parse::<HashAlgorithm>()
+        .map_err(|e| e.to_string())?;
+    let display_algorithm = algorithm.name().to_string();
+    let worker_algorithm = hash_algorithm_worker_name(algorithm).to_string();
+    let overrides = validate_batch_hash_overrides(concurrency_overrides.unwrap_or_default())?;
+
+    Ok((display_algorithm, worker_algorithm, overrides))
+}
+
+fn validate_batch_file_input(file: &BatchFileInput) -> Result<(), String> {
+    validate_hash_source_field(Some(&file.path), "batch path", MAX_HASH_SOURCE_FIELD_CHARS)?;
+    validate_hash_source_field(
+        Some(&file.container_type),
+        "batch containerType",
+        MAX_HASH_SOURCE_CONTAINER_TYPE_CHARS,
+    )
+}
+
+fn validate_batch_hash_overrides(
+    overrides: HashMap<String, usize>,
+) -> Result<HashMap<String, usize>, String> {
+    if overrides.len() > MAX_BATCH_HASH_OVERRIDE_ENTRIES {
+        return Err(format!(
+            "Batch hash concurrency overrides contain {} entries, exceeding limit {}",
+            overrides.len(),
+            MAX_BATCH_HASH_OVERRIDE_ENTRIES
+        ));
+    }
+
+    let mut normalized = HashMap::with_capacity(overrides.len());
+    for (key, value) in overrides {
+        let normalized_key = key.trim().to_lowercase();
+        if normalized_key.is_empty() {
+            return Err("Batch hash concurrency override keys cannot be empty".to_string());
+        }
+        if normalized_key.chars().count() > MAX_HASH_SOURCE_CONTAINER_TYPE_CHARS {
+            return Err(format!(
+                "Batch hash concurrency override key exceeds limit of {} characters",
+                MAX_HASH_SOURCE_CONTAINER_TYPE_CHARS
+            ));
+        }
+        if !is_valid_storage_override_key(&normalized_key) {
+            return Err(format!(
+                "Unknown batch hash concurrency override key: {normalized_key}"
+            ));
+        }
+        if value > MAX_BATCH_HASH_CONCURRENCY_OVERRIDE {
+            return Err(format!(
+                "Batch hash concurrency override for {normalized_key} is {value}, exceeding limit {}",
+                MAX_BATCH_HASH_CONCURRENCY_OVERRIDE
+            ));
+        }
+        normalized.insert(normalized_key, value);
+    }
+
+    Ok(normalized)
 }
 
 /// Verify an EWF container using the libewf C library (via libewf-ffi).
@@ -389,6 +937,32 @@ impl StorageClass {
             Self::Unknown => "unknown",
         }
     }
+}
+
+fn is_valid_storage_override_key(key: &str) -> bool {
+    matches!(
+        key,
+        "nvme" | "ssd" | "raid" | "hdd" | "removable" | "network" | "unknown"
+    )
+}
+
+/// Resolve effective concurrency for a storage class, considering user overrides.
+/// A user-set value of 0 means "use auto/default".
+fn resolve_batch_hash_concurrency(
+    class: StorageClass,
+    overrides: &HashMap<String, usize>,
+) -> usize {
+    let concurrency = if let Some(&user_val) = overrides.get(class.key()) {
+        if user_val > 0 {
+            user_val
+        } else {
+            class.default_concurrency()
+        }
+    } else {
+        class.default_concurrency()
+    };
+
+    concurrency.clamp(1, MAX_EFFECTIVE_BATCH_HASH_CONCURRENCY)
 }
 
 /// Classify the storage device backing a file path.
@@ -614,8 +1188,8 @@ pub async fn batch_hash(
     if num_files == 0 {
         return Ok(Vec::new());
     }
-
-    let overrides = concurrency_overrides.unwrap_or_default();
+    let (display_algorithm, worker_algorithm, overrides) =
+        validate_batch_hash_request(&files, &algorithm, concurrency_overrides)?;
 
     // ── Drive detection ────────────────────────────────────────────────
     // Detect the storage type for each file and create per-drive semaphores.
@@ -642,23 +1216,12 @@ pub async fn batch_hash(
         drive_classes.entry(mount).or_insert(class);
     }
 
-    /// Resolve effective concurrency for a storage class, considering user overrides.
-    /// A user-set value of 0 means "use auto/default".
-    fn resolve_concurrency(class: StorageClass, overrides: &HashMap<String, usize>) -> usize {
-        if let Some(&user_val) = overrides.get(class.key()) {
-            if user_val > 0 {
-                return user_val;
-            }
-        }
-        class.default_concurrency()
-    }
-
     // Create per-drive semaphores with storage-appropriate concurrency
     let drive_semaphores: Arc<HashMap<String, Arc<tokio::sync::Semaphore>>> = Arc::new(
         drive_classes
             .iter()
             .map(|(mount, class)| {
-                let concurrency = resolve_concurrency(*class, &overrides).min(num_files);
+                let concurrency = resolve_batch_hash_concurrency(*class, &overrides).min(num_files);
                 (
                     mount.clone(),
                     Arc::new(tokio::sync::Semaphore::new(concurrency)),
@@ -668,7 +1231,7 @@ pub async fn batch_hash(
     );
 
     for (mount, class) in &drive_classes {
-        let effective = resolve_concurrency(*class, &overrides);
+        let effective = resolve_batch_hash_concurrency(*class, &overrides);
         info!(
             mount = %mount,
             storage = class.label(),
@@ -685,7 +1248,7 @@ pub async fn batch_hash(
             drives: drive_classes
                 .iter()
                 .map(|(mount, class)| {
-                    let effective = resolve_concurrency(*class, &overrides);
+                    let effective = resolve_batch_hash_concurrency(*class, &overrides);
                     DriveDetection {
                         mount_point: mount.clone(),
                         storage_class: class.label().to_string(),
@@ -715,7 +1278,8 @@ pub async fn batch_hash(
     for (idx, file) in files.into_iter().enumerate() {
         let path = file.path.clone();
         let container_type = file.container_type.to_lowercase();
-        let algo = algorithm.clone();
+        let algo = worker_algorithm.clone();
+        let display_algo = display_algorithm.clone();
         let app_clone = app.clone();
         let file_mount = file_mounts[idx].clone();
         let drive_label = file_drive_labels[idx].clone();
@@ -769,7 +1333,7 @@ pub async fn batch_hash(
                     );
                     return BatchHashResult {
                         path,
-                        algorithm: algo.to_uppercase(),
+                        algorithm: display_algo,
                         hash: None,
                         error: Some(err_msg),
                         duration_ms: None,
@@ -803,7 +1367,7 @@ pub async fn batch_hash(
             let container_for_hash = container_type.clone();
             let app_for_hash = app_clone.clone();
             let path_for_error = path.clone();
-            let algo_for_error = algo.clone();
+            let algo_for_error = display_algo.clone();
 
             // Run blocking hash in spawn_blocking
             let hash_result = tauri::async_runtime::spawn_blocking(move || {
@@ -833,9 +1397,14 @@ pub async fn batch_hash(
 
                 info!(container_type = %container_for_hash, algorithm = %algo_for_hash, path = %path_for_hash, "[HASH-DIAG] About to start hashing");
                 let _hash_start = std::time::Instant::now();
+                let cache_scope = batch_hash_cache_scope(&container_for_hash);
 
                 // Check cache first - this can skip expensive recomputation
-                let cached_hash = hash_cache::get_cached_hash(&path_for_hash, &algo_for_hash);
+                let cached_hash = hash_cache::get_cached_hash_scoped(
+                    &path_for_hash,
+                    &algo_for_hash,
+                    &cache_scope,
+                );
 
                 // Hash based on container type (or use cached result)
                 let result: Result<String, String> = if let Some(hash) = cached_hash {
@@ -847,8 +1416,14 @@ pub async fn batch_hash(
                 } else {
                     // Shared progress callback — all hash functions use the same pattern
                     let mut progress_cb = |current: u64, total: u64| {
-                        progress_total.store(total as usize, std::sync::atomic::Ordering::Relaxed);
-                        progress_current.store(current as usize, std::sync::atomic::Ordering::Relaxed);
+                        progress_total.store(
+                            progress_counter_value(total),
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+                        progress_current.store(
+                            progress_counter_value(current),
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
                     };
 
                     // Route to the appropriate hash function (3 paths:
@@ -907,7 +1482,12 @@ pub async fn batch_hash(
 
                 // Cache successful hash results for future lookups
                 if let Ok(ref hash) = result {
-                    hash_cache::cache_hash(&path_for_hash, &algo_for_hash, hash.clone());
+                    hash_cache::cache_hash_scoped(
+                        &path_for_hash,
+                        &algo_for_hash,
+                        &cache_scope,
+                        hash.clone(),
+                    );
                 }
 
                 // Stop progress thread
@@ -948,7 +1528,7 @@ pub async fn batch_hash(
                     );
                     return BatchHashResult {
                         path: path_for_error,
-                        algorithm: algo_for_error.to_uppercase(),
+                        algorithm: algo_for_error,
                         hash: None,
                         error: Some(err_msg),
                         duration_ms: None,
@@ -971,7 +1551,7 @@ pub async fn batch_hash(
                             files_completed: idx + 1,
                             files_total: num_files,
                             hash: Some(hash.clone()),
-                            algorithm: Some(algo.to_uppercase()),
+                            algorithm: Some(display_algo.clone()),
                             error: None,
                             chunks_processed: None,
                             chunks_total: None,
@@ -979,7 +1559,7 @@ pub async fn batch_hash(
                     );
                     BatchHashResult {
                         path,
-                        algorithm: algo.to_uppercase(),
+                        algorithm: display_algo.clone(),
                         hash: Some(hash),
                         error: None,
                         duration_ms: Some(duration_ms),
@@ -1006,7 +1586,7 @@ pub async fn batch_hash(
                     );
                     BatchHashResult {
                         path,
-                        algorithm: algo.to_uppercase(),
+                        algorithm: display_algo,
                         hash: None,
                         error: Some(e),
                         duration_ms: Some(duration_ms),
@@ -1088,4 +1668,422 @@ pub async fn hash_queue_clear_completed() -> Result<(), String> {
         "Hash queue completed items cleared"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::hash_byte_source;
+    use std::io::{Cursor, Write};
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
+
+    fn write_temp_file(bytes: &[u8]) -> tempfile::NamedTempFile {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(bytes).unwrap();
+        file.flush().unwrap();
+        file
+    }
+
+    fn zip_bytes(entry_path: &str, bytes: &[u8], method: CompressionMethod) -> Vec<u8> {
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut zip = ZipWriter::new(&mut cursor);
+            let options = SimpleFileOptions::default().compression_method(method);
+            zip.start_file(entry_path, options).unwrap();
+            zip.write_all(bytes).unwrap();
+            zip.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
+
+    fn write_zip_file(path: &std::path::Path, entry_path: &str, bytes: &[u8]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file(entry_path, options).unwrap();
+        zip.write_all(bytes).unwrap();
+        zip.finish().unwrap();
+    }
+
+    fn disk_hash_source(path: Option<String>, entry_path: Option<String>) -> HashSourceInput {
+        HashSourceInput {
+            path,
+            container_path: None,
+            entry_path,
+            nested_archive_path: None,
+            container_type: None,
+            size: None,
+        }
+    }
+
+    fn batch_file(path: &str, container_type: &str) -> BatchFileInput {
+        BatchFileInput {
+            path: path.to_string(),
+            container_type: container_type.to_string(),
+        }
+    }
+
+    #[test]
+    fn aff4_read_chunk_size_clamps_to_chunk_size_before_usize_conversion() {
+        assert_eq!(
+            aff4_read_chunk_size(u64::MAX, 0, 1024 * 1024).unwrap(),
+            Some(1024 * 1024)
+        );
+    }
+
+    #[test]
+    fn aff4_read_chunk_size_uses_remaining_tail() {
+        assert_eq!(aff4_read_chunk_size(4096, 4000, 1024).unwrap(), Some(96));
+    }
+
+    #[test]
+    fn aff4_read_chunk_size_returns_none_when_complete() {
+        assert_eq!(aff4_read_chunk_size(4096, 4096, 1024).unwrap(), None);
+    }
+
+    #[test]
+    fn aff4_read_chunk_size_rejects_counter_past_stream_size() {
+        let err = aff4_read_chunk_size(4096, 8192, 1024).unwrap_err();
+
+        assert!(err.contains("exceeded stream size"));
+    }
+
+    #[test]
+    fn aff4_read_chunk_size_rejects_zero_chunk_size() {
+        let err = aff4_read_chunk_size(4096, 0, 0).unwrap_err();
+
+        assert!(err.contains("cannot be zero"));
+    }
+
+    #[test]
+    fn checked_aff4_bytes_read_advance_adds_chunk_size() {
+        assert_eq!(
+            checked_aff4_bytes_read_advance(40, 2, "aff4://stream").unwrap(),
+            42
+        );
+    }
+
+    #[test]
+    fn checked_aff4_bytes_read_advance_rejects_overflow() {
+        let err = checked_aff4_bytes_read_advance(u64::MAX, 1, "aff4://stream").unwrap_err();
+
+        assert!(err.contains("overflowed"));
+    }
+
+    #[test]
+    fn progress_counter_value_preserves_representable_values() {
+        assert_eq!(progress_counter_value(42), 42);
+    }
+
+    #[test]
+    fn progress_counter_value_saturates_large_values() {
+        assert_eq!(progress_counter_value(u64::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn batch_hash_cache_scope_separates_container_semantics() {
+        assert_eq!(batch_hash_cache_scope("E01"), "decoded-ewf");
+        assert_eq!(batch_hash_cache_scope("ad1"), "ad1-segments");
+        assert_eq!(batch_hash_cache_scope("AFF4"), "decoded-aff4");
+        assert_eq!(batch_hash_cache_scope("raw"), "raw-file:raw");
+        assert_eq!(batch_hash_cache_scope(" "), "raw-file:disk");
+    }
+
+    #[test]
+    fn open_hash_source_reads_local_path() {
+        let file = write_temp_file(b"source hash test");
+        let input = disk_hash_source(Some(file.path().to_string_lossy().into_owned()), None);
+
+        let source = open_hash_source(&input).unwrap();
+        let hash = hash_byte_source(source.as_ref(), "sha256").unwrap();
+
+        assert_eq!(
+            hash,
+            "0217d36ce769599b7e301a7c3f8f6a2a692d4da3ac36eddafcced83390851867"
+        );
+    }
+
+    #[test]
+    fn open_hash_source_accepts_disk_entry_path() {
+        let file = write_temp_file(b"disk entry path");
+        let mut input = disk_hash_source(None, Some(file.path().to_string_lossy().into_owned()));
+        input.container_type = Some("disk".to_string());
+
+        let source = open_hash_source(&input).unwrap();
+        assert!(matches!(
+            source.source_ref(),
+            EvidenceSourceRef::LocalFile { .. }
+        ));
+    }
+
+    #[test]
+    fn open_hash_source_requires_container_entry_path() {
+        let input = HashSourceInput {
+            path: Some("/cases/evidence.ad1".to_string()),
+            container_path: None,
+            entry_path: None,
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: None,
+        };
+
+        let err = match open_hash_source(&input) {
+            Ok(_) => panic!("expected container source validation to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("entryPath"));
+    }
+
+    #[test]
+    fn split_nested_entry_path_accepts_explicit_and_compact_forms() {
+        assert_eq!(
+            split_nested_entry_path(Some("inner.zip"), "nested/file.txt"),
+            Some(("inner.zip".to_string(), "nested/file.txt".to_string()))
+        );
+        assert_eq!(
+            split_nested_entry_path(None, "inner.zip::nested/file.txt"),
+            Some(("inner.zip".to_string(), "nested/file.txt".to_string()))
+        );
+        assert_eq!(split_nested_entry_path(None, "plain/file.txt"), None);
+    }
+
+    #[test]
+    fn split_nested_entry_path_rejects_empty_nested_parts() {
+        assert_eq!(split_nested_entry_path(Some(""), "nested/file.txt"), None);
+        assert_eq!(split_nested_entry_path(Some("inner.zip"), ""), None);
+        assert_eq!(split_nested_entry_path(None, "::nested/file.txt"), None);
+        assert_eq!(split_nested_entry_path(None, "inner.zip::"), None);
+    }
+
+    #[test]
+    fn validate_hash_source_request_normalizes_algorithm() {
+        let input = disk_hash_source(Some("/cases/evidence.bin".to_string()), None);
+
+        let algorithm = validate_hash_source_request(&input, "sha-256").unwrap();
+
+        assert_eq!(algorithm, "SHA-256");
+    }
+
+    #[test]
+    fn validate_hash_source_request_rejects_unknown_algorithm() {
+        let input = disk_hash_source(Some("/cases/evidence.bin".to_string()), None);
+
+        let err = validate_hash_source_request(&input, "rot13").unwrap_err();
+
+        assert!(err.contains("Unsupported hash algorithm"));
+    }
+
+    #[test]
+    fn validate_hash_source_request_rejects_missing_disk_path() {
+        let input = disk_hash_source(None, None);
+
+        let err = validate_hash_source_request(&input, "sha256").unwrap_err();
+
+        assert!(err.contains("requires a path or entryPath"));
+    }
+
+    #[test]
+    fn validate_hash_source_request_rejects_empty_fields() {
+        let input = disk_hash_source(Some(" ".to_string()), None);
+
+        let err = validate_hash_source_request(&input, "sha256").unwrap_err();
+
+        assert!(err.contains("path cannot be empty"));
+    }
+
+    #[test]
+    fn validate_hash_source_request_rejects_oversized_path() {
+        let input = disk_hash_source(Some("a".repeat(MAX_HASH_SOURCE_FIELD_CHARS + 1)), None);
+
+        let err = validate_hash_source_request(&input, "sha256").unwrap_err();
+
+        assert!(err.contains("path exceeds limit"));
+    }
+
+    #[test]
+    fn validate_hash_source_request_rejects_missing_container_entry_path() {
+        let input = HashSourceInput {
+            path: Some("/cases/evidence.ad1".to_string()),
+            container_path: None,
+            entry_path: None,
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: None,
+        };
+
+        let err = validate_hash_source_request(&input, "sha256").unwrap_err();
+
+        assert!(err.contains("entryPath"));
+    }
+
+    #[test]
+    fn validate_hash_source_request_rejects_invalid_compact_nested_path() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/outer.zip".to_string()),
+            entry_path: Some("inner.zip::".to_string()),
+            nested_archive_path: None,
+            container_type: Some("zip".to_string()),
+            size: None,
+        };
+
+        let err = validate_hash_source_request(&input, "sha256").unwrap_err();
+
+        assert!(err.contains("compact entryPath"));
+    }
+
+    #[test]
+    fn truncate_hash_source_text_caps_character_count() {
+        let value = format!("{}{}", "a".repeat(MAX_HASH_SOURCE_ID_CHARS), "tail");
+
+        let truncated = truncate_hash_source_text(value, MAX_HASH_SOURCE_ID_CHARS);
+
+        assert_eq!(truncated.chars().count(), MAX_HASH_SOURCE_ID_CHARS);
+        assert!(!truncated.ends_with("tail"));
+    }
+
+    #[test]
+    fn validate_batch_hash_request_normalizes_algorithm_and_overrides() {
+        let files = vec![batch_file("/cases/evidence.bin", "raw")];
+        let mut overrides = HashMap::new();
+        overrides.insert(" SSD ".to_string(), 3);
+
+        let (display, worker, overrides) =
+            validate_batch_hash_request(&files, "sha-256", Some(overrides)).unwrap();
+
+        assert_eq!(display, "SHA-256");
+        assert_eq!(worker, "sha256");
+        assert_eq!(overrides.get("ssd"), Some(&3));
+    }
+
+    #[test]
+    fn validate_batch_hash_request_rejects_excessive_file_count() {
+        let files: Vec<_> = (0..=MAX_BATCH_HASH_FILES)
+            .map(|index| batch_file(&format!("/cases/{index}.bin"), "raw"))
+            .collect();
+
+        let err = validate_batch_hash_request(&files, "sha256", None).unwrap_err();
+
+        assert!(err.contains("exceeding limit"));
+    }
+
+    #[test]
+    fn validate_batch_hash_request_rejects_empty_path() {
+        let files = vec![batch_file(" ", "raw")];
+
+        let err = validate_batch_hash_request(&files, "sha256", None).unwrap_err();
+
+        assert!(err.contains("batch path cannot be empty"));
+    }
+
+    #[test]
+    fn validate_batch_hash_request_rejects_oversized_container_type() {
+        let files = vec![batch_file(
+            "/cases/evidence.bin",
+            &"r".repeat(MAX_HASH_SOURCE_CONTAINER_TYPE_CHARS + 1),
+        )];
+
+        let err = validate_batch_hash_request(&files, "sha256", None).unwrap_err();
+
+        assert!(err.contains("batch containerType exceeds limit"));
+    }
+
+    #[test]
+    fn validate_batch_hash_request_rejects_unknown_algorithm() {
+        let files = vec![batch_file("/cases/evidence.bin", "raw")];
+
+        let err = validate_batch_hash_request(&files, "rot13", None).unwrap_err();
+
+        assert!(err.contains("Unsupported hash algorithm"));
+    }
+
+    #[test]
+    fn validate_batch_hash_overrides_rejects_unknown_key() {
+        let mut overrides = HashMap::new();
+        overrides.insert("gpu".to_string(), 1);
+
+        let err = validate_batch_hash_overrides(overrides).unwrap_err();
+
+        assert!(err.contains("Unknown batch hash concurrency override key"));
+    }
+
+    #[test]
+    fn validate_batch_hash_overrides_rejects_excessive_value() {
+        let mut overrides = HashMap::new();
+        overrides.insert("ssd".to_string(), MAX_BATCH_HASH_CONCURRENCY_OVERRIDE + 1);
+
+        let err = validate_batch_hash_overrides(overrides).unwrap_err();
+
+        assert!(err.contains("exceeding limit"));
+    }
+
+    #[test]
+    fn resolve_batch_hash_concurrency_clamps_effective_value() {
+        let mut overrides = HashMap::new();
+        overrides.insert("ssd".to_string(), MAX_EFFECTIVE_BATCH_HASH_CONCURRENCY + 10);
+
+        assert_eq!(
+            resolve_batch_hash_concurrency(StorageClass::InternalSsd, &overrides),
+            MAX_EFFECTIVE_BATCH_HASH_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn resolve_batch_hash_concurrency_treats_zero_as_default() {
+        let mut overrides = HashMap::new();
+        overrides.insert("hdd".to_string(), 0);
+
+        assert_eq!(
+            resolve_batch_hash_concurrency(StorageClass::InternalHdd, &overrides),
+            StorageClass::InternalHdd.default_concurrency()
+        );
+    }
+
+    #[test]
+    fn open_hash_source_identifies_nested_archive_source_with_known_size() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/outer.zip".to_string()),
+            entry_path: Some("nested/file.txt".to_string()),
+            nested_archive_path: Some("inner.zip".to_string()),
+            container_type: Some("zip".to_string()),
+            size: Some(42),
+        };
+
+        let source = open_hash_source(&input).unwrap();
+
+        assert_eq!(source.len().unwrap(), 42);
+        assert_eq!(
+            source.source_ref(),
+            EvidenceSourceRef::NestedContainerEntry {
+                container_path: "/cases/outer.zip".to_string(),
+                nested_container_path: "inner.zip".to_string(),
+                entry_path: "nested/file.txt".to_string(),
+                container_type: Some("zip".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn open_hash_source_reads_nested_archive_range() {
+        crate::commands::archive::nested::nested_container_clear_cache_for_tests();
+        let tmp = tempfile::Builder::new().suffix(".zip").tempfile().unwrap();
+        let inner_zip = zip_bytes("nested/file.txt", b"abcdef", CompressionMethod::Deflated);
+        write_zip_file(tmp.path(), "inner.zip", &inner_zip);
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some(tmp.path().to_string_lossy().to_string()),
+            entry_path: Some("nested/file.txt".to_string()),
+            nested_archive_path: Some("inner.zip".to_string()),
+            container_type: Some("zip".to_string()),
+            size: None,
+        };
+
+        let source = open_hash_source(&input).unwrap();
+
+        assert_eq!(source.len().unwrap(), 6);
+        assert_eq!(source.read_range(2, 3).unwrap(), b"cde");
+        assert!(source.read_range(6, 3).unwrap().is_empty());
+    }
 }

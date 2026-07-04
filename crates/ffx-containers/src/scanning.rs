@@ -22,6 +22,9 @@ use super::segments::{
 use super::types::DiscoveredFile;
 use crate::formats::detect_format_by_extension;
 
+const MAX_SCAN_DEPTH: usize = 128;
+const MAX_SCAN_RESULTS: usize = 250_000;
+
 /// Scan a directory for forensic container files (non-recursive)
 pub fn scan_directory(dir_path: &str) -> Result<Vec<DiscoveredFile>, ContainerError> {
     scan_directory_impl(dir_path, false)
@@ -62,6 +65,7 @@ where
         recursive,
         &on_file_found,
         &mut count,
+        0,
     )?;
 
     Ok(count)
@@ -73,10 +77,24 @@ fn scan_dir_streaming_internal<F>(
     recursive: bool,
     on_file_found: &F,
     count: &mut usize,
+    depth: usize,
 ) -> Result<(), ContainerError>
 where
     F: Fn(&DiscoveredFile),
 {
+    if depth > MAX_SCAN_DEPTH {
+        tracing::warn!(
+            "Skipping directory {}: maximum scan depth {} exceeded",
+            path.display(),
+            MAX_SCAN_DEPTH
+        );
+        return Ok(());
+    }
+
+    if *count >= MAX_SCAN_RESULTS {
+        return Ok(());
+    }
+
     let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     // First pass: collect all entries and find UFD files (to identify UFED extraction sets)
@@ -134,8 +152,17 @@ where
 
     // Recurse into subdirectories
     for subdir in subdirs {
-        let _ =
-            scan_dir_streaming_internal(&subdir, seen_basenames, recursive, on_file_found, count);
+        if *count >= MAX_SCAN_RESULTS {
+            break;
+        }
+        let _ = scan_dir_streaming_internal(
+            &subdir,
+            seen_basenames,
+            recursive,
+            on_file_found,
+            count,
+            depth + 1,
+        );
     }
 
     // Second pass: process files
@@ -143,6 +170,11 @@ where
     // - UFDX files are skipped (collection index)
     // - ZIP files with matching UFD are detected as "UFED" type containers
     for (entry, filename, lower) in file_entries {
+        if *count >= MAX_SCAN_RESULTS {
+            tracing::warn!("Stopping streaming scan at {} results", MAX_SCAN_RESULTS);
+            break;
+        }
+
         let entry_path = entry.path();
 
         let path_str = match entry_path.to_str() {
@@ -280,7 +312,7 @@ fn scan_directory_impl(
     let mut discovered = Vec::new();
     let mut seen_basenames = HashSet::new();
 
-    scan_dir_internal(path, &mut discovered, &mut seen_basenames, recursive)?;
+    scan_dir_internal(path, &mut discovered, &mut seen_basenames, recursive, 0)?;
 
     Ok(discovered)
 }
@@ -290,7 +322,21 @@ fn scan_dir_internal(
     discovered: &mut Vec<DiscoveredFile>,
     seen_basenames: &mut HashSet<String>,
     recursive: bool,
+    depth: usize,
 ) -> Result<(), ContainerError> {
+    if depth > MAX_SCAN_DEPTH {
+        tracing::warn!(
+            "Skipping directory {}: maximum scan depth {} exceeded",
+            path.display(),
+            MAX_SCAN_DEPTH
+        );
+        return Ok(());
+    }
+
+    if discovered.len() >= MAX_SCAN_RESULTS {
+        return Ok(());
+    }
+
     let entries = fs::read_dir(path).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     // First pass: collect all entries and find UFD files (to identify UFED extraction sets)
@@ -344,7 +390,10 @@ fn scan_dir_internal(
 
     // Recurse into subdirectories
     for subdir in subdirs {
-        let _ = scan_dir_internal(&subdir, discovered, seen_basenames, recursive);
+        if discovered.len() >= MAX_SCAN_RESULTS {
+            break;
+        }
+        let _ = scan_dir_internal(&subdir, discovered, seen_basenames, recursive, depth + 1);
     }
 
     // Second pass: process files
@@ -352,6 +401,11 @@ fn scan_dir_internal(
     // - UFDX files are skipped (collection index)
     // - ZIP files with matching UFD are detected as "UFED" type containers
     for (entry, filename, lower) in file_entries {
+        if discovered.len() >= MAX_SCAN_RESULTS {
+            tracing::warn!("Stopping directory scan at {} results", MAX_SCAN_RESULTS);
+            break;
+        }
+
         let entry_path = entry.path();
 
         let path_str = match entry_path.to_str() {
@@ -945,6 +999,20 @@ mod tests {
         assert_eq!(files.len(), 1);
     }
 
+    #[test]
+    fn test_scan_directory_recursive_skips_beyond_depth_limit() {
+        let temp = TempDir::new().unwrap();
+        let mut current = temp.path().to_path_buf();
+        for index in 0..=MAX_SCAN_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            fs::create_dir(&current).unwrap();
+        }
+        File::create(current.join("too-deep.E01")).unwrap();
+
+        let files = scan_directory_recursive(temp.path().to_str().unwrap()).unwrap();
+        assert!(files.is_empty());
+    }
+
     // ==================== scan_directory_streaming tests ====================
 
     #[test]
@@ -972,5 +1040,29 @@ mod tests {
     fn test_scan_directory_streaming_nonexistent() {
         let result = scan_directory_streaming("/nonexistent/path", false, |_| {});
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_scan_directory_streaming_skips_beyond_depth_limit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let temp = TempDir::new().unwrap();
+        let mut current = temp.path().to_path_buf();
+        for index in 0..=MAX_SCAN_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            fs::create_dir(&current).unwrap();
+        }
+        File::create(current.join("too-deep.E01")).unwrap();
+
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let count = scan_directory_streaming(temp.path().to_str().unwrap(), true, move |_file| {
+            callback_count_clone.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap();
+
+        assert_eq!(count, 0);
+        assert_eq!(callback_count.load(Ordering::SeqCst), 0);
     }
 }

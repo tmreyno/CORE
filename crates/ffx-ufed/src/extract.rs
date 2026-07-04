@@ -9,7 +9,7 @@
 //! Provides extraction of UFED container contents to output directories,
 //! with support for ZIP, UFD, UFDR, and UFDX formats.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tracing::{debug, instrument};
 
@@ -124,8 +124,15 @@ where
             // Copy associated files - construct full path from parent dir + filename
             let parent_dir = path_obj.parent().unwrap_or(path_obj);
             for assoc in &info.associated_files {
-                let assoc_path = parent_dir.join(&assoc.filename);
-                let dest = output_path.join(&assoc.filename);
+                let Some((assoc_path, dest)) =
+                    associated_file_copy_paths(parent_dir, output_path, &assoc.filename)
+                else {
+                    errors.push(UfedExtractError {
+                        path: assoc.filename.clone(),
+                        error: "Unsafe associated file path".to_string(),
+                    });
+                    continue;
+                };
                 if let Err(e) = std::fs::copy(&assoc_path, &dest) {
                     errors.push(UfedExtractError {
                         path: assoc.filename.clone(),
@@ -170,10 +177,57 @@ pub fn get_segment_paths(path: &str) -> Result<Vec<std::path::PathBuf>, Containe
     // Add associated files as "segments" - construct full path from parent dir + filename
     let parent_dir = path_obj.parent().unwrap_or(path_obj);
     for assoc in info.associated_files {
-        segments.push(parent_dir.join(&assoc.filename));
+        if let Some(segment_path) = associated_file_source_path(parent_dir, &assoc.filename) {
+            segments.push(segment_path);
+        }
     }
 
     Ok(segments)
+}
+
+fn associated_file_copy_paths(
+    parent_dir: &Path,
+    output_dir: &Path,
+    filename: &str,
+) -> Option<(PathBuf, PathBuf)> {
+    let source = associated_file_source_path(parent_dir, filename)?;
+    let leaf = associated_file_output_name(filename)?;
+    Some((source, output_dir.join(leaf)))
+}
+
+fn associated_file_source_path(parent_dir: &Path, filename: &str) -> Option<PathBuf> {
+    if let Some(parent_name) = filename.strip_prefix("../") {
+        if !is_safe_associated_file_leaf(parent_name) {
+            return None;
+        }
+        let base = parent_dir.parent()?;
+        Some(base.join(parent_name))
+    } else {
+        if !is_safe_associated_file_leaf(filename) {
+            return None;
+        }
+        Some(parent_dir.join(filename))
+    }
+}
+
+fn associated_file_output_name(filename: &str) -> Option<&str> {
+    let leaf = filename.strip_prefix("../").unwrap_or(filename);
+    is_safe_associated_file_leaf(leaf).then_some(leaf)
+}
+
+fn is_safe_associated_file_leaf(filename: &str) -> bool {
+    if filename.is_empty()
+        || filename == "."
+        || filename == ".."
+        || filename.contains('\0')
+        || filename.contains('/')
+        || filename.contains('\\')
+    {
+        return false;
+    }
+
+    let bytes = filename.as_bytes();
+    !(bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic())
 }
 
 // =============================================================================
@@ -183,6 +237,7 @@ pub fn get_segment_paths(path: &str) -> Result<Vec<std::path::PathBuf>, Containe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn test_extract_nonexistent_file() {
@@ -208,5 +263,60 @@ mod tests {
 
         assert_eq!(result.files_extracted, 5);
         assert!(result.success);
+    }
+
+    #[test]
+    fn test_associated_file_paths_keep_parent_source_inside_output_destination() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let parent_dir = temp.path().join("evidence").join("UFED");
+        let output_dir = temp.path().join("out");
+        fs::create_dir_all(&parent_dir).unwrap();
+
+        let (source, dest) =
+            associated_file_copy_paths(&parent_dir, &output_dir, "../EvidenceCollection.ufdx")
+                .unwrap();
+
+        assert_eq!(
+            source,
+            temp.path().join("evidence").join("EvidenceCollection.ufdx")
+        );
+        assert_eq!(dest, output_dir.join("EvidenceCollection.ufdx"));
+    }
+
+    #[test]
+    fn test_associated_file_paths_reject_unsafe_names() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let parent_dir = temp.path().join("evidence");
+        let output_dir = temp.path().join("out");
+
+        assert!(associated_file_copy_paths(&parent_dir, &output_dir, "../../evil.ufdx").is_none());
+        assert!(
+            associated_file_copy_paths(&parent_dir, &output_dir, "../nested/evil.ufdx").is_none()
+        );
+        assert!(
+            associated_file_copy_paths(&parent_dir, &output_dir, r"nested\evil.ufdx").is_none()
+        );
+        assert!(associated_file_copy_paths(&parent_dir, &output_dir, "C:evil.ufdx").is_none());
+    }
+
+    #[test]
+    fn test_extract_parent_ufdx_writes_inside_output_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let evidence_dir = temp.path().join("evidence");
+        let ufed_dir = evidence_dir.join("UFED");
+        let output_dir = temp.path().join("out");
+        fs::create_dir_all(&ufed_dir).unwrap();
+
+        let ufd_path = ufed_dir.join("case.ufd");
+        let ufdx_path = evidence_dir.join("EvidenceCollection.ufdx");
+        fs::write(&ufd_path, b"[General]\n").unwrap();
+        fs::write(&ufdx_path, br#"<EvidenceCollection EvidenceID="EV-1"/>"#).unwrap();
+
+        let result = extract(ufd_path.to_str().unwrap(), output_dir.to_str().unwrap()).unwrap();
+
+        assert!(result.success);
+        assert!(output_dir.join("case.ufd").exists());
+        assert!(output_dir.join("EvidenceCollection.ufdx").exists());
+        assert!(!temp.path().join("EvidenceCollection.ufdx").exists());
     }
 }

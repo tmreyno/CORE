@@ -10,8 +10,39 @@ use super::migration::{make_paths_absolute, make_paths_relative, migrate_project
 use super::types::{ProjectLoadResult, ProjectSaveResult};
 use super::{FFXProject, PROJECT_EXTENSION, PROJECT_VERSION};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
+
+pub(crate) const PROJECT_FILE_READ_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
+pub(crate) fn read_project_json_with_limit(path: &Path, label: &str) -> Result<String, String> {
+    let metadata = fs::metadata(path).map_err(|e| format!("Failed to stat {}: {}", label, e))?;
+    if metadata.len() > PROJECT_FILE_READ_MAX_BYTES {
+        return Err(format!(
+            "{} is too large: {} bytes > {} bytes",
+            label,
+            metadata.len(),
+            PROJECT_FILE_READ_MAX_BYTES
+        ));
+    }
+
+    let file = fs::File::open(path).map_err(|e| format!("Failed to read {}: {}", label, e))?;
+    let mut limited = file.take(PROJECT_FILE_READ_MAX_BYTES.saturating_add(1));
+    let mut bytes = Vec::with_capacity(metadata.len().min(PROJECT_FILE_READ_MAX_BYTES) as usize);
+    limited
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to read {}: {}", label, e))?;
+
+    if bytes.len() as u64 > PROJECT_FILE_READ_MAX_BYTES {
+        return Err(format!(
+            "{} is too large: read more than {} bytes",
+            label, PROJECT_FILE_READ_MAX_BYTES
+        ));
+    }
+
+    String::from_utf8(bytes).map_err(|e| format!("Failed to decode {} as UTF-8: {}", label, e))
+}
 
 /// Get the default project file path for a given root directory
 pub fn get_default_project_path(root_path: &str) -> PathBuf {
@@ -108,7 +139,7 @@ pub fn load_project(path: &str) -> ProjectLoadResult {
     // Get the directory containing the project file for resolving relative paths
     let project_dir = path.parent().unwrap_or(Path::new("."));
 
-    match fs::read_to_string(path) {
+    match read_project_json_with_limit(path, "project file") {
         Ok(json) => {
             let file_size_kb = json.len() / 1024;
             info!("Project file read: {} KB", file_size_kb);

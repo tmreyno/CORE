@@ -20,6 +20,14 @@ use tracing::debug;
 
 use super::SearchIndex;
 
+const DEFAULT_SEARCH_LIMIT: usize = 100;
+const MAX_SEARCH_RESULTS: usize = 10_000;
+const MAX_SEARCH_QUERY_CHARS: usize = 2048;
+const MAX_SEARCH_FILTER_VALUES: usize = 256;
+const MAX_SEARCH_FILTER_VALUE_CHARS: usize = 512;
+const MAX_SEARCH_SNIPPET_CHARS: usize = 4096;
+const SEARCH_TRUNCATED_SUFFIX: &str = "... [truncated]";
+
 // =============================================================================
 // Search Result Types
 // =============================================================================
@@ -89,11 +97,86 @@ pub struct SearchOptions {
 }
 
 fn default_limit() -> usize {
-    100
+    DEFAULT_SEARCH_LIMIT
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn normalized_search_limit(limit: usize) -> usize {
+    limit.clamp(1, MAX_SEARCH_RESULTS)
+}
+
+fn search_fetch_limit(result_limit: usize) -> usize {
+    let capped = normalized_search_limit(result_limit);
+    capped.saturating_mul(2).saturating_add(50)
+}
+
+fn normalized_search_options(options: &SearchOptions) -> SearchOptions {
+    SearchOptions {
+        query: truncate_input_chars(options.query.trim(), MAX_SEARCH_QUERY_CHARS),
+        limit: normalized_search_limit(options.limit),
+        container_types: normalized_filter_values(&options.container_types),
+        extensions: normalized_filter_values(&options.extensions),
+        categories: normalized_filter_values(&options.categories),
+        min_size: options.min_size,
+        max_size: options.max_size,
+        include_dirs: options.include_dirs,
+        search_content: options.search_content,
+        container_path: options
+            .container_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| truncate_input_chars(value, MAX_SEARCH_FILTER_VALUE_CHARS)),
+    }
+}
+
+fn normalized_filter_values(values: &[String]) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for value in values.iter().take(MAX_SEARCH_FILTER_VALUES) {
+        let value =
+            truncate_input_chars(value.trim(), MAX_SEARCH_FILTER_VALUE_CHARS).to_lowercase();
+        if !value.is_empty() && !normalized.iter().any(|existing| existing == &value) {
+            normalized.push(value);
+        }
+    }
+    normalized
+}
+
+fn truncate_input_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let end = value
+        .char_indices()
+        .nth(max_chars)
+        .map(|(idx, _)| idx)
+        .unwrap_or(value.len());
+    value[..end].to_string()
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let suffix_chars = SEARCH_TRUNCATED_SUFFIX.chars().count();
+    let keep_chars = max_chars.saturating_sub(suffix_chars);
+    let end = value
+        .char_indices()
+        .nth(keep_chars)
+        .map(|(idx, _)| idx)
+        .unwrap_or(value.len());
+    let mut truncated = String::with_capacity(end + SEARCH_TRUNCATED_SUFFIX.len());
+    truncated.push_str(&value[..end]);
+    truncated.push_str(SEARCH_TRUNCATED_SUFFIX);
+    truncated
+}
+
+fn bounded_snippet_html(value: String) -> String {
+    truncate_chars(&value, MAX_SEARCH_SNIPPET_CHARS)
 }
 
 /// Search results with aggregate info.
@@ -128,12 +211,14 @@ pub fn search(index: &SearchIndex, options: &SearchOptions) -> Result<SearchResu
     let start = std::time::Instant::now();
     let searcher = index.searcher();
     let fields = &index.fields;
+    let options = normalized_search_options(options);
+    let result_limit = options.limit;
 
     // Build the query
-    let query = build_query(index, options)?;
+    let query = build_query(index, &options)?;
 
     // Execute search with extra capacity for post-filtering
-    let fetch_limit = options.limit * 2 + 50; // Over-fetch to handle dir filtering
+    let fetch_limit = search_fetch_limit(result_limit); // Over-fetch to handle dir filtering
     let top_docs = searcher
         .search(&query, &TopDocs::with_limit(fetch_limit))
         .map_err(|e| format!("Search failed: {}", e))?;
@@ -151,9 +236,9 @@ pub fn search(index: &SearchIndex, options: &SearchOptions) -> Result<SearchResu
     };
 
     // Collect results
-    let mut hits = Vec::with_capacity(options.limit);
+    let mut hits = Vec::with_capacity(result_limit);
     for (score, doc_addr) in top_docs {
-        if hits.len() >= options.limit {
+        if hits.len() >= result_limit {
             break;
         }
 
@@ -190,13 +275,13 @@ pub fn search(index: &SearchIndex, options: &SearchOptions) -> Result<SearchResu
         // Generate snippet — prefer content snippet if available
         let (snippet, content_match) = if let Some(ref gen) = content_snippet_gen {
             let content_snip = gen.snippet_from_doc(&doc);
-            let snippet_html = content_snip.to_html();
+            let snippet_html = bounded_snippet_html(content_snip.to_html());
             if snippet_html.contains("<b>") {
                 (snippet_html, true)
             } else {
                 // Fall back to filename snippet
                 let fn_snip = filename_snippet_gen.snippet_from_doc(&doc);
-                let fn_html = fn_snip.to_html();
+                let fn_html = bounded_snippet_html(fn_snip.to_html());
                 if fn_html.contains("<b>") {
                     (fn_html, false)
                 } else {
@@ -205,7 +290,7 @@ pub fn search(index: &SearchIndex, options: &SearchOptions) -> Result<SearchResu
             }
         } else {
             let fn_snip = filename_snippet_gen.snippet_from_doc(&doc);
-            (fn_snip.to_html(), false)
+            (bounded_snippet_html(fn_snip.to_html()), false)
         };
 
         hits.push(SearchHit {
@@ -397,4 +482,120 @@ where
         .collect();
     result.sort_by(|a, b| b.count.cmp(&a.count));
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn search_options_for_test() -> SearchOptions {
+        SearchOptions {
+            query: String::new(),
+            limit: DEFAULT_SEARCH_LIMIT,
+            container_types: Vec::new(),
+            extensions: Vec::new(),
+            categories: Vec::new(),
+            min_size: None,
+            max_size: None,
+            include_dirs: false,
+            search_content: true,
+            container_path: None,
+        }
+    }
+
+    #[test]
+    fn search_result_limits_are_bounded() {
+        assert_eq!(normalized_search_limit(0), 1);
+        assert_eq!(normalized_search_limit(25), 25);
+        assert_eq!(
+            normalized_search_limit(DEFAULT_SEARCH_LIMIT),
+            DEFAULT_SEARCH_LIMIT
+        );
+        assert_eq!(
+            normalized_search_limit(MAX_SEARCH_RESULTS + 1),
+            MAX_SEARCH_RESULTS
+        );
+        assert_eq!(normalized_search_limit(usize::MAX), MAX_SEARCH_RESULTS);
+    }
+
+    #[test]
+    fn search_fetch_limit_uses_saturating_bounded_math() {
+        assert_eq!(search_fetch_limit(0), 52);
+        assert_eq!(search_fetch_limit(25), 100);
+        assert_eq!(
+            search_fetch_limit(usize::MAX),
+            MAX_SEARCH_RESULTS.saturating_mul(2).saturating_add(50)
+        );
+    }
+
+    #[test]
+    fn normalized_search_options_bounds_query_filters_and_limit() {
+        let mut options = search_options_for_test();
+        options.query = format!("  {}  ", "q".repeat(MAX_SEARCH_QUERY_CHARS + 32));
+        options.limit = usize::MAX;
+        options.container_types = vec![
+            " AD1 ".to_string(),
+            "ad1".to_string(),
+            String::new(),
+            " ".to_string(),
+            "E01".to_string(),
+        ];
+        options.extensions = (0..(MAX_SEARCH_FILTER_VALUES + 10))
+            .map(|index| format!("EXT{index}"))
+            .collect();
+        options.categories = vec!["document".repeat(MAX_SEARCH_FILTER_VALUE_CHARS + 1)];
+        options.container_path = Some(format!(
+            "  /case/{}  ",
+            "x".repeat(MAX_SEARCH_FILTER_VALUE_CHARS + 32)
+        ));
+
+        let bounded = normalized_search_options(&options);
+
+        assert_eq!(bounded.query.chars().count(), MAX_SEARCH_QUERY_CHARS);
+        assert_eq!(bounded.limit, MAX_SEARCH_RESULTS);
+        assert_eq!(bounded.container_types, vec!["ad1", "e01"]);
+        assert_eq!(bounded.extensions.len(), MAX_SEARCH_FILTER_VALUES);
+        assert_eq!(
+            bounded.categories[0].chars().count(),
+            MAX_SEARCH_FILTER_VALUE_CHARS
+        );
+        assert_eq!(
+            bounded.container_path.as_deref().unwrap().chars().count(),
+            MAX_SEARCH_FILTER_VALUE_CHARS
+        );
+    }
+
+    #[test]
+    fn normalized_search_options_treats_whitespace_as_empty() {
+        let mut options = search_options_for_test();
+        options.query = " \n\t ".to_string();
+        options.container_path = Some(" \t ".to_string());
+        options.extensions = vec![" ".to_string()];
+
+        let bounded = normalized_search_options(&options);
+
+        assert!(bounded.query.is_empty());
+        assert!(bounded.container_path.is_none());
+        assert!(bounded.extensions.is_empty());
+    }
+
+    #[test]
+    fn search_input_truncation_is_unicode_safe_and_has_no_suffix() {
+        let value = "åß∂ƒ".repeat(MAX_SEARCH_QUERY_CHARS);
+
+        let truncated = truncate_input_chars(&value, 3);
+
+        assert_eq!(truncated, "åß∂");
+        assert!(!truncated.contains(SEARCH_TRUNCATED_SUFFIX));
+    }
+
+    #[test]
+    fn snippet_truncation_is_bounded_with_suffix() {
+        let value = "é".repeat(MAX_SEARCH_SNIPPET_CHARS + 128);
+
+        let truncated = bounded_snippet_html(value);
+
+        assert_eq!(truncated.chars().count(), MAX_SEARCH_SNIPPET_CHARS);
+        assert!(truncated.ends_with(SEARCH_TRUNCATED_SUFFIX));
+    }
 }

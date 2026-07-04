@@ -9,10 +9,15 @@
 use tracing::debug;
 
 use crate::ad1;
+use crate::common::vfs::VirtualFileSystem;
 use crate::containers;
 use crate::ewf;
 use crate::raw;
 use crate::ufed;
+
+const CONTAINER_CHUNK_MAX_BYTES: usize = 16 * 1024 * 1024;
+const CONTAINER_PREVIEW_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const CONTAINER_METADATA_BATCH_MAX_ITEMS: usize = 10_000;
 
 // =============================================================================
 // V1 Container Commands
@@ -46,6 +51,104 @@ fn checked_l01_read_offset(data_offset: u64, offset: u64) -> Option<u64> {
     data_offset.checked_add(offset)
 }
 
+fn checked_l01_chunk_size(entry_size: u64, offset: u64, requested_size: usize) -> usize {
+    let remaining = entry_size.saturating_sub(offset);
+    let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+    requested_size.min(remaining)
+}
+
+fn checked_container_chunk_request_size(requested_size: usize) -> Result<usize, String> {
+    if requested_size > CONTAINER_CHUNK_MAX_BYTES {
+        return Err(format!(
+            "Container chunk request is too large: {requested_size} bytes > {CONTAINER_CHUNK_MAX_BYTES} bytes"
+        ));
+    }
+    Ok(requested_size)
+}
+
+fn bounded_container_chunk_read_size(
+    entry_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, String> {
+    let requested_size = checked_container_chunk_request_size(requested_size)?;
+    if offset >= entry_size {
+        return Ok(0);
+    }
+
+    let remaining = entry_size.saturating_sub(offset);
+    usize::try_from(remaining.min(requested_size as u64))
+        .map_err(|_| "Container chunk range is too large for this platform".to_string())
+}
+
+fn read_bounded_vfs_entry_chunk(
+    vfs: &dyn VirtualFileSystem,
+    entry_path: &str,
+    offset: u64,
+    requested_size: usize,
+    context: &str,
+) -> Result<Vec<u8>, String> {
+    let entry_size = vfs
+        .file_size(entry_path)
+        .map_err(|e| format!("Failed to determine {context} file size: {:?}", e))?;
+    let read_size = bounded_container_chunk_read_size(entry_size, offset, requested_size)?;
+    if read_size == 0 {
+        return Ok(Vec::new());
+    }
+
+    let data = vfs
+        .read(entry_path, offset, read_size)
+        .map_err(|e| format!("Failed to read {context} file: {:?}", e))?;
+    if data.len() > read_size {
+        return Err(format!(
+            "{context} VFS backend returned too many bytes: requested {read_size}, received {}",
+            data.len()
+        ));
+    }
+    Ok(data)
+}
+
+fn checked_container_preview_read_size(size: u64, context: &str) -> Result<usize, String> {
+    if size > CONTAINER_PREVIEW_MAX_BYTES {
+        return Err(format!(
+            "{context} exceeds preview extraction limit: {size} bytes > {CONTAINER_PREVIEW_MAX_BYTES} bytes"
+        ));
+    }
+
+    usize::try_from(size).map_err(|_| format!("{context} is too large to preview"))
+}
+
+fn checked_l01_preview_read_size(entry_size: u64, data_size: u64) -> Result<usize, String> {
+    let size = if entry_size > 0 {
+        entry_size
+    } else {
+        data_size
+    };
+    checked_container_preview_read_size(size, "L01 entry")
+}
+
+fn checked_ad1_preview_read_size(
+    reported_entry_size: u64,
+    resolved_entry_size: Option<u64>,
+) -> Result<usize, String> {
+    let size = if reported_entry_size > 0 {
+        reported_entry_size
+    } else {
+        resolved_entry_size
+            .ok_or_else(|| "Failed to determine AD1 entry size for preview".to_string())?
+    };
+    checked_container_preview_read_size(size, "AD1 entry")
+}
+
+fn checked_container_metadata_batch_size(count: usize) -> Result<usize, String> {
+    if count > CONTAINER_METADATA_BATCH_MAX_ITEMS {
+        return Err(format!(
+            "Container metadata batch is too large: {count} items > {CONTAINER_METADATA_BATCH_MAX_ITEMS} items"
+        ));
+    }
+    Ok(count)
+}
+
 /// Read a chunk of file content from within a forensic container
 #[tauri::command]
 pub async fn container_read_entry_chunk(
@@ -55,8 +158,9 @@ pub async fn container_read_entry_chunk(
     size: usize,
 ) -> Result<Vec<u8>, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let requested_size = checked_container_chunk_request_size(size)?;
         if ad1::is_ad1(&containerPath).unwrap_or(false) {
-            ad1::read_entry_chunk(&containerPath, &entryPath, offset, size)
+            ad1::read_entry_chunk(&containerPath, &entryPath, offset, requested_size)
                 .map_err(|e| e.to_string())
         } else if ewf::is_l01_file(&containerPath).unwrap_or(false) {
             // L01 logical evidence - read chunk using ltree offsets
@@ -67,12 +171,7 @@ pub async fn container_read_entry_chunk(
                 .ok_or_else(|| format!("Entry not found in L01: {}", entryPath))?;
             let mut handle = ewf::EwfHandle::open(&containerPath)
                 .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
-            let max_size = if entry.size > offset {
-                (entry.size - offset) as usize
-            } else {
-                0
-            };
-            let actual_size = std::cmp::min(size, max_size);
+            let actual_size = checked_l01_chunk_size(entry.size, offset, requested_size);
             if actual_size == 0 {
                 return Ok(Vec::new());
             }
@@ -83,25 +182,19 @@ pub async fn container_read_entry_chunk(
                 .map_err(|e| format!("Failed to read L01 chunk: {}", e))
         } else if ewf::is_ewf(&containerPath).unwrap_or(false) {
             // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
-            use crate::common::vfs::VirtualFileSystem;
             let vfs = ewf::vfs::EwfVfs::open(&containerPath)
                 .map_err(|e| format!("Failed to open E01: {:?}", e))?;
-            vfs.read(&entryPath, offset, size)
-                .map_err(|e| format!("Failed to read VFS file: {:?}", e))
+            read_bounded_vfs_entry_chunk(&vfs, &entryPath, offset, requested_size, "EWF")
         } else if raw::is_raw(&containerPath).unwrap_or(false) {
             // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
-            use crate::common::vfs::VirtualFileSystem;
             let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
                 .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
                 .map_err(|e| format!("Failed to open raw: {:?}", e))?;
-            vfs.read(&entryPath, offset, size)
-                .map_err(|e| format!("Failed to read raw file: {:?}", e))
+            read_bounded_vfs_entry_chunk(&vfs, &entryPath, offset, requested_size, "raw")
         } else if ufed::is_ufed(&containerPath) {
-            use crate::common::vfs::VirtualFileSystem;
             let vfs = ufed::UfedVfs::open(&containerPath)
                 .map_err(|e| format!("Failed to open UFED: {:?}", e))?;
-            vfs.read(&entryPath, offset, size)
-                .map_err(|e| format!("Failed to read UFED file: {:?}", e))
+            read_bounded_vfs_entry_chunk(&vfs, &entryPath, offset, requested_size, "UFED")
         } else {
             Err(format!("Unsupported container type for: {}", containerPath))
         }
@@ -204,11 +297,7 @@ pub async fn container_extract_entry_to_temp(
             let mut handle = ewf::EwfHandle::open(&containerPath)
                 .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
 
-            let read_size = if entry.size > 0 {
-                entry.size as usize
-            } else {
-                entry.data_size as usize
-            };
+            let read_size = checked_l01_preview_read_size(entry.size, entry.data_size)?;
             handle
                 .read_at(entry.data_offset, read_size)
                 .map_err(|e| format!("Failed to read L01 file data: {}", e))?
@@ -221,10 +310,12 @@ pub async fn container_extract_entry_to_temp(
                     .map_err(|e| format!("Failed to open E01: {:?}", e))?;
                 // If entrySize is 0, query the actual file size from the VFS.
                 // The frontend may report size=0 when getattr() failed during directory listing.
-                let read_size = if entrySize == 0 {
-                    vfs.file_size(&entryPath).map(|s| s as usize).unwrap_or(0)
+                let read_size = if entrySize > 0 {
+                    checked_container_preview_read_size(entrySize, "EWF VFS entry")?
+                } else if let Ok(size) = vfs.file_size(&entryPath) {
+                    checked_container_preview_read_size(size, "EWF VFS entry")?
                 } else {
-                    entrySize as usize
+                    0
                 };
                 vfs.read(&entryPath, 0, read_size)
                     .map_err(|e| format!("Failed to read VFS file: {:?}", e))?
@@ -232,10 +323,12 @@ pub async fn container_extract_entry_to_temp(
                 let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
                     .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
                     .map_err(|e| format!("Failed to open raw: {:?}", e))?;
-                let read_size = if entrySize == 0 {
-                    vfs.file_size(&entryPath).map(|s| s as usize).unwrap_or(0)
+                let read_size = if entrySize > 0 {
+                    checked_container_preview_read_size(entrySize, "Raw VFS entry")?
+                } else if let Ok(size) = vfs.file_size(&entryPath) {
+                    checked_container_preview_read_size(size, "Raw VFS entry")?
                 } else {
-                    entrySize as usize
+                    0
                 };
                 vfs.read(&entryPath, 0, read_size)
                     .map_err(|e| format!("Failed to read raw file: {:?}", e))?
@@ -249,11 +342,9 @@ pub async fn container_extract_entry_to_temp(
                 .map_err(|e| format!("Failed to open UFED: {:?}", e))?;
 
             let read_size = if entrySize > 0 {
-                usize::try_from(entrySize)
-                    .map_err(|_| "UFED entry is too large to preview".to_string())?
+                checked_container_preview_read_size(entrySize, "UFED entry")?
             } else if let Ok(size) = vfs.file_size(&entryPath) {
-                usize::try_from(size)
-                    .map_err(|_| "UFED entry is too large to preview".to_string())?
+                checked_container_preview_read_size(size, "UFED entry")?
             } else {
                 let entry_size = ufed::get_tree(&containerPath)
                     .ok()
@@ -265,21 +356,35 @@ pub async fn container_extract_entry_to_temp(
                     })
                     .ok_or_else(|| format!("Failed to determine UFED entry size: {}", entryPath))?;
 
-                usize::try_from(entry_size)
-                    .map_err(|_| "UFED entry is too large to preview".to_string())?
+                checked_container_preview_read_size(entry_size, "UFED entry")?
             };
 
             vfs.read(&entryPath, 0, read_size)
                 .map_err(|e| format!("Failed to read UFED file: {:?}", e))?
         } else if is_ad1 {
+            let resolved_size = if entrySize > 0 {
+                Some(entrySize)
+            } else {
+                ad1::get_entry_info(&containerPath, &entryPath)
+                    .map(|entry| entry.size)
+                    .ok()
+            };
+            let read_size = checked_ad1_preview_read_size(entrySize, resolved_size)?;
             // AD1 entry - prefer address-based read if available
-            if let Some(addr) = dataAddr {
-                ad1::read_entry_data_by_addr(&containerPath, addr, entrySize)
+            let data = if let Some(addr) = dataAddr {
+                ad1::read_entry_data_by_addr(&containerPath, addr, read_size as u64)
                     .map_err(|e| format!("Failed to read AD1 by address: {}", e))?
             } else {
                 ad1::read_entry_data(&containerPath, &entryPath)
                     .map_err(|e| format!("Failed to read AD1 entry: {}", e))?
+            };
+            if data.len() > read_size {
+                return Err(format!(
+                    "AD1 preview read returned too many bytes: allowed {read_size}, received {}",
+                    data.len()
+                ));
             }
+            data
         } else {
             return Err(format!("Unsupported container type: {}", containerPath));
         };
@@ -377,6 +482,7 @@ pub async fn container_get_items_metadata_v2(
         itemAddrs.len()
     );
     tauri::async_runtime::spawn_blocking(move || {
+        checked_container_metadata_batch_size(itemAddrs.len())?;
         if ad1::is_ad1(&containerPath).unwrap_or(false) {
             ad1::get_items_metadata_v2(&containerPath, &itemAddrs).map_err(|e| e.to_string())
         } else {
@@ -573,6 +679,114 @@ mod tests {
     #[test]
     fn test_checked_l01_read_offset_overflow() {
         assert_eq!(checked_l01_read_offset(u64::MAX, 1), None);
+    }
+
+    #[test]
+    fn test_checked_l01_chunk_size_clamps_to_remaining_entry_bytes() {
+        assert_eq!(checked_l01_chunk_size(100, 90, 64), 10);
+    }
+
+    #[test]
+    fn test_checked_l01_chunk_size_returns_zero_past_eof() {
+        assert_eq!(checked_l01_chunk_size(100, 150, 64), 0);
+    }
+
+    #[test]
+    fn test_checked_container_chunk_request_size_allows_limit() {
+        assert_eq!(
+            checked_container_chunk_request_size(CONTAINER_CHUNK_MAX_BYTES).unwrap(),
+            CONTAINER_CHUNK_MAX_BYTES
+        );
+    }
+
+    #[test]
+    fn test_checked_container_chunk_request_size_rejects_oversized_request() {
+        let err = checked_container_chunk_request_size(CONTAINER_CHUNK_MAX_BYTES + 1).unwrap_err();
+
+        assert!(err.contains("Container chunk request is too large"));
+    }
+
+    #[test]
+    fn test_bounded_container_chunk_read_size_clamps_to_remaining_entry_bytes() {
+        assert_eq!(
+            bounded_container_chunk_read_size(100, 90, CONTAINER_CHUNK_MAX_BYTES).unwrap(),
+            10
+        );
+    }
+
+    #[test]
+    fn test_bounded_container_chunk_read_size_returns_zero_past_eof() {
+        assert_eq!(bounded_container_chunk_read_size(100, 150, 64).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_checked_container_preview_read_size_allows_limit() {
+        let size =
+            checked_container_preview_read_size(CONTAINER_PREVIEW_MAX_BYTES, "test entry").unwrap();
+
+        assert_eq!(size, CONTAINER_PREVIEW_MAX_BYTES as usize);
+    }
+
+    #[test]
+    fn test_checked_container_preview_read_size_rejects_oversized_entry() {
+        let err =
+            checked_container_preview_read_size(CONTAINER_PREVIEW_MAX_BYTES + 1, "test entry")
+                .unwrap_err();
+
+        assert!(err.contains("test entry exceeds preview extraction limit"));
+    }
+
+    #[test]
+    fn test_checked_l01_preview_read_size_uses_data_size_fallback() {
+        let size = checked_l01_preview_read_size(0, 128).unwrap();
+
+        assert_eq!(size, 128);
+    }
+
+    #[test]
+    fn test_checked_ad1_preview_read_size_uses_reported_size_first() {
+        let size = checked_ad1_preview_read_size(256, Some(CONTAINER_PREVIEW_MAX_BYTES + 1))
+            .expect("reported size should be used before resolved size");
+
+        assert_eq!(size, 256);
+    }
+
+    #[test]
+    fn test_checked_ad1_preview_read_size_uses_resolved_size_fallback() {
+        let size = checked_ad1_preview_read_size(0, Some(128)).unwrap();
+
+        assert_eq!(size, 128);
+    }
+
+    #[test]
+    fn test_checked_ad1_preview_read_size_rejects_unknown_size() {
+        let err = checked_ad1_preview_read_size(0, None).unwrap_err();
+
+        assert!(err.contains("Failed to determine AD1 entry size"));
+    }
+
+    #[test]
+    fn test_checked_ad1_preview_read_size_rejects_oversized_resolved_size() {
+        let err =
+            checked_ad1_preview_read_size(0, Some(CONTAINER_PREVIEW_MAX_BYTES + 1)).unwrap_err();
+
+        assert!(err.contains("AD1 entry exceeds preview extraction limit"));
+    }
+
+    #[test]
+    fn test_checked_container_metadata_batch_size_allows_limit() {
+        assert_eq!(
+            checked_container_metadata_batch_size(CONTAINER_METADATA_BATCH_MAX_ITEMS).unwrap(),
+            CONTAINER_METADATA_BATCH_MAX_ITEMS
+        );
+    }
+
+    #[test]
+    fn test_checked_container_metadata_batch_size_rejects_oversized_batch() {
+        let err = checked_container_metadata_batch_size(CONTAINER_METADATA_BATCH_MAX_ITEMS + 1)
+            .unwrap_err();
+
+        assert!(err.contains("Container metadata batch is too large"));
     }
 
     // ==================== is_compressed_synthetic_entry tests ====================

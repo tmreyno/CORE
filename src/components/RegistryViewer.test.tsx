@@ -181,6 +181,34 @@ describe("RegistryViewer", () => {
     });
   });
 
+  it("invokes source commands when an evidence source is provided", async () => {
+    const source = {
+      containerPath: "/evidence/case.ad1",
+      entryPath: "Users/Alice/NTUSER.DAT",
+      containerType: "ad1",
+      size: 65536,
+    };
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "registry_get_info_source") return mockHiveInfo;
+      if (cmd === "registry_get_subkeys_source") return mockSubkeysResponse;
+      if (cmd === "registry_get_key_info_source") return mockKeyInfo;
+      return null;
+    });
+
+    renderComponent(() => <RegistryViewer path="/tmp/NTUSER.DAT" source={source} />);
+    await tick();
+
+    expect(mockInvoke).toHaveBeenCalledWith("registry_get_info_source", { source });
+    expect(mockInvoke).toHaveBeenCalledWith("registry_get_subkeys_source", {
+      source,
+      keyPath: "",
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("registry_get_key_info_source", {
+      source,
+      keyPath: "CMI-CreateHive\\Software",
+    });
+  });
+
   it("shows Registry badge in header", async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "registry_get_info") return mockHiveInfo;

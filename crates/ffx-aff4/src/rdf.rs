@@ -169,6 +169,16 @@ fn format_object(value: &str) -> String {
             "\"{}\"^^<http://www.w3.org/2001/XMLSchema#dateTime>",
             stripped
         )
+    } else if let Some(stripped) = value.strip_prefix("^^hash:") {
+        if let Some((algorithm_uri, hex_digest)) = stripped.rsplit_once(':') {
+            format!(
+                "\"{}\"^^<{}>",
+                escape_turtle_string(hex_digest),
+                algorithm_uri
+            )
+        } else {
+            format!("\"{}\"", escape_turtle_string(value))
+        }
     } else {
         // String literal
         format!("\"{}\"", escape_turtle_string(value))
@@ -549,6 +559,27 @@ mod tests {
 
         let desc = parsed.get_first("aff4://test", "http://purl.org/dc/elements/1.1/description");
         assert_eq!(desc, Some("Test image"));
+    }
+
+    #[test]
+    fn test_hash_literal_roundtrip() {
+        let mut graph = RdfGraph::new();
+        add_hash(
+            &mut graph,
+            "aff4://test",
+            "http://aff4.org/Schema#hash",
+            "http://aff4.org/Schema#SHA256",
+            "abcdef1234567890",
+        );
+
+        let turtle = serialize_turtle(&graph);
+        assert!(turtle.contains("\"abcdef1234567890\"^^<http://aff4.org/Schema#SHA256>"));
+
+        let parsed = parse_turtle(&turtle).unwrap();
+        assert_eq!(
+            parsed.get_first("aff4://test", "http://aff4.org/Schema#hash"),
+            Some("http://aff4.org/Schema#SHA256|abcdef1234567890")
+        );
     }
 
     #[test]

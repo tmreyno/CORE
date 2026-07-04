@@ -31,6 +31,7 @@
 pub mod analysis;
 pub mod archive; // Archive inspection only (no creation)
 pub mod archive_create; // Archive creation with sevenzip-ffi
+pub mod artifacts; // Normalized artifact extraction
 pub mod companion; // Acquisition companion file writer/reader
 pub mod container;
 pub mod database;
@@ -92,6 +93,7 @@ pub use aff4_export::*;
 pub use analysis::*;
 pub use archive::*; // Archive inspection commands only
 pub use archive_create::*; // Archive creation commands
+pub use artifacts::*;
 pub use container::*;
 pub use database::*;
 pub use discovery::*;

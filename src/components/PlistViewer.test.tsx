@@ -65,6 +65,24 @@ describe("PlistViewer", () => {
       expect(mockInvoke).toHaveBeenCalledWith("plist_read", { path: "/tmp/Info.plist" });
     });
 
+    it("calls plist_read_source when an evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockPlistData,
+        path: "/evidence/image.ad1:Library/Preferences/app.plist",
+      });
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "Library/Preferences/app.plist",
+        containerType: "ad1",
+        size: 2048,
+      };
+
+      renderComponent(() => <PlistViewer path="/tmp/Info.plist" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("plist_read_source", { source });
+    });
+
     it("shows format badge (Binary/XML)", async () => {
       mockInvoke.mockResolvedValueOnce(mockPlistData);
 

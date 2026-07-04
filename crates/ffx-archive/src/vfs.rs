@@ -89,7 +89,10 @@ struct ArchiveEntry {
 }
 
 const ZIP_CENTRAL_DIRECTORY_ENTRY_HEADER_SIZE: usize = 46;
+const ZIP_EOCD_RECORD_SIZE: usize = 22;
 const ZIP_LOCAL_FILE_HEADER_SIZE: u64 = 30;
+const ZIP_STREAM_BUFFER_BYTES: usize = 64 * 1024;
+const ZIP32_SIZE_SENTINEL: u64 = u32::MAX as u64;
 
 impl ArchiveVfs {
     /// Open an archive for virtual filesystem access
@@ -229,11 +232,7 @@ impl ArchiveVfs {
         file.read_exact(&mut buf)
             .map_err(|e| VfsError::IoError(e.to_string()))?;
 
-        // Find EOCD signature (PK\x05\x06)
-        let eocd_sig = [0x50, 0x4B, 0x05, 0x06];
-        let eocd_offset = (0..buf.len().saturating_sub(4))
-            .rev()
-            .find(|&i| buf[i..i + 4] == eocd_sig)
+        let eocd_offset = find_zip_eocd_offset(&buf)
             .ok_or_else(|| VfsError::InvalidPath("ZIP EOCD not found".to_string()))?;
 
         // Parse EOCD
@@ -253,6 +252,8 @@ impl ArchiveVfs {
             buf[eocd_offset + 18],
             buf[eocd_offset + 19],
         ]) as u64;
+        ensure_zip32_entry_count(entry_count)?;
+        ensure_zip32_central_directory_fields(cd_size, cd_offset)?;
 
         // Read Central Directory
         checked_central_directory_bounds(cd_offset, cd_size, file_size)?;
@@ -289,6 +290,7 @@ impl ArchiveVfs {
                 cd_buf[pos + 26],
                 cd_buf[pos + 27],
             ]) as u64;
+            ensure_zip32_entry_sizes(compressed_size, uncompressed_size)?;
             let filename_len = u16::from_le_bytes([cd_buf[pos + 28], cd_buf[pos + 29]]) as usize;
             let extra_len = u16::from_le_bytes([cd_buf[pos + 30], cd_buf[pos + 31]]) as usize;
             let comment_len = u16::from_le_bytes([cd_buf[pos + 32], cd_buf[pos + 33]]) as usize;
@@ -318,9 +320,20 @@ impl ArchiveVfs {
             let filename =
                 String::from_utf8_lossy(&cd_buf[filename_start..filename_end]).to_string();
 
-            // Normalize path
             let is_dir = filename.ends_with('/') || (external_attrs >> 16) & 0x4000 != 0;
-            let normalized = normalize_path(&format!("/{}", filename.trim_end_matches('/')));
+            let Some(normalized) = normalize_archive_entry_path(&filename, is_dir) else {
+                let Some(next_pos) = checked_central_directory_next_pos(
+                    pos,
+                    filename_len,
+                    extra_len,
+                    comment_len,
+                    cd_buf.len(),
+                ) else {
+                    break;
+                };
+                pos = next_pos;
+                continue;
+            };
 
             // Create entry
             let inode = self.alloc_inode();
@@ -413,8 +426,9 @@ impl ArchiveVfs {
 
         for entry_info in entries {
             let is_dir = entry_info.is_dir;
-            let normalized =
-                normalize_path(&format!("/{}", entry_info.path.trim_start_matches('/')));
+            let Some(normalized) = normalize_archive_entry_path(&entry_info.path, is_dir) else {
+                continue;
+            };
 
             let inode = self.alloc_inode();
             let entry = ArchiveEntry {
@@ -540,7 +554,6 @@ impl ArchiveVfs {
             .map_err(|e| VfsError::IoError(e.to_string()))?
             .len();
 
-        let target_name = path.trim_start_matches('/');
         let mut pos = 0u64;
 
         while pos < file_size {
@@ -567,6 +580,7 @@ impl ArchiveVfs {
                 u32::from_le_bytes([header[14], header[15], header[16], header[17]]) as u64;
             let uncompressed_size =
                 u32::from_le_bytes([header[18], header[19], header[20], header[21]]) as u64;
+            ensure_zip32_entry_sizes(compressed_size, uncompressed_size)?;
             let filename_len = usize::from(u16::from_le_bytes([header[22], header[23]]));
             let extra_len = usize::from(u16::from_le_bytes([header[24], header[25]]));
             let next_pos = checked_local_file_entry_end(
@@ -589,40 +603,46 @@ impl ArchiveVfs {
             )?))
             .map_err(|e| VfsError::IoError(e.to_string()))?;
 
-            if filename.trim_end_matches('/') == target_name {
-                // Found the file! Read and decompress
-                let mut compressed_data =
-                    vec![0u8; checked_zip_entry_buffer_len(compressed_size, "compressed data")?];
-                file.read_exact(&mut compressed_data)
-                    .map_err(|e| VfsError::IoError(e.to_string()))?;
+            if normalize_archive_entry_path(&filename, false).as_deref() == Some(path) {
+                if compression == 0 {
+                    let Some((start, end)) =
+                        bounded_read_range_u64(offset, size, uncompressed_size)
+                    else {
+                        return Ok(Vec::new());
+                    };
+                    let data_offset = pos
+                        .checked_add(ZIP_LOCAL_FILE_HEADER_SIZE)
+                        .and_then(|offset| offset.checked_add(u64::try_from(filename_len).ok()?))
+                        .and_then(|offset| offset.checked_add(u64::try_from(extra_len).ok()?))
+                        .and_then(|offset| offset.checked_add(start))
+                        .ok_or_else(|| {
+                            VfsError::InvalidPath("ZIP stored entry range overflow".to_string())
+                        })?;
+                    file.seek(SeekFrom::Start(data_offset))
+                        .map_err(|e| VfsError::IoError(e.to_string()))?;
+                    let read_size = usize::try_from(end - start).map_err(|_| {
+                        VfsError::InvalidPath("ZIP stored range too large".to_string())
+                    })?;
+                    let mut data = vec![0u8; read_size];
+                    file.read_exact(&mut data)
+                        .map_err(|e| VfsError::IoError(e.to_string()))?;
+                    return Ok(data);
+                }
 
-                let data = if compression == 0 {
-                    // Stored (no compression)
-                    compressed_data
-                } else if compression == 8 {
-                    // Deflate
-                    use flate2::read::DeflateDecoder;
-                    let mut decoder = DeflateDecoder::new(&compressed_data[..]);
-                    let mut decompressed = Vec::with_capacity(checked_zip_entry_buffer_len(
+                if compression == 8 {
+                    return read_deflated_zip_range(
+                        &mut file,
+                        compressed_size,
                         uncompressed_size,
-                        "decompressed data",
-                    )?);
-                    decoder
-                        .read_to_end(&mut decompressed)
-                        .map_err(|e| VfsError::IoError(format!("Decompression failed: {}", e)))?;
-                    decompressed
+                        offset,
+                        size,
+                    );
                 } else {
                     return Err(VfsError::Internal(format!(
                         "Unsupported compression method: {}",
                         compression
                     )));
-                };
-
-                // Apply offset and size
-                let Some((start, end)) = bounded_read_range(offset, size, data.len()) else {
-                    return Ok(Vec::new());
-                };
-                return Ok(data[start..end].to_vec());
+                }
             }
 
             // Move to next entry
@@ -705,9 +725,161 @@ fn bounded_read_range(offset: u64, size: usize, len: usize) -> Option<(usize, us
     Some((start, end))
 }
 
+fn bounded_read_range_u64(offset: u64, size: usize, len: u64) -> Option<(u64, u64)> {
+    if offset >= len {
+        return None;
+    }
+
+    let end = offset.saturating_add(size as u64).min(len);
+    Some((offset, end))
+}
+
+fn normalize_archive_entry_path(entry_path: &str, is_dir: bool) -> Option<String> {
+    if entry_path.contains('\0') {
+        return None;
+    }
+
+    let entry_path = entry_path.replace('\\', "/");
+    if entry_path.starts_with('/') || entry_path.starts_with("~/") {
+        return None;
+    }
+
+    let trimmed = if is_dir {
+        entry_path.trim_end_matches('/')
+    } else {
+        entry_path.as_str()
+    };
+
+    let mut parts = Vec::new();
+    for part in trimmed.split('/') {
+        match part {
+            "" | "." => continue,
+            ".." => return None,
+            _ if part.ends_with(':') => return None,
+            _ => parts.push(part),
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    Some(format!("/{}", parts.join("/")))
+}
+
+fn read_deflated_zip_range(
+    file: &mut File,
+    compressed_size: u64,
+    uncompressed_size: u64,
+    offset: u64,
+    size: usize,
+) -> Result<Vec<u8>, VfsError> {
+    let Some((start, end)) = bounded_read_range_u64(offset, size, uncompressed_size) else {
+        return Ok(Vec::new());
+    };
+    let reader = file.by_ref().take(compressed_size);
+    let decoder = flate2::read::DeflateDecoder::new(reader);
+    read_uncompressed_range(decoder, start, end)
+}
+
+fn read_uncompressed_range(
+    mut reader: impl Read,
+    start: u64,
+    end: u64,
+) -> Result<Vec<u8>, VfsError> {
+    let output_size = usize::try_from(end.saturating_sub(start))
+        .map_err(|_| VfsError::InvalidPath("ZIP decompressed range too large".to_string()))?;
+    if output_size == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut output = Vec::with_capacity(output_size);
+    let mut position = 0u64;
+    let mut buffer = [0u8; ZIP_STREAM_BUFFER_BYTES];
+
+    while position < end {
+        let bytes_read = reader
+            .read(&mut buffer)
+            .map_err(|e| VfsError::IoError(format!("Decompression failed: {}", e)))?;
+        if bytes_read == 0 {
+            return Err(VfsError::IoError(
+                "Decompressed ZIP entry ended before requested range".to_string(),
+            ));
+        }
+
+        let chunk_start = position;
+        let chunk_end = position.saturating_add(bytes_read as u64);
+        if chunk_end > start {
+            let copy_start = start.saturating_sub(chunk_start) as usize;
+            let copy_end = end.min(chunk_end).saturating_sub(chunk_start) as usize;
+            output.extend_from_slice(&buffer[copy_start..copy_end]);
+        }
+        position = chunk_end;
+    }
+
+    Ok(output)
+}
+
 fn checked_central_directory_size(cd_size: u64) -> Result<usize, VfsError> {
     usize::try_from(cd_size)
         .map_err(|_| VfsError::InvalidPath("ZIP central directory too large".to_string()))
+}
+
+fn find_zip_eocd_offset(buf: &[u8]) -> Option<usize> {
+    if buf.len() < ZIP_EOCD_RECORD_SIZE {
+        return None;
+    }
+
+    let eocd_sig = [0x50, 0x4B, 0x05, 0x06];
+    for offset in (0..=buf.len() - ZIP_EOCD_RECORD_SIZE).rev() {
+        if buf[offset..offset + 4] != eocd_sig {
+            continue;
+        }
+
+        let comment_len = usize::from(u16::from_le_bytes([buf[offset + 20], buf[offset + 21]]));
+        let Some(record_end) = offset
+            .checked_add(ZIP_EOCD_RECORD_SIZE)
+            .and_then(|end| end.checked_add(comment_len))
+        else {
+            continue;
+        };
+
+        if record_end == buf.len() {
+            return Some(offset);
+        }
+    }
+
+    None
+}
+
+fn ensure_zip32_central_directory_fields(cd_size: u64, cd_offset: u64) -> Result<(), VfsError> {
+    if cd_size == ZIP32_SIZE_SENTINEL || cd_offset == ZIP32_SIZE_SENTINEL {
+        return Err(VfsError::InvalidPath(
+            "ZIP64 central directory fields are not supported by archive VFS".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_zip32_entry_count(entry_count: usize) -> Result<(), VfsError> {
+    if entry_count == u16::MAX as usize {
+        return Err(VfsError::InvalidPath(
+            "ZIP64 entry count fields are not supported by archive VFS".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_zip32_entry_sizes(compressed_size: u64, uncompressed_size: u64) -> Result<(), VfsError> {
+    if compressed_size == ZIP32_SIZE_SENTINEL || uncompressed_size == ZIP32_SIZE_SENTINEL {
+        return Err(VfsError::InvalidPath(
+            "ZIP64 entry size fields are not supported by archive VFS".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn checked_central_directory_bounds(
@@ -758,10 +930,6 @@ fn checked_central_directory_next_pos(
     (next <= buf_len).then_some(next)
 }
 
-fn checked_zip_entry_buffer_len(size: u64, context: &str) -> Result<usize, VfsError> {
-    usize::try_from(size).map_err(|_| VfsError::InvalidPath(format!("ZIP {} too large", context)))
-}
-
 fn checked_local_file_entry_end(
     pos: u64,
     filename_len: usize,
@@ -797,6 +965,196 @@ fn checked_local_file_entry_end(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::path::Path;
+
+    fn write_u16(file: &mut File, value: u16) {
+        file.write_all(&value.to_le_bytes()).unwrap();
+    }
+
+    fn write_u32(file: &mut File, value: u32) {
+        file.write_all(&value.to_le_bytes()).unwrap();
+    }
+
+    fn create_sparse_stored_zip(path: &Path, entry_name: &str, entry_size: u32) {
+        let mut file = File::create(path).unwrap();
+        let name = entry_name.as_bytes();
+        let name_len = u16::try_from(name.len()).unwrap();
+
+        write_u32(&mut file, 0x0403_4b50);
+        write_u16(&mut file, 20);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u32(&mut file, 0);
+        write_u32(&mut file, entry_size);
+        write_u32(&mut file, entry_size);
+        write_u16(&mut file, name_len);
+        write_u16(&mut file, 0);
+        file.write_all(name).unwrap();
+
+        let data_start = ZIP_LOCAL_FILE_HEADER_SIZE + u64::from(name_len);
+        file.write_all(b"head").unwrap();
+        file.set_len(data_start + u64::from(entry_size)).unwrap();
+        file.seek(SeekFrom::Start(data_start + u64::from(entry_size)))
+            .unwrap();
+
+        let cd_offset = file.stream_position().unwrap();
+        write_u32(&mut file, 0x0201_4b50);
+        write_u16(&mut file, 20);
+        write_u16(&mut file, 20);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u32(&mut file, 0);
+        write_u32(&mut file, entry_size);
+        write_u32(&mut file, entry_size);
+        write_u16(&mut file, name_len);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u32(&mut file, 0);
+        write_u32(&mut file, 0);
+        file.write_all(name).unwrap();
+
+        let cd_size = file.stream_position().unwrap() - cd_offset;
+        write_u32(&mut file, 0x0605_4b50);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 1);
+        write_u16(&mut file, 1);
+        write_u32(&mut file, u32::try_from(cd_size).unwrap());
+        write_u32(&mut file, u32::try_from(cd_offset).unwrap());
+        write_u16(&mut file, 0);
+    }
+
+    fn create_single_file_zip(
+        path: &Path,
+        entry_name: &str,
+        data: &[u8],
+        compression: u16,
+        compressed_data: &[u8],
+    ) {
+        let mut file = File::create(path).unwrap();
+        let name = entry_name.as_bytes();
+        let name_len = u16::try_from(name.len()).unwrap();
+        let data_len = u32::try_from(data.len()).unwrap();
+        let compressed_len = u32::try_from(compressed_data.len()).unwrap();
+
+        write_u32(&mut file, 0x0403_4b50);
+        write_u16(&mut file, 20);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, compression);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u32(&mut file, 0);
+        write_u32(&mut file, compressed_len);
+        write_u32(&mut file, data_len);
+        write_u16(&mut file, name_len);
+        write_u16(&mut file, 0);
+        file.write_all(name).unwrap();
+        file.write_all(compressed_data).unwrap();
+
+        let cd_offset = file.stream_position().unwrap();
+        write_u32(&mut file, 0x0201_4b50);
+        write_u16(&mut file, 20);
+        write_u16(&mut file, 20);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, compression);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u32(&mut file, 0);
+        write_u32(&mut file, compressed_len);
+        write_u32(&mut file, data_len);
+        write_u16(&mut file, name_len);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u32(&mut file, 0);
+        write_u32(&mut file, 0);
+        file.write_all(name).unwrap();
+
+        let cd_size = file.stream_position().unwrap() - cd_offset;
+        write_u32(&mut file, 0x0605_4b50);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 1);
+        write_u16(&mut file, 1);
+        write_u32(&mut file, u32::try_from(cd_size).unwrap());
+        write_u32(&mut file, u32::try_from(cd_offset).unwrap());
+        write_u16(&mut file, 0);
+    }
+
+    fn create_stored_zip_entries(path: &Path, entries: &[(&str, &[u8])]) {
+        let mut file = File::create(path).unwrap();
+        let mut central_entries = Vec::new();
+
+        for (name, data) in entries {
+            let header_offset = file.stream_position().unwrap();
+            let name = name.as_bytes();
+            let name_len = u16::try_from(name.len()).unwrap();
+            let data_len = u32::try_from(data.len()).unwrap();
+
+            write_u32(&mut file, 0x0403_4b50);
+            write_u16(&mut file, 20);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u32(&mut file, 0);
+            write_u32(&mut file, data_len);
+            write_u32(&mut file, data_len);
+            write_u16(&mut file, name_len);
+            write_u16(&mut file, 0);
+            file.write_all(name).unwrap();
+            file.write_all(data).unwrap();
+
+            central_entries.push((header_offset, name.to_vec(), data_len));
+        }
+
+        let cd_offset = file.stream_position().unwrap();
+        for (header_offset, name, data_len) in &central_entries {
+            write_u32(&mut file, 0x0201_4b50);
+            write_u16(&mut file, 20);
+            write_u16(&mut file, 20);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u32(&mut file, 0);
+            write_u32(&mut file, *data_len);
+            write_u32(&mut file, *data_len);
+            write_u16(&mut file, u16::try_from(name.len()).unwrap());
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u16(&mut file, 0);
+            write_u32(&mut file, 0);
+            write_u32(&mut file, u32::try_from(*header_offset).unwrap());
+            file.write_all(name).unwrap();
+        }
+
+        let cd_size = file.stream_position().unwrap() - cd_offset;
+        write_u32(&mut file, 0x0605_4b50);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, u16::try_from(entries.len()).unwrap());
+        write_u16(&mut file, u16::try_from(entries.len()).unwrap());
+        write_u32(&mut file, u32::try_from(cd_size).unwrap());
+        write_u32(&mut file, u32::try_from(cd_offset).unwrap());
+        write_u16(&mut file, 0);
+    }
+
+    fn deflate_bytes(data: &[u8]) -> Vec<u8> {
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
 
     #[test]
     fn test_archive_vfs_path_normalization() {
@@ -817,8 +1175,187 @@ mod tests {
     }
 
     #[test]
+    fn test_bounded_read_range_u64_saturates_large_size() {
+        assert_eq!(
+            bounded_read_range_u64(2 * 1024 * 1024 * 1024, usize::MAX, 3 * 1024 * 1024 * 1024),
+            Some((2 * 1024 * 1024 * 1024, 3 * 1024 * 1024 * 1024))
+        );
+    }
+
+    #[test]
+    fn archive_entry_path_normalization_rejects_traversal() {
+        assert_eq!(
+            normalize_archive_entry_path("dir\\file.txt", false),
+            Some("/dir/file.txt".to_string())
+        );
+        assert_eq!(normalize_archive_entry_path("../evil.txt", false), None);
+        assert_eq!(
+            normalize_archive_entry_path("safe/../../evil.txt", false),
+            None
+        );
+        assert_eq!(normalize_archive_entry_path("/absolute.txt", false), None);
+        assert_eq!(normalize_archive_entry_path("C:/absolute.txt", false), None);
+    }
+
+    #[test]
+    fn archive_vfs_reads_sparse_stored_zip_range_without_full_materialization() {
+        let tmp = tempfile::Builder::new().suffix(".zip").tempfile().unwrap();
+        let entry_size = 2_u32 * 1024 * 1024 * 1024;
+        create_sparse_stored_zip(tmp.path(), "files/large.bin", entry_size);
+
+        let vfs = ArchiveVfs::open(tmp.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(vfs.read("/files/large.bin", 0, 4).unwrap(), b"head");
+        assert_eq!(
+            vfs.read("/files/large.bin", u64::from(entry_size) - 2, 8)
+                .unwrap(),
+            vec![0, 0]
+        );
+    }
+
+    #[test]
+    fn archive_vfs_streams_deflated_zip_range() {
+        let tmp = tempfile::Builder::new().suffix(".zip").tempfile().unwrap();
+        let mut data = Vec::with_capacity(8 * 1024 * 1024);
+        for i in 0..(8 * 1024 * 1024) {
+            data.push((i % 251) as u8);
+        }
+        let compressed = deflate_bytes(&data);
+        create_single_file_zip(tmp.path(), "files/deflated.bin", &data, 8, &compressed);
+
+        let vfs = ArchiveVfs::open(tmp.path().to_str().unwrap()).unwrap();
+        let offset = 3 * 1024 * 1024 + 17;
+
+        assert_eq!(
+            vfs.read("/files/deflated.bin", offset as u64, 64).unwrap(),
+            data[offset..offset + 64]
+        );
+        assert_eq!(
+            vfs.read("/files/deflated.bin", data.len() as u64, 8)
+                .unwrap(),
+            b""
+        );
+    }
+
+    #[test]
+    fn archive_vfs_skips_traversal_entries_and_reads_normalized_backslashes() {
+        let tmp = tempfile::Builder::new().suffix(".zip").tempfile().unwrap();
+        create_stored_zip_entries(
+            tmp.path(),
+            &[
+                ("../evil.txt", b"evil"),
+                ("dir\\safe.txt", b"safe"),
+                ("notes/readme..txt", b"dots"),
+            ],
+        );
+
+        let vfs = ArchiveVfs::open(tmp.path().to_str().unwrap()).unwrap();
+
+        assert!(vfs.getattr("/evil.txt").is_err());
+        assert_eq!(vfs.read("/dir/safe.txt", 0, 4).unwrap(), b"safe");
+        assert_eq!(vfs.read("/notes/readme..txt", 0, 4).unwrap(), b"dots");
+    }
+
+    #[test]
     fn test_checked_central_directory_bounds_rejects_overflow() {
         assert!(checked_central_directory_bounds(u64::MAX, 1, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn find_zip_eocd_offset_rejects_short_trailing_signature() {
+        let buf = b"not a zip PK\x05\x06";
+
+        assert_eq!(find_zip_eocd_offset(buf), None);
+    }
+
+    #[test]
+    fn find_zip_eocd_offset_accepts_record_with_matching_comment() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"prefix");
+        let offset = buf.len();
+        buf.extend_from_slice(&[
+            0x50, 0x4B, 0x05, 0x06, // signature
+            0, 0, // disk number
+            0, 0, // central directory disk
+            0, 0, // entries on disk
+            0, 0, // total entries
+            0, 0, 0, 0, // central directory size
+            0, 0, 0, 0, // central directory offset
+            4, 0, // comment length
+        ]);
+        buf.extend_from_slice(b"note");
+
+        assert_eq!(find_zip_eocd_offset(&buf), Some(offset));
+    }
+
+    #[test]
+    fn find_zip_eocd_offset_ignores_comment_signature_suffix() {
+        let mut buf = Vec::new();
+        let offset = buf.len();
+        buf.extend_from_slice(&[
+            0x50, 0x4B, 0x05, 0x06, // signature
+            0, 0, // disk number
+            0, 0, // central directory disk
+            0, 0, // entries on disk
+            0, 0, // total entries
+            0, 0, 0, 0, // central directory size
+            0, 0, 0, 0, // central directory offset
+            5, 0, // comment length
+        ]);
+        buf.extend_from_slice(b"aPK\x05\x06");
+
+        assert_eq!(find_zip_eocd_offset(&buf), Some(offset));
+    }
+
+    #[test]
+    fn zip32_central_directory_fields_reject_zip64_sentinels() {
+        assert!(ensure_zip32_central_directory_fields(ZIP32_SIZE_SENTINEL, 0).is_err());
+        assert!(ensure_zip32_central_directory_fields(0, ZIP32_SIZE_SENTINEL).is_err());
+        assert!(ensure_zip32_central_directory_fields(1024, 2048).is_ok());
+    }
+
+    #[test]
+    fn zip32_entry_count_rejects_zip64_sentinel() {
+        assert!(ensure_zip32_entry_count(u16::MAX as usize).is_err());
+        assert!(ensure_zip32_entry_count(42).is_ok());
+    }
+
+    #[test]
+    fn archive_vfs_rejects_zip64_entry_count_sentinel() {
+        let tmp = tempfile::Builder::new().suffix(".zip").tempfile().unwrap();
+        let mut file = File::create(tmp.path()).unwrap();
+        write_u32(&mut file, 0x0605_4b50);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, 0);
+        write_u16(&mut file, u16::MAX);
+        write_u16(&mut file, u16::MAX);
+        write_u32(&mut file, 0);
+        write_u32(&mut file, 0);
+        write_u16(&mut file, 0);
+        drop(file);
+
+        let vfs = ArchiveVfs {
+            path: tmp.path().to_string_lossy().to_string(),
+            format: ArchiveFormat::Zip,
+            entries: DashMap::new(),
+            dir_children: DashMap::new(),
+            next_inode: AtomicU64::new(2),
+            loaded: AtomicBool::new(false),
+        };
+        vfs.init_root().unwrap();
+
+        let err = vfs
+            .load_zip_entries()
+            .expect_err("ZIP64 entry count sentinel should be rejected");
+
+        assert!(matches!(err, VfsError::InvalidPath(message) if message.contains("entry count")));
+    }
+
+    #[test]
+    fn zip32_entry_sizes_reject_zip64_sentinels() {
+        assert!(ensure_zip32_entry_sizes(ZIP32_SIZE_SENTINEL, 0).is_err());
+        assert!(ensure_zip32_entry_sizes(0, ZIP32_SIZE_SENTINEL).is_err());
+        assert!(ensure_zip32_entry_sizes(1024, 2048).is_ok());
     }
 
     #[test]

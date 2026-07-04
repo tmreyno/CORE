@@ -47,8 +47,16 @@ const HEADERS: &[&str] = &[
     "Storage Notes",
     "Notes",
     "Photo Refs",
+    "Evidence File ID",
+    "Source ID",
+    "Hash Algorithm",
+    "Hash Value",
+    "Hash Computed At",
     "Description",
 ];
+
+const MAX_EXPORT_FIELD_CHARS: usize = 32_000;
+const TRUNCATED_FIELD_SUFFIX: &str = "... [truncated]";
 
 // =============================================================================
 // CSV Export
@@ -62,7 +70,8 @@ pub fn export_csv(ev: &EvidenceCollectionData, output_path: impl AsRef<Path>) ->
     wtr.write_record(HEADERS).map_err(csv_err)?;
 
     for item in &ev.collected_items {
-        wtr.write_record(item_to_row(item)).map_err(csv_err)?;
+        wtr.write_record(item_to_spreadsheet_row(item))
+            .map_err(csv_err)?;
     }
 
     wtr.flush()?;
@@ -136,17 +145,19 @@ pub fn export_xlsx(
     ];
     for (i, (lbl, val)) in meta_rows.iter().enumerate() {
         let r = meta_start + i as u32;
+        let val = export_field(val);
         ws.write_with_format(r, 0, *lbl, &meta_label)
             .map_err(xlsx_err)?;
-        ws.write_with_format(r, 1, *val, &meta_val)
+        ws.write_with_format(r, 1, val.as_str(), &meta_val)
             .map_err(xlsx_err)?;
     }
 
     if !ev.witnesses.is_empty() {
         let r = meta_start + meta_rows.len() as u32;
+        let witnesses = export_field(&ev.witnesses.join(", "));
         ws.write_with_format(r, 0, "Witnesses:", &meta_label)
             .map_err(xlsx_err)?;
-        ws.write_with_format(r, 1, ev.witnesses.join(", "), &meta_val)
+        ws.write_with_format(r, 1, witnesses.as_str(), &meta_val)
             .map_err(xlsx_err)?;
     }
 
@@ -160,7 +171,7 @@ pub fn export_xlsx(
     // ---- Item data rows ----
     for (i, item) in ev.collected_items.iter().enumerate() {
         let r = hdr_row + 1 + i as u32;
-        for (c, val) in item_to_row(item).iter().enumerate() {
+        for (c, val) in item_to_spreadsheet_row(item).iter().enumerate() {
             ws.write_with_format(r, c as u16, val.as_str(), &cell_fmt)
                 .map_err(xlsx_err)?;
         }
@@ -169,7 +180,7 @@ pub fn export_xlsx(
     // ---- Column widths ----
     let widths: &[f64] = &[
         8.0, 18.0, 18.0, 18.0, 16.0, 14.0, 16.0, 12.0, 14.0, 10.0, 16.0, 16.0, 18.0, 12.0, 10.0,
-        14.0, 18.0, 12.0, 18.0, 14.0, 12.0, 18.0, 24.0, 14.0, 24.0,
+        14.0, 18.0, 12.0, 18.0, 14.0, 12.0, 18.0, 24.0, 14.0, 18.0, 28.0, 16.0, 36.0, 20.0, 24.0,
     ];
     for (c, w) in widths.iter().enumerate() {
         ws.set_column_width(c as u16, *w).map_err(xlsx_err)?;
@@ -249,13 +260,16 @@ pub fn export_html(
             if !n.is_empty() {
                 html.push_str(&format!(
                     "<p><strong>Documentation:</strong> {}</p>\n",
-                    esc(n)
+                    esc_export(n)
                 ));
             }
         }
         if let Some(ref c) = ev.conditions {
             if !c.is_empty() {
-                html.push_str(&format!("<p><strong>Conditions:</strong> {}</p>\n", esc(c)));
+                html.push_str(&format!(
+                    "<p><strong>Conditions:</strong> {}</p>\n",
+                    esc_export(c)
+                ));
             }
         }
         html.push_str("</div>\n");
@@ -279,46 +293,112 @@ pub fn export_html(
 
 /// Convert a CollectedItem into a flat row of string values (column-aligned with HEADERS)
 fn item_to_row(item: &CollectedItem) -> Vec<String> {
+    item_to_raw_row(item)
+        .into_iter()
+        .map(|value| export_field(&value))
+        .collect()
+}
+
+fn item_to_spreadsheet_row(item: &CollectedItem) -> Vec<String> {
+    item_to_raw_row(item)
+        .into_iter()
+        .map(|value| spreadsheet_field(&value))
+        .collect()
+}
+
+fn item_to_raw_row(item: &CollectedItem) -> Vec<String> {
     vec![
         item.item_number.clone(),
-        item.item_collection_datetime
-            .as_deref()
-            .unwrap_or("")
-            .to_string(),
-        item.item_system_datetime
-            .as_deref()
-            .unwrap_or("")
-            .to_string(),
-        item.item_collecting_officer
-            .as_deref()
-            .unwrap_or("")
-            .to_string(),
-        item.item_authorization.as_deref().unwrap_or("").to_string(),
+        item.item_collection_datetime.clone().unwrap_or_default(),
+        item.item_system_datetime.clone().unwrap_or_default(),
+        item.item_collecting_officer.clone().unwrap_or_default(),
+        item.item_authorization.clone().unwrap_or_default(),
         if !item.device_type.is_empty() {
             item.device_type.clone()
         } else {
             item.item_type.clone()
         },
-        item.brand.as_deref().unwrap_or("").to_string(),
-        item.make.as_deref().unwrap_or("").to_string(),
-        item.model.as_deref().unwrap_or("").to_string(),
-        item.color.as_deref().unwrap_or("").to_string(),
-        item.serial_number.as_deref().unwrap_or("").to_string(),
-        item.imei.as_deref().unwrap_or("").to_string(),
-        item.other_identifiers.as_deref().unwrap_or("").to_string(),
-        item.building.as_deref().unwrap_or("").to_string(),
-        item.room.as_deref().unwrap_or("").to_string(),
-        item.location_other.as_deref().unwrap_or("").to_string(),
+        item.brand.clone().unwrap_or_default(),
+        item.make.clone().unwrap_or_default(),
+        item.model.clone().unwrap_or_default(),
+        item.color.clone().unwrap_or_default(),
+        item.serial_number.clone().unwrap_or_default(),
+        item.imei.clone().unwrap_or_default(),
+        item.other_identifiers.clone().unwrap_or_default(),
+        item.building.clone().unwrap_or_default(),
+        item.room.clone().unwrap_or_default(),
+        item.location_other.clone().unwrap_or_default(),
         item.found_location.clone(),
-        item.image_format.as_deref().unwrap_or("").to_string(),
-        item.acquisition_method.as_deref().unwrap_or("").to_string(),
+        item.image_format.clone().unwrap_or_default(),
+        item.acquisition_method.clone().unwrap_or_default(),
         item.condition.clone(),
         item.packaging.clone(),
-        item.storage_notes.as_deref().unwrap_or("").to_string(),
-        item.notes.as_deref().unwrap_or("").to_string(),
+        item.storage_notes.clone().unwrap_or_default(),
+        item.notes.clone().unwrap_or_default(),
         item.photo_refs.join(", "),
+        item.evidence_file_id.clone().unwrap_or_default(),
+        item.source_id.clone().unwrap_or_default(),
+        item.hash_algorithm.clone().unwrap_or_default(),
+        item.hash_value.clone().unwrap_or_default(),
+        item.hash_computed_at.clone().unwrap_or_default(),
         item.description.clone(),
     ]
+}
+
+fn export_field(value: &str) -> String {
+    truncate_chars(value, MAX_EXPORT_FIELD_CHARS)
+}
+
+fn spreadsheet_field(value: &str) -> String {
+    if !needs_spreadsheet_escape(value) {
+        return export_field(value);
+    }
+
+    let mut escaped =
+        String::with_capacity(MAX_EXPORT_FIELD_CHARS.min(value.len().saturating_add(1)));
+    escaped.push('\'');
+    escaped.push_str(&truncate_chars(
+        value,
+        MAX_EXPORT_FIELD_CHARS.saturating_sub(1),
+    ));
+    escaped
+}
+
+fn needs_spreadsheet_escape(value: &str) -> bool {
+    let Some(first) = value.chars().next() else {
+        return false;
+    };
+    if is_spreadsheet_formula_prefix(first) {
+        return true;
+    }
+    first == ' '
+        && value
+            .trim_start_matches(' ')
+            .chars()
+            .next()
+            .is_some_and(is_spreadsheet_formula_prefix)
+}
+
+fn is_spreadsheet_formula_prefix(ch: char) -> bool {
+    matches!(ch, '=' | '+' | '-' | '@' | '\t' | '\r' | '\n')
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let suffix_chars = TRUNCATED_FIELD_SUFFIX.chars().count();
+    let keep_chars = max_chars.saturating_sub(suffix_chars);
+    let end = value
+        .char_indices()
+        .nth(keep_chars)
+        .map(|(idx, _)| idx)
+        .unwrap_or(value.len());
+    let mut truncated = String::with_capacity(end + TRUNCATED_FIELD_SUFFIX.len());
+    truncated.push_str(&value[..end]);
+    truncated.push_str(TRUNCATED_FIELD_SUFFIX);
+    truncated
 }
 
 /// HTML-escape a string
@@ -329,11 +409,15 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+fn esc_export(s: &str) -> String {
+    esc(&export_field(s))
+}
+
 fn meta_row(html: &mut String, label: &str, value: &str) {
     html.push_str(&format!(
         "<tr><td class=\"lbl\">{}</td><td>{}</td></tr>\n",
         esc(label),
-        esc(value)
+        esc_export(value)
     ));
 }
 
@@ -396,3 +480,143 @@ const HTML_HEADER: &str = r#"<!DOCTYPE html>
 </head>
 <body>
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn item_row_includes_source_and_hash_snapshot() {
+        let item = CollectedItem {
+            item_number: "ITEM-001".to_string(),
+            description: "Logical image".to_string(),
+            source_id: Some("ad1:/case/logical.ad1:/docs/a.txt".to_string()),
+            evidence_file_id: Some("ev-1".to_string()),
+            hash_algorithm: Some("SHA-256".to_string()),
+            hash_value: Some(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
+            hash_computed_at: Some("2026-04-14T10:02:00Z".to_string()),
+            ..Default::default()
+        };
+
+        let row = item_to_row(&item);
+
+        assert_eq!(row.len(), HEADERS.len());
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Evidence File ID")
+                .expect("evidence file column")],
+            "ev-1"
+        );
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Source ID")
+                .expect("source column")],
+            "ad1:/case/logical.ad1:/docs/a.txt"
+        );
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Hash Algorithm")
+                .expect("hash algorithm column")],
+            "SHA-256"
+        );
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Hash Value")
+                .expect("hash value column")],
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Hash Computed At")
+                .expect("hash computed column")],
+            "2026-04-14T10:02:00Z"
+        );
+    }
+
+    #[test]
+    fn item_row_truncates_oversized_export_fields() {
+        let oversized_notes = "n".repeat(MAX_EXPORT_FIELD_CHARS + 256);
+        let item = CollectedItem {
+            item_number: "ITEM-001".to_string(),
+            notes: Some(oversized_notes),
+            ..Default::default()
+        };
+
+        let row = item_to_row(&item);
+        let notes = &row[HEADERS
+            .iter()
+            .position(|header| *header == "Notes")
+            .expect("notes column")];
+
+        assert_eq!(notes.chars().count(), MAX_EXPORT_FIELD_CHARS);
+        assert!(notes.ends_with(TRUNCATED_FIELD_SUFFIX));
+    }
+
+    #[test]
+    fn spreadsheet_row_neutralizes_formula_like_cells() {
+        let item = CollectedItem {
+            item_number: "=2+2".to_string(),
+            description: " +SUM(A1:A2)".to_string(),
+            notes: Some("@cmd".to_string()),
+            found_location: "-10".to_string(),
+            ..Default::default()
+        };
+
+        let row = item_to_spreadsheet_row(&item);
+
+        assert_eq!(row[0], "'=2+2");
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Description")
+                .expect("description column")],
+            "' +SUM(A1:A2)"
+        );
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Notes")
+                .expect("notes column")],
+            "'@cmd"
+        );
+        assert_eq!(
+            row[HEADERS
+                .iter()
+                .position(|header| *header == "Found Location")
+                .expect("found location column")],
+            "'-10"
+        );
+
+        let html_row = item_to_row(&item);
+        assert_eq!(html_row[0], "=2+2");
+    }
+
+    #[test]
+    fn spreadsheet_formula_escape_preserves_field_cap() {
+        let value = format!("={}", "x".repeat(MAX_EXPORT_FIELD_CHARS + 256));
+        let escaped = spreadsheet_field(&value);
+
+        assert!(escaped.starts_with("'="));
+        assert_eq!(escaped.chars().count(), MAX_EXPORT_FIELD_CHARS);
+        assert!(escaped.ends_with(TRUNCATED_FIELD_SUFFIX));
+    }
+
+    #[test]
+    fn metadata_values_are_truncated_before_html_escaping() {
+        let value = format!("<tag>{}", "w".repeat(MAX_EXPORT_FIELD_CHARS + 128));
+        let mut html = String::new();
+
+        meta_row(&mut html, "Witnesses", &value);
+
+        assert!(html.contains(TRUNCATED_FIELD_SUFFIX));
+        assert!(html.contains("&lt;tag&gt;"));
+        assert!(!html.contains("<tag>"));
+    }
+}

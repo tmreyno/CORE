@@ -37,7 +37,7 @@
 use parking_lot::RwLock;
 use std::collections::HashMap;
 
-use super::parser::Session;
+use super::parser::{is_safe_ad1_item_name, Session};
 use super::types::{Item, ACCESS, AD1_FOLDER_SIGNATURE, CREATED, MODIFIED};
 use super::utils::find_timestamp;
 use ffx_common::vfs::{join_path, normalize_path, DirEntry, FileAttr, VfsError, VirtualFileSystem};
@@ -168,6 +168,7 @@ impl Ad1Vfs {
         // Build child entries - collect data first to avoid nested lock
         let child_data: Vec<_> = items
             .iter()
+            .filter(|item| is_safe_ad1_item_name(&item.name))
             .map(|item| {
                 let child_path = join_path(&normalized, &item.name);
                 let inode = self.alloc_inode();
@@ -294,16 +295,10 @@ impl Ad1Vfs {
         let mut session_guard = self.session.write();
         let session = session_guard.as_mut().ok_or(VfsError::NotMounted)?;
 
-        // Read the file data
-        let full_data = session
-            .read_file_data(&item)
-            .map_err(|e| VfsError::IoError(e.to_string()))?;
-
-        // Apply offset and size
-        let Some((start, end)) = bounded_read_range(offset, size, full_data.len()) else {
-            return Ok(Vec::new());
-        };
-        Ok(full_data[start..end].to_vec())
+        // Read the requested file range.
+        session
+            .read_file_data_range(&item, offset, size)
+            .map_err(|e| VfsError::IoError(e.to_string()))
     }
 
     /// Find an item by its path
@@ -414,20 +409,6 @@ impl VirtualFileSystem for Ad1Vfs {
     }
 }
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-fn bounded_read_range(offset: u64, size: usize, len: usize) -> Option<(usize, usize)> {
-    let start = usize::try_from(offset).ok()?;
-    if start >= len {
-        return None;
-    }
-
-    let end = start.saturating_add(size).min(len);
-    Some((start, end))
-}
-
 /// Parse timestamp string to nanoseconds since epoch
 fn parse_timestamp(s: &str) -> Option<i64> {
     use chrono::{DateTime, NaiveDateTime};
@@ -468,15 +449,5 @@ mod tests {
 
         let ts = parse_timestamp("2024-01-15 10:30:00");
         assert!(ts.is_some());
-    }
-
-    #[test]
-    fn test_bounded_read_range_rejects_offset_past_end() {
-        assert_eq!(bounded_read_range(10, 4, 8), None);
-    }
-
-    #[test]
-    fn test_bounded_read_range_saturates_large_size() {
-        assert_eq!(bounded_read_range(6, usize::MAX, 8), Some((6, 8)));
     }
 }

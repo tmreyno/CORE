@@ -601,6 +601,9 @@ pub enum L01WriteError {
     #[error("Too many segments: data requires {0} segments but maximum is {1}")]
     TooManySegments(u16, u16),
 
+    #[error("Output segment already exists and will not be overwritten: {0}")]
+    OutputExists(PathBuf),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }

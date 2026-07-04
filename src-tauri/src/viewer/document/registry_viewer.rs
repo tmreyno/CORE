@@ -8,9 +8,24 @@ use notatin::cell_value::CellValue;
 use notatin::parser::ParserIterator;
 use notatin::parser_builder::ParserBuilder;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::error::{DocumentError, DocumentResult};
+
+pub(crate) const MAX_REGISTRY_PREVIEW_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_REGISTRY_RESPONSE_SUBKEYS: usize = 10_000;
+const MAX_REGISTRY_RESPONSE_VALUES: usize = 10_000;
+
+pub(crate) fn ensure_registry_preview_size_allowed(path: &Path) -> DocumentResult<()> {
+    let size = std::fs::metadata(path).map_err(DocumentError::Io)?.len();
+    if size > MAX_REGISTRY_PREVIEW_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "Registry hive too large for preview: {} bytes > {} bytes",
+            size, MAX_REGISTRY_PREVIEW_BYTES
+        )));
+    }
+    Ok(())
+}
 
 // =============================================================================
 // Types
@@ -141,13 +156,44 @@ fn format_cell_value(value: &CellValue) -> String {
 /// Estimate byte size of a CellValue
 fn cell_value_size(value: &CellValue) -> usize {
     match value {
-        CellValue::String(s) => s.len() * 2, // UTF-16 stored
+        CellValue::String(s) => utf16_storage_size(s),
         CellValue::U32(_) | CellValue::I32(_) => 4,
         CellValue::U64(_) | CellValue::I64(_) => 8,
-        CellValue::MultiString(ms) => ms.iter().map(|s| s.len() * 2 + 2).sum(),
+        CellValue::MultiString(ms) => multi_string_storage_size(ms),
         CellValue::Binary(b) => b.len(),
         CellValue::Error | CellValue::None => 0,
     }
+}
+
+fn utf16_storage_size(value: &str) -> usize {
+    utf16_storage_size_len(value.len())
+}
+
+fn utf16_storage_size_len(len: usize) -> usize {
+    len.saturating_mul(2)
+}
+
+fn multi_string_storage_size(values: &[String]) -> usize {
+    values.iter().fold(0usize, |total, value| {
+        total.saturating_add(utf16_storage_size(value).saturating_add(2))
+    })
+}
+
+fn checked_registry_count_increment(total: usize, count: usize) -> Option<usize> {
+    total.checked_add(count)
+}
+
+fn registry_response_limit(kind: RegistryResponseKind) -> usize {
+    match kind {
+        RegistryResponseKind::Subkeys => MAX_REGISTRY_RESPONSE_SUBKEYS,
+        RegistryResponseKind::Values => MAX_REGISTRY_RESPONSE_VALUES,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RegistryResponseKind {
+    Subkeys,
+    Values,
 }
 
 /// Format a Windows FILETIME (100-ns intervals since 1601-01-01) as ISO timestamp
@@ -172,6 +218,7 @@ fn format_timestamp(filetime: u64) -> Option<String> {
 /// Get overview information about a registry hive file
 pub fn get_hive_info(path: &str) -> DocumentResult<RegistryHiveInfo> {
     let hive_path = PathBuf::from(path);
+    ensure_registry_preview_size_allowed(&hive_path)?;
     let mut parser = ParserBuilder::from_path(hive_path.clone())
         .build()
         .map_err(|e| DocumentError::Parse(format!("Failed to open registry hive: {}", e)))?;
@@ -201,8 +248,18 @@ pub fn get_hive_info(path: &str) -> DocumentResult<RegistryHiveInfo> {
     let mut capped = false;
 
     for key in ParserIterator::new(&parser_for_iter).iter() {
-        total_keys += 1;
-        total_values += key.value_iter().count();
+        let Some(next_keys) = checked_registry_count_increment(total_keys, 1) else {
+            capped = true;
+            break;
+        };
+        total_keys = next_keys;
+
+        let value_count = key.value_iter().count();
+        let Some(next_values) = checked_registry_count_increment(total_values, value_count) else {
+            capped = true;
+            break;
+        };
+        total_values = next_values;
         // Safety: cap at 100K keys to avoid hang on very large hives
         if total_keys > 100_000 {
             capped = true;
@@ -225,7 +282,9 @@ pub fn get_hive_info(path: &str) -> DocumentResult<RegistryHiveInfo> {
 
 /// Get the immediate subkeys of a key at the given path
 pub fn get_subkeys(hive_path: &str, key_path: &str) -> DocumentResult<RegistrySubkeysResponse> {
-    let mut parser = ParserBuilder::from_path(PathBuf::from(hive_path))
+    let hive_path = PathBuf::from(hive_path);
+    ensure_registry_preview_size_allowed(&hive_path)?;
+    let mut parser = ParserBuilder::from_path(hive_path)
         .build()
         .map_err(|e| DocumentError::Parse(format!("Failed to open registry hive: {}", e)))?;
 
@@ -251,6 +310,7 @@ pub fn get_subkeys(hive_path: &str, key_path: &str) -> DocumentResult<RegistrySu
 
     let subkeys: Vec<RegistryKey> = sub_keys
         .iter()
+        .take(registry_response_limit(RegistryResponseKind::Subkeys))
         .map(|sk| RegistryKey {
             name: sk.key_name.clone(),
             path: sk.path.clone(),
@@ -273,7 +333,9 @@ pub fn get_subkeys(hive_path: &str, key_path: &str) -> DocumentResult<RegistrySu
 
 /// Get the values of a key at the given path
 pub fn get_values(hive_path: &str, key_path: &str) -> DocumentResult<RegistryValuesResponse> {
-    let mut parser = ParserBuilder::from_path(PathBuf::from(hive_path))
+    let hive_path = PathBuf::from(hive_path);
+    ensure_registry_preview_size_allowed(&hive_path)?;
+    let mut parser = ParserBuilder::from_path(hive_path)
         .build()
         .map_err(|e| DocumentError::Parse(format!("Failed to open registry hive: {}", e)))?;
 
@@ -294,6 +356,7 @@ pub fn get_values(hive_path: &str, key_path: &str) -> DocumentResult<RegistryVal
 
     let values: Vec<RegistryValue> = key
         .value_iter()
+        .take(registry_response_limit(RegistryResponseKind::Values))
         .map(|val| {
             let (cell_value, _warnings) = val.get_content();
             let size = cell_value_size(&cell_value);
@@ -318,7 +381,9 @@ pub fn get_values(hive_path: &str, key_path: &str) -> DocumentResult<RegistryVal
 
 /// Get detailed information about a specific key including both subkeys and values
 pub fn get_key_info(hive_path: &str, key_path: &str) -> DocumentResult<RegistryKeyInfo> {
-    let mut parser = ParserBuilder::from_path(PathBuf::from(hive_path))
+    let hive_path = PathBuf::from(hive_path);
+    ensure_registry_preview_size_allowed(&hive_path)?;
+    let mut parser = ParserBuilder::from_path(hive_path)
         .build()
         .map_err(|e| DocumentError::Parse(format!("Failed to open registry hive: {}", e)))?;
 
@@ -349,6 +414,7 @@ pub fn get_key_info(hive_path: &str, key_path: &str) -> DocumentResult<RegistryK
     // Get values
     let values: Vec<RegistryValue> = key
         .value_iter()
+        .take(registry_response_limit(RegistryResponseKind::Values))
         .map(|val| {
             let (cell_value, _warnings) = val.get_content();
             let size = cell_value_size(&cell_value);
@@ -370,6 +436,7 @@ pub fn get_key_info(hive_path: &str, key_path: &str) -> DocumentResult<RegistryK
     let sub_keys = key_for_subkeys.read_sub_keys(&mut parser);
     let subkeys: Vec<RegistryKey> = sub_keys
         .iter()
+        .take(registry_response_limit(RegistryResponseKind::Subkeys))
         .map(|sk| RegistryKey {
             name: sk.key_name.clone(),
             path: sk.path.clone(),
@@ -403,6 +470,7 @@ pub fn get_key_info(hive_path: &str, key_path: &str) -> DocumentResult<RegistryK
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     // Since we don't have a real registry hive in test_data, we test the helpers
 
@@ -526,6 +594,44 @@ mod tests {
     }
 
     #[test]
+    fn utf16_storage_size_len_saturates_on_overflow() {
+        assert_eq!(utf16_storage_size_len(usize::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn checked_registry_count_increment_rejects_overflow() {
+        assert_eq!(checked_registry_count_increment(usize::MAX, 1), None);
+        assert_eq!(checked_registry_count_increment(41, 1), Some(42));
+    }
+
+    #[test]
+    fn registry_response_limits_are_bounded() {
+        assert_eq!(
+            registry_response_limit(RegistryResponseKind::Subkeys),
+            MAX_REGISTRY_RESPONSE_SUBKEYS
+        );
+        assert_eq!(
+            registry_response_limit(RegistryResponseKind::Values),
+            MAX_REGISTRY_RESPONSE_VALUES
+        );
+    }
+
+    #[test]
+    fn registry_response_limits_can_cap_iterators() {
+        let limit = registry_response_limit(RegistryResponseKind::Values);
+        let count = (0..limit + 32).take(limit).count();
+
+        assert_eq!(count, MAX_REGISTRY_RESPONSE_VALUES);
+    }
+
+    #[test]
+    fn multi_string_storage_size_uses_utf16_terminators() {
+        let values = vec!["A".to_string(), "BC".to_string()];
+
+        assert_eq!(multi_string_storage_size(&values), 10);
+    }
+
+    #[test]
     fn test_cell_value_size_dword() {
         assert_eq!(cell_value_size(&CellValue::U32(0)), 4);
     }
@@ -549,6 +655,19 @@ mod tests {
     fn test_get_hive_info_nonexistent() {
         let result = get_hive_info("/nonexistent/file.dat");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn registry_preview_rejects_sparse_oversized_hive_before_open() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"regf").unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_REGISTRY_PREVIEW_BYTES + 1)
+            .unwrap();
+
+        let err = get_hive_info(&tmp.path().to_string_lossy()).unwrap_err();
+
+        assert!(err.to_string().contains("Registry hive too large"));
     }
 
     #[test]

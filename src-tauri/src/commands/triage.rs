@@ -20,6 +20,7 @@
 
 #![allow(unused_imports)]
 
+use super::ewf_helpers::validate_snapshot_byte_count;
 use rayon::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -34,9 +35,91 @@ use tracing::{info, warn};
 /// Cancel flag for triage operations.
 static TRIAGE_CANCEL_FLAG: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false));
 
+const TRIAGE_LARGE_FILE_THRESHOLD: u64 = 4 * 1024 * 1024;
+const TRIAGE_COPY_CHUNK_SIZE: usize = 256 * 1024;
+const TRIAGE_MAX_TRAVERSAL_DEPTH: usize = 128;
+const TRIAGE_MAX_TRAVERSAL_FILES: usize = 250_000;
+const TRIAGE_MAX_COLLECTION_FILES: usize = 250_000;
+const TRIAGE_MAX_SECRET_FINDINGS: usize = 10_000;
+
 /// Pre-compiled secret detection patterns (compiled once, reused across calls).
 static SECRET_PATTERNS: LazyLock<Vec<(Regex, &'static str, &'static str, &'static str)>> =
     LazyLock::new(build_secret_patterns);
+
+fn copy_triage_file_snapshot(
+    src_path: &Path,
+    dest_path: &Path,
+    file_size: u64,
+) -> std::io::Result<u64> {
+    if file_size <= TRIAGE_LARGE_FILE_THRESHOLD {
+        let copied = std::fs::copy(src_path, dest_path)?;
+        validate_snapshot_byte_count("Triage copy", src_path, file_size, copied)
+            .map_err(std::io::Error::other)?;
+        return Ok(copied);
+    }
+
+    use std::io::{Read, Write};
+    let mut reader = std::fs::File::open(src_path)?;
+    let mut writer = std::fs::File::create(dest_path)?;
+    let mut buf = vec![0u8; TRIAGE_COPY_CHUNK_SIZE];
+    let mut copied: u64 = 0;
+
+    loop {
+        let Some(to_read) = checked_triage_copy_read_len(file_size, copied)? else {
+            break;
+        };
+        let n = reader.read(&mut buf[..to_read])?;
+        if n == 0 {
+            validate_snapshot_byte_count("Triage copy", src_path, file_size, copied)
+                .map_err(std::io::Error::other)?;
+            break;
+        }
+        writer.write_all(&buf[..n])?;
+        copied = checked_triage_copy_advance(copied, n, src_path)?;
+    }
+
+    writer.flush()?;
+    validate_snapshot_byte_count("Triage copy", src_path, file_size, copied)
+        .map_err(std::io::Error::other)?;
+    Ok(copied)
+}
+
+fn checked_triage_copy_read_len(file_size: u64, copied: u64) -> std::io::Result<Option<usize>> {
+    let remaining = file_size.checked_sub(copied).ok_or_else(|| {
+        std::io::Error::other(format!(
+            "Triage copy byte counter exceeded snapshot size: copied {copied} bytes > expected {file_size} bytes"
+        ))
+    })?;
+    if remaining == 0 {
+        return Ok(None);
+    }
+
+    let chunk_limit = u64::try_from(TRIAGE_COPY_CHUNK_SIZE)
+        .map_err(|_| std::io::Error::other("Triage copy chunk size does not fit in u64"))?;
+    let read_len = remaining.min(chunk_limit);
+    usize::try_from(read_len)
+        .map(Some)
+        .map_err(|_| std::io::Error::other("Triage copy read length does not fit in usize"))
+}
+
+fn checked_triage_copy_advance(
+    copied: u64,
+    bytes_read: usize,
+    src_path: &Path,
+) -> std::io::Result<u64> {
+    let bytes_read = u64::try_from(bytes_read).map_err(|_| {
+        std::io::Error::other(format!(
+            "Triage copy read length does not fit in u64: {}",
+            src_path.display()
+        ))
+    })?;
+    copied.checked_add(bytes_read).ok_or_else(|| {
+        std::io::Error::other(format!(
+            "Triage copy byte counter overflow for {}: copied {copied} + {bytes_read} bytes",
+            src_path.display()
+        ))
+    })
+}
 
 // =============================================================================
 // Types
@@ -1082,18 +1165,26 @@ pub async fn triage_collect(
 
         // First pass: enumerate all files to collect (for progress)
         let mut all_files: Vec<(PathBuf, String, String)> = Vec::new(); // (source, relative_dest, category)
-        for art in &selected {
+        let mut collection_truncated = false;
+        'collection: for art in &selected {
             let cat = art.category.to_string();
             let resolved = resolve_artifact_paths(&art.paths, target_path);
             for src in resolved {
                 if src.is_file() {
                     let rel = make_relative(&src, target_path, art.category);
-                    all_files.push((src, rel, cat.clone()));
+                    if !push_triage_collection_file(&mut all_files, src, rel, cat.clone()) {
+                        collection_truncated = true;
+                        break 'collection;
+                    }
                 } else if src.is_dir() && art.recursive {
                     if let Ok(entries) = collect_dir_recursive(&src) {
                         for entry in entries {
                             let rel = make_relative(&entry, target_path, art.category);
-                            all_files.push((entry, rel, cat.clone()));
+                            if !push_triage_collection_file(&mut all_files, entry, rel, cat.clone())
+                            {
+                                collection_truncated = true;
+                                break 'collection;
+                            }
                         }
                     }
                 } else if src.is_dir() {
@@ -1103,7 +1194,11 @@ pub async fn triage_collect(
                             let p = entry.path();
                             if p.is_file() {
                                 let rel = make_relative(&p, target_path, art.category);
-                                all_files.push((p, rel, cat.clone()));
+                                if !push_triage_collection_file(&mut all_files, p, rel, cat.clone())
+                                {
+                                    collection_truncated = true;
+                                    break 'collection;
+                                }
                             }
                         }
                     }
@@ -1112,6 +1207,12 @@ pub async fn triage_collect(
         }
 
         let total = all_files.len() as u64;
+        if collection_truncated {
+            warn!(
+                "Triage collection queue capped at {} files",
+                TRIAGE_MAX_COLLECTION_FILES
+            );
+        }
         let mut category_details: HashMap<String, CategoryResult> = HashMap::new();
 
         // Initialize category details for all selected categories
@@ -1173,9 +1274,6 @@ pub async fn triage_collect(
 
             let dest = output_path.join(rel_dest);
 
-            const LARGE_FILE_THRESHOLD: u64 = 4 * 1024 * 1024; // 4 MB
-            const CHUNK_SIZE: usize = 256 * 1024; // 256 KB
-
             let file_size = src.metadata().map(|m| m.len()).unwrap_or(0);
 
             // Skip files exceeding the size limit (e.g., huge .tracev3 files)
@@ -1198,32 +1296,8 @@ pub async fn triage_collect(
             // freeze the rayon worker. We poll for completion with a timeout.
             let src_path = src.clone();
             let dest_path = dest.clone();
-            let copy_limit = file_size; // snapshot — don't chase growing files
             let copy_handle = std::thread::spawn(move || -> Result<u64, std::io::Error> {
-                if file_size <= LARGE_FILE_THRESHOLD {
-                    std::fs::copy(&src_path, &dest_path)
-                } else {
-                    // Chunked copy capped at the snapshot file size
-                    use std::io::{Read, Write};
-                    let mut reader = std::fs::File::open(&src_path)?;
-                    let mut writer = std::fs::File::create(&dest_path)?;
-                    let mut buf = vec![0u8; CHUNK_SIZE];
-                    let mut copied: u64 = 0;
-                    loop {
-                        let remaining = copy_limit.saturating_sub(copied) as usize;
-                        if remaining == 0 {
-                            break;
-                        }
-                        let to_read = CHUNK_SIZE.min(remaining);
-                        let n = reader.read(&mut buf[..to_read])?;
-                        if n == 0 {
-                            break;
-                        }
-                        writer.write_all(&buf[..n])?;
-                        copied += n as u64;
-                    }
-                    Ok(copied)
-                }
+                copy_triage_file_snapshot(&src_path, &dest_path, file_size)
             });
 
             // Poll for thread completion with timeout + cancel check.
@@ -1279,10 +1353,11 @@ pub async fn triage_collect(
                 }
                 Err(e) => {
                     warn!("Failed to copy {}: {e}", src.display());
-                    a_skipped.fetch_add(1, Ordering::Relaxed);
+                    let _ = std::fs::remove_file(&dest);
+                    a_failed.fetch_add(1, Ordering::Relaxed);
                     let mut details = lock_mutex_recover(shared_category_details.as_ref());
                     if let Some(cat_result) = details.get_mut(category.as_str()) {
-                        cat_result.files_skipped += 1;
+                        cat_result.files_failed += 1;
                     }
                 }
             }
@@ -1497,6 +1572,19 @@ fn into_inner_recover<T>(mutex: Mutex<T>) -> T {
     }
 }
 
+fn push_triage_collection_file(
+    all_files: &mut Vec<(PathBuf, String, String)>,
+    source: PathBuf,
+    relative_dest: String,
+    category: String,
+) -> bool {
+    if all_files.len() >= TRIAGE_MAX_COLLECTION_FILES {
+        return false;
+    }
+    all_files.push((source, relative_dest, category));
+    true
+}
+
 /// Package the staging directory contents into a 7z archive.
 fn package_to_7z(staging_dir: &Path, archive_path: &Path) -> Result<(), String> {
     let sz =
@@ -1530,14 +1618,37 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
     writeln!(file, "relative_path,category,size_bytes,modified")
         .map_err(|e| format!("Write header failed: {e}"))?;
 
-    fn walk_dir(dir: &Path, base: &Path, out: &mut std::fs::File) {
+    fn walk_dir(
+        dir: &Path,
+        base: &Path,
+        out: &mut std::fs::File,
+        depth: usize,
+        rows_written: &mut usize,
+    ) {
+        if depth > TRIAGE_MAX_TRAVERSAL_DEPTH {
+            warn!(
+                "Skipping triage manifest directory {}: maximum traversal depth {} exceeded",
+                dir.display(),
+                TRIAGE_MAX_TRAVERSAL_DEPTH
+            );
+            return;
+        }
+
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         for entry in entries.flatten() {
+            if *rows_written >= TRIAGE_MAX_TRAVERSAL_FILES {
+                warn!(
+                    "Stopping triage manifest at {} files",
+                    TRIAGE_MAX_TRAVERSAL_FILES
+                );
+                return;
+            }
+
             let path = entry.path();
             if path.is_dir() {
-                walk_dir(&path, base, out);
+                walk_dir(&path, base, out, depth + 1, rows_written);
             } else if path.is_file() {
                 // Skip the manifest file itself
                 if path
@@ -1568,11 +1679,13 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                     })
                     .unwrap_or_default();
                 let _ = writeln!(out, "{rel_str},{category},{size},{modified}");
+                *rows_written += 1;
             }
         }
     }
 
-    walk_dir(output_dir, output_dir, &mut file);
+    let mut rows_written = 0usize;
+    walk_dir(output_dir, output_dir, &mut file, 0, &mut rows_written);
     info!("Triage manifest written: {}", manifest_path.display());
     Ok(())
 }
@@ -1640,14 +1753,29 @@ fn resolve_artifact_paths(patterns: &[String], _target_root: &Path) -> Vec<PathB
 /// Collect all files in a directory recursively.
 fn collect_dir_recursive(dir: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
     let mut files = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
+    let mut stack = vec![(dir.to_path_buf(), 0usize)];
 
-    while let Some(current) = stack.pop() {
+    while let Some((current, depth)) = stack.pop() {
+        if depth > TRIAGE_MAX_TRAVERSAL_DEPTH {
+            warn!(
+                "Skipping triage directory {}: maximum traversal depth {} exceeded",
+                current.display(),
+                TRIAGE_MAX_TRAVERSAL_DEPTH
+            );
+            continue;
+        }
         if let Ok(entries) = std::fs::read_dir(&current) {
             for entry in entries.flatten() {
+                if files.len() >= TRIAGE_MAX_TRAVERSAL_FILES {
+                    warn!(
+                        "Stopping triage recursive collection at {} files",
+                        TRIAGE_MAX_TRAVERSAL_FILES
+                    );
+                    return Ok(files);
+                }
                 let path = entry.path();
                 if path.is_dir() {
-                    stack.push(path);
+                    stack.push((path, depth + 1));
                 } else if path.is_file() {
                     files.push(path);
                 }
@@ -1690,10 +1818,19 @@ fn scan_for_secrets(
     let mut last_emit = std::time::Instant::now();
 
     // Walk the output directory for scannable text files
-    let mut stack = vec![output_dir.to_path_buf()];
-    while let Some(dir) = stack.pop() {
+    let mut stack = vec![(output_dir.to_path_buf(), 0usize)];
+    while let Some((dir, depth)) = stack.pop() {
         if TRIAGE_CANCEL_FLAG.load(Ordering::Relaxed) {
             break;
+        }
+
+        if depth > TRIAGE_MAX_TRAVERSAL_DEPTH {
+            warn!(
+                "Skipping triage secret scan directory {}: maximum traversal depth {} exceeded",
+                dir.display(),
+                TRIAGE_MAX_TRAVERSAL_DEPTH
+            );
+            continue;
         }
 
         let entries = match std::fs::read_dir(&dir) {
@@ -1702,9 +1839,17 @@ fn scan_for_secrets(
         };
 
         for entry in entries.flatten() {
+            if scanned as usize >= TRIAGE_MAX_TRAVERSAL_FILES {
+                warn!(
+                    "Stopping triage secret scan at {} files",
+                    TRIAGE_MAX_TRAVERSAL_FILES
+                );
+                return findings;
+            }
+
             let path = entry.path();
             if path.is_dir() {
-                stack.push(path);
+                stack.push((path, depth + 1));
                 continue;
             }
 
@@ -1733,14 +1878,21 @@ fn scan_for_secrets(
                         if pattern.is_match(line) {
                             // Extract the matched portion and redact it
                             if let Some(m) = pattern.find(line) {
-                                findings.push(SecretFinding {
+                                let finding = SecretFinding {
                                     file_path: rel_path.clone(),
                                     line_number: line_num + 1,
                                     secret_type: secret_type.to_string(),
                                     description: description.to_string(),
                                     preview: redact_match(m.as_str()),
                                     confidence: confidence.to_string(),
-                                });
+                                };
+                                if !push_secret_finding(&mut findings, finding) {
+                                    warn!(
+                                        "Stopping triage secret scan at {} findings",
+                                        TRIAGE_MAX_SECRET_FINDINGS
+                                    );
+                                    return findings;
+                                }
                             }
                         }
                     }
@@ -1772,6 +1924,14 @@ fn scan_for_secrets(
     }
 
     findings
+}
+
+fn push_secret_finding(findings: &mut Vec<SecretFinding>, finding: SecretFinding) -> bool {
+    if findings.len() >= TRIAGE_MAX_SECRET_FINDINGS {
+        return false;
+    }
+    findings.push(finding);
+    true
 }
 
 /// Check if a file is likely text/config (worth scanning for secrets).
@@ -2065,7 +2225,12 @@ fn redact_match(matched: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{into_inner_recover, lock_mutex_recover};
+    use super::{
+        checked_triage_copy_advance, checked_triage_copy_read_len, collect_dir_recursive,
+        copy_triage_file_snapshot, into_inner_recover, lock_mutex_recover, push_secret_finding,
+        push_triage_collection_file, write_triage_manifest, SecretFinding, TRIAGE_COPY_CHUNK_SIZE,
+        TRIAGE_MAX_COLLECTION_FILES, TRIAGE_MAX_SECRET_FINDINGS, TRIAGE_MAX_TRAVERSAL_DEPTH,
+    };
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -2098,5 +2263,154 @@ mod tests {
         assert!(value.is_poisoned());
         let value = Arc::try_unwrap(value).expect("single owner after join");
         assert_eq!(into_inner_recover(value), 7);
+    }
+
+    #[test]
+    fn copy_triage_file_snapshot_accepts_exact_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.txt");
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&src, b"evidence").unwrap();
+
+        let copied = copy_triage_file_snapshot(&src, &dest, 8).unwrap();
+
+        assert_eq!(copied, 8);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"evidence");
+    }
+
+    #[test]
+    fn copy_triage_file_snapshot_rejects_short_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.txt");
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&src, b"short").unwrap();
+
+        let err = copy_triage_file_snapshot(&src, &dest, 10).unwrap_err();
+
+        assert!(err.to_string().contains("Triage copy incomplete"));
+        assert!(err.to_string().contains("expected 10 bytes"));
+    }
+
+    #[test]
+    fn copy_triage_file_snapshot_rejects_grown_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.txt");
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&src, b"grew-after-snapshot").unwrap();
+
+        let err = copy_triage_file_snapshot(&src, &dest, 4).unwrap_err();
+
+        assert!(err.to_string().contains("Triage copy incomplete"));
+        assert!(err.to_string().contains("expected 4 bytes"));
+    }
+
+    #[test]
+    fn checked_triage_copy_read_len_returns_none_at_expected_size() {
+        assert_eq!(checked_triage_copy_read_len(10, 10).unwrap(), None);
+    }
+
+    #[test]
+    fn checked_triage_copy_read_len_clamps_to_remaining_tail() {
+        assert_eq!(checked_triage_copy_read_len(10, 8).unwrap(), Some(2));
+    }
+
+    #[test]
+    fn checked_triage_copy_read_len_caps_large_remaining() {
+        assert_eq!(
+            checked_triage_copy_read_len(u64::MAX, 0).unwrap(),
+            Some(TRIAGE_COPY_CHUNK_SIZE)
+        );
+    }
+
+    #[test]
+    fn checked_triage_copy_read_len_rejects_counter_past_snapshot() {
+        let err = checked_triage_copy_read_len(10, 11).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("byte counter exceeded snapshot size"));
+    }
+
+    #[test]
+    fn checked_triage_copy_advance_rejects_overflow() {
+        let err = checked_triage_copy_advance(u64::MAX, 1, std::path::Path::new("source.txt"))
+            .unwrap_err();
+
+        assert!(err.to_string().contains("byte counter overflow"));
+    }
+
+    #[test]
+    fn push_triage_collection_file_caps_collection_queue() {
+        let mut all_files = Vec::new();
+        for index in 0..TRIAGE_MAX_COLLECTION_FILES {
+            assert!(push_triage_collection_file(
+                &mut all_files,
+                std::path::PathBuf::from(format!("source-{index}.txt")),
+                format!("dest-{index}.txt"),
+                "logs".to_string(),
+            ));
+        }
+
+        assert!(!push_triage_collection_file(
+            &mut all_files,
+            std::path::PathBuf::from("overflow.txt"),
+            "overflow.txt".to_string(),
+            "logs".to_string(),
+        ));
+        assert_eq!(all_files.len(), TRIAGE_MAX_COLLECTION_FILES);
+    }
+
+    #[test]
+    fn push_secret_finding_caps_returned_findings() {
+        fn finding(index: usize) -> SecretFinding {
+            SecretFinding {
+                file_path: format!("file-{index}.txt"),
+                line_number: index + 1,
+                secret_type: "api_key".to_string(),
+                description: "Generic API Key/Token".to_string(),
+                preview: "abcd****wxyz".to_string(),
+                confidence: "medium".to_string(),
+            }
+        }
+
+        let mut findings = Vec::new();
+        for index in 0..TRIAGE_MAX_SECRET_FINDINGS {
+            assert!(push_secret_finding(&mut findings, finding(index)));
+        }
+
+        assert!(!push_secret_finding(
+            &mut findings,
+            finding(TRIAGE_MAX_SECRET_FINDINGS)
+        ));
+        assert_eq!(findings.len(), TRIAGE_MAX_SECRET_FINDINGS);
+    }
+
+    #[test]
+    fn collect_dir_recursive_skips_beyond_depth_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut current = dir.path().to_path_buf();
+        for index in 0..=TRIAGE_MAX_TRAVERSAL_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            std::fs::create_dir(&current).unwrap();
+        }
+        std::fs::write(current.join("too-deep.txt"), b"secret").unwrap();
+
+        let files = collect_dir_recursive(dir.path()).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn write_triage_manifest_skips_beyond_depth_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut current = dir.path().to_path_buf();
+        for index in 0..=TRIAGE_MAX_TRAVERSAL_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            std::fs::create_dir(&current).unwrap();
+        }
+        std::fs::write(current.join("too-deep.txt"), b"secret").unwrap();
+
+        write_triage_manifest(dir.path()).unwrap();
+        let manifest = std::fs::read_to_string(dir.path().join("triage_manifest.csv")).unwrap();
+        assert_eq!(manifest.lines().count(), 1);
     }
 }

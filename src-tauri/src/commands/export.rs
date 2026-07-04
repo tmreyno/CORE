@@ -12,6 +12,7 @@
 //! - Metadata preservation
 //! - Activity logging
 
+use super::ewf_helpers::validate_snapshot_byte_count;
 use crate::common::COPY_BUFFER_SIZE;
 use crate::database;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,8 @@ use tracing::{debug, info, warn};
 static EXPORT_CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+const MAX_EXPORT_TRAVERSAL_DEPTH: usize = 128;
+
 fn export_cancel_flags() -> std::sync::MutexGuard<'static, HashMap<String, Arc<AtomicBool>>> {
     match EXPORT_CANCEL_FLAGS.lock() {
         Ok(flags) => flags,
@@ -37,6 +40,48 @@ fn export_cancel_flags() -> std::sync::MutexGuard<'static, HashMap<String, Arc<A
             poisoned.into_inner()
         }
     }
+}
+
+fn checked_export_copy_read_len(
+    file_size: u64,
+    bytes_copied: u64,
+    source: &Path,
+) -> Result<Option<usize>, String> {
+    let remaining = file_size.checked_sub(bytes_copied).ok_or_else(|| {
+        format!(
+            "Copy byte counter exceeded source size for {}: copied {} bytes > expected {} bytes",
+            source.display(),
+            bytes_copied,
+            file_size
+        )
+    })?;
+
+    if remaining == 0 {
+        return Ok(None);
+    }
+
+    let copy_buffer_size = u64::try_from(COPY_BUFFER_SIZE)
+        .map_err(|_| "Copy buffer size does not fit in u64".to_string())?;
+    usize::try_from(remaining.min(copy_buffer_size))
+        .map(Some)
+        .map_err(|_| "Copy read length does not fit in usize".to_string())
+}
+
+fn checked_export_copy_advance(
+    bytes_copied: u64,
+    bytes_read: usize,
+    source: &Path,
+) -> Result<u64, String> {
+    let bytes_read = u64::try_from(bytes_read)
+        .map_err(|_| "Copy read byte count does not fit in u64".to_string())?;
+    bytes_copied.checked_add(bytes_read).ok_or_else(|| {
+        format!(
+            "Copy byte counter overflowed while reading {}: copied {} bytes, next chunk {} bytes",
+            source.display(),
+            bytes_copied,
+            bytes_read
+        )
+    })
 }
 
 /// Progress event for copy/export operations
@@ -244,11 +289,15 @@ fn copy_file_with_progress(
             let _ = writer.flush();
             return Err("Export cancelled".to_string());
         }
+        let Some(read_size) = checked_export_copy_read_len(file_size, bytes_copied, source)? else {
+            break;
+        };
         let bytes_read = reader
-            .read(&mut buffer)
+            .read(&mut buffer[..read_size])
             .map_err(|e| format!("Read error: {}", e))?;
 
         if bytes_read == 0 {
+            validate_snapshot_byte_count("Copy", source, file_size, bytes_copied)?;
             break;
         }
 
@@ -259,12 +308,12 @@ fn copy_file_with_progress(
         if let Some(ref mut h) = hasher {
             h.update(&buffer[..bytes_read]);
         }
-        bytes_copied += bytes_read as u64;
+        bytes_copied = checked_export_copy_advance(bytes_copied, bytes_read, source)?;
 
         // Emit progress every 100ms
         if last_emit.elapsed().as_millis() > 100 {
             let elapsed = start_time.elapsed().as_secs_f64();
-            let total_copied = total_bytes_so_far + bytes_copied;
+            let total_copied = total_bytes_so_far.saturating_add(bytes_copied);
             let speed = if elapsed > 0.0 {
                 (total_copied as f64 / elapsed) as u64
             } else {
@@ -308,6 +357,8 @@ fn copy_file_with_progress(
         }
     }
 
+    validate_snapshot_byte_count("Copy", source, file_size, bytes_copied)?;
+
     writer.flush().map_err(|e| format!("Flush error: {}", e))?;
 
     let hash = hasher.map(|h| format!("{:x}", h.finalize()));
@@ -346,9 +397,9 @@ fn calculate_total_size(paths: &[String]) -> u64 {
     for path in paths {
         if let Ok(meta) = fs::metadata(path) {
             if meta.is_file() {
-                total += meta.len();
+                total = total.saturating_add(meta.len());
             } else if meta.is_dir() {
-                total += calculate_dir_size(Path::new(path));
+                total = total.saturating_add(calculate_dir_size(Path::new(path)));
             }
         }
     }
@@ -357,18 +408,36 @@ fn calculate_total_size(paths: &[String]) -> u64 {
 
 /// Calculate directory size recursively
 fn calculate_dir_size(dir: &Path) -> u64 {
+    calculate_dir_size_at_depth(dir, 0)
+}
+
+fn calculate_dir_size_at_depth(dir: &Path, depth: usize) -> u64 {
+    if depth > MAX_EXPORT_TRAVERSAL_DEPTH {
+        warn!(
+            "Skipping directory {}: maximum export traversal depth {} exceeded",
+            dir.display(),
+            MAX_EXPORT_TRAVERSAL_DEPTH
+        );
+        return 0;
+    }
+
     let mut total = 0u64;
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file() {
-                total += path.metadata().map(|m| m.len()).unwrap_or(0);
+                total = total.saturating_add(path.metadata().map(|m| m.len()).unwrap_or(0));
             } else if path.is_dir() {
-                total += calculate_dir_size(&path);
+                total = total.saturating_add(calculate_dir_size_at_depth(&path, depth + 1));
             }
         }
     }
     total
+}
+
+fn required_export_space(total_bytes: u64) -> u64 {
+    let headroom = (total_bytes / 10).max(1024 * 1024);
+    total_bytes.saturating_add(headroom)
 }
 
 /// Collect all files from paths (expanding directories)
@@ -397,6 +466,24 @@ fn collect_files(paths: &[String]) -> Vec<(String, String)> {
 
 /// Recursively collect files from a directory
 fn collect_dir_files(base: &Path, dir: &Path, files: &mut Vec<(String, String)>) {
+    collect_dir_files_at_depth(base, dir, files, 0);
+}
+
+fn collect_dir_files_at_depth(
+    base: &Path,
+    dir: &Path,
+    files: &mut Vec<(String, String)>,
+    depth: usize,
+) {
+    if depth > MAX_EXPORT_TRAVERSAL_DEPTH {
+        warn!(
+            "Skipping directory {}: maximum export traversal depth {} exceeded",
+            dir.display(),
+            MAX_EXPORT_TRAVERSAL_DEPTH
+        );
+        return;
+    }
+
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -411,7 +498,7 @@ fn collect_dir_files(base: &Path, dir: &Path, files: &mut Vec<(String, String)>)
                     });
                 files.push((path.to_string_lossy().to_string(), rel_path));
             } else if path.is_dir() {
-                collect_dir_files(base, &path, files);
+                collect_dir_files_at_depth(base, &path, files, depth + 1);
             }
         }
     }
@@ -528,7 +615,7 @@ fn run_export_inner(
     // Check destination free space
     if let Some(free_bytes) = get_available_space(dest_path) {
         // Require at least 10% headroom beyond the files to account for metadata/manifests
-        let required = total_bytes + (total_bytes / 10).max(1024 * 1024);
+        let required = required_export_space(total_bytes);
         if free_bytes < required {
             let free_mb = free_bytes / (1024 * 1024);
             let required_mb = required / (1024 * 1024);
@@ -600,7 +687,7 @@ fn run_export_inner(
             compute_hash,
         ) {
             Ok((copied, hash)) => {
-                bytes_copied += copied;
+                bytes_copied = bytes_copied.saturating_add(copied);
 
                 // Handle forensic metadata if hashing is enabled
                 if opts.compute_hashes {
@@ -720,7 +807,7 @@ fn run_export_inner(
 
     let duration_ms = start_time.elapsed().as_millis() as u64;
     let avg_speed = if duration_ms > 0 {
-        (bytes_copied * 1000) / duration_ms
+        bytes_copied.saturating_mul(1000) / duration_ms
     } else {
         0
     };
@@ -902,4 +989,89 @@ fn get_available_space(path: &Path) -> Option<u64> {
 fn get_available_space(_path: &Path) -> Option<u64> {
     // On non-Unix systems, skip the space check (it will just proceed)
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn required_export_space_saturates_for_huge_totals() {
+        assert_eq!(required_export_space(u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn required_export_space_adds_minimum_headroom() {
+        assert_eq!(required_export_space(512), 512 + 1024 * 1024);
+    }
+
+    #[test]
+    fn calculate_total_size_sums_regular_files() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.bin");
+        let b = dir.path().join("b.bin");
+        std::fs::write(&a, [0u8; 3]).unwrap();
+        std::fs::write(&b, [0u8; 5]).unwrap();
+
+        let paths = vec![
+            a.to_string_lossy().to_string(),
+            b.to_string_lossy().to_string(),
+        ];
+
+        assert_eq!(calculate_total_size(&paths), 8);
+    }
+
+    #[test]
+    fn checked_export_copy_read_len_returns_none_when_file_complete() {
+        let source = std::path::Path::new("complete.bin");
+
+        assert_eq!(
+            checked_export_copy_read_len(1024, 1024, source).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn checked_export_copy_read_len_clamps_to_remaining_tail() {
+        let source = std::path::Path::new("tail.bin");
+
+        assert_eq!(
+            checked_export_copy_read_len(1024, 1000, source).unwrap(),
+            Some(24)
+        );
+    }
+
+    #[test]
+    fn checked_export_copy_read_len_caps_large_remaining_to_buffer_size() {
+        let source = std::path::Path::new("large.bin");
+
+        assert_eq!(
+            checked_export_copy_read_len(u64::MAX, 0, source).unwrap(),
+            Some(COPY_BUFFER_SIZE)
+        );
+    }
+
+    #[test]
+    fn checked_export_copy_read_len_rejects_counter_past_source_size() {
+        let source = std::path::Path::new("drifted.bin");
+        let err = checked_export_copy_read_len(10, 11, source).unwrap_err();
+
+        assert!(err.contains("exceeded source size"));
+    }
+
+    #[test]
+    fn checked_export_copy_advance_rejects_overflow() {
+        let source = std::path::Path::new("overflow.bin");
+        let err = checked_export_copy_advance(u64::MAX, 1, source).unwrap_err();
+
+        assert!(err.contains("overflowed"));
+    }
+
+    #[test]
+    fn checked_export_copy_advance_adds_bytes_read() {
+        let source = std::path::Path::new("advance.bin");
+
+        assert_eq!(checked_export_copy_advance(40, 2, source).unwrap(), 42);
+    }
 }

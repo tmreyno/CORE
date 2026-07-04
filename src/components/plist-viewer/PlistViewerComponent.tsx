@@ -6,7 +6,7 @@
 
 import { createSignal, createEffect, Show, For, createMemo } from "solid-js";
 import { CoreSpinner } from "@core-suite/icons";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "../../api/commands";
 import { getBasename } from "../../utils/pathUtils";
 import { HiOutlineExclamationTriangle } from "../icons";
 import { SearchIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon } from "../icons";
@@ -38,9 +38,9 @@ export function PlistViewerComponent(props: PlistViewerProps) {
     setError(null);
 
     try {
-      const info = await invoke<PlistInfo>("plist_read", {
-        path: props.path,
-      });
+      const info = props.source
+        ? await commands.plist.readSource<PlistInfo>(props.source)
+        : await commands.plist.read<PlistInfo>(props.path);
       setPlistInfo(info);
     } catch (e) {
       log.error("Failed to parse plist:", e);
@@ -51,8 +51,10 @@ export function PlistViewerComponent(props: PlistViewerProps) {
   };
 
   createEffect(() => {
-    if (props.path) {
-      loadPlist();
+    const path = props.path;
+    const source = props.source;
+    if (path || source) {
+      void loadPlist();
     }
   });
 

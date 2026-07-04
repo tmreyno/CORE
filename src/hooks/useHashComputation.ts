@@ -30,6 +30,7 @@ import type { HashAlgorithmName, HashHistoryEntry, FileHashInfo } from "../types
 import { logger } from "../utils/logger";
 import { generateId } from "../types/project";
 import { dbSync } from "./project/useProjectDbSync";
+import { buildLocalFileHashSourceFields } from "../utils/hashSourceIdentity";
 
 const log = logger.scope("HashComputation");
 
@@ -161,6 +162,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
         hash: {
           id: hashRecordId,
           fileId: filePath,
+          ...buildLocalFileHashSourceFields(filePath),
           algorithm,
           hashValue: hash,
           computedAt,

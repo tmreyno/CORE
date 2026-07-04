@@ -11,9 +11,10 @@
 //! actual EWF v1 section layout, chunk table construction, and hash computation.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use md5::Digest as _;
@@ -28,6 +29,48 @@ use super::L01Writer;
 
 /// Type alias for the progress callback wrapped in a [`RefCell`].
 type ProgressCell = RefCell<Option<Box<dyn FnMut(L01WriteProgress) + Send>>>;
+
+#[derive(Debug)]
+struct CreatedL01Outputs {
+    base_path: PathBuf,
+    preexisting: HashSet<PathBuf>,
+    cleanup_on_drop: bool,
+}
+
+impl CreatedL01Outputs {
+    fn new(base_path: &Path) -> Result<Self, L01WriteError> {
+        let preexisting = discover_l01_output_candidates(base_path)?;
+        if let Some(existing) = preexisting.iter().next() {
+            return Err(L01WriteError::OutputExists(existing.clone()));
+        }
+
+        Ok(Self {
+            base_path: base_path.to_path_buf(),
+            preexisting,
+            cleanup_on_drop: true,
+        })
+    }
+
+    fn disarm(&mut self) {
+        self.cleanup_on_drop = false;
+    }
+}
+
+impl Drop for CreatedL01Outputs {
+    fn drop(&mut self) {
+        if !self.cleanup_on_drop {
+            return;
+        }
+
+        if let Ok(paths) = discover_l01_output_candidates(&self.base_path) {
+            for path in paths {
+                if !self.preexisting.contains(&path) {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+    }
+}
 
 impl L01Writer {
     /// Write the L01 file.
@@ -420,8 +463,8 @@ impl L01Writer {
     ) -> Result<L01WriteResult, L01WriteError> {
         let sectors_section_size = SECTION_HEADER_SIZE as u64 + merged_compressed.len() as u64;
 
-        let table_entries_size = merged_table.chunk_count() as u64 * 4 + 4;
-        let table_section_size = SECTION_HEADER_SIZE as u64 + 24 + table_entries_size;
+        let merged_chunk_count = sections::table_chunk_count(merged_table.chunks.len())?;
+        let table_section_size = sections::table_section_size(merged_table.chunks.len())?;
         let table2_section_size = table_section_size;
 
         // Build next_offset chain
@@ -471,6 +514,7 @@ impl L01Writer {
 
         // Ensure the output file has the .L01 extension (consistent with multi-segment path)
         let actual_path = segment::segment_path(output_path, 1);
+        let mut created_outputs = CreatedL01Outputs::new(output_path)?;
         let file = File::create(&actual_path)?;
         let mut writer = BufWriter::new(file);
 
@@ -500,7 +544,7 @@ impl L01Writer {
             &mut writer,
             section_offsets[3],
             volume_section_size,
-            merged_table.chunk_count(),
+            merged_chunk_count,
         )?;
 
         // 5. Sectors section
@@ -542,13 +586,14 @@ impl L01Writer {
             hash_section_size,
             digest_section_size,
             done_section_size,
-            merged_table.chunk_count(),
+            merged_chunk_count,
             md5_bytes,
             sha1_bytes,
         )?;
 
         writer.flush()?;
         drop(writer);
+        created_outputs.disarm();
 
         let compression_ratio = if total_bytes > 0 {
             total_compressed_bytes as f64 / total_bytes as f64
@@ -566,7 +611,7 @@ impl L01Writer {
             md5_hash: Some(hex::encode(md5_bytes)),
             sha1_hash: Some(hex::encode(sha1_bytes)),
             segment_count: 1,
-            chunk_count: merged_table.chunk_count(),
+            chunk_count: merged_chunk_count,
         })
     }
 
@@ -604,6 +649,7 @@ impl L01Writer {
         total_dirs: usize,
     ) -> Result<L01WriteResult, L01WriteError> {
         let segment_size = self.config.segment_size;
+        let merged_chunk_count = sections::table_chunk_count(merged_table.chunks.len())?;
 
         // Calculate overhead for the first segment (metadata sections)
         let first_seg_overhead = FILE_HEADER_SIZE as u64
@@ -658,8 +704,7 @@ impl L01Writer {
 
                 // Calculate table sizes for this many chunks
                 let new_chunk_count = chunks_in_seg + 1;
-                let table_entries_size = (new_chunk_count as u64) * 4 + 4;
-                let table_section_size = SECTION_HEADER_SIZE as u64 + 24 + table_entries_size;
+                let table_section_size = sections::table_section_size(new_chunk_count)?;
                 let table2_section_size = table_section_size;
 
                 // Total segment size if we include this chunk
@@ -697,6 +742,7 @@ impl L01Writer {
         }
 
         let mut output_paths = Vec::with_capacity(segments.len());
+        let mut created_outputs = CreatedL01Outputs::new(base_path)?;
 
         for (seg_idx, chunk_range) in segments.iter().enumerate() {
             let seg_num = (seg_idx + 1) as u16;
@@ -741,7 +787,7 @@ impl L01Writer {
                     &mut writer,
                     volume_next,
                     volume_section_size,
-                    merged_table.chunk_count(),
+                    merged_chunk_count,
                 )?;
                 pos += volume_section_size;
             }
@@ -757,8 +803,7 @@ impl L01Writer {
 
             // Build segment-local chunk table with offsets relative to
             // this segment's sectors data start
-            let seg_table_entries = seg_chunks.len() as u64 * 4 + 4;
-            let seg_table_section_size = SECTION_HEADER_SIZE as u64 + 24 + seg_table_entries;
+            let seg_table_section_size = sections::table_section_size(seg_chunks.len())?;
             let seg_table2_section_size = seg_table_section_size;
 
             let sectors_data_start_in_seg = pos + SECTION_HEADER_SIZE as u64;
@@ -844,7 +889,7 @@ impl L01Writer {
                     hash_section_size,
                     digest_section_size,
                     done_section_size,
-                    merged_table.chunk_count(),
+                    merged_chunk_count,
                     md5_bytes,
                     sha1_bytes,
                 )?;
@@ -862,6 +907,7 @@ impl L01Writer {
             drop(writer);
             output_paths.push(seg_path.to_string_lossy().to_string());
         }
+        created_outputs.disarm();
 
         let compression_ratio = if total_bytes > 0 {
             total_compressed_bytes as f64 / total_bytes as f64
@@ -879,7 +925,7 @@ impl L01Writer {
             md5_hash: Some(hex::encode(md5_bytes)),
             sha1_hash: Some(hex::encode(sha1_bytes)),
             segment_count: segment_count as u32,
-            chunk_count: merged_table.chunk_count(),
+            chunk_count: merged_chunk_count,
         })
     }
 
@@ -1059,23 +1105,66 @@ fn compress_text(data: &[u8]) -> Result<Vec<u8>, L01WriteError> {
         .map_err(|e| L01WriteError::CompressionError(e.to_string()))
 }
 
+fn discover_l01_output_candidates(base_path: &Path) -> Result<HashSet<PathBuf>, L01WriteError> {
+    let parent = base_path.parent().unwrap_or_else(|| Path::new("."));
+    let base_stem = base_path
+        .file_stem()
+        .ok_or(L01WriteError::NoOutputPath)?
+        .to_string_lossy();
+    let entries = std::fs::read_dir(parent)?;
+
+    let mut candidates = HashSet::new();
+    for entry in entries {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if is_l01_output_candidate_name(&file_name, &base_stem) {
+            candidates.insert(entry.path());
+        }
+    }
+
+    Ok(candidates)
+}
+
+fn is_l01_output_candidate_name(file_name: &str, base_stem: &str) -> bool {
+    let Some(extension) = file_name.strip_prefix(base_stem).and_then(|suffix| {
+        if suffix.starts_with('.') {
+            Some(&suffix[1..])
+        } else {
+            None
+        }
+    }) else {
+        return false;
+    };
+
+    is_l01_segment_extension(extension)
+}
+
+fn is_l01_segment_extension(extension: &str) -> bool {
+    let extension = extension.to_ascii_lowercase();
+    if extension.len() != 3 || !extension.starts_with('l') {
+        return false;
+    }
+
+    let suffix = &extension[1..];
+    suffix.chars().all(|c| c.is_ascii_digit()) || suffix.chars().all(|c| c.is_ascii_lowercase())
+}
+
 /// Write table data (header + entries + checksum) without section header
 fn write_table_data<W: Write>(writer: &mut W, table: &ChunkTable) -> Result<(), L01WriteError> {
     // Table header (24 bytes)
     let mut header = [0u8; 24];
-    header[0..4].copy_from_slice(&table.chunk_count().to_le_bytes());
+    header[0..4].copy_from_slice(&sections::table_chunk_count(table.chunks.len())?.to_le_bytes());
     header[8..16].copy_from_slice(&table.base_offset.to_le_bytes());
     let header_checksum = adler32(&header[0..20]);
     header[20..24].copy_from_slice(&header_checksum.to_le_bytes());
     writer.write_all(&header)?;
 
     // Chunk offset entries
-    let mut entries_data = Vec::with_capacity(table.chunk_count() as usize * 4);
+    let entries_size = sections::table_entries_size(table.chunks.len())?;
+    let mut entries_data = Vec::with_capacity(entries_size);
     for chunk in &table.chunks {
-        let mut offset_value = chunk.offset as u32;
-        if chunk.is_compressed {
-            offset_value |= 0x8000_0000;
-        }
+        let offset_value = sections::encoded_table_offset(chunk.offset, chunk.is_compressed)?;
         entries_data.extend_from_slice(&offset_value.to_le_bytes());
     }
     writer.write_all(&entries_data)?;
@@ -1186,3 +1275,101 @@ fn emit_progress_cell(
 const HASH_SECTION_DATA_SIZE: usize = 20;
 const DIGEST_SECTION_DATA_SIZE: usize = 24;
 const DATA_SECTION_DATA_SIZE: usize = 72;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn l01_output_candidate_name_matches_l01_segments_only() {
+        assert!(is_l01_output_candidate_name("case.L01", "case"));
+        assert!(is_l01_output_candidate_name("case.L99", "case"));
+        assert!(is_l01_output_candidate_name("case.LAA", "case"));
+        assert!(is_l01_output_candidate_name("case.lzz", "case"));
+        assert!(is_l01_output_candidate_name("case.v1.L01", "case.v1"));
+        assert!(!is_l01_output_candidate_name("case.txt", "case"));
+        assert!(!is_l01_output_candidate_name("case.L0", "case"));
+        assert!(!is_l01_output_candidate_name("case.LAAA", "case"));
+        assert!(!is_l01_output_candidate_name("other.L01", "case"));
+    }
+
+    #[test]
+    fn created_l01_outputs_rejects_existing_segment() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let output_path = dir.path().join("case.L01");
+        let existing = dir.path().join("case.L02");
+        std::fs::write(&existing, b"existing").unwrap();
+
+        let err = CreatedL01Outputs::new(&output_path).unwrap_err();
+
+        assert!(matches!(err, L01WriteError::OutputExists(path) if path == existing));
+    }
+
+    #[test]
+    fn created_l01_outputs_removes_created_segments_on_drop() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let output_path = dir.path().join("case.L01");
+        let l01_path = dir.path().join("case.L01");
+        let l02_path = dir.path().join("case.L02");
+        let unrelated_path = dir.path().join("case.txt");
+
+        {
+            let _guard = CreatedL01Outputs::new(&output_path).unwrap();
+            std::fs::write(&l01_path, b"partial").unwrap();
+            std::fs::write(&l02_path, b"partial").unwrap();
+            std::fs::write(&unrelated_path, b"keep").unwrap();
+        }
+
+        assert!(!l01_path.exists());
+        assert!(!l02_path.exists());
+        assert!(unrelated_path.exists());
+    }
+
+    #[test]
+    fn created_l01_outputs_preserves_segments_after_disarm() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let output_path = dir.path().join("case.L01");
+        let l01_path = dir.path().join("case.L01");
+
+        {
+            let mut guard = CreatedL01Outputs::new(&output_path).unwrap();
+            std::fs::write(&l01_path, b"complete").unwrap();
+            guard.disarm();
+        }
+
+        assert!(l01_path.exists());
+    }
+
+    #[test]
+    fn test_write_table_data_rejects_reserved_offset_bit() {
+        let mut buf = Cursor::new(Vec::new());
+        let mut table = ChunkTable::new(1000);
+        table.add_chunk(0x8000_0000, 500, false);
+
+        assert!(matches!(
+            write_table_data(&mut buf, &table),
+            Err(L01WriteError::Internal(message)) if message.contains("reserved compression bit")
+        ));
+    }
+
+    #[test]
+    fn test_write_table_data_uses_checked_count() {
+        let mut buf = Cursor::new(Vec::new());
+        let mut table = ChunkTable::new(1000);
+        table.add_chunk(0, 500, true);
+        table.add_chunk(500, 32768, false);
+
+        write_table_data(&mut buf, &table).unwrap();
+        let data = buf.into_inner();
+
+        assert_eq!(data.len(), 24 + 8 + 4);
+        assert_eq!(u32::from_le_bytes(data[0..4].try_into().unwrap()), 2);
+        assert_eq!(u64::from_le_bytes(data[8..16].try_into().unwrap()), 1000);
+        assert_eq!(
+            u32::from_le_bytes(data[24..28].try_into().unwrap()),
+            0x8000_0000
+        );
+        assert_eq!(u32::from_le_bytes(data[28..32].try_into().unwrap()), 500);
+    }
+}

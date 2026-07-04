@@ -22,6 +22,7 @@ use super::types::{ChunkTable, CompressionLevel, L01WriteError};
 
 /// Default chunk size: 32KB (64 sectors × 512 bytes)
 pub const DEFAULT_CHUNK_SIZE: usize = 32768;
+const MAX_COMPRESSED_PREALLOC_BYTES: usize = 64 * 1024 * 1024;
 
 /// Compress file data into chunks suitable for the EWF sectors section.
 ///
@@ -171,28 +172,35 @@ pub fn compress_and_hash_from_reader<R: std::io::Read>(
         chunk_size
     };
 
-    let estimated_chunks = (total_size as usize).div_ceil(chunk_size);
-    let mut compressed_data = Vec::with_capacity(total_size as usize);
+    let estimated_chunks = estimated_chunk_count(total_size, chunk_size)?;
+    let mut compressed_data = Vec::with_capacity(prealloc_capacity(total_size));
     let mut table = ChunkTable::new(base_offset);
 
     let mut buf = vec![0u8; chunk_size];
     let mut offset: u64 = 0;
     let mut bytes_processed: u64 = 0;
 
-    loop {
+    while bytes_processed < total_size {
         let mut filled = 0;
-        // Read exactly chunk_size bytes (or until EOF)
-        while filled < chunk_size {
-            match reader.read(&mut buf[filled..chunk_size]) {
-                Ok(0) => break, // EOF
+        let remaining = bounded_remaining_bytes(total_size, bytes_processed)?;
+        let target = chunk_size.min(remaining);
+
+        while filled < target {
+            match reader.read(&mut buf[filled..target]) {
+                Ok(0) => {
+                    return Err(L01WriteError::Io(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        format!(
+                            "L01 source ended before snapshot size: expected {} bytes, processed {} bytes",
+                            total_size,
+                            bytes_processed + filled as u64
+                        ),
+                    )));
+                }
                 Ok(n) => filled += n,
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(e) => return Err(L01WriteError::Io(e)),
             }
-        }
-
-        if filled == 0 {
-            break; // No more data
         }
 
         let chunk = &buf[..filled];
@@ -240,6 +248,33 @@ pub fn compress_and_hash_from_reader<R: std::io::Read>(
     });
 
     Ok((compressed_data, table, hash_result))
+}
+
+fn estimated_chunk_count(total_size: u64, chunk_size: usize) -> Result<usize, L01WriteError> {
+    let chunk_size = u64::try_from(chunk_size)
+        .map_err(|_| L01WriteError::Internal("L01 chunk size exceeds u64".to_string()))?;
+    if chunk_size == 0 {
+        return Err(L01WriteError::Internal(
+            "L01 chunk size must be non-zero".to_string(),
+        ));
+    }
+
+    let chunks = total_size.div_ceil(chunk_size);
+    usize::try_from(chunks)
+        .map_err(|_| L01WriteError::Internal("L01 chunk count exceeds memory limits".to_string()))
+}
+
+fn prealloc_capacity(total_size: u64) -> usize {
+    usize::try_from(total_size)
+        .unwrap_or(usize::MAX)
+        .min(MAX_COMPRESSED_PREALLOC_BYTES)
+}
+
+fn bounded_remaining_bytes(total_size: u64, bytes_processed: u64) -> Result<usize, L01WriteError> {
+    let remaining = total_size.saturating_sub(bytes_processed);
+    usize::try_from(remaining).map_err(|_| {
+        L01WriteError::Internal("L01 remaining source range exceeds memory limits".to_string())
+    })
 }
 
 #[cfg(test)]
@@ -355,6 +390,65 @@ mod tests {
 
         assert_eq!(table.chunk_count(), 2);
         assert_eq!(last_progress, data.len() as u64);
+    }
+
+    #[test]
+    fn test_compress_from_reader_rejects_short_snapshot() {
+        let data = b"short";
+        let mut cursor = std::io::Cursor::new(data);
+
+        let err =
+            compress_from_reader(&mut cursor, 10, 4, CompressionLevel::None, 0, None).unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("expected 10 bytes"), "unexpected error: {msg}");
+        assert!(msg.contains("processed 5 bytes"), "unexpected error: {msg}");
+    }
+
+    #[test]
+    fn test_prealloc_capacity_is_capped() {
+        assert_eq!(prealloc_capacity(1024), 1024);
+        assert_eq!(prealloc_capacity(u64::MAX), MAX_COMPRESSED_PREALLOC_BYTES);
+    }
+
+    #[test]
+    fn test_estimated_chunk_count_handles_platform_limits() {
+        if usize::BITS >= 64 {
+            assert_eq!(estimated_chunk_count(u64::MAX, 1).unwrap(), usize::MAX);
+            return;
+        }
+
+        let err = estimated_chunk_count(u64::MAX, 1).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("chunk count exceeds memory limits"));
+    }
+
+    #[test]
+    fn test_bounded_remaining_bytes_handles_platform_limits() {
+        if usize::BITS >= 64 {
+            assert_eq!(bounded_remaining_bytes(u64::MAX, 0).unwrap(), usize::MAX);
+            return;
+        }
+
+        let err = bounded_remaining_bytes(u64::MAX, 0).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("remaining source range exceeds memory limits"));
+    }
+
+    #[test]
+    fn test_compress_from_reader_caps_grown_snapshot() {
+        let data = b"abcdef";
+        let mut cursor = std::io::Cursor::new(data);
+
+        let (compressed, table) =
+            compress_from_reader(&mut cursor, 3, 2, CompressionLevel::None, 0, None).unwrap();
+
+        assert_eq!(compressed, b"abc");
+        assert_eq!(table.chunk_count(), 2);
     }
 
     #[test]

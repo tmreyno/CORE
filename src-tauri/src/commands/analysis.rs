@@ -6,6 +6,8 @@
 
 //! Data viewing and raw byte reading commands.
 
+const READ_FILE_BYTES_MAX_LENGTH: usize = 16 * 1024 * 1024;
+
 /// Read raw bytes from a file at specified offset
 ///
 /// Returns up to `length` bytes starting at `offset`.
@@ -14,6 +16,13 @@
 pub fn read_file_bytes(path: String, offset: u64, length: usize) -> Result<Vec<u8>, String> {
     use std::fs::File;
     use std::io::{Read, Seek, SeekFrom};
+
+    if length > READ_FILE_BYTES_MAX_LENGTH {
+        return Err(format!(
+            "Requested byte range is too large: {} bytes > {} bytes",
+            length, READ_FILE_BYTES_MAX_LENGTH
+        ));
+    }
 
     let mut file = File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
 
@@ -66,5 +75,45 @@ mod tests {
     #[test]
     fn test_bounded_file_read_len_handles_large_remaining() {
         assert_eq!(bounded_file_read_len(u64::MAX, 0, 8), Some(8));
+    }
+
+    #[test]
+    fn test_read_file_bytes_rejects_oversized_request() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("sample.bin");
+        std::fs::write(&path, b"abcdef").unwrap();
+
+        let err = read_file_bytes(
+            path.to_string_lossy().to_string(),
+            0,
+            READ_FILE_BYTES_MAX_LENGTH + 1,
+        )
+        .unwrap_err();
+        assert!(err.contains("Requested byte range is too large"));
+    }
+
+    #[test]
+    fn test_read_file_bytes_rejects_oversized_request_even_past_eof() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("sample.bin");
+        std::fs::write(&path, b"abcdef").unwrap();
+
+        let err = read_file_bytes(
+            path.to_string_lossy().to_string(),
+            99,
+            READ_FILE_BYTES_MAX_LENGTH + 1,
+        )
+        .unwrap_err();
+        assert!(err.contains("Requested byte range is too large"));
+    }
+
+    #[test]
+    fn test_read_file_bytes_reads_partial_tail() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("sample.bin");
+        std::fs::write(&path, b"abcdef").unwrap();
+
+        let bytes = read_file_bytes(path.to_string_lossy().to_string(), 4, 16).unwrap();
+        assert_eq!(bytes, b"ef");
     }
 }

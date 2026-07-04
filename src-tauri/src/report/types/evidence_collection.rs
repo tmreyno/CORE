@@ -119,4 +119,20 @@ pub struct CollectedItem {
     /// Photo reference numbers
     #[serde(default)]
     pub photo_refs: Vec<String>,
+
+    // --- Engine Linkage / Integrity ---
+    /// FK to evidence_files, when this collected item is linked to project evidence.
+    pub evidence_file_id: Option<String>,
+    /// FK to coc_items, when this collection item is linked to custody.
+    pub coc_item_id: Option<String>,
+    /// Stable source identity for local files, container entries, or VFS byte sources.
+    pub source_id: Option<String>,
+    /// JSON-encoded EvidenceSourceRef snapshot used by source-aware engines.
+    pub source_ref_json: Option<String>,
+    /// Best-known hash algorithm for this collected source.
+    pub hash_algorithm: Option<String>,
+    /// Best-known hash value for this collected source.
+    pub hash_value: Option<String>,
+    /// Timestamp when the hash snapshot was computed or imported.
+    pub hash_computed_at: Option<String>,
 }

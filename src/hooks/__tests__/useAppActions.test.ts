@@ -241,15 +241,25 @@ describe("createSearchHandlers", () => {
         .mockResolvedValueOnce([          // fts_search
           { source: "bookmarks", id: "bm-1", snippet: "important <mark>evidence</mark>", rank: -5.0 },
           { source: "notes", id: "note-1", snippet: "case <mark>evidence</mark> found", rank: -3.0 },
+          { source: "activity_log", id: "hash", snippet: "<mark>evidence</mark> hashed", rank: -2.0 },
+          { source: "annotations", id: "ad1:/case/image.ad1:/file.bin", snippet: "<mark>signature</mark> bytes", rank: -4.0 },
+          { source: "artifacts", id: "ad1:/case/image.ad1:/photo.jpg", snippet: "<mark>camera</mark> metadata", rank: -1.0 },
+          { source: "source_analysis", id: "ad1:/case/image.ad1:/doc.pdf", snippet: "<mark>PDF</mark> Document", rank: -0.5 },
         ]);
 
       const { handleSearch } = createSearchHandlers({ fileManager: fm as any, projectManager: pm as any });
       const results = await handleSearch("evidence", {} as any);
 
       const ftsResults = results.filter((r) => r.id.startsWith("fts:"));
-      expect(ftsResults).toHaveLength(2);
+      expect(ftsResults).toHaveLength(6);
       expect(ftsResults[0].matchType).toBe("bookmarks");
-      expect(ftsResults[1].matchType).toBe("notes");
+      expect(ftsResults.map((result) => result.matchType)).toContain("notes");
+      expect(ftsResults.map((result) => result.matchType)).toContain("activity");
+      expect(ftsResults.map((result) => result.matchType)).toContain("annotations");
+      expect(ftsResults.map((result) => result.matchType)).toContain("artifacts");
+      expect(ftsResults.map((result) => result.matchType)).toContain("source_analysis");
+      expect(ftsResults.find((result) => result.matchType === "source_analysis")?.name)
+        .toContain("[Source Analysis]");
     });
 
     it("handles FTS search errors gracefully", async () => {

@@ -16,6 +16,7 @@
 
 #![allow(unused_imports)]
 
+use super::ewf_helpers::validate_snapshot_byte_count;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
@@ -24,6 +25,31 @@ use tracing::{info, warn};
 
 /// Cancel flag for memory capture operations.
 static MEMORY_CANCEL_FLAG: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false));
+
+#[cfg(any(target_os = "windows", test))]
+const PROCESS_OUTPUT_MAX_BYTES: u64 = 1024 * 1024;
+
+#[cfg(any(target_os = "windows", test))]
+fn read_process_output_with_limit<R: std::io::Read>(reader: R) -> String {
+    use std::io::Read;
+
+    let mut limited = reader.take(PROCESS_OUTPUT_MAX_BYTES.saturating_add(1));
+    let mut bytes = Vec::new();
+    if limited.read_to_end(&mut bytes).is_err() {
+        return String::new();
+    }
+
+    let truncated = bytes.len() as u64 > PROCESS_OUTPUT_MAX_BYTES;
+    if truncated {
+        bytes.truncate(PROCESS_OUTPUT_MAX_BYTES as usize);
+    }
+
+    let mut output = String::from_utf8_lossy(&bytes).into_owned();
+    if truncated {
+        output.push_str("\n[process output truncated]");
+    }
+    output
+}
 
 // =============================================================================
 // Types
@@ -501,6 +527,13 @@ mod linux {
                         .map_err(|e| format!("Read error from kcore: {}", e))?;
 
                     if n == 0 {
+                        let range_captured = range_size.saturating_sub(remaining);
+                        validate_snapshot_byte_count(
+                            "Memory capture range",
+                            std::path::Path::new("/proc/kcore"),
+                            range_size,
+                            range_captured,
+                        )?;
                         break;
                     }
 
@@ -564,6 +597,13 @@ mod linux {
                 );
             }
         }
+
+        validate_snapshot_byte_count(
+            "Memory capture total",
+            std::path::Path::new(output_path),
+            total_bytes,
+            bytes_captured,
+        )?;
 
         output.flush().map_err(|e| format!("Flush error: {}", e))?;
 
@@ -679,11 +719,7 @@ mod windows_capture {
                         let stderr = child
                             .stderr
                             .take()
-                            .and_then(|mut s| {
-                                let mut buf = String::new();
-                                std::io::Read::read_to_string(&mut s, &mut buf).ok()?;
-                                Some(buf)
-                            })
+                            .map(read_process_output_with_limit)
                             .unwrap_or_default();
                         return Err(format!("WinPmem exited with status {}: {}", status, stderr));
                     }
@@ -855,4 +891,31 @@ fn find_winpmem() -> Option<std::path::PathBuf> {
 #[allow(dead_code)]
 fn find_winpmem() -> Option<std::path::PathBuf> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn read_process_output_with_limit_preserves_small_output() {
+        let output = read_process_output_with_limit(Cursor::new(b"capture failed".to_vec()));
+        assert_eq!(output, "capture failed");
+    }
+
+    #[test]
+    fn read_process_output_with_limit_truncates_large_output() {
+        let output =
+            read_process_output_with_limit(Cursor::new(vec![
+                b'x';
+                PROCESS_OUTPUT_MAX_BYTES as usize + 1
+            ]));
+
+        assert_eq!(
+            output.matches('x').count(),
+            PROCESS_OUTPUT_MAX_BYTES as usize
+        );
+        assert!(output.ends_with("[process output truncated]"));
+    }
 }

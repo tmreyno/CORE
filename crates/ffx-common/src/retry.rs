@@ -109,7 +109,7 @@ impl RetryConfig {
 ///
 /// # Example
 /// ```ignore
-/// use ffx_check_lib::common::retry::{RetryConfig, retry_async};
+/// use ffx_common::retry::{RetryConfig, retry_async};
 ///
 /// let config = RetryConfig::default();
 /// let result = retry_async(config, "file_operation", || async {
@@ -172,7 +172,7 @@ where
 ///
 /// # Example
 /// ```ignore
-/// use ffx_check_lib::common::retry::{RetryConfig, retry_sync};
+/// use ffx_common::retry::{RetryConfig, retry_sync};
 ///
 /// let config = RetryConfig::fast();
 /// let result = retry_sync(config, "network_request", || {

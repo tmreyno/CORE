@@ -35,6 +35,12 @@ use std::fs;
 use std::path::Path;
 use tracing::{debug, warn};
 
+const AUT_FILE_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+fn non_negative_i64_to_u64(value: i64) -> u64 {
+    u64::try_from(value.max(0)).unwrap_or(0)
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -280,7 +286,7 @@ fn find_aut_file(dir: &Path) -> Option<std::path::PathBuf> {
 /// Examiner=John Doe
 /// ```
 fn parse_aut_file(path: &Path) -> Result<AutFileInfo, ContainerError> {
-    let content = fs::read_to_string(path)?;
+    let content = super::read_utf8_file_with_limit(path, AUT_FILE_MAX_BYTES, "Autopsy .aut file")?;
     let trimmed = content.trim();
 
     if trimmed.starts_with("<?xml") || trimmed.starts_with('<') {
@@ -562,7 +568,7 @@ fn query_artifact_types(conn: &Connection) -> Result<Vec<AutopsyArtifactCategory
             Ok(AutopsyArtifactCategory {
                 name: row.get::<_, String>(0).unwrap_or_default(),
                 type_id: row.get::<_, i32>(1).unwrap_or(0),
-                count: row.get::<_, i64>(2).unwrap_or(0) as u64,
+                count: non_negative_i64_to_u64(row.get::<_, i64>(2).unwrap_or(0)),
             })
         }) {
             for row in rows.flatten() {
@@ -581,7 +587,8 @@ fn query_file_count(conn: &Connection) -> u64 {
     conn.query_row("SELECT COUNT(*) FROM tsk_files", [], |row| {
         row.get::<_, i64>(0)
     })
-    .unwrap_or(0) as u64
+    .map(non_negative_i64_to_u64)
+    .unwrap_or(0)
 }
 
 /// Query tags used in the case
@@ -599,7 +606,7 @@ fn query_tags(conn: &Connection) -> Vec<AutopsyTag> {
         if let Ok(rows) = stmt.query_map([], |row| {
             Ok(AutopsyTag {
                 name: row.get::<_, String>(0).unwrap_or_default(),
-                count: row.get::<_, i64>(1).unwrap_or(0) as u64,
+                count: non_negative_i64_to_u64(row.get::<_, i64>(1).unwrap_or(0)),
             })
         }) {
             for row in rows.flatten() {
@@ -630,6 +637,12 @@ mod tests {
         assert_eq!(info.total_files, 0);
         assert!(!info.has_database);
         assert!(!info.has_aut_file);
+    }
+
+    #[test]
+    fn non_negative_i64_to_u64_clamps_negative_values() {
+        assert_eq!(non_negative_i64_to_u64(-1), 0);
+        assert_eq!(non_negative_i64_to_u64(42), 42);
     }
 
     #[test]
@@ -728,6 +741,33 @@ mod tests {
 
         let info = parse_aut_file(&aut_path).unwrap();
         assert_eq!(info.case_name, "Props Case");
+    }
+
+    #[test]
+    fn test_parse_aut_file_rejects_oversized_metadata() {
+        let dir = TempDir::new().unwrap();
+        let aut_path = dir.path().join("huge.aut");
+        fs::File::create(&aut_path)
+            .unwrap()
+            .set_len(AUT_FILE_MAX_BYTES + 1)
+            .unwrap();
+
+        match parse_aut_file(&aut_path) {
+            Err(ContainerError::InvalidFormat(_)) => {}
+            other => panic!("expected oversized .aut rejection, got {:?}", other.err()),
+        }
+    }
+
+    #[test]
+    fn test_parse_aut_file_rejects_invalid_utf8() {
+        let dir = TempDir::new().unwrap();
+        let aut_path = dir.path().join("invalid.aut");
+        fs::write(&aut_path, [0xff]).unwrap();
+
+        match parse_aut_file(&aut_path) {
+            Err(ContainerError::ParseError(_)) => {}
+            other => panic!("expected invalid UTF-8 rejection, got {:?}", other.err()),
+        }
     }
 
     #[test]

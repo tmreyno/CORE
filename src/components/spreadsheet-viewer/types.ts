@@ -5,10 +5,13 @@
 // =============================================================================
 
 import type { SpreadsheetMetadataSection } from "../../types/viewerMetadata";
+import type { HashSourceInput } from "../../api/commands";
 
 export interface SpreadsheetViewerProps {
   /** Path to the spreadsheet file */
   path: string;
+  /** Optional evidence source for container or nested spreadsheet entries */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
   /** Callback to emit metadata section for right panel */

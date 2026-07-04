@@ -6,10 +6,40 @@
 use exif::{In, Reader, Tag};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{Cursor, Read, Seek};
 use std::path::Path;
 
 use super::error::{DocumentError, DocumentResult};
+
+pub(crate) const MAX_EXIF_SOURCE_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_EXIF_RAW_TAGS: usize = 1024;
+const MAX_EXIF_DISPLAY_VALUE_CHARS: usize = 2048;
+const MAX_EXIF_IMAGE_PIXELS: u64 = 100_000_000;
+
+pub(crate) fn ensure_exif_size_allowed(size: u64) -> DocumentResult<()> {
+    if size > MAX_EXIF_SOURCE_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "Image file too large for EXIF extraction ({:.1} MiB, max {} MiB)",
+            size as f64 / (1024.0 * 1024.0),
+            MAX_EXIF_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
+fn read_exif_source_with_limit<R: Read>(reader: R, max_bytes: u64) -> DocumentResult<Vec<u8>> {
+    let mut data = Vec::new();
+    reader
+        .take(max_bytes.saturating_add(1))
+        .read_to_end(&mut data)?;
+    if data.len() as u64 > max_bytes {
+        return Err(DocumentError::Parse(format!(
+            "Image file too large for EXIF extraction (actual read exceeded max {} MiB)",
+            max_bytes / (1024 * 1024)
+        )));
+    }
+    Ok(data)
+}
 
 /// GPS coordinates extracted from photo
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -230,8 +260,19 @@ impl ExifMetadata {
 /// Extract EXIF metadata from an image file
 pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
     let path = path.as_ref();
+    ensure_exif_size_allowed(std::fs::metadata(path)?.len())?;
     let file = File::open(path)?;
-    let mut reader = BufReader::with_capacity(64 * 1024, file);
+    extract_exif_from_reader(path.to_string_lossy(), file)
+}
+
+/// Extract EXIF metadata from any seekable byte stream.
+pub fn extract_exif_from_reader(
+    source_id: impl Into<String>,
+    reader: impl Read + Seek,
+) -> DocumentResult<ExifMetadata> {
+    let source_id = source_id.into();
+    let data = read_exif_source_with_limit(reader, MAX_EXIF_SOURCE_BYTES)?;
+    let mut reader = Cursor::new(data);
 
     let exif = Reader::new()
         .read_from_container(&mut reader)
@@ -240,7 +281,7 @@ pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
     // Helper to get string value
     let get_str = |tag: Tag| -> Option<String> {
         exif.get_field(tag, In::PRIMARY)
-            .map(|f| f.display_value().with_unit(&exif).to_string())
+            .map(|f| clean_display_value(f.display_value().with_unit(&exif).to_string()))
     };
 
     // Helper to get u32 value
@@ -252,7 +293,7 @@ pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
     // Helper to get u16 value
     let get_u16 = |tag: Tag| -> Option<u16> {
         exif.get_field(tag, In::PRIMARY)
-            .and_then(|f| f.value.get_uint(0).map(|v| v as u16))
+            .and_then(|f| f.value.get_uint(0).and_then(exif_uint_to_u16))
     };
 
     // Extract GPS if available
@@ -261,16 +302,21 @@ pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
     // Collect all raw tags
     let raw_tags: Vec<(String, String)> = exif
         .fields()
+        .take(MAX_EXIF_RAW_TAGS)
         .map(|f| {
             (
                 f.tag.to_string(),
-                f.display_value().with_unit(&exif).to_string(),
+                clean_display_value(f.display_value().with_unit(&exif).to_string()),
             )
         })
         .collect();
+    let (width, height) = validated_exif_dimensions(
+        get_u32(Tag::PixelXDimension).or(get_u32(Tag::ImageWidth)),
+        get_u32(Tag::PixelYDimension).or(get_u32(Tag::ImageLength)),
+    );
 
     Ok(ExifMetadata {
-        path: path.to_string_lossy().to_string(),
+        path: source_id,
         // Camera info
         make: get_str(Tag::Make),
         model: get_str(Tag::Model),
@@ -290,8 +336,8 @@ pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
         // GPS
         gps,
         // Image info
-        width: get_u32(Tag::PixelXDimension).or(get_u32(Tag::ImageWidth)),
-        height: get_u32(Tag::PixelYDimension).or(get_u32(Tag::ImageLength)),
+        width,
+        height,
         orientation: get_u16(Tag::Orientation),
         color_space: get_str(Tag::ColorSpace),
         // Forensic indicators
@@ -301,6 +347,48 @@ pub fn extract_exif(path: impl AsRef<Path>) -> DocumentResult<ExifMetadata> {
         // All raw tags
         raw_tags,
     })
+}
+
+fn clean_display_value(value: String) -> String {
+    let value = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or(&value)
+        .to_string();
+    truncate_display_value(value, MAX_EXIF_DISPLAY_VALUE_CHARS)
+}
+
+fn truncate_display_value(value: String, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value;
+    }
+
+    let mut truncated: String = value.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+fn exif_uint_to_u16(value: u32) -> Option<u16> {
+    u16::try_from(value).ok()
+}
+
+fn validated_exif_dimensions(
+    width: Option<u32>,
+    height: Option<u32>,
+) -> (Option<u32>, Option<u32>) {
+    let (Some(width), Some(height)) = (width, height) else {
+        return (None, None);
+    };
+    if width == 0 || height == 0 {
+        return (None, None);
+    }
+    let Some(pixels) = u64::from(width).checked_mul(u64::from(height)) else {
+        return (None, None);
+    };
+    if pixels > MAX_EXIF_IMAGE_PIXELS {
+        return (None, None);
+    }
+    (Some(width), Some(height))
 }
 
 fn extract_gps(exif: &exif::Exif) -> Option<GpsCoordinates> {
@@ -326,11 +414,14 @@ fn extract_gps(exif: &exif::Exif) -> Option<GpsCoordinates> {
     } else {
         lon_val
     };
+    if !is_valid_gps_coordinate(latitude, longitude) {
+        return None;
+    }
 
     // Try to get altitude
     let altitude = exif.get_field(Tag::GPSAltitude, In::PRIMARY).and_then(|f| {
         if let exif::Value::Rational(ref v) = f.value {
-            v.first().map(|r| r.to_f64())
+            v.first().and_then(rational_to_f64)
         } else {
             None
         }
@@ -345,23 +436,48 @@ fn extract_gps(exif: &exif::Exif) -> Option<GpsCoordinates> {
     })
 }
 
+fn rational_to_f64(value: &exif::Rational) -> Option<f64> {
+    if value.denom == 0 {
+        return None;
+    }
+    let value = value.to_f64();
+    value.is_finite().then_some(value)
+}
+
 fn parse_gps_coord(value: &exif::Value) -> Option<f64> {
     if let exif::Value::Rational(ref rationals) = value {
         if rationals.len() >= 3 {
-            let degrees = rationals[0].to_f64();
-            let minutes = rationals[1].to_f64();
-            let seconds = rationals[2].to_f64();
-            return Some(degrees + minutes / 60.0 + seconds / 3600.0);
+            let degrees = rational_to_f64(&rationals[0])?;
+            let minutes = rational_to_f64(&rationals[1])?;
+            let seconds = rational_to_f64(&rationals[2])?;
+            let coordinate = degrees + minutes / 60.0 + seconds / 3600.0;
+            return coordinate.is_finite().then_some(coordinate);
         }
     }
     None
 }
 
+fn is_valid_gps_coordinate(latitude: f64, longitude: f64) -> bool {
+    latitude.is_finite()
+        && longitude.is_finite()
+        && (-90.0..=90.0).contains(&latitude)
+        && (-180.0..=180.0).contains(&longitude)
+}
+
 /// Check if file has EXIF data without full parsing
 pub fn has_exif(path: impl AsRef<Path>) -> bool {
     let path = path.as_ref();
+    if std::fs::metadata(path)
+        .map(|meta| ensure_exif_size_allowed(meta.len()).is_err())
+        .unwrap_or(true)
+    {
+        return false;
+    }
     if let Ok(file) = File::open(path) {
-        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let Ok(data) = read_exif_source_with_limit(file, MAX_EXIF_SOURCE_BYTES) else {
+            return false;
+        };
+        let mut reader = Cursor::new(data);
         return Reader::new().read_from_container(&mut reader).is_ok();
     }
     false
@@ -370,6 +486,7 @@ pub fn has_exif(path: impl AsRef<Path>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Cursor, Write};
 
     #[test]
     fn test_gps_coordinates_struct() {
@@ -381,5 +498,135 @@ mod tests {
             longitude_ref: "W".to_string(),
         };
         assert_eq!(gps.latitude, 37.7749);
+    }
+
+    #[test]
+    fn extract_exif_from_reader_reads_tiff_metadata() {
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II");
+        tiff.extend_from_slice(&42u16.to_le_bytes());
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        tiff.extend_from_slice(&0x010fu16.to_le_bytes()); // Make
+        tiff.extend_from_slice(&2u16.to_le_bytes()); // ASCII
+        tiff.extend_from_slice(&5u32.to_le_bytes()); // "CORE\0"
+        tiff.extend_from_slice(&26u32.to_le_bytes());
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        tiff.extend_from_slice(b"CORE\0");
+
+        let metadata = extract_exif_from_reader("memory.tiff", Cursor::new(tiff)).unwrap();
+
+        assert_eq!(metadata.path, "memory.tiff");
+        assert_eq!(metadata.make.as_deref(), Some("CORE"));
+        assert!(metadata
+            .raw_tags
+            .iter()
+            .any(|(tag, value)| tag == "Make" && value == "CORE"));
+    }
+
+    #[test]
+    fn read_exif_source_with_limit_reads_within_limit() {
+        let data = read_exif_source_with_limit(Cursor::new(b"abc"), 3).unwrap();
+
+        assert_eq!(data, b"abc");
+    }
+
+    #[test]
+    fn read_exif_source_with_limit_rejects_actual_read_limit() {
+        let err = read_exif_source_with_limit(Cursor::new(b"abcd"), 3).unwrap_err();
+
+        assert!(err.to_string().contains("too large for EXIF extraction"));
+    }
+
+    #[test]
+    fn extract_exif_rejects_sparse_oversized_file_before_parsing() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"II*\0").unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_EXIF_SOURCE_BYTES + 1)
+            .unwrap();
+
+        let err = extract_exif(tmp.path()).unwrap_err();
+
+        assert!(err.to_string().contains("too large for EXIF extraction"));
+        assert!(!has_exif(tmp.path()));
+    }
+
+    #[test]
+    fn parse_gps_coord_rejects_zero_denominator_rational() {
+        let value = exif::Value::Rational(vec![
+            exif::Rational { num: 37, denom: 1 },
+            exif::Rational { num: 46, denom: 0 },
+            exif::Rational {
+                num: 2964,
+                denom: 100,
+            },
+        ]);
+
+        assert!(parse_gps_coord(&value).is_none());
+    }
+
+    #[test]
+    fn gps_coordinate_range_validation_rejects_huge_rational_value() {
+        let value = exif::Value::Rational(vec![
+            exif::Rational {
+                num: u32::MAX,
+                denom: 1,
+            },
+            exif::Rational { num: 0, denom: 1 },
+            exif::Rational { num: 0, denom: 1 },
+        ]);
+
+        assert!(parse_gps_coord(&value).is_some());
+        assert!(!is_valid_gps_coordinate(
+            parse_gps_coord(&value).unwrap(),
+            0.0
+        ));
+    }
+
+    #[test]
+    fn gps_coordinate_range_validation_rejects_out_of_range_values() {
+        assert!(is_valid_gps_coordinate(37.7749, -122.4194));
+        assert!(!is_valid_gps_coordinate(90.1, 0.0));
+        assert!(!is_valid_gps_coordinate(0.0, -180.1));
+        assert!(!is_valid_gps_coordinate(f64::NAN, 0.0));
+    }
+
+    #[test]
+    fn clean_display_value_strips_quotes_and_truncates() {
+        let value = format!("\"{}\"", "a".repeat(MAX_EXIF_DISPLAY_VALUE_CHARS + 1));
+
+        let cleaned = clean_display_value(value);
+
+        assert_eq!(cleaned.chars().count(), MAX_EXIF_DISPLAY_VALUE_CHARS + 3);
+        assert!(cleaned.ends_with("..."));
+        assert!(!cleaned.starts_with('"'));
+    }
+
+    #[test]
+    fn truncate_display_value_is_unicode_safe() {
+        let truncated = truncate_display_value("åß∂ƒ".to_string(), 3);
+
+        assert_eq!(truncated, "åß∂...");
+    }
+
+    #[test]
+    fn exif_uint_to_u16_rejects_overflow() {
+        assert_eq!(exif_uint_to_u16(u16::MAX as u32), Some(u16::MAX));
+        assert_eq!(exif_uint_to_u16(u16::MAX as u32 + 1), None);
+    }
+
+    #[test]
+    fn validated_exif_dimensions_reject_zero_or_excessive_values() {
+        assert_eq!(
+            validated_exif_dimensions(Some(640), Some(480)),
+            (Some(640), Some(480))
+        );
+        assert_eq!(validated_exif_dimensions(Some(0), Some(480)), (None, None));
+        assert_eq!(
+            validated_exif_dimensions(Some(100_001), Some(1_000)),
+            (None, None)
+        );
+        assert_eq!(validated_exif_dimensions(Some(640), None), (None, None));
     }
 }

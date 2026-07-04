@@ -287,6 +287,21 @@ fn checked_fat_absolute_offset(base: u64, position: u64) -> Option<u64> {
     base.checked_add(position)
 }
 
+fn checked_fat_read_position_advance(position: u64, bytes_read: usize) -> std::io::Result<u64> {
+    let bytes_read = u64::try_from(bytes_read).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "FAT read byte count overflow",
+        )
+    })?;
+    position.checked_add(bytes_read).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "FAT read position overflow",
+        )
+    })
+}
+
 fn checked_fat_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
     if delta >= 0 {
         base.checked_add(delta as u64).ok_or_else(|| {
@@ -321,7 +336,7 @@ impl Read for FatIoWrapper {
             .device
             .read_at(absolute_offset, buf)
             .map_err(std::io::Error::other)?;
-        self.position += bytes_read as u64;
+        self.position = checked_fat_read_position_advance(self.position, bytes_read)?;
         Ok(bytes_read)
     }
 }
@@ -528,6 +543,20 @@ mod tests {
     #[test]
     fn test_checked_fat_absolute_offset_rejects_overflow() {
         assert_eq!(checked_fat_absolute_offset(u64::MAX, 1), None);
+    }
+
+    #[test]
+    fn test_checked_fat_read_position_advance_adds_bytes_read() {
+        assert_eq!(checked_fat_read_position_advance(40, 2).unwrap(), 42);
+    }
+
+    #[test]
+    fn test_checked_fat_read_position_advance_rejects_overflow() {
+        let err = checked_fat_read_position_advance(u64::MAX, 1)
+            .expect_err("position overflow should fail");
+
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("FAT read position overflow"));
     }
 
     #[test]

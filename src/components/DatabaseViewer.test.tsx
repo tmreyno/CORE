@@ -207,6 +207,36 @@ describe("DatabaseViewer", () => {
     expect(mockInvoke).toHaveBeenCalledWith("database_get_info", { path: "/test/evidence.db" });
   });
 
+  it("invokes source commands when an evidence source is provided", async () => {
+    const source = {
+      containerPath: "/evidence/case.ad1",
+      entryPath: "data/messages.db",
+      containerType: "ad1",
+      size: 8192,
+    };
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "database_get_info_source") return mockDatabaseInfo;
+      if (cmd === "database_get_table_schema_source") return mockTableSchema;
+      if (cmd === "database_query_table_source") return mockTableRows;
+      return null;
+    });
+
+    renderComponent(() => <DatabaseViewer path="/tmp/messages.db" source={source} />);
+    await tick();
+
+    expect(mockInvoke).toHaveBeenCalledWith("database_get_info_source", { source });
+    expect(mockInvoke).toHaveBeenCalledWith("database_get_table_schema_source", {
+      source,
+      tableName: "contacts",
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("database_query_table_source", {
+      source,
+      tableName: "contacts",
+      page: 0,
+      pageSize: 100,
+    });
+  });
+
   it("shows row counts for tables", async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "database_get_info") return mockDatabaseInfo;

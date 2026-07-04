@@ -9,6 +9,8 @@
 use libewf_ffi::{EwfCompression, EwfCompressionMethod, EwfFormat};
 use std::path::Path;
 
+const MAX_WALK_DIR_DEPTH: usize = 128;
+
 // =============================================================================
 // Format & Compression Parsing
 // =============================================================================
@@ -138,10 +140,63 @@ pub(super) fn format_byte_size(bytes: u64) -> String {
     }
 }
 
+pub(super) fn validate_snapshot_byte_count(
+    operation: &str,
+    path: &Path,
+    expected: u64,
+    actual: u64,
+) -> Result<(), String> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    Err(format!(
+        "{} incomplete for {}: expected {} bytes from snapshot, processed {} bytes",
+        operation,
+        path.display(),
+        expected,
+        actual
+    ))
+}
+
+pub(super) fn checked_stream_read_size(remaining: u64, chunk_size: usize) -> Result<usize, String> {
+    if chunk_size == 0 {
+        return Err("Stream read chunk size must be greater than zero".to_string());
+    }
+
+    let chunk_size_u64 = u64::try_from(chunk_size)
+        .map_err(|_| "Stream read chunk size is too large for this platform".to_string())?;
+    let read_size = remaining.min(chunk_size_u64);
+    usize::try_from(read_size)
+        .map_err(|_| "Stream read range is too large for this platform".to_string())
+}
+
+pub(super) fn checked_segment_write_len(
+    remaining_in_chunk: usize,
+    segment_space: u64,
+) -> Result<usize, String> {
+    let segment_space = usize::try_from(segment_space)
+        .map_err(|_| "Segment space is too large for this platform".to_string())?;
+    Ok(remaining_in_chunk.min(segment_space))
+}
+
 /// Recursively walk a directory and collect all files with their sizes.
 /// Returned paths are absolute. Skips symlinks, unreadable entries, and
 /// directories that cannot be read (e.g. macOS TCC-protected folders).
 pub(super) fn walk_dir_files(dir: &Path) -> Result<Vec<(String, u64)>, String> {
+    walk_dir_files_at_depth(dir, 0)
+}
+
+fn walk_dir_files_at_depth(dir: &Path, depth: usize) -> Result<Vec<(String, u64)>, String> {
+    if depth > MAX_WALK_DIR_DEPTH {
+        tracing::warn!(
+            "Skipping directory {}: maximum traversal depth {} exceeded",
+            dir.display(),
+            MAX_WALK_DIR_DEPTH
+        );
+        return Ok(Vec::new());
+    }
+
     let mut results = Vec::new();
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -163,7 +218,7 @@ pub(super) fn walk_dir_files(dir: &Path) -> Result<Vec<(String, u64)>, String> {
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             results.push((path.to_string_lossy().into_owned(), size));
         } else if ft.is_dir() {
-            let sub = walk_dir_files(&path)?;
+            let sub = walk_dir_files_at_depth(&path, depth + 1)?;
             results.extend(sub);
         }
         // Skip symlinks and other special entries
@@ -472,5 +527,62 @@ mod tests {
         // Non-V2 formats (bzip2 would be invalid with these)
         let e5 = parse_format("e01").unwrap();
         assert!(!e5.is_v2());
+    }
+
+    #[test]
+    fn test_validate_snapshot_byte_count_accepts_exact_count() {
+        let path = Path::new("/tmp/evidence.bin");
+        assert!(validate_snapshot_byte_count("Copy", path, 10, 10).is_ok());
+    }
+
+    #[test]
+    fn test_validate_snapshot_byte_count_rejects_short_count() {
+        let path = Path::new("/tmp/evidence.bin");
+        let err = validate_snapshot_byte_count("Copy", path, 10, 7).unwrap_err();
+
+        assert!(err.contains("Copy incomplete"));
+        assert!(err.contains("expected 10 bytes"));
+        assert!(err.contains("processed 7 bytes"));
+    }
+
+    #[test]
+    fn test_checked_stream_read_size_rejects_zero_chunk_size() {
+        let err = checked_stream_read_size(10, 0).unwrap_err();
+
+        assert!(err.contains("chunk size must be greater than zero"));
+    }
+
+    #[test]
+    fn test_checked_stream_read_size_clamps_to_chunk_size() {
+        assert_eq!(checked_stream_read_size(u64::MAX, 1024).unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_checked_stream_read_size_clamps_to_remaining_bytes() {
+        assert_eq!(checked_stream_read_size(3, 1024).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_checked_segment_write_len_clamps_to_segment_space() {
+        assert_eq!(checked_segment_write_len(1024, 3).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_checked_segment_write_len_clamps_to_chunk_bytes() {
+        assert_eq!(checked_segment_write_len(3, u64::MAX).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_walk_dir_files_skips_beyond_depth_limit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut current = dir.path().to_path_buf();
+        for index in 0..=MAX_WALK_DIR_DEPTH + 1 {
+            current = current.join(format!("d{}", index));
+            std::fs::create_dir(&current).unwrap();
+        }
+        std::fs::write(current.join("too-deep.bin"), b"data").unwrap();
+
+        let files = walk_dir_files(dir.path()).unwrap();
+        assert!(files.is_empty());
     }
 }

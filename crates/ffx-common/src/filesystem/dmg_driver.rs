@@ -55,6 +55,8 @@ use super::traits::{BlockDevice, BlockReader, SeekableBlockDevice};
 use crate::vfs::VfsError;
 use ffx_errors::ContainerError;
 
+const DMG_SECTOR_SIZE: u64 = 512;
+
 // =============================================================================
 // DMG Driver
 // =============================================================================
@@ -158,7 +160,11 @@ impl DmgDriver {
         let partition = &plist.partitions()[index];
 
         // Get size from table if available
-        let size = partition.table().map(|t| t.sector_count * 512).unwrap_or(0);
+        let size = partition
+            .table()
+            .ok()
+            .and_then(|t| checked_dmg_partition_size(t.sector_count))
+            .unwrap_or(0);
 
         Some(DmgPartitionInfo {
             index,
@@ -189,7 +195,10 @@ impl DmgDriver {
 
         for (i, partition) in plist.partitions().iter().enumerate() {
             if let Ok(table) = partition.table() {
-                let size = table.sector_count * 512;
+                let Some(size) = checked_dmg_partition_size(table.sector_count) else {
+                    continue;
+                };
+
                 if size > largest_size {
                     largest_size = size;
                     largest_idx = i;
@@ -270,6 +279,10 @@ impl DmgDriver {
         let data = self.partition_data(index)?;
         Ok(Box::new(MemoryBlockDevice::new(data)))
     }
+}
+
+fn checked_dmg_partition_size(sector_count: u64) -> Option<u64> {
+    sector_count.checked_mul(DMG_SECTOR_SIZE)
 }
 
 /// Information about a DMG partition
@@ -391,6 +404,16 @@ impl BlockReader for MemoryBlockReader {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_checked_dmg_partition_size_converts_sectors_to_bytes() {
+        assert_eq!(checked_dmg_partition_size(4), Some(2048));
+    }
+
+    #[test]
+    fn test_checked_dmg_partition_size_rejects_overflow() {
+        assert_eq!(checked_dmg_partition_size(u64::MAX), None);
+    }
 
     #[test]
     fn test_memory_block_device() {

@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { createSignal, createEffect, createMemo, type Accessor } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "../../api/commands";
 import { getBasename } from "../../utils/pathUtils";
 import { logger } from "../../utils/logger";
 import type { BinaryMetadataSection } from "../../types/viewerMetadata";
@@ -47,7 +47,9 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     setError(null);
 
     try {
-      const data = await invoke<BinaryInfo>("binary_analyze", { path: props.path });
+      const data = props.source
+        ? await commands.binary.analyzeSource<BinaryInfo>(props.source)
+        : await commands.binary.analyze<BinaryInfo>(props.path);
       setInfo(data);
     } catch (e) {
       log.error("Failed to analyze binary:", e);
@@ -58,8 +60,10 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
   };
 
   createEffect(() => {
-    if (props.path) {
-      loadBinary();
+    const path = props.path;
+    const source = props.source;
+    if (path || source) {
+      void loadBinary();
     }
   });
 

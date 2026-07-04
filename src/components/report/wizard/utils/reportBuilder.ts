@@ -21,6 +21,10 @@ import type { EvidenceGroup } from "../types";
 import type { ContainerInfo } from "../../../../types";
 import type { FileHashInfo } from "../../../../types/hash";
 import { getPreference } from "../../../preferences";
+import {
+  buildProjectDbEvidenceAppendices,
+  type ProjectDbReportEvidence,
+} from "../../../../report/api";
 import { detectEvidenceType } from "./evidenceUtils";
 
 export interface ReportBuilderParams {
@@ -46,6 +50,8 @@ export interface ReportBuilderParams {
   fileHashMap: Map<string, FileHashInfo>;
   /** Timeline events derived from project activity log */
   projectTimeline?: Accessor<TimelineEvent[]>;
+  /** Optional project DB engine evidence already loaded by the caller */
+  projectDbEvidence?: Accessor<ProjectDbReportEvidence | null | undefined>;
 }
 
 export function buildForensicReport(params: ReportBuilderParams): ForensicReport {
@@ -71,6 +77,7 @@ export function buildForensicReport(params: ReportBuilderParams): ForensicReport
     fileInfoMap,
     fileHashMap,
     projectTimeline,
+    projectDbEvidence,
   } = params;
 
   // Get report preferences
@@ -144,6 +151,24 @@ export function buildForensicReport(params: ReportBuilderParams): ForensicReport
     });
   }
 
+  const appendices = projectDbEvidence
+    ? buildProjectDbEvidenceAppendices(projectDbEvidence() ?? {
+        evidenceItems: [],
+        hashRecords: [],
+        hashAlgorithmSummaries: [],
+        verificationResultSummaries: [],
+        artifacts: [],
+        artifactSummaries: [],
+        artifactCategories: [],
+        artifactEvidenceSummaries: [],
+        artifactExtractorSummaries: [],
+        sourceAnalyses: [],
+        sourceAnalysisSummaries: [],
+        sourceAnalysisCategorySummaries: [],
+        annotations: [],
+      })
+    : [];
+
   return {
     metadata: metadata(),
     case_info: caseInfo(),
@@ -165,7 +190,7 @@ export function buildForensicReport(params: ReportBuilderParams): ForensicReport
       },
     ],
     conclusions: conclusions() || undefined,
-    appendices: [],
+    appendices,
     signatures: signatures.length > 0 ? signatures : undefined,
     notes: undefined,
   };

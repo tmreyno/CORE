@@ -158,6 +158,9 @@ const CASE_DOCUMENT_FOLDERS: &[&str] = &[
     "case_notes",
 ];
 
+const TEXT_COC_SCAN_BYTES: u64 = 32 * 1024;
+const OFFICE_XML_COC_SCAN_BYTES: u64 = 64 * 1024;
+
 /// Find case documents in a directory
 ///
 /// This function searches for common case document types including COC forms,
@@ -525,8 +528,7 @@ fn detect_coc_in_text_file(path: &Path) -> Option<CaseDocumentType> {
     let file = fs::File::open(path).ok()?;
     let mut buffer = String::new();
 
-    // Read up to 32KB
-    let mut limited_reader = file.take(32 * 1024);
+    let mut limited_reader = file.take(TEXT_COC_SCAN_BYTES);
     limited_reader.read_to_string(&mut buffer).ok()?;
 
     let content = buffer.to_lowercase();
@@ -555,7 +557,8 @@ fn detect_coc_in_office_file(path: &Path) -> Option<CaseDocumentType> {
                 // Try to read word/document.xml
                 if let Ok(mut doc_xml) = archive.by_name("word/document.xml") {
                     let mut content = String::new();
-                    if doc_xml.read_to_string(&mut content).is_ok() {
+                    let mut limited_reader = doc_xml.by_ref().take(OFFICE_XML_COC_SCAN_BYTES);
+                    if limited_reader.read_to_string(&mut content).is_ok() {
                         let content_lower = content.to_lowercase();
                         for pattern in CONTENT_COC_PATTERNS {
                             if content_lower.contains(pattern) {
@@ -847,6 +850,27 @@ mod tests {
             "Should find 1 COC PDF via content detection"
         );
         assert_eq!(coc_docs[0].filename, "document.pdf");
+    }
+
+    #[test]
+    fn test_docx_content_detection_uses_bounded_xml_scan() {
+        let temp = TempDir::new().unwrap();
+        let docx_path = temp.path().join("generic.docx");
+        {
+            let file = File::create(&docx_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(&vec![b'a'; OFFICE_XML_COC_SCAN_BYTES as usize])
+                .unwrap();
+            zip.write_all(b" chain of custody ").unwrap();
+            zip.finish().unwrap();
+        }
+
+        assert_eq!(detect_coc_in_office_file(&docx_path), None);
     }
 
     #[test]

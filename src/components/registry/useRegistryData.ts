@@ -12,8 +12,8 @@
  */
 
 import { createSignal, createEffect, createMemo, on } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
+import { commands, type HashSourceInput } from "../../api/commands";
 import type { RegistryMetadataSection } from "../../types/viewerMetadata";
 import type {
   RegistryHiveInfo,
@@ -26,6 +26,7 @@ const log = logger.scope("RegistryViewer");
 
 export interface UseRegistryDataOptions {
   path: () => string;
+  source?: () => HashSourceInput | null | undefined;
   onMetadata?: (section: RegistryMetadataSection) => void;
 }
 
@@ -45,15 +46,21 @@ export function useRegistryData(opts: UseRegistryDataOptions) {
     setError(null);
 
     try {
-      const info = await invoke<RegistryHiveInfo>("registry_get_info", {
-        path: opts.path(),
-      });
+      const source = opts.source?.();
+      const info = source
+        ? await commands.registry.getInfoSource<RegistryHiveInfo>(source)
+        : await commands.registry.getInfo<RegistryHiveInfo>(opts.path());
       setHiveInfo(info);
 
-      const rootSubkeys = await invoke<RegistrySubkeysResponse>("registry_get_subkeys", {
-        hivePath: opts.path(),
-        keyPath: "",
-      });
+      const rootSubkeys = source
+        ? await commands.registry.getSubkeysSource<RegistrySubkeysResponse>(
+            source,
+            "",
+          )
+        : await commands.registry.getSubkeys<RegistrySubkeysResponse>(
+            opts.path(),
+            "",
+          );
 
       const nodes: TreeNode[] = rootSubkeys.subkeys.map((sk) => ({
         key: sk,
@@ -82,10 +89,16 @@ export function useRegistryData(opts: UseRegistryDataOptions) {
 
     if (!node.loaded) {
       try {
-        const response = await invoke<RegistrySubkeysResponse>("registry_get_subkeys", {
-          hivePath: opts.path(),
-          keyPath: node.key.path,
-        });
+        const source = opts.source?.();
+        const response = source
+          ? await commands.registry.getSubkeysSource<RegistrySubkeysResponse>(
+              source,
+              node.key.path,
+            )
+          : await commands.registry.getSubkeys<RegistrySubkeysResponse>(
+              opts.path(),
+              node.key.path,
+            );
 
         node.children = response.subkeys.map((sk) => ({
           key: sk,
@@ -112,10 +125,16 @@ export function useRegistryData(opts: UseRegistryDataOptions) {
     setValuesLoading(true);
 
     try {
-      const keyInfo = await invoke<RegistryKeyInfo>("registry_get_key_info", {
-        hivePath: opts.path(),
-        keyPath: node.key.path,
-      });
+      const source = opts.source?.();
+      const keyInfo = source
+        ? await commands.registry.getKeyInfoSource<RegistryKeyInfo>(
+            source,
+            node.key.path,
+          )
+        : await commands.registry.getKeyInfo<RegistryKeyInfo>(
+            opts.path(),
+            node.key.path,
+          );
       setSelectedKeyInfo(keyInfo);
     } catch (e) {
       log.error("Failed to load key info:", e);
@@ -154,7 +173,12 @@ export function useRegistryData(opts: UseRegistryDataOptions) {
   });
 
   // ── Load on path change ──
-  createEffect(on(() => opts.path(), () => loadHive()));
+  createEffect(
+    on(
+      () => `${opts.path()}|${JSON.stringify(opts.source?.() ?? null)}`,
+      () => loadHive(),
+    ),
+  );
 
   // ── Emit metadata ──
   createEffect(() => {

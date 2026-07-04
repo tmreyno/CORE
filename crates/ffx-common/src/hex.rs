@@ -41,18 +41,30 @@ pub fn format_hex_string(data: &[u8], uppercase: bool) -> String {
 
 /// Parse hex string back to bytes
 pub fn parse_hex_string(hex: &str) -> Result<Vec<u8>, ContainerError> {
-    let hex = hex.replace(" ", "").replace("\n", "").replace("\r", "");
+    let mut normalized = String::with_capacity(hex.len());
+    for (index, ch) in hex.char_indices() {
+        if ch.is_ascii_whitespace() {
+            continue;
+        }
+        if !ch.is_ascii_hexdigit() {
+            return Err(ContainerError::ParseError(format!(
+                "Invalid hex character at position {}: {}",
+                index, ch
+            )));
+        }
+        normalized.push(ch);
+    }
 
-    if !hex.len().is_multiple_of(2) {
+    if !normalized.len().is_multiple_of(2) {
         return Err(ContainerError::ParseError(
             "Hex string must have even length".to_string(),
         ));
     }
 
-    (0..hex.len())
+    (0..normalized.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| {
+            u8::from_str_radix(&normalized[i..i + 2], 16).map_err(|e| {
                 ContainerError::ParseError(format!("Invalid hex at position {}: {}", i, e))
             })
         })
@@ -70,7 +82,7 @@ pub fn parse_hex_string(hex: &str) -> Result<Vec<u8>, ContainerError> {
 ///
 /// # Examples
 /// ```
-/// use ffx_check_lib::common::format_size;
+/// use ffx_common::format_size;
 /// assert_eq!(format_size(1024), "1.00 KB (1024 bytes)");
 /// assert_eq!(format_size(1500000), "1.43 MB (1500000 bytes)");
 /// ```
@@ -127,7 +139,7 @@ pub fn format_size_compact(bytes: u64) -> String {
 ///
 /// # Examples
 /// ```rust
-/// use ffx_check_lib::common::escape_csv;
+/// use ffx_common::escape_csv;
 ///
 /// assert_eq!(escape_csv("simple"), "simple");
 /// assert_eq!(escape_csv("has,comma"), "\"has,comma\"");
@@ -135,7 +147,7 @@ pub fn format_size_compact(bytes: u64) -> String {
 /// assert_eq!(escape_csv("has\nline"), "\"has\nline\"");
 /// ```
 pub fn escape_csv(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') {
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
         value.to_string()
@@ -148,7 +160,7 @@ pub fn escape_csv(value: &str) -> String {
 ///
 /// # Examples
 /// ```rust
-/// use ffx_check_lib::common::csv_row;
+/// use ffx_common::csv_row;
 ///
 /// let row = csv_row(&["Name", "Value", "has,comma"]);
 /// assert_eq!(row, "Name,Value,\"has,comma\"\n");
@@ -195,6 +207,7 @@ mod tests {
         assert_eq!(escape_csv("has,comma"), "\"has,comma\"");
         assert_eq!(escape_csv("has\"quote"), "\"has\"\"quote\"");
         assert_eq!(escape_csv("has\nline"), "\"has\nline\"");
+        assert_eq!(escape_csv("has\rline"), "\"has\rline\"");
         assert_eq!(escape_csv(""), "");
     }
 
@@ -202,6 +215,7 @@ mod tests {
     fn test_csv_row() {
         assert_eq!(csv_row(&["a", "b", "c"]), "a,b,c\n");
         assert_eq!(csv_row(&["has,comma", "normal"]), "\"has,comma\",normal\n");
+        assert_eq!(csv_row(&["has\rline", "normal"]), "\"has\rline\",normal\n");
     }
 
     #[test]
@@ -228,7 +242,17 @@ mod tests {
             parse_hex_string("de ad be ef").unwrap(),
             vec![0xDE, 0xAD, 0xBE, 0xEF]
         );
+        assert_eq!(
+            parse_hex_string("de\tad\nbe\ref").unwrap(),
+            vec![0xDE, 0xAD, 0xBE, 0xEF]
+        );
         assert!(parse_hex_string("DEA").is_err()); // Odd length
         assert!(parse_hex_string("GHIJ").is_err()); // Invalid hex
+    }
+
+    #[test]
+    fn test_parse_hex_string_rejects_non_ascii_without_panic() {
+        assert!(parse_hex_string("０0").is_err());
+        assert!(parse_hex_string("de☃ad").is_err());
     }
 }

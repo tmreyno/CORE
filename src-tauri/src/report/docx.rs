@@ -14,7 +14,7 @@ use std::path::Path;
 use docx_rs::*;
 
 use super::error::{ReportError, ReportResult};
-use super::format_helpers::{has_text, text_blocks, TextBlock};
+use super::format_helpers::{appendix_label, has_text, text_blocks, TextBlock};
 use super::types::*;
 
 /// DOCX generator for forensic reports
@@ -581,7 +581,7 @@ impl DocxGenerator {
                     Run::new()
                         .add_text(format!(
                             "Appendix {}: {}",
-                            (b'A' + index as u8) as char,
+                            appendix_label(index),
                             appendix.title
                         ))
                         .bold()

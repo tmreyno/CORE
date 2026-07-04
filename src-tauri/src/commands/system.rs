@@ -543,13 +543,42 @@ pub async fn write_text_file(path: String, content: String) -> Result<(), String
     Ok(())
 }
 
+const TEXT_FILE_READ_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
+fn read_text_file_with_limit(path: &std::path::Path) -> Result<String, String> {
+    use std::io::Read;
+
+    let metadata = std::fs::metadata(path).map_err(|e| format!("Failed to stat file: {e}"))?;
+    if metadata.len() > TEXT_FILE_READ_MAX_BYTES {
+        return Err(format!(
+            "File is too large to read as text: {} bytes > {} bytes",
+            metadata.len(),
+            TEXT_FILE_READ_MAX_BYTES
+        ));
+    }
+
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let mut limited = file.take(TEXT_FILE_READ_MAX_BYTES.saturating_add(1));
+    let mut bytes = Vec::with_capacity(metadata.len().min(TEXT_FILE_READ_MAX_BYTES) as usize);
+    limited
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to read file: {e}"))?;
+
+    if bytes.len() as u64 > TEXT_FILE_READ_MAX_BYTES {
+        return Err(format!(
+            "File is too large to read as text: read more than {} bytes",
+            TEXT_FILE_READ_MAX_BYTES
+        ));
+    }
+
+    String::from_utf8(bytes).map_err(|e| format!("Failed to decode file as UTF-8: {e}"))
+}
+
 /// Read text content from a file on disk.
 /// Used for loading acquisition session files and other text-based data.
 #[tauri::command]
 pub async fn read_text_file(path: String) -> Result<String, String> {
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {e}"))?;
-    Ok(content)
+    read_text_file_with_limit(std::path::Path::new(&path))
 }
 
 /// Get the path to the audit log directory.
@@ -1748,7 +1777,8 @@ pub fn get_system_health_report() -> crate::common::health::SystemHealth {
 #[tauri::command]
 pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
     use chrono::{DateTime, Datelike, Local, Timelike};
-    use std::io::Write;
+    use std::io::{BufReader, Seek, Write};
+    use std::path::Path;
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
@@ -1774,7 +1804,26 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
             .unwrap_or(options)
     }
 
-    let dest = std::path::Path::new(&dest_path);
+    fn add_file_to_zip<W: Write + Seek>(
+        zip: &mut ZipWriter<W>,
+        source: &Path,
+        zip_name: &str,
+        options: SimpleFileOptions,
+    ) -> Result<bool, String> {
+        let Ok(file) = std::fs::File::open(source) else {
+            return Ok(false);
+        };
+
+        zip.start_file(zip_name, options)
+            .map_err(|e| format!("Failed to add {zip_name} to ZIP: {e}"))?;
+
+        let mut reader = BufReader::with_capacity(1024 * 1024, file);
+        std::io::copy(&mut reader, zip)
+            .map_err(|e| format!("Failed to stream {zip_name} into ZIP: {e}"))?;
+        Ok(true)
+    }
+
+    let dest = Path::new(&dest_path);
 
     // Ensure parent directory exists
     if let Some(parent) = dest.parent() {
@@ -1794,20 +1843,19 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
                 for entry in entries.flatten() {
                     let fname = entry.file_name().to_string_lossy().to_string();
                     if crate::app_paths::is_global_audit_log_filename(&fname) {
-                        if let Ok(content) = std::fs::read(entry.path()) {
-                            let modified =
-                                entry.metadata().ok().and_then(|meta| meta.modified().ok());
-                            let zip_name = format!(
-                                "logs/{}",
-                                crate::app_paths::support_bundle_audit_log_name(&fname)
-                            );
-                            if zip
-                                .start_file(&zip_name, zip_options_for_time(modified))
-                                .is_ok()
-                            {
-                                let _ = zip.write_all(&content);
-                                files_added += 1;
-                            }
+                        let path = entry.path();
+                        let modified = entry.metadata().ok().and_then(|meta| meta.modified().ok());
+                        let zip_name = format!(
+                            "logs/{}",
+                            crate::app_paths::support_bundle_audit_log_name(&fname)
+                        );
+                        if add_file_to_zip(
+                            &mut zip,
+                            &path,
+                            &zip_name,
+                            zip_options_for_time(modified),
+                        )? {
+                            files_added += 1;
                         }
                     }
                 }
@@ -1831,18 +1879,17 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
     // 3. App database copy (read-only snapshot)
     let db_path = crate::app_paths::global_db_path();
     if db_path.exists() {
-        if let Ok(content) = std::fs::read(&db_path) {
-            let modified = db_path
-                .metadata()
-                .ok()
-                .and_then(|meta| meta.modified().ok());
-            if zip
-                .start_file("app-database.db", zip_options_for_time(modified))
-                .is_ok()
-            {
-                let _ = zip.write_all(&content);
-                files_added += 1;
-            }
+        let modified = db_path
+            .metadata()
+            .ok()
+            .and_then(|meta| meta.modified().ok());
+        if add_file_to_zip(
+            &mut zip,
+            &db_path,
+            "app-database.db",
+            zip_options_for_time(modified),
+        )? {
+            files_added += 1;
         }
     }
 
@@ -2113,4 +2160,43 @@ pub fn open_full_disk_access_settings() -> Result<(), String> {
             .map_err(|e| format!("Failed to open System Settings: {e}"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn read_text_file_with_limit_reads_small_utf8_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("report.txt");
+        std::fs::write(&path, "forensic report").unwrap();
+
+        let content = read_text_file_with_limit(&path).unwrap();
+        assert_eq!(content, "forensic report");
+    }
+
+    #[test]
+    fn read_text_file_with_limit_rejects_oversized_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("huge-report.txt");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(TEXT_FILE_READ_MAX_BYTES + 1)
+            .unwrap();
+
+        let err = read_text_file_with_limit(&path).unwrap_err();
+        assert!(err.contains("File is too large to read as text"));
+    }
+
+    #[test]
+    fn read_text_file_with_limit_rejects_invalid_utf8() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("invalid.txt");
+        std::fs::write(&path, [0xff]).unwrap();
+
+        let err = read_text_file_with_limit(&path).unwrap_err();
+        assert!(err.contains("Failed to decode file as UTF-8"));
+    }
 }

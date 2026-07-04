@@ -9,11 +9,30 @@
 //! Extracts text and metadata from ZIP-based OOXML documents
 //! using `zip` + `quick-xml`.
 
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::path::Path;
 
 use super::{OfficeMetadata, OfficeParagraph, OfficeTextSection, ParagraphHint};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
+
+const MAX_OOXML_XML_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
+
+fn read_ooxml_xml_entry<R: Read>(reader: R, entry_name: &str) -> DocumentResult<String> {
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_OOXML_XML_ENTRY_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+
+    if bytes.len() as u64 > MAX_OOXML_XML_ENTRY_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "OOXML XML entry '{}' exceeds {} MiB limit",
+            entry_name,
+            MAX_OOXML_XML_ENTRY_BYTES / (1024 * 1024)
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
 
 // =============================================================================
 // OOXML Metadata (shared by DOCX and PPTX)
@@ -29,23 +48,31 @@ pub(crate) fn extract_ooxml_metadata(
     app_path: &str,
 ) -> DocumentResult<OfficeMetadata> {
     let file = std::fs::File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)
+    extract_ooxml_metadata_from_reader(file, core_path, app_path)
+}
+
+pub(crate) fn extract_ooxml_metadata_from_reader<R: Read + Seek>(
+    reader: R,
+    core_path: &str,
+    app_path: &str,
+) -> DocumentResult<OfficeMetadata> {
+    let mut archive = zip::ZipArchive::new(reader)
         .map_err(|e| DocumentError::Parse(format!("Not a valid ZIP/OOXML file: {}", e)))?;
 
     let mut meta = OfficeMetadata::default();
 
     // Parse core.xml (Dublin Core metadata)
     if let Ok(mut entry) = archive.by_name(core_path) {
-        let mut xml_data = String::new();
-        let _ = entry.read_to_string(&mut xml_data);
-        parse_core_xml(&xml_data, &mut meta);
+        if let Ok(xml_data) = read_ooxml_xml_entry(&mut entry, core_path) {
+            parse_core_xml(&xml_data, &mut meta);
+        }
     }
 
     // Parse app.xml (application properties)
     if let Ok(mut entry) = archive.by_name(app_path) {
-        let mut xml_data = String::new();
-        let _ = entry.read_to_string(&mut xml_data);
-        parse_app_xml(&xml_data, &mut meta);
+        if let Ok(xml_data) = read_ooxml_xml_entry(&mut entry, app_path) {
+            parse_app_xml(&xml_data, &mut meta);
+        }
     }
 
     Ok(meta)
@@ -156,16 +183,21 @@ fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) {
 /// detecting heading styles from `<w:pStyle>` for rendering hints.
 pub(crate) fn extract_docx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
     let file = std::fs::File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)
+    extract_docx_text_from_reader(file)
+}
+
+pub(crate) fn extract_docx_text_from_reader<R: Read + Seek>(
+    reader: R,
+) -> DocumentResult<Vec<OfficeTextSection>> {
+    let mut archive = zip::ZipArchive::new(reader)
         .map_err(|e| DocumentError::Parse(format!("Not a valid DOCX: {}", e)))?;
 
-    let mut xml_data = String::new();
-    {
+    let xml_data = {
         let mut entry = archive
             .by_name("word/document.xml")
             .map_err(|e| DocumentError::Parse(format!("Missing word/document.xml: {}", e)))?;
-        entry.read_to_string(&mut xml_data)?;
-    }
+        read_ooxml_xml_entry(&mut entry, "word/document.xml")?
+    };
 
     let paragraphs = extract_docx_styled_paragraphs(&xml_data);
 
@@ -184,7 +216,13 @@ pub(crate) fn extract_docx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSec
 /// Each slide is returned as a separate section.
 pub(crate) fn extract_pptx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
     let file = std::fs::File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)
+    extract_pptx_text_from_reader(file)
+}
+
+pub(crate) fn extract_pptx_text_from_reader<R: Read + Seek>(
+    reader: R,
+) -> DocumentResult<Vec<OfficeTextSection>> {
+    let mut archive = zip::ZipArchive::new(reader)
         .map_err(|e| DocumentError::Parse(format!("Not a valid PPTX: {}", e)))?;
 
     // Collect slide file names and sort them
@@ -203,10 +241,11 @@ pub(crate) fn extract_pptx_text(path: &Path) -> DocumentResult<Vec<OfficeTextSec
 
     let mut sections = Vec::new();
     for (idx, slide_name) in slide_names.iter().enumerate() {
-        let mut xml_data = String::new();
-        if let Ok(mut entry) = archive.by_name(slide_name) {
-            let _ = entry.read_to_string(&mut xml_data);
-        }
+        let xml_data = if let Ok(mut entry) = archive.by_name(slide_name) {
+            read_ooxml_xml_entry(&mut entry, slide_name)?
+        } else {
+            String::new()
+        };
 
         let paragraphs = extract_ooxml_paragraphs_simple(&xml_data, b"a:p", b"a:t");
         if !paragraphs.is_empty() {
@@ -403,6 +442,15 @@ fn extract_ooxml_paragraphs_simple(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_ooxml_xml_entry_rejects_oversized_content() {
+        let oversized = std::io::repeat(b'x').take(MAX_OOXML_XML_ENTRY_BYTES + 1);
+
+        let err = read_ooxml_xml_entry(oversized, "word/document.xml").unwrap_err();
+
+        assert!(err.to_string().contains("exceeds 16 MiB limit"));
+    }
 
     #[test]
     fn test_parse_core_xml() {

@@ -13,7 +13,7 @@
 import { createSignal, createEffect, Show, createMemo } from "solid-js";
 import { CoreSpinner } from "@core-suite/icons";
 import { getBasename } from "../utils/pathUtils";
-import { invoke } from "@tauri-apps/api/core";
+import { commands, type HashSourceInput } from "../api/commands";
 import {
   HiOutlineMagnifyingGlassPlus,
   HiOutlineMagnifyingGlassMinus,
@@ -30,6 +30,8 @@ const log = logger.scope("ImageViewer");
 interface ImageViewerProps {
   /** Path to the image file */
   path: string;
+  /** Optional evidence source for container or nested image entries */
+  source?: HashSourceInput | null;
   /** Optional class name */
   class?: string;
 }
@@ -109,7 +111,9 @@ export function ImageViewer(props: ImageViewerProps) {
     setNaturalSize(null);
 
     try {
-      const base64Data = await invoke<string>("viewer_read_binary_base64", { path: props.path });
+      const base64Data = props.source
+        ? await commands.viewer.readBinarySourceBase64(props.source)
+        : await commands.viewer.readBinaryBase64(props.path);
       setImageSrc(`data:${mimeType()};base64,${base64Data}`);
     } catch (e) {
       log.error("Failed to load image:", e);
@@ -121,8 +125,10 @@ export function ImageViewer(props: ImageViewerProps) {
 
   // Load image when path changes
   createEffect(() => {
-    if (props.path) {
-      loadImage();
+    const path = props.path;
+    const source = props.source;
+    if (path || source) {
+      void loadImage();
     }
   });
 

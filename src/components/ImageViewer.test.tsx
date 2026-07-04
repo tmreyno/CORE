@@ -52,6 +52,23 @@ describe("ImageViewer", () => {
         path: "/evidence/photo.jpg",
       });
     });
+
+    it("calls viewer_read_binary_source_base64 when an evidence source is provided", async () => {
+      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "photos/photo.jpg",
+        containerType: "ad1",
+        size: 1024,
+      };
+
+      renderComponent(() => <ImageViewer path="/evidence/photo.jpg" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_source_base64", {
+        source,
+      });
+    });
   });
 
   describe("successful render", () => {

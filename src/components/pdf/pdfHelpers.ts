@@ -7,25 +7,86 @@
 import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
+import type { HashSourceInput } from "../../api/commands";
 const log = logger.scope("PdfHelpers");
 
 /**
  * Load a PDF document from a file path via Tauri command
- * Converts base64 data to Uint8Array for PDF.js
+ * Reads in base64 chunks and converts to Uint8Array for PDF.js.
  */
-export async function loadPdfDocument(path: string): Promise<PDFDocumentProxy> {
-  // Read file as base64 via Tauri command (avoids file:// URL security restrictions)
-  const base64Data = await invoke<string>("viewer_read_binary_base64", { path });
-  
-  // Convert base64 to Uint8Array
-  const binaryString = atob(base64Data);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+export async function loadPdfDocument(
+  path: string,
+  source?: HashSourceInput | null
+): Promise<PDFDocumentProxy> {
+  const bytes = await readBinaryFileChunked(path, source);
 
   const loadingTask = getDocument({ data: bytes });
   return await loadingTask.promise;
+}
+
+interface BinaryInfo {
+  size: number;
+}
+
+interface BinaryBase64Chunk {
+  offset: number;
+  bytesRead: number;
+  totalSize: number;
+  eof: boolean;
+  data: string;
+}
+
+const PDF_READ_CHUNK_SIZE = 4 * 1024 * 1024;
+
+async function readBinaryFileChunked(
+  path: string,
+  source?: HashSourceInput | null
+): Promise<Uint8Array> {
+  const info = source
+    ? await invoke<BinaryInfo>("viewer_get_binary_info_source", { source })
+    : await invoke<BinaryInfo>("viewer_get_binary_info", { path });
+  if (!Number.isSafeInteger(info.size)) {
+    throw new Error(`PDF is too large to load in this browser process: ${info.size} bytes`);
+  }
+
+  const bytes = new Uint8Array(info.size);
+  let offset = 0;
+
+  while (offset < info.size) {
+    const chunkSize = Math.min(PDF_READ_CHUNK_SIZE, info.size - offset);
+    const chunk = source
+      ? await invoke<BinaryBase64Chunk>("viewer_read_binary_source_base64_chunk", {
+          source,
+          offset,
+          size: chunkSize,
+        })
+      : await invoke<BinaryBase64Chunk>("viewer_read_binary_base64_chunk", {
+          path,
+          offset,
+          size: chunkSize,
+        });
+
+    if (chunk.offset !== offset) {
+      throw new Error(`Unexpected PDF chunk offset: expected ${offset}, received ${chunk.offset}`);
+    }
+    if (chunk.bytesRead === 0 && !chunk.eof) {
+      throw new Error(`PDF read stalled at offset ${offset}`);
+    }
+
+    const binaryString = atob(chunk.data);
+    if (binaryString.length !== chunk.bytesRead) {
+      throw new Error(`PDF chunk size mismatch at offset ${offset}`);
+    }
+
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[offset + i] = binaryString.charCodeAt(i);
+    }
+
+    offset += chunk.bytesRead;
+    if (chunk.eof) break;
+  }
+
+  return bytes;
 }
 
 /**

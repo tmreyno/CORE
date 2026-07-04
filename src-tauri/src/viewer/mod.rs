@@ -40,13 +40,42 @@ const DEFAULT_CHUNK_SIZE: usize = 16384;
 /// Maximum chunk size (64KB)
 const MAX_CHUNK_SIZE: usize = 65536;
 
+fn capped_chunk_size(size: Option<usize>) -> Result<usize, ContainerError> {
+    let size = size.unwrap_or(DEFAULT_CHUNK_SIZE);
+    if size == 0 {
+        return Err("Chunk size must be greater than zero".into());
+    }
+    Ok(size.min(MAX_CHUNK_SIZE))
+}
+
+fn text_byte_request_size(max_chars: usize) -> usize {
+    max_chars.saturating_mul(4).min(MAX_CHUNK_SIZE)
+}
+
+fn header_read_size(file_size: u64) -> usize {
+    usize::try_from(file_size.min(512)).unwrap_or(512)
+}
+
+fn read_file_prefix(path: &Path, max_bytes: usize) -> Result<Vec<u8>, ContainerError> {
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let total_size = file
+        .metadata()
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?
+        .len();
+    let to_read = total_size.min(max_bytes as u64) as usize;
+    let mut buffer = vec![0u8; to_read];
+    file.read_exact(&mut buffer)
+        .map_err(|e| format!("Failed to read: {}", e))?;
+    Ok(buffer)
+}
+
 /// Read a chunk of a file at the given offset
 pub fn read_file_chunk(
     path: &str,
     offset: u64,
     size: Option<usize>,
 ) -> Result<FileChunk, ContainerError> {
-    let chunk_size = size.unwrap_or(DEFAULT_CHUNK_SIZE).min(MAX_CHUNK_SIZE);
+    let chunk_size = capped_chunk_size(size)?;
 
     let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
 
@@ -55,62 +84,57 @@ pub fn read_file_chunk(
         .map_err(|e| format!("Failed to get file metadata: {}", e))?
         .len();
 
-    // Clamp offset to file bounds
-    let actual_offset = offset.min(total_size);
+    if offset > total_size {
+        return Err(format!(
+            "Chunk offset is beyond EOF for {path}: offset {offset} > size {total_size}"
+        )
+        .into());
+    }
+    let actual_offset = offset;
 
     file.seek(SeekFrom::Start(actual_offset))
         .map_err(|e| format!("Failed to seek: {}", e))?;
 
     // Calculate how much we can actually read
-    let remaining = total_size.saturating_sub(actual_offset) as usize;
-    let to_read = chunk_size.min(remaining);
+    let remaining = total_size.saturating_sub(actual_offset);
+    let to_read = usize::try_from(remaining.min(chunk_size as u64)).unwrap_or(chunk_size);
 
     let mut buffer = vec![0u8; to_read];
-    let bytes_read = file
-        .read(&mut buffer)
-        .map_err(|e| format!("Failed to read: {}", e))?;
+    if to_read > 0 {
+        file.read_exact(&mut buffer).map_err(|e| {
+            format!("Failed to read {to_read} bytes at offset {actual_offset}: {e}")
+        })?;
+    }
 
-    buffer.truncate(bytes_read);
-
-    let chunk_end = actual_offset + (bytes_read as u64);
-    let has_more = chunk_end < total_size;
-    let has_prev = actual_offset > 0;
-
-    Ok(FileChunk {
-        bytes: buffer,
-        offset: actual_offset,
-        total_size,
-        has_more,
-        has_prev,
-    })
+    Ok(FileChunk::new(buffer, actual_offset, total_size))
 }
 
 /// Detect file type from magic bytes
 pub fn detect_file_type(path: &str) -> Result<FileTypeInfo, ContainerError> {
-    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
-
-    let mut magic = [0u8; 32];
-    let bytes_read = file
-        .read(&mut magic)
-        .map_err(|e| format!("Failed to read: {}", e))?;
-
-    let magic_hex = magic[..bytes_read.min(16)]
-        .iter()
-        .map(|b| format!("{:02X}", b))
-        .collect::<Vec<_>>()
-        .join(" ");
-
     let extension = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
+    let magic = read_file_prefix(Path::new(path), 32)?;
+
+    Ok(detect_file_type_bytes(&magic, &extension))
+}
+
+/// Detect file type from already-read magic bytes and a source extension.
+pub fn detect_file_type_bytes(magic: &[u8], extension: &str) -> FileTypeInfo {
+    let extension = extension.to_lowercase();
+    let magic_hex = magic[..magic.len().min(16)]
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ");
 
     // Detect known forensic formats
-    let (description, is_forensic, mime_type) = detect_format(&magic[..bytes_read], &extension);
+    let (description, is_forensic, mime_type) = detect_format(magic, &extension);
 
     // Check if likely text
-    let is_text = is_likely_text(&magic[..bytes_read])
+    let is_text = is_likely_text(magic)
         || matches!(
             extension.as_str(),
             "txt"
@@ -132,14 +156,14 @@ pub fn detect_file_type(path: &str) -> Result<FileTypeInfo, ContainerError> {
                 | "java"
         );
 
-    Ok(FileTypeInfo {
+    FileTypeInfo {
         mime_type,
         description,
         extension,
         is_text,
         is_forensic_format: is_forensic,
         magic_hex,
-    })
+    }
 }
 
 /// Parse file header and extract metadata with regions for highlighting
@@ -149,7 +173,7 @@ pub fn parse_file_header(path: &str) -> Result<ParsedMetadata, ContainerError> {
     let file_size = file.metadata().map_err(|e| e.to_string())?.len();
 
     // Read first 512 bytes for header analysis
-    let mut header = vec![0u8; 512.min(file_size as usize)];
+    let mut header = vec![0u8; header_read_size(file_size)];
     file.read_exact(&mut header)
         .map_err(|e| format!("Failed to read header: {}", e))?;
 
@@ -177,9 +201,22 @@ pub fn parse_file_header(path: &str) -> Result<ParsedMetadata, ContainerError> {
     parse_header_by_format(&header, &extension, file_size)
 }
 
+/// Parse a source header and extract metadata with regions for highlighting.
+pub fn parse_file_header_bytes(
+    header: &[u8],
+    extension: &str,
+    file_size: u64,
+) -> Result<ParsedMetadata, ContainerError> {
+    parse_header_by_format(header, extension, file_size)
+}
+
 /// Read file as text (for text viewer)
 pub fn read_file_text(path: &str, offset: u64, max_chars: usize) -> Result<String, ContainerError> {
-    let chunk = read_file_chunk(path, offset, Some(max_chars * 4))?; // UTF-8 can be up to 4 bytes per char
+    if max_chars == 0 {
+        return Ok(String::new());
+    }
+    // UTF-8 can be up to 4 bytes per char.
+    let chunk = read_file_chunk(path, offset, Some(text_byte_request_size(max_chars)))?;
 
     // Try to decode as UTF-8, falling back to lossy conversion
     let text = String::from_utf8_lossy(&chunk.bytes);
@@ -569,6 +606,7 @@ fn parse_header_by_format(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_format_size() {
@@ -586,6 +624,115 @@ mod tests {
     }
 
     #[test]
+    fn capped_chunk_size_limits_caller_requested_size() {
+        assert_eq!(capped_chunk_size(None).unwrap(), DEFAULT_CHUNK_SIZE);
+        assert_eq!(capped_chunk_size(Some(1024)).unwrap(), 1024);
+        assert_eq!(capped_chunk_size(Some(usize::MAX)).unwrap(), MAX_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn capped_chunk_size_rejects_zero() {
+        let err = capped_chunk_size(Some(0)).unwrap_err();
+
+        assert!(err.to_string().contains("greater than zero"));
+    }
+
+    #[test]
+    fn text_byte_request_size_saturates_before_chunk_cap() {
+        assert_eq!(text_byte_request_size(12), 48);
+        assert_eq!(text_byte_request_size(usize::MAX), MAX_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn header_read_size_clamps_before_usize_conversion() {
+        assert_eq!(header_read_size(0), 0);
+        assert_eq!(header_read_size(128), 128);
+        assert_eq!(header_read_size(512), 512);
+        assert_eq!(header_read_size(513), 512);
+        assert_eq!(header_read_size(u64::MAX), 512);
+    }
+
+    #[test]
+    fn parse_file_header_reads_sparse_large_file_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.raw");
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(&[0u8; 512]).unwrap();
+        file.set_len(5 * 1024 * 1024 * 1024).unwrap();
+
+        let metadata = parse_file_header(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(metadata.format, "Raw Disk Image");
+        assert!(metadata.fields.iter().any(|field| field.key == "File Size"));
+    }
+
+    #[test]
+    fn read_file_chunk_rejects_offset_past_eof() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.bin");
+        std::fs::write(&path, b"abcdef").unwrap();
+
+        let err = read_file_chunk(path.to_str().unwrap(), 99, Some(16)).unwrap_err();
+
+        assert!(err.to_string().contains("offset 99 > size 6"));
+    }
+
+    #[test]
+    fn read_file_chunk_allows_offset_at_eof() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.bin");
+        std::fs::write(&path, b"abcdef").unwrap();
+
+        let chunk = read_file_chunk(path.to_str().unwrap(), 6, Some(16)).unwrap();
+
+        assert!(chunk.bytes.is_empty());
+        assert_eq!(chunk.offset, 6);
+        assert_eq!(chunk.total_size, 6);
+        assert!(!chunk.has_more);
+        assert!(chunk.has_prev);
+    }
+
+    #[test]
+    fn read_file_chunk_rejects_zero_size_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.bin");
+        std::fs::write(&path, b"abcdef").unwrap();
+
+        let err = read_file_chunk(path.to_str().unwrap(), 0, Some(0)).unwrap_err();
+
+        assert!(err.to_string().contains("greater than zero"));
+    }
+
+    #[test]
+    fn read_file_text_allows_zero_max_chars_without_chunk_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.txt");
+        std::fs::write(&path, b"abcdef").unwrap();
+
+        let text = read_file_text(path.to_str().unwrap(), 99, 0).unwrap();
+
+        assert!(text.is_empty());
+    }
+
+    #[test]
+    fn read_file_chunk_caps_requested_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.bin");
+        std::fs::write(&path, vec![0xAB; MAX_CHUNK_SIZE + 1]).unwrap();
+
+        let chunk = read_file_chunk(path.to_str().unwrap(), 0, Some(usize::MAX)).unwrap();
+
+        assert_eq!(chunk.bytes.len(), MAX_CHUNK_SIZE);
+        assert_eq!(chunk.offset, 0);
+        assert_eq!(chunk.total_size, (MAX_CHUNK_SIZE + 1) as u64);
+        assert!(chunk.has_more);
+    }
+
+    #[test]
     fn test_detect_format_forensic() {
         // Test E01 detection
         let e01_magic = [0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00];
@@ -598,5 +745,18 @@ mod tests {
         let (desc, is_forensic, _) = detect_format(ad1_magic, "ad1");
         assert!(desc.contains("AD1"));
         assert!(is_forensic);
+    }
+
+    #[test]
+    fn detect_file_type_reads_exact_magic_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("image.ad1");
+        std::fs::write(&path, b"ADSEGMEN forensic archive content").unwrap();
+
+        let info = detect_file_type(path.to_str().unwrap()).unwrap();
+
+        assert!(info.is_forensic_format);
+        assert!(info.description.contains("AD1"));
+        assert!(info.magic_hex.starts_with("41 44 53 45"));
     }
 }

@@ -6,12 +6,21 @@
 
 import { createSignal } from "solid-js";
 import { scanForAcquisitions } from "../api/importAcquisitions";
-import type { DiscoveredAcquisition, ImportResult } from "../api/importAcquisitions";
+import type {
+  DiscoveredAcquisition,
+  ImportResult,
+} from "../api/importAcquisitions";
 import type { CompanionFile } from "../api/companion";
 import type { DiscoveredFile } from "../types/container";
-import type { DbEvidenceFile, DbProjectHash, DbEvidenceCollection, DbCollectedItem } from "../types/projectDb";
+import type {
+  DbEvidenceFile,
+  DbProjectHash,
+  DbEvidenceCollection,
+  DbCollectedItem,
+} from "../types/projectDb";
 import { dbSync } from "./project/useProjectDbSync";
 import { logger } from "../utils/logger";
+import { buildLocalFileHashSourceFields } from "../utils/hashSourceIdentity";
 
 const log = logger.scope("ImportAcquisitions");
 
@@ -19,15 +28,24 @@ const log = logger.scope("ImportAcquisitions");
 
 function mapContainerType(acquisitionType: string): string {
   switch (acquisitionType) {
-    case "e01": return "e01";
-    case "l01": return "l01";
-    case "aff4": return "aff4";
-    case "raw": return "raw";
-    case "archive": return "archive";
-    case "file_copy": return "raw";
-    case "memory": return "raw";
-    case "triage": return "raw";
-    default: return "raw";
+    case "e01":
+      return "e01";
+    case "l01":
+      return "l01";
+    case "aff4":
+      return "aff4";
+    case "raw":
+      return "raw";
+    case "archive":
+      return "archive";
+    case "file_copy":
+      return "raw";
+    case "memory":
+      return "raw";
+    case "triage":
+      return "raw";
+    default:
+      return "raw";
   }
 }
 
@@ -77,7 +95,9 @@ export function useImportAcquisitions() {
   const [results, setResults] = createSignal<DiscoveredAcquisition[]>([]);
   const [selected, setSelected] = createSignal<Set<string>>(new Set());
   const [importing, setImporting] = createSignal(false);
-  const [importResult, setImportResult] = createSignal<ImportResult | null>(null);
+  const [importResult, setImportResult] = createSignal<ImportResult | null>(
+    null,
+  );
   const [error, setError] = createSignal<string | null>(null);
 
   /** Scan a directory for companion files */
@@ -93,10 +113,12 @@ export function useImportAcquisitions() {
       setResults(found);
       // Pre-select all that have existing output files
       const preSelected = new Set(
-        found.filter(a => a.outputExists).map(a => a.companionPath),
+        found.filter((a) => a.outputExists).map((a) => a.companionPath),
       );
       setSelected(preSelected);
-      log.info(`Scan complete: ${found.length} acquisitions found, ${preSelected.size} with existing output`);
+      log.info(
+        `Scan complete: ${found.length} acquisitions found, ${preSelected.size} with existing output`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -107,7 +129,7 @@ export function useImportAcquisitions() {
   }
 
   function toggleSelect(companionPath: string): void {
-    setSelected(prev => {
+    setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(companionPath)) {
         next.delete(companionPath);
@@ -119,7 +141,7 @@ export function useImportAcquisitions() {
   }
 
   function selectAll(): void {
-    setSelected(new Set(results().map(a => a.companionPath)));
+    setSelected(new Set(results().map((a) => a.companionPath)));
   }
 
   function deselectAll(): void {
@@ -136,7 +158,9 @@ export function useImportAcquisitions() {
 
     try {
       const selectedSet = selected();
-      const acquisitions = results().filter(a => selectedSet.has(a.companionPath));
+      const acquisitions = results().filter((a) =>
+        selectedSet.has(a.companionPath),
+      );
 
       for (const acq of acquisitions) {
         try {
@@ -223,13 +247,19 @@ function importSingleAcquisition(
   // 2. Hash records (source = 'imported')
   const fileId = outputPath;
   if (c.hashes.md5) {
-    dbSync.insertHash(buildHashRecord(fileId, "MD5", c.hashes.md5, c.timing.completedAt));
+    dbSync.insertHash(
+      buildHashRecord(fileId, "MD5", c.hashes.md5, c.timing.completedAt),
+    );
   }
   if (c.hashes.sha1) {
-    dbSync.insertHash(buildHashRecord(fileId, "SHA-1", c.hashes.sha1, c.timing.completedAt));
+    dbSync.insertHash(
+      buildHashRecord(fileId, "SHA-1", c.hashes.sha1, c.timing.completedAt),
+    );
   }
   if (c.hashes.sha256) {
-    dbSync.insertHash(buildHashRecord(fileId, "SHA-256", c.hashes.sha256, c.timing.completedAt));
+    dbSync.insertHash(
+      buildHashRecord(fileId, "SHA-256", c.hashes.sha256, c.timing.completedAt),
+    );
   }
 
   // 3. Evidence collection + collected item
@@ -250,10 +280,14 @@ function importSingleAcquisition(
 
   const itemId = uniqueId("ci-import");
   const typeLabel = TYPE_LABELS[c.acquisitionType] || c.acquisitionType;
+  const sourceFields = buildLocalFileHashSourceFields(outputPath);
+  const hashSnapshot = bestCompanionHashSnapshot(c);
   const item: DbCollectedItem = {
     id: itemId,
     collectionId,
     evidenceFileId: fileId,
+    sourceId: sourceFields.sourceId,
+    sourceRefJson: sourceFields.sourceRefJson,
     itemNumber: c.case?.evidenceNumber || "1",
     description: `${typeLabel} — ${filename}`,
     foundLocation: c.source.paths?.join("; ") || "",
@@ -267,6 +301,9 @@ function importSingleAcquisition(
     itemCollectionDatetime: c.timing.startedAt,
     itemSystemDatetime: c.timing.completedAt,
     itemCollectingOfficer: c.case?.examiner || c.system?.username || "",
+    hashAlgorithm: hashSnapshot?.algorithm,
+    hashValue: hashSnapshot?.hashValue,
+    hashComputedAt: hashSnapshot ? c.timing.completedAt : undefined,
     building: c.system?.hostname || "",
   };
   dbSync.upsertCollectedItem(item);
@@ -293,11 +330,22 @@ function buildHashRecord(
   return {
     id: uniqueId(`hash-import-${algorithm.toLowerCase()}`),
     fileId,
+    ...buildLocalFileHashSourceFields(fileId),
     algorithm,
     hashValue,
     computedAt,
     source: "imported",
   };
+}
+
+function bestCompanionHashSnapshot(
+  c: CompanionFile,
+): { algorithm: string; hashValue: string } | undefined {
+  if (c.hashes.sha256)
+    return { algorithm: "SHA-256", hashValue: c.hashes.sha256 };
+  if (c.hashes.sha1) return { algorithm: "SHA-1", hashValue: c.hashes.sha1 };
+  if (c.hashes.md5) return { algorithm: "MD5", hashValue: c.hashes.md5 };
+  return undefined;
 }
 
 function buildImportNotes(c: CompanionFile): string {
@@ -323,9 +371,10 @@ function buildStorageNotes(c: CompanionFile): string {
   }
   if (c.timing.durationMs) {
     const dur = c.timing.durationMs;
-    const durStr = dur < 60000
-      ? `${(dur / 1000).toFixed(1)}s`
-      : `${Math.floor(dur / 60000)}m ${Math.floor((dur % 60000) / 1000)}s`;
+    const durStr =
+      dur < 60000
+        ? `${(dur / 1000).toFixed(1)}s`
+        : `${Math.floor(dur / 60000)}m ${Math.floor((dur % 60000) / 1000)}s`;
     parts.push(`Duration: ${durStr}`);
   }
   const hashes: string[] = [];

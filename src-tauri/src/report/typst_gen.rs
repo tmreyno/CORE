@@ -97,22 +97,31 @@ impl TypstGenerator {
         let mut output = template.to_string();
 
         // Basic report metadata
-        output = output.replace("{{report_title}}", &report.metadata.title);
-        output = output.replace("{{case_number}}", &report.case_info.case_number);
+        output = output.replace(
+            "{{report_title}}",
+            &Self::escape_typst(&report.metadata.title),
+        );
+        output = output.replace(
+            "{{case_number}}",
+            &Self::escape_typst(&report.case_info.case_number),
+        );
         output = output.replace(
             "{{case_name}}",
-            &report.case_info.case_name.clone().unwrap_or_default(),
+            &Self::escape_typst(report.case_info.case_name.as_deref().unwrap_or_default()),
         );
 
         // Examiner info
-        output = output.replace("{{examiner_name}}", &report.examiner.name);
+        output = output.replace(
+            "{{examiner_name}}",
+            &Self::escape_typst(&report.examiner.name),
+        );
         output = output.replace(
             "{{examiner_title}}",
-            &report.examiner.title.clone().unwrap_or_default(),
+            &Self::escape_typst(report.examiner.title.as_deref().unwrap_or_default()),
         );
         output = output.replace(
             "{{examiner_agency}}",
-            &report.examiner.organization.clone().unwrap_or_default(),
+            &Self::escape_typst(report.examiner.organization.as_deref().unwrap_or_default()),
         );
 
         // Date
@@ -124,18 +133,24 @@ impl TypstGenerator {
         // Optional text sections
         output = output.replace(
             "{{executive_summary}}",
-            &report.executive_summary.clone().unwrap_or_default(),
+            &Self::escape_typst(report.executive_summary.as_deref().unwrap_or_default()),
         );
-        output = output.replace("{{scope}}", &report.scope.clone().unwrap_or_default());
+        output = output.replace(
+            "{{scope}}",
+            &Self::escape_typst(report.scope.as_deref().unwrap_or_default()),
+        );
         output = output.replace(
             "{{methodology}}",
-            &report.methodology.clone().unwrap_or_default(),
+            &Self::escape_typst(report.methodology.as_deref().unwrap_or_default()),
         );
         output = output.replace(
             "{{conclusions}}",
-            &report.conclusions.clone().unwrap_or_default(),
+            &Self::escape_typst(report.conclusions.as_deref().unwrap_or_default()),
         );
-        output = output.replace("{{notes}}", &report.notes.clone().unwrap_or_default());
+        output = output.replace(
+            "{{notes}}",
+            &Self::escape_typst(report.notes.as_deref().unwrap_or_default()),
+        );
 
         // Complex sections
         if output.contains("{{evidence_table}}") {
@@ -177,8 +192,9 @@ impl TypstGenerator {
                 Self::escape_typst(&item.description),
                 item.evidence_type.as_str(),
                 item.capacity
-                    .as_ref()
-                    .map_or("-".to_string(), |s| s.clone())
+                    .as_deref()
+                    .map(Self::escape_typst)
+                    .unwrap_or_else(|| "-".to_string())
             ));
         }
         table.push_str(")\n");
@@ -243,7 +259,7 @@ impl TypstGenerator {
                 "  [{}], [{}], [`{}`],\n",
                 Self::escape_typst(&record.item),
                 record.algorithm.as_str(),
-                &record.value
+                Self::escape_typst(&record.value)
             ));
         }
         table.push_str(")\n");
@@ -791,6 +807,11 @@ impl TypstGenerator {
             .replace('$', "\\$")
             .replace('<', "\\<")
             .replace('>', "\\>")
+            .replace('[', "\\[")
+            .replace(']', "\\]")
+            .replace('"', "\\\"")
+            .replace('{', "\\{")
+            .replace('}', "\\}")
     }
 }
 
@@ -815,6 +836,57 @@ mod tests {
             TypstGenerator::escape_typst("Test *bold*"),
             "Test \\*bold\\*"
         );
+        assert_eq!(
+            TypstGenerator::escape_typst("[case] \"quoted\" {block}"),
+            "\\[case\\] \\\"quoted\\\" \\{block\\}"
+        );
+    }
+
+    #[test]
+    fn custom_template_escapes_placeholder_values() {
+        let report = ForensicReport {
+            metadata: ReportMetadata {
+                title: "Case ] #pagebreak()".to_string(),
+                report_number: "TEST-001".to_string(),
+                version: "1.0".to_string(),
+                classification: Classification::Confidential,
+                generated_at: Utc::now(),
+                generated_by: "Test".to_string(),
+            },
+            case_info: CaseInfo {
+                case_number: "CASE-001".to_string(),
+                ..Default::default()
+            },
+            examiner: ExaminerInfo {
+                name: "Examiner".to_string(),
+                ..Default::default()
+            },
+            executive_summary: Some("summary #eval(\"bad\")".to_string()),
+            scope: None,
+            methodology: None,
+            evidence_items: vec![],
+            chain_of_custody: vec![],
+            findings: vec![],
+            timeline: vec![],
+            hash_records: vec![],
+            tools: vec![],
+            conclusions: None,
+            appendices: vec![],
+            signatures: vec![],
+            notes: None,
+            report_type: None,
+            coc_items: None,
+            evidence_collection: None,
+        };
+
+        let output = TypstGenerator::new()
+            .render_with_template(&report, "[{{report_title}}]\n{{executive_summary}}")
+            .unwrap();
+
+        assert!(output.contains("Case \\] \\#pagebreak()"));
+        assert!(output.contains("summary \\#eval(\\\"bad\\\")"));
+        assert!(!output.contains("Case ] #pagebreak()"));
+        assert!(!output.contains("summary #eval"));
     }
 
     #[test]

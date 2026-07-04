@@ -6,10 +6,67 @@
 use goblin::Object;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{Read, Take};
 use std::path::Path;
 
 use super::error::{DocumentError, DocumentResult};
+
+const MAX_BINARY_ANALYSIS_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_BINARY_DETECT_PREFIX_BYTES: usize = 4096;
+const MAX_BINARY_IMPORT_LIBRARIES: usize = 512;
+const MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY: usize = 2048;
+const MAX_BINARY_EXPORTS: usize = 4096;
+const MAX_BINARY_SECTIONS: usize = 2048;
+
+#[derive(Debug, Default)]
+struct ImportAccumulator {
+    function_count: usize,
+    functions: Vec<String>,
+}
+
+fn ensure_binary_analysis_size(size: u64) -> DocumentResult<()> {
+    if size > MAX_BINARY_ANALYSIS_BYTES {
+        return Err(binary_analysis_too_large_error(
+            size,
+            MAX_BINARY_ANALYSIS_BYTES,
+        ));
+    }
+    Ok(())
+}
+
+fn binary_analysis_too_large_error(size: u64, max_bytes: u64) -> DocumentError {
+    DocumentError::Parse(format!(
+        "Binary file too large for full analysis ({:.1} MiB, max {} MiB)",
+        size as f64 / (1024.0 * 1024.0),
+        max_bytes / (1024 * 1024)
+    ))
+}
+
+fn read_binary_prefix(path: &Path, max_bytes: usize) -> DocumentResult<Vec<u8>> {
+    let mut file = File::open(path)?;
+    let total_size = file.metadata()?.len();
+    let to_read = total_size.min(max_bytes as u64) as usize;
+    let mut data = vec![0u8; to_read];
+    file.read_exact(&mut data)?;
+    Ok(data)
+}
+
+fn read_binary_analysis_with_limit<R: Read>(reader: R, max_bytes: u64) -> DocumentResult<Vec<u8>> {
+    let read_limit = max_bytes
+        .checked_add(1)
+        .ok_or_else(|| DocumentError::Parse("Binary analysis read limit overflow".to_string()))?;
+    let mut limited: Take<R> = reader.take(read_limit);
+    let mut data = Vec::new();
+    limited.read_to_end(&mut data)?;
+    if data.len() as u64 > max_bytes {
+        return Err(binary_analysis_too_large_error(
+            data.len() as u64,
+            max_bytes,
+        ));
+    }
+    Ok(data)
+}
 
 /// Binary format detected
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,23 +135,33 @@ pub struct BinaryInfo {
 /// Analyze a binary file
 pub fn analyze_binary(path: impl AsRef<Path>) -> DocumentResult<BinaryInfo> {
     let path = path.as_ref();
-    let data = fs::read(path)?;
-    let file_size = data.len() as u64;
+    ensure_binary_analysis_size(fs::metadata(path)?.len())?;
+    let data = read_binary_analysis_with_limit(File::open(path)?, MAX_BINARY_ANALYSIS_BYTES)?;
+    analyze_binary_bytes(path.to_string_lossy(), &data)
+}
 
-    let obj = Object::parse(&data)
+/// Analyze binary bytes read from any evidence source.
+pub fn analyze_binary_bytes(
+    source_id: impl Into<String>,
+    data: &[u8],
+) -> DocumentResult<BinaryInfo> {
+    let source_id = source_id.into();
+    ensure_binary_analysis_size(data.len() as u64)?;
+    let file_size = data.len() as u64;
+    let obj = Object::parse(data)
         .map_err(|e| DocumentError::Parse(format!("Failed to parse binary: {}", e)))?;
 
     match obj {
-        Object::PE(pe) => analyze_pe(pe, path, file_size),
-        Object::Elf(elf) => analyze_elf(elf, path, file_size),
-        Object::Mach(mach) => analyze_mach(mach, path, file_size),
+        Object::PE(pe) => analyze_pe(pe, &source_id, file_size),
+        Object::Elf(elf) => analyze_elf(elf, &source_id, file_size),
+        Object::Mach(mach) => analyze_mach(mach, &source_id, data, file_size),
         _ => Err(DocumentError::UnsupportedFormat(
             "Not a recognized binary format".to_string(),
         )),
     }
 }
 
-fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult<BinaryInfo> {
+fn analyze_pe(pe: goblin::pe::PE, source_id: &str, file_size: u64) -> DocumentResult<BinaryInfo> {
     let is_64bit = pe.is_64;
     let format = if is_64bit {
         BinaryFormat::PE64
@@ -110,29 +177,17 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
     };
 
     // Imports - group by DLL
-    let mut import_map: HashMap<String, Vec<String>> = HashMap::new();
+    let mut import_map: HashMap<String, ImportAccumulator> = HashMap::new();
     for imp in &pe.imports {
-        import_map
-            .entry(imp.dll.to_string())
-            .or_default()
-            .push(imp.name.to_string());
+        push_limited_import(&mut import_map, imp.dll, &imp.name);
     }
-    let imports: Vec<ImportInfo> = import_map
-        .into_iter()
-        .map(|(library, functions)| {
-            let function_count = functions.len();
-            ImportInfo {
-                library,
-                functions,
-                function_count,
-            }
-        })
-        .collect();
+    let imports = import_infos_from_accumulators(import_map);
 
     // Exports
     let exports: Vec<ExportInfo> = pe
         .exports
         .iter()
+        .take(MAX_BINARY_EXPORTS)
         .filter_map(|exp| {
             exp.name.map(|name| ExportInfo {
                 name: name.to_string(),
@@ -146,6 +201,7 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
     let sections: Vec<SectionInfo> = pe
         .sections
         .iter()
+        .take(MAX_BINARY_SECTIONS)
         .map(|sec| {
             let name = String::from_utf8_lossy(&sec.name)
                 .trim_end_matches('\0')
@@ -190,7 +246,7 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
         .unwrap_or(false);
 
     Ok(BinaryInfo {
-        path: path.to_string_lossy().to_string(),
+        path: source_id.to_string(),
         format,
         architecture,
         is_64bit,
@@ -210,7 +266,11 @@ fn analyze_pe(pe: goblin::pe::PE, path: &Path, file_size: u64) -> DocumentResult
     })
 }
 
-fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentResult<BinaryInfo> {
+fn analyze_elf(
+    elf: goblin::elf::Elf,
+    source_id: &str,
+    file_size: u64,
+) -> DocumentResult<BinaryInfo> {
     let is_64bit = elf.is_64;
     let format = if is_64bit {
         BinaryFormat::ELF64
@@ -230,6 +290,7 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
     let imports: Vec<ImportInfo> = elf
         .libraries
         .iter()
+        .take(MAX_BINARY_IMPORT_LIBRARIES)
         .map(|lib| ImportInfo {
             library: lib.to_string(),
             functions: Vec::new(),
@@ -249,6 +310,7 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
                 address: sym.st_value,
             })
         })
+        .take(MAX_BINARY_EXPORTS)
         .collect();
 
     // Sections
@@ -264,6 +326,7 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
                 characteristics: format!("0x{:08x}", sec.sh_flags),
             })
         })
+        .take(MAX_BINARY_SECTIONS)
         .collect();
 
     // Security and debug indicators
@@ -281,7 +344,7 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
     });
 
     Ok(BinaryInfo {
-        path: path.to_string_lossy().to_string(),
+        path: source_id.to_string(),
         format,
         architecture,
         is_64bit,
@@ -303,24 +366,22 @@ fn analyze_elf(elf: goblin::elf::Elf, path: &Path, file_size: u64) -> DocumentRe
 
 fn analyze_mach(
     mach: goblin::mach::Mach,
-    path: &Path,
+    source_id: &str,
+    data: &[u8],
     file_size: u64,
 ) -> DocumentResult<BinaryInfo> {
     match mach {
-        goblin::mach::Mach::Binary(macho) => analyze_single_mach(macho, path, file_size),
+        goblin::mach::Mach::Binary(macho) => analyze_single_mach(macho, source_id, file_size),
         goblin::mach::Mach::Fat(fat) => {
-            // For fat binaries, read the file data and parse the first architecture
-            let data = fs::read(path)?;
             let narches = fat.narches;
 
             // Try to parse and analyze the first architecture fully
             if let Some(arch) = fat.iter_arches().flatten().next() {
-                if let Some(slice) = checked_u64_slice(&data, arch.offset as u64, arch.size as u64)
-                {
+                if let Some(slice) = checked_u64_slice(data, arch.offset as u64, arch.size as u64) {
                     if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) =
                         Object::parse(slice)
                     {
-                        let mut info = analyze_single_mach(inner, path, file_size)?;
+                        let mut info = analyze_single_mach(inner, source_id, file_size)?;
                         info.format = BinaryFormat::MachOFat;
                         info.architecture = format!(
                             "{} (Universal, {} architectures)",
@@ -338,7 +399,7 @@ fn analyze_mach(
 
             // Fallback if we can't parse inner binary
             Ok(BinaryInfo {
-                path: path.to_string_lossy().to_string(),
+                path: source_id.to_string(),
                 format: BinaryFormat::MachOFat,
                 architecture: "Universal".to_string(),
                 is_64bit: true,
@@ -367,9 +428,40 @@ fn checked_u64_slice(data: &[u8], offset: u64, size: u64) -> Option<&[u8]> {
     data.get(start..end)
 }
 
+fn push_limited_import(
+    import_map: &mut HashMap<String, ImportAccumulator>,
+    library: &str,
+    function: &str,
+) {
+    if !import_map.contains_key(library) && import_map.len() >= MAX_BINARY_IMPORT_LIBRARIES {
+        return;
+    }
+
+    let entry = import_map.entry(library.to_string()).or_default();
+    entry.function_count = entry.function_count.saturating_add(1);
+    if entry.functions.len() < MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY {
+        entry.functions.push(function.to_string());
+    }
+}
+
+fn import_infos_from_accumulators(
+    import_map: HashMap<String, ImportAccumulator>,
+) -> Vec<ImportInfo> {
+    let mut imports: Vec<ImportInfo> = import_map
+        .into_iter()
+        .map(|(library, accumulator)| ImportInfo {
+            library,
+            functions: accumulator.functions,
+            function_count: accumulator.function_count,
+        })
+        .collect();
+    imports.sort_by(|left, right| left.library.cmp(&right.library));
+    imports
+}
+
 fn analyze_single_mach(
     macho: goblin::mach::MachO,
-    path: &Path,
+    source_id: &str,
     file_size: u64,
 ) -> DocumentResult<BinaryInfo> {
     // Check if 64-bit by looking at magic number
@@ -404,6 +496,7 @@ fn analyze_single_mach(
     let imports: Vec<ImportInfo> = macho
         .libs
         .iter()
+        .take(MAX_BINARY_IMPORT_LIBRARIES)
         .map(|lib| ImportInfo {
             library: lib.to_string(),
             functions: Vec::new(),
@@ -416,6 +509,7 @@ fn analyze_single_mach(
         .exports()
         .map_err(|e| DocumentError::Parse(format!("Failed to read exports: {}", e)))?
         .iter()
+        .take(MAX_BINARY_EXPORTS)
         .map(|exp| ExportInfo {
             name: exp.name.clone(),
             ordinal: None,
@@ -428,6 +522,7 @@ fn analyze_single_mach(
         .segments
         .iter()
         .flat_map(|seg| seg.sections().ok().unwrap_or_default())
+        .take(MAX_BINARY_SECTIONS)
         .map(|(sec, _)| SectionInfo {
             name: format!(
                 "{},{}",
@@ -450,10 +545,10 @@ fn analyze_single_mach(
         // LC_CODE_SIGNATURE = 0x1D
         lc.command.cmd() == 0x1D
     });
-    let is_stripped = macho.symbols().count() == 0;
+    let is_stripped = macho.symbols().next().is_none();
 
     Ok(BinaryInfo {
-        path: path.to_string_lossy().to_string(),
+        path: source_id.to_string(),
         format,
         architecture: cpu_type.clone(),
         is_64bit,
@@ -475,37 +570,71 @@ fn analyze_single_mach(
 
 /// Quick format detection without full parsing
 pub fn detect_binary_format(path: impl AsRef<Path>) -> DocumentResult<BinaryFormat> {
-    let data = fs::read(path.as_ref())?;
+    let data = read_binary_prefix(path.as_ref(), MAX_BINARY_DETECT_PREFIX_BYTES)?;
+    Ok(detect_binary_format_bytes(&data))
+}
+
+/// Quick format detection from a bounded header/prefix.
+pub fn detect_binary_format_bytes(data: &[u8]) -> BinaryFormat {
     if data.len() < 4 {
-        return Ok(BinaryFormat::Unknown);
+        return BinaryFormat::Unknown;
     }
 
-    match Object::parse(&data) {
-        Ok(Object::PE(pe)) => Ok(if pe.is_64 {
-            BinaryFormat::PE64
-        } else {
-            BinaryFormat::PE32
-        }),
-        Ok(Object::Elf(elf)) => Ok(if elf.is_64 {
-            BinaryFormat::ELF64
-        } else {
-            BinaryFormat::ELF32
-        }),
-        Ok(Object::Mach(goblin::mach::Mach::Binary(m))) => {
-            Ok(if matches!(m.header.magic, 0xFEEDFACF | 0xCFFAEDFE) {
-                BinaryFormat::MachO64
-            } else {
-                BinaryFormat::MachO32
-            })
+    if data.starts_with(b"\x7fELF") {
+        return match data.get(4) {
+            Some(1) => BinaryFormat::ELF32,
+            Some(2) => BinaryFormat::ELF64,
+            _ => BinaryFormat::Unknown,
+        };
+    }
+
+    match data.get(0..4) {
+        Some([0xFE, 0xED, 0xFA, 0xCE]) | Some([0xCE, 0xFA, 0xED, 0xFE]) => {
+            return BinaryFormat::MachO32
         }
-        Ok(Object::Mach(goblin::mach::Mach::Fat(_))) => Ok(BinaryFormat::MachOFat),
-        _ => Ok(BinaryFormat::Unknown),
+        Some([0xFE, 0xED, 0xFA, 0xCF]) | Some([0xCF, 0xFA, 0xED, 0xFE]) => {
+            return BinaryFormat::MachO64
+        }
+        Some([0xCA, 0xFE, 0xBA, 0xBE])
+        | Some([0xBE, 0xBA, 0xFE, 0xCA])
+        | Some([0xCA, 0xFE, 0xBA, 0xBF])
+        | Some([0xBF, 0xBA, 0xFE, 0xCA]) => return BinaryFormat::MachOFat,
+        _ => {}
+    }
+
+    if data.starts_with(b"MZ") {
+        return detect_pe_format_from_prefix(data);
+    }
+
+    BinaryFormat::Unknown
+}
+
+fn detect_pe_format_from_prefix(data: &[u8]) -> BinaryFormat {
+    let pe_offset = match data.get(0x3c..0x40) {
+        Some(bytes) => u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize,
+        None => return BinaryFormat::Unknown,
+    };
+    let optional_magic_offset = match pe_offset.checked_add(24) {
+        Some(offset) => offset,
+        None => return BinaryFormat::Unknown,
+    };
+
+    if data.get(pe_offset..pe_offset.saturating_add(4)) != Some(&b"PE\0\0"[..]) {
+        return BinaryFormat::Unknown;
+    }
+
+    match data.get(optional_magic_offset..optional_magic_offset.saturating_add(2)) {
+        Some([0x0b, 0x01]) => BinaryFormat::PE32,
+        Some([0x0b, 0x02]) => BinaryFormat::PE64,
+        _ => BinaryFormat::Unknown,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+    use std::io::Write;
 
     #[test]
     fn test_binary_format_enum() {
@@ -523,5 +652,126 @@ mod tests {
     fn test_checked_u64_slice_rejects_overflow_range() {
         let data = b"hello";
         assert!(checked_u64_slice(data, 4, u64::MAX).is_none());
+    }
+
+    #[test]
+    fn import_accumulator_caps_libraries_and_functions() {
+        let mut imports = HashMap::new();
+        for index in 0..(MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY + 5) {
+            push_limited_import(&mut imports, "KERNEL32.dll", &format!("Function{index}"));
+        }
+        for index in 0..(MAX_BINARY_IMPORT_LIBRARIES + 5) {
+            push_limited_import(&mut imports, &format!("lib{index}.dll"), "OnlyFunction");
+        }
+
+        let infos = import_infos_from_accumulators(imports);
+        assert_eq!(infos.len(), MAX_BINARY_IMPORT_LIBRARIES);
+
+        let kernel32 = infos
+            .iter()
+            .find(|info| info.library == "KERNEL32.dll")
+            .expect("retained first import library");
+        assert_eq!(
+            kernel32.function_count,
+            MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY + 5
+        );
+        assert_eq!(
+            kernel32.functions.len(),
+            MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY
+        );
+    }
+
+    #[test]
+    fn detect_binary_format_bytes_identifies_pe64_from_prefix() {
+        let data = minimal_pe_header(0x20b);
+
+        assert!(matches!(
+            detect_binary_format_bytes(&data),
+            BinaryFormat::PE64
+        ));
+    }
+
+    #[test]
+    fn detect_binary_format_reads_sparse_file_prefix_only() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(&minimal_pe_header(0x10b)).unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_BINARY_ANALYSIS_BYTES + 1)
+            .unwrap();
+
+        let format = detect_binary_format(tmp.path()).unwrap();
+
+        assert!(matches!(format, BinaryFormat::PE32));
+    }
+
+    #[test]
+    fn analyze_binary_rejects_oversized_local_file_before_reading() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(&minimal_elf64_header()).unwrap();
+        tmp.as_file_mut()
+            .set_len(MAX_BINARY_ANALYSIS_BYTES + 1)
+            .unwrap();
+
+        let err = analyze_binary(tmp.path()).unwrap_err();
+
+        assert!(err.to_string().contains("too large for full analysis"));
+    }
+
+    #[test]
+    fn read_binary_analysis_with_limit_accepts_exact_limit() {
+        let data = read_binary_analysis_with_limit(Cursor::new(b"abcd"), 4).unwrap();
+
+        assert_eq!(data, b"abcd");
+    }
+
+    #[test]
+    fn read_binary_analysis_with_limit_rejects_reader_past_limit() {
+        let err = read_binary_analysis_with_limit(Cursor::new(b"abcde"), 4).unwrap_err();
+
+        assert!(err.to_string().contains("too large for full analysis"));
+    }
+
+    #[test]
+    fn analyze_binary_bytes_reads_elf_source_metadata() {
+        let data = minimal_elf64_header();
+        let info = analyze_binary_bytes("container.ad1:/bin/tool", &data).unwrap();
+
+        assert_eq!(info.path, "container.ad1:/bin/tool");
+        assert!(matches!(info.format, BinaryFormat::ELF64));
+        assert_eq!(info.architecture, "x86_64");
+        assert!(info.is_64bit);
+        assert_eq!(info.entry_point, Some(0x400000));
+        assert_eq!(info.file_size, data.len() as u64);
+    }
+
+    fn minimal_pe_header(optional_magic: u16) -> Vec<u8> {
+        let pe_offset = 0x80usize;
+        let mut data = vec![0u8; pe_offset + 26];
+        data[0..2].copy_from_slice(b"MZ");
+        data[0x3c..0x40].copy_from_slice(&(pe_offset as u32).to_le_bytes());
+        data[pe_offset..pe_offset + 4].copy_from_slice(b"PE\0\0");
+        data[pe_offset + 24..pe_offset + 26].copy_from_slice(&optional_magic.to_le_bytes());
+        data
+    }
+
+    fn minimal_elf64_header() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x7f, b'E', b'L', b'F']);
+        data.extend_from_slice(&[2, 1, 1, 0]); // 64-bit, little-endian, ELF v1
+        data.extend_from_slice(&[0; 8]);
+        data.extend_from_slice(&2u16.to_le_bytes()); // executable
+        data.extend_from_slice(&0x3eu16.to_le_bytes()); // x86_64
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&0x400000u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes()); // no program headers
+        data.extend_from_slice(&0u64.to_le_bytes()); // no section headers
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&64u16.to_le_bytes());
+        data.extend_from_slice(&56u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&64u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data
     }
 }

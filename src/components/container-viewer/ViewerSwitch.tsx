@@ -9,12 +9,13 @@
  * based on file type memos. Wrapped in Suspense + ErrorBoundary.
  */
 
-import { Switch, Match, Suspense, type Accessor } from "solid-js";
+import { createMemo, Switch, Match, Suspense, type Accessor } from "solid-js";
 import { CompactErrorBoundary } from "../ErrorBoundary";
 import { HexViewer } from "../HexViewer";
 import { TextViewer } from "../TextViewer";
 import type { SelectedEntry } from "../EvidenceTree";
 import type { ViewerMetadataSection } from "../../types/viewerMetadata";
+import { buildEvidenceSourceInput } from "../evidenceSourceInput";
 import type { ContentDetectResult } from "./types";
 import {
   DocumentViewer,
@@ -52,6 +53,10 @@ export interface ViewerSwitchProps {
 }
 
 export function ViewerSwitch(props: ViewerSwitchProps) {
+  const entrySource = createMemo(() =>
+    buildEvidenceSourceInput(null, props.entry, props.previewPath)
+  );
+
   return (
     <Suspense
       fallback={
@@ -63,50 +68,83 @@ export function ViewerSwitch(props: ViewerSwitchProps) {
       <CompactErrorBoundary name="ViewerSwitch">
         <Switch
           fallback={
-            <DocumentViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <DocumentViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           }
         >
           <Match when={props.fileIsPdf()}>
-            <PdfViewer path={props.previewPath} />
+            <PdfViewer path={props.previewPath} source={entrySource()} />
           </Match>
           <Match when={props.fileIsImage()}>
-            <ImageViewer path={props.previewPath} />
-            <ExifPanel path={props.previewPath} onMetadata={props.onMetadata} class="hidden" />
+            <ImageViewer path={props.previewPath} source={entrySource()} />
+            <ExifPanel
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+              class="hidden"
+            />
           </Match>
           <Match when={props.fileIsSpreadsheet()}>
-            <SpreadsheetViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <SpreadsheetViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsOffice()}>
-            <OfficeViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <OfficeViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsEmail()}>
-            <EmailViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <EmailViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsPst()}>
-            <PstViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <PstViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsPlist()}>
-            <PlistViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <PlistViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsBinary()}>
-            <BinaryViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <BinaryViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsRegistry()}>
-            <RegistryViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <RegistryViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsDatabase()}>
-            <DatabaseViewer path={props.previewPath} onMetadata={props.onMetadata} />
+            <DatabaseViewer
+              path={props.previewPath}
+              source={entrySource()}
+              onMetadata={props.onMetadata}
+            />
           </Match>
           <Match when={props.fileIsDetectedText()}>
-            <TextViewer
-              file={{
-                path: props.previewPath,
-                filename: props.entry.name,
-                container_type: "",
-                size: props.entry.size,
-                segment_count: 1,
-              }}
-            />
+            <TextViewer entry={props.entry} />
           </Match>
           <Match when={props.detectedFormat()?.viewerType === "Hex"}>
             <HexViewer entry={props.entry} />

@@ -108,6 +108,28 @@ describe("DocumentViewer", () => {
         path: "/evidence/report.pdf",
       });
     });
+
+    it("calls source document commands when an evidence source is provided", async () => {
+      const source = {
+        containerPath: "/evidence/case.ad1",
+        entryPath: "docs/readme.md",
+        containerType: "ad1",
+        size: 512,
+      };
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "document_read_source") return mockDocumentResponse;
+        if (cmd === "document_get_metadata_source") return mockMetadataResponse;
+        return null;
+      });
+
+      renderComponent(() => <DocumentViewer path="/tmp/readme.md" source={source} />);
+      await tick();
+
+      expect(mockInvoke).toHaveBeenCalledWith("document_read_source", { source });
+      expect(mockInvoke).toHaveBeenCalledWith("document_get_metadata_source", {
+        source,
+      });
+    });
   });
 
   describe("successful render", () => {

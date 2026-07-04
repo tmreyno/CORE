@@ -32,6 +32,20 @@ use tracing::{debug, info, warn};
 use manifest::generate_forensic_manifest;
 pub use manifest::{ChainOfCustody, ForensicManifest, ManifestFileEntry};
 
+const ARCHIVE_CREATE_MAX_TRAVERSAL_DEPTH: usize = 128;
+const ARCHIVE_CREATE_MAX_FILES: usize = 250_000;
+
+fn checked_archive_size_add(total: u64, addition: u64, path: &Path) -> Result<u64, String> {
+    total.checked_add(addition).ok_or_else(|| {
+        format!(
+            "Archive size overflow while adding {} bytes from {} to current total {} bytes",
+            addition,
+            path.display(),
+            total
+        )
+    })
+}
+
 /// Global cancel flags for active archive creation jobs
 static CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -114,6 +128,23 @@ impl Default for CreateArchiveOptions {
 /// Calculate total size of directory recursively.
 /// Skips unreadable directories (e.g. macOS TCC-protected folders) with a warning.
 fn calculate_dir_size(dir: &Path) -> Result<u64, String> {
+    let mut files_seen = 0usize;
+    calculate_dir_size_at_depth(dir, 0, &mut files_seen)
+}
+
+fn calculate_dir_size_at_depth(
+    dir: &Path,
+    depth: usize,
+    files_seen: &mut usize,
+) -> Result<u64, String> {
+    if depth > ARCHIVE_CREATE_MAX_TRAVERSAL_DEPTH {
+        tracing::warn!(
+            "Archive size preflight reached traversal depth cap at {}",
+            dir.display()
+        );
+        return Ok(0);
+    }
+
     let mut total = 0u64;
 
     let entries = match std::fs::read_dir(dir) {
@@ -128,9 +159,20 @@ fn calculate_dir_size(dir: &Path) -> Result<u64, String> {
         let path = entry.path();
 
         if path.is_file() {
-            total += path.metadata().map(|m| m.len()).unwrap_or(0);
+            if *files_seen >= ARCHIVE_CREATE_MAX_FILES {
+                tracing::warn!(
+                    "Archive size preflight reached file cap while scanning {}",
+                    dir.display()
+                );
+                break;
+            }
+
+            *files_seen += 1;
+            let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
+            total = checked_archive_size_add(total, file_size, &path)?;
         } else if path.is_dir() {
-            total += calculate_dir_size(&path)?;
+            let dir_size = calculate_dir_size_at_depth(&path, depth + 1, files_seen)?;
+            total = checked_archive_size_add(total, dir_size, &path)?;
         }
     }
 
@@ -246,11 +288,11 @@ pub async fn create_7z_archive(
             if path_obj.is_file() {
                 let file_size = path_obj.metadata().map(|m| m.len()).unwrap_or(0);
                 debug!("File {} size: {} bytes", path, file_size);
-                total_size += file_size;
+                total_size = checked_archive_size_add(total_size, file_size, path_obj)?;
             } else if path_obj.is_dir() {
-                let dir_size = calculate_dir_size(path_obj).unwrap_or(0);
+                let dir_size = calculate_dir_size(path_obj)?;
                 debug!("Directory {} size: {} bytes", path, dir_size);
-                total_size += dir_size;
+                total_size = checked_archive_size_add(total_size, dir_size, path_obj)?;
             }
         }
 
@@ -628,13 +670,15 @@ pub async fn estimate_archive_size(
             }
 
             if path_obj.is_file() {
-                total_size += path_obj
+                let file_size = path_obj
                     .metadata()
                     .map(|m| m.len())
                     .map_err(|e| format!("Failed to get file size: {}", e))?;
+                total_size = checked_archive_size_add(total_size, file_size, path_obj)?;
             } else if path_obj.is_dir() {
                 // Recursively calculate directory size
-                total_size += calculate_dir_size(path_obj)?;
+                let dir_size = calculate_dir_size(path_obj)?;
+                total_size = checked_archive_size_add(total_size, dir_size, path_obj)?;
             }
         }
 
@@ -821,11 +865,43 @@ mod tests {
     }
 
     #[test]
+    fn test_calculate_dir_size_skips_beyond_depth_limit() {
+        let dir = TempDir::new().unwrap();
+        let mut deep = dir.path().to_path_buf();
+
+        for _ in 0..=ARCHIVE_CREATE_MAX_TRAVERSAL_DEPTH {
+            deep = deep.join("d");
+            fs::create_dir(&deep).unwrap();
+        }
+
+        fs::write(deep.join("too-deep.bin"), vec![0u8; 1024]).unwrap();
+
+        let size = calculate_dir_size(dir.path()).unwrap();
+        assert_eq!(size, 0);
+    }
+
+    #[test]
     fn test_calculate_dir_size_nonexistent() {
         let result = calculate_dir_size(Path::new("/nonexistent/path/xyz"));
         // The function logs a warning and returns Ok(0) for unreadable dirs
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn test_checked_archive_size_add_sums_regular_values() {
+        let path = Path::new("evidence.bin");
+
+        assert_eq!(checked_archive_size_add(40, 2, path).unwrap(), 42);
+    }
+
+    #[test]
+    fn test_checked_archive_size_add_rejects_overflow() {
+        let path = Path::new("too-large.bin");
+        let err = checked_archive_size_add(u64::MAX, 1, path).unwrap_err();
+
+        assert!(err.contains("Archive size overflow"));
+        assert!(err.contains("too-large.bin"));
     }
 
     // ==================== Compression level mapping ====================

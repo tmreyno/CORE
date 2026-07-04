@@ -223,19 +223,28 @@ impl UniversalFormat {
 
     /// Detect format by reading magic bytes from the file header.
     ///
-    /// Reads the first 32 bytes and matches against known file signatures.
+    /// Reads enough header bytes to cover common signatures, including TAR's
+    /// `ustar` marker at offset 257.
     /// Returns `None` if the file cannot be read or is empty.
     /// This is read-only — forensic integrity is preserved.
     pub fn detect_by_magic(path: impl AsRef<std::path::Path>) -> Option<Self> {
-        use std::io::{Read, Seek, SeekFrom};
+        use std::io::Read;
 
-        let mut file = std::fs::File::open(path.as_ref()).ok()?;
-        let mut buf = [0u8; 32];
-        let bytes_read = file.read(&mut buf).ok()?;
-        if bytes_read == 0 {
+        let file = std::fs::File::open(path.as_ref()).ok()?;
+        let mut buf = Vec::new();
+        file.take(265).read_to_end(&mut buf).ok()?;
+        Self::detect_by_magic_bytes(&buf)
+    }
+
+    /// Detect format from already-read header bytes.
+    ///
+    /// This mirrors [`Self::detect_by_magic`] for callers that read from
+    /// evidence sources instead of local filesystem paths.
+    pub fn detect_by_magic_bytes(header: &[u8]) -> Option<Self> {
+        let bytes_read = header.len();
+        if header.is_empty() {
             return None;
         }
-        let header = &buf[..bytes_read];
 
         // --- 16-byte signatures ---
         if bytes_read >= 16 && &header[..16] == b"SQLite format 3\0" {
@@ -382,16 +391,8 @@ impl UniversalFormat {
         }
 
         // --- TAR archive ("ustar" at offset 257) ---
-        // Requires a separate read since offset 257 is beyond our 32-byte header
-        {
-            let mut tar_buf = [0u8; 8];
-            if file.seek(SeekFrom::Start(257)).is_ok() {
-                if let Ok(n) = file.read(&mut tar_buf) {
-                    if n >= 5 && &tar_buf[..5] == b"ustar" {
-                        return Some(Self::Tar);
-                    }
-                }
-            }
+        if bytes_read >= 262 && &header[257..262] == b"ustar" {
+            return Some(Self::Tar);
         }
 
         // --- Text-based heuristics (must come last) ---

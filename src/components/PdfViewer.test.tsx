@@ -90,7 +90,23 @@ describe("PdfViewer", () => {
       renderComponent(() => <PdfViewer path="/evidence/report.pdf" />);
       await tick();
 
-      expect(mockLoadPdfDocument).toHaveBeenCalledWith("/evidence/report.pdf");
+      expect(mockLoadPdfDocument).toHaveBeenCalledWith("/evidence/report.pdf", undefined);
+    });
+
+    it("passes an evidence source to loadPdfDocument when provided", async () => {
+      const mockDoc = createMockPdfDoc(3);
+      mockLoadPdfDocument.mockResolvedValueOnce(mockDoc);
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "docs/report.pdf",
+        containerType: "ad1",
+        size: 4096,
+      };
+
+      renderComponent(() => <PdfViewer path="/evidence/report.pdf" source={source} />);
+      await tick();
+
+      expect(mockLoadPdfDocument).toHaveBeenCalledWith("/evidence/report.pdf", source);
     });
   });
 

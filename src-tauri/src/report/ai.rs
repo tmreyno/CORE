@@ -41,6 +41,10 @@
 use super::error::{ReportError, ReportResult};
 use super::NarrativeType;
 
+const MAX_AI_CONTEXT_CHARS: usize = 120_000;
+const TRUNCATED_AI_CONTEXT_SUFFIX: &str =
+    "\n\n[Context truncated by CORE-FFX before AI narrative generation]";
+
 /// Validate a URL for Ollama connections to prevent SSRF attacks.
 ///
 /// # Security Rules
@@ -227,6 +231,7 @@ impl AiAssistant {
     fn build_prompt(&self, context: &str, narrative_type: NarrativeType) -> String {
         let system_prompt = self.get_system_prompt();
         let task_prompt = self.get_task_prompt(narrative_type);
+        let context = bounded_ai_context(context);
 
         format!(
             "{}\n\n{}\n\nContext:\n{}\n\nGenerate the narrative:",
@@ -603,6 +608,28 @@ pub struct EnhancedNarratives {
     pub conclusion: Option<String>,
 }
 
+fn bounded_ai_context(context: &str) -> String {
+    truncate_chars(context, MAX_AI_CONTEXT_CHARS, TRUNCATED_AI_CONTEXT_SUFFIX)
+}
+
+fn truncate_chars(value: &str, max_chars: usize, suffix: &str) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let suffix_chars = suffix.chars().count();
+    let keep_chars = max_chars.saturating_sub(suffix_chars);
+    let end = value
+        .char_indices()
+        .nth(keep_chars)
+        .map(|(idx, _)| idx)
+        .unwrap_or(value.len());
+    let mut truncated = String::with_capacity(end + suffix.len());
+    truncated.push_str(&value[..end]);
+    truncated.push_str(suffix);
+    truncated
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,6 +642,27 @@ mod tests {
         assert!(prompt.contains("executive summary"));
         assert!(prompt.contains("Test context"));
         assert!(prompt.contains("NEVER fabricate"));
+    }
+
+    #[test]
+    fn test_prompt_context_is_bounded() {
+        let ai = AiAssistant::ollama("llama3.2");
+        let context = "e".repeat(MAX_AI_CONTEXT_CHARS + 4096);
+
+        let prompt = ai.build_prompt(&context, NarrativeType::ExecutiveSummary);
+
+        assert!(prompt.contains(TRUNCATED_AI_CONTEXT_SUFFIX));
+        assert!(!prompt.contains(&"e".repeat(MAX_AI_CONTEXT_CHARS + 1)));
+    }
+
+    #[test]
+    fn test_context_truncation_preserves_utf8_boundaries() {
+        let context = format!("{}{}", "é".repeat(MAX_AI_CONTEXT_CHARS + 16), "tail");
+
+        let bounded = bounded_ai_context(&context);
+
+        assert_eq!(bounded.chars().count(), MAX_AI_CONTEXT_CHARS);
+        assert!(bounded.ends_with(TRUNCATED_AI_CONTEXT_SUFFIX));
     }
 
     #[test]

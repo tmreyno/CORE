@@ -13,15 +13,32 @@
  */
 
 import type { Accessor, Setter } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import type { ContextMenuItem, SearchFilter, SearchResult, TabViewMode } from "../components";
 import type { DiscoveredFile } from "../types";
 import type { useFileManager, useHashManager, useProject, BuildProjectOptions } from "./index";
 import { searchQuery, type TantivySearchOptions } from "../api/search";
+import { commands } from "../api/commands";
 import { announce } from "../utils/accessibility";
 import { logger } from "../utils/logger";
 import { getBasename } from "../utils/pathUtils";
 const log = logger.scope("AppActions");
+
+const FTS_SOURCE_LABELS: Record<string, string> = {
+  activity: "Activity",
+  annotations: "Annotation",
+  artifacts: "Artifact",
+  bookmarks: "Bookmark",
+  notes: "Note",
+  source_analysis: "Source Analysis",
+};
+
+function canonicalFtsSource(source: string): string {
+  return source === "activity_log" ? "activity" : source;
+}
+
+function ftsSourceLabel(source: string): string {
+  return FTS_SOURCE_LABELS[source] ?? source.replace(/_/g, " ");
+}
 
 // =============================================================================
 // Types
@@ -128,29 +145,24 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
       }
     }
 
-    // Tier 2: FTS5 cross-entity search (bookmarks, notes, activity log)
+    // Tier 2: FTS5 cross-entity search (bookmarks, notes, activity log, annotations, artifacts, analysis facts)
     if (query.length >= 2 && projectManager.project()) {
       try {
-        await invoke("project_db_rebuild_fts").catch(() => {});
-        const ftsResults = await invoke<Array<{
-          source: string;
-          id: string;
-          snippet: string;
-          rank: number;
-        }>>("project_db_fts_search", { query, limit: 30 });
+        await commands.projectDb.rebuildFts().catch(() => {});
+        const ftsResults = await commands.projectDb.searchFts(query, 30);
 
         for (const r of ftsResults) {
-          const sourceLabel = r.source === "activity_log" ? "activity" : r.source;
+          const sourceKey = canonicalFtsSource(r.source);
           const cleanSnippet = r.snippet.replace(/<\/?mark>/g, "");
           results.push({
             id: `fts:${r.source}:${r.id}`,
             path: r.id,
-            name: `[${sourceLabel}] ${cleanSnippet}`.slice(0, 120),
+            name: `[${ftsSourceLabel(sourceKey)}] ${cleanSnippet}`.slice(0, 120),
             matchContext: r.snippet,
             size: 0,
             isDir: false,
             score: Math.max(1, 80 + Math.round(r.rank * -10)),
-            matchType: sourceLabel,
+            matchType: sourceKey,
           });
         }
       } catch (err) {

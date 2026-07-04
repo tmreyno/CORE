@@ -9,11 +9,30 @@
 //! Extracts text and metadata from OpenDocument Format files
 //! using `zip` + `quick-xml`.
 
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::path::Path;
 
 use super::{OfficeMetadata, OfficeParagraph, OfficeTextSection};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
+
+const MAX_ODF_XML_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
+
+fn read_odf_xml_entry<R: Read>(reader: R, entry_name: &str) -> DocumentResult<String> {
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_ODF_XML_ENTRY_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+
+    if bytes.len() as u64 > MAX_ODF_XML_ENTRY_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "ODF XML entry '{}' exceeds {} MiB limit",
+            entry_name,
+            MAX_ODF_XML_ENTRY_BYTES / (1024 * 1024)
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
 
 // =============================================================================
 // OpenDocument Metadata
@@ -24,15 +43,21 @@ use crate::viewer::document::error::{DocumentError, DocumentResult};
 /// Reads `meta.xml` from the ZIP archive.
 pub(crate) fn extract_odf_metadata(path: &Path) -> DocumentResult<OfficeMetadata> {
     let file = std::fs::File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)
+    extract_odf_metadata_from_reader(file)
+}
+
+pub(crate) fn extract_odf_metadata_from_reader<R: Read + Seek>(
+    reader: R,
+) -> DocumentResult<OfficeMetadata> {
+    let mut archive = zip::ZipArchive::new(reader)
         .map_err(|e| DocumentError::Parse(format!("Not a valid ODF file: {}", e)))?;
 
     let mut meta = OfficeMetadata::default();
 
     if let Ok(mut entry) = archive.by_name("meta.xml") {
-        let mut xml_data = String::new();
-        let _ = entry.read_to_string(&mut xml_data);
-        parse_odf_meta_xml(&xml_data, &mut meta);
+        if let Ok(xml_data) = read_odf_xml_entry(&mut entry, "meta.xml") {
+            parse_odf_meta_xml(&xml_data, &mut meta);
+        }
     }
 
     Ok(meta)
@@ -130,16 +155,21 @@ fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
 /// OpenDocument uses `<text:p>` for paragraphs and stores text directly.
 pub(crate) fn extract_odt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
     let file = std::fs::File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)
+    extract_odt_text_from_reader(file)
+}
+
+pub(crate) fn extract_odt_text_from_reader<R: Read + Seek>(
+    reader: R,
+) -> DocumentResult<Vec<OfficeTextSection>> {
+    let mut archive = zip::ZipArchive::new(reader)
         .map_err(|e| DocumentError::Parse(format!("Not a valid ODT: {}", e)))?;
 
-    let mut xml_data = String::new();
-    {
+    let xml_data = {
         let mut entry = archive
             .by_name("content.xml")
             .map_err(|e| DocumentError::Parse(format!("Missing content.xml: {}", e)))?;
-        entry.read_to_string(&mut xml_data)?;
-    }
+        read_odf_xml_entry(&mut entry, "content.xml")?
+    };
 
     let paragraphs = extract_odf_paragraphs(&xml_data)
         .into_iter()
@@ -161,16 +191,21 @@ pub(crate) fn extract_odt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 /// Each `<draw:page>` is a slide; text is in `<text:p>` elements.
 pub(crate) fn extract_odp_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
     let file = std::fs::File::open(path)?;
-    let mut archive = zip::ZipArchive::new(file)
+    extract_odp_text_from_reader(file)
+}
+
+pub(crate) fn extract_odp_text_from_reader<R: Read + Seek>(
+    reader: R,
+) -> DocumentResult<Vec<OfficeTextSection>> {
+    let mut archive = zip::ZipArchive::new(reader)
         .map_err(|e| DocumentError::Parse(format!("Not a valid ODP: {}", e)))?;
 
-    let mut xml_data = String::new();
-    {
+    let xml_data = {
         let mut entry = archive
             .by_name("content.xml")
             .map_err(|e| DocumentError::Parse(format!("Missing content.xml: {}", e)))?;
-        entry.read_to_string(&mut xml_data)?;
-    }
+        read_odf_xml_entry(&mut entry, "content.xml")?
+    };
 
     // For ODP, extract all paragraphs as one section (slide separation
     // would require tracking <draw:page> boundaries, which adds complexity)
@@ -263,6 +298,15 @@ fn extract_odf_paragraphs(xml: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_odf_xml_entry_rejects_oversized_content() {
+        let oversized = std::io::repeat(b'x').take(MAX_ODF_XML_ENTRY_BYTES + 1);
+
+        let err = read_odf_xml_entry(oversized, "content.xml").unwrap_err();
+
+        assert!(err.to_string().contains("exceeds 16 MiB limit"));
+    }
 
     #[test]
     fn test_parse_odf_meta_xml() {

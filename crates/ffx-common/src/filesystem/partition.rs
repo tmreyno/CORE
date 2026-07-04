@@ -113,6 +113,22 @@ fn checked_partition_range_bytes(start_lba: u64, end_lba: u64) -> Option<(u64, u
     ))
 }
 
+fn checked_partition_extent_bytes(
+    start_block: u64,
+    block_count: u64,
+    block_size: u64,
+    disk_size: u64,
+) -> Option<(u64, u64)> {
+    if block_count == 0 {
+        return None;
+    }
+
+    let start_offset = start_block.checked_mul(block_size)?;
+    let size = block_count.checked_mul(block_size)?;
+    let end_offset = start_offset.checked_add(size)?;
+    (end_offset <= disk_size).then_some((start_offset, size))
+}
+
 // =============================================================================
 // Apple Partition Map (APM) Constants
 // =============================================================================
@@ -216,8 +232,20 @@ fn parse_mbr(
             continue;
         }
 
-        let start_offset = start_lba as u64 * SECTOR_SIZE;
-        let size = sector_count as u64 * SECTOR_SIZE;
+        let Some((start_offset, size)) = checked_partition_extent_bytes(
+            u64::from(start_lba),
+            u64::from(sector_count),
+            SECTOR_SIZE,
+            disk_size,
+        ) else {
+            tracing::debug!(
+                "Skipping MBR partition {}: range exceeds disk bounds (start_lba={}, sectors={})",
+                i + 1,
+                start_lba,
+                sector_count
+            );
+            continue;
+        };
 
         // Detect filesystem type by reading partition boot sector
         let fs_type = detect_partition_filesystem(device, start_offset);
@@ -339,6 +367,18 @@ fn parse_gpt(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
         let Some((start_offset, size)) = checked_partition_range_bytes(start_lba, end_lba) else {
             continue;
         };
+        let Some(end_offset) = start_offset.checked_add(size) else {
+            continue;
+        };
+        if end_offset > disk_size {
+            tracing::debug!(
+                "Skipping GPT partition entry {}: range exceeds disk bounds (start_lba={}, end_lba={})",
+                i + 1,
+                start_lba,
+                end_lba
+            );
+            continue;
+        }
 
         // Detect filesystem type
         let fs_type = detect_partition_filesystem(device, start_offset);
@@ -392,7 +432,9 @@ fn parse_apm(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
 
     // Read each partition map entry
     for i in 1..=map_entries {
-        let entry_offset = i as u64 * APM_BLOCK_SIZE;
+        let Some(entry_offset) = u64::from(i).checked_mul(APM_BLOCK_SIZE) else {
+            break;
+        };
 
         let mut entry = vec![0u8; 512];
         if device.read_at(entry_offset, &mut entry).is_err() {
@@ -424,8 +466,19 @@ fn parse_apm(device: &dyn BlockDevice, disk_size: u64) -> Result<PartitionTable,
 
         // Calculate byte offsets and sizes
         // Note: APM block size comes from DDR, but we assume 512 for now
-        let start_offset = pblock_start as u64 * APM_BLOCK_SIZE;
-        let size = pblock_count as u64 * APM_BLOCK_SIZE;
+        let Some((start_offset, size)) = checked_partition_extent_bytes(
+            u64::from(pblock_start),
+            u64::from(pblock_count),
+            APM_BLOCK_SIZE,
+            disk_size,
+        ) else {
+            tracing::debug!(
+                "APM: Skipping partition with invalid range: start={}, blocks={}",
+                pblock_start,
+                pblock_count
+            );
+            continue;
+        };
 
         // Skip partition map entries and driver entries
         if part_type == "Apple_partition_map" || part_type.starts_with("Apple_Driver") {
@@ -526,18 +579,22 @@ fn detect_partition_filesystem(device: &dyn BlockDevice, offset: u64) -> Option<
 
     // HFS+/HFSX - volume header at offset 1024, need to read more
     let mut hfs_buf = vec![0u8; 512];
-    if device.read_at(offset + 1024, &mut hfs_buf).is_ok() && hfs_buf.len() >= 2 {
-        let hfs_sig = u16::from_be_bytes([hfs_buf[0], hfs_buf[1]]);
-        // HFS+ signature 'H+' (0x482B) or HFSX 'HX' (0x4858)
-        if hfs_sig == 0x482B || hfs_sig == 0x4858 {
-            return Some(FilesystemType::HfsPlus);
+    if let Some(hfs_offset) = offset.checked_add(1024) {
+        if device.read_at(hfs_offset, &mut hfs_buf).is_ok() && hfs_buf.len() >= 2 {
+            let hfs_sig = u16::from_be_bytes([hfs_buf[0], hfs_buf[1]]);
+            // HFS+ signature 'H+' (0x482B) or HFSX 'HX' (0x4858)
+            if hfs_sig == 0x482B || hfs_sig == 0x4858 {
+                return Some(FilesystemType::HfsPlus);
+            }
         }
     }
 
     // ext2/3/4 - magic at offset 0x438 (1080)
     let mut ext_buf = vec![0u8; 2];
-    if device.read_at(offset + 0x438, &mut ext_buf).is_ok() && ext_buf == [0x53, 0xEF] {
-        return Some(FilesystemType::Ext4);
+    if let Some(ext_offset) = offset.checked_add(0x438) {
+        if device.read_at(ext_offset, &mut ext_buf).is_ok() && ext_buf == [0x53, 0xEF] {
+            return Some(FilesystemType::Ext4);
+        }
     }
 
     None
@@ -636,6 +693,76 @@ fn parse_utf16le_name(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffx_errors::ContainerError;
+
+    struct MockBlockDevice {
+        data: Vec<u8>,
+        size: u64,
+    }
+
+    impl MockBlockDevice {
+        fn with_data(data: Vec<u8>) -> Self {
+            let size = data.len() as u64;
+            Self { data, size }
+        }
+
+        fn with_data_and_size(data: Vec<u8>, size: u64) -> Self {
+            Self { data, size }
+        }
+    }
+
+    impl BlockDevice for MockBlockDevice {
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ContainerError> {
+            let Ok(offset) = usize::try_from(offset) else {
+                return Ok(0);
+            };
+            if offset >= self.data.len() {
+                return Ok(0);
+            }
+            let end = offset.saturating_add(buf.len()).min(self.data.len());
+            let len = end.saturating_sub(offset);
+            buf[..len].copy_from_slice(&self.data[offset..end]);
+            Ok(len)
+        }
+
+        fn size(&self) -> u64 {
+            self.size
+        }
+    }
+
+    fn make_mbr_partition(partition_type: u8, start_lba: u32, sector_count: u32) -> Vec<u8> {
+        let mut mbr = vec![0u8; 512];
+        mbr[510..512].copy_from_slice(&MBR_SIGNATURE);
+        let offset = MBR_PARTITION_TABLE_OFFSET;
+        mbr[offset + 4] = partition_type;
+        mbr[offset + 8..offset + 12].copy_from_slice(&start_lba.to_le_bytes());
+        mbr[offset + 12..offset + 16].copy_from_slice(&sector_count.to_le_bytes());
+        mbr
+    }
+
+    fn write_apm_entry(
+        data: &mut [u8],
+        block: usize,
+        map_entries: u32,
+        part_type: &str,
+        name: &str,
+        start_block: u32,
+        block_count: u32,
+    ) {
+        let offset = block * APM_BLOCK_SIZE as usize;
+        data[offset..offset + 2].copy_from_slice(&APM_SIGNATURE);
+        data[offset + 4..offset + 8].copy_from_slice(&map_entries.to_be_bytes());
+        data[offset + 8..offset + 12].copy_from_slice(&start_block.to_be_bytes());
+        data[offset + 12..offset + 16].copy_from_slice(&block_count.to_be_bytes());
+
+        let type_bytes = part_type.as_bytes();
+        let type_len = type_bytes.len().min(32);
+        data[offset + 16..offset + 16 + type_len].copy_from_slice(&type_bytes[..type_len]);
+
+        let name_bytes = name.as_bytes();
+        let name_len = name_bytes.len().min(32);
+        data[offset + 48..offset + 48 + name_len].copy_from_slice(&name_bytes[..name_len]);
+    }
 
     #[test]
     fn test_mbr_type_to_string() {
@@ -662,5 +789,56 @@ mod tests {
     #[test]
     fn test_checked_partition_range_bytes_rejects_reversed_range() {
         assert_eq!(checked_partition_range_bytes(10, 9), None);
+    }
+
+    #[test]
+    fn test_checked_partition_extent_rejects_out_of_bounds_range() {
+        assert_eq!(
+            checked_partition_extent_bytes(1, 100, SECTOR_SIZE, 4096),
+            None
+        );
+        assert_eq!(
+            checked_partition_extent_bytes(1, 2, SECTOR_SIZE, 4096),
+            Some((512, 1024))
+        );
+    }
+
+    #[test]
+    fn mbr_parser_skips_partition_extending_beyond_disk() {
+        let mbr = make_mbr_partition(MBR_TYPE_NTFS, 1, 100);
+        let device = MockBlockDevice::with_data(mbr.clone());
+
+        let table = parse_mbr(&device, &mbr, 4096).unwrap();
+
+        assert_eq!(table.table_type, PartitionTableType::Mbr);
+        assert!(table.partitions.is_empty());
+    }
+
+    #[test]
+    fn apm_parser_skips_partition_extending_beyond_disk() {
+        let mut data = vec![0u8; 3 * APM_BLOCK_SIZE as usize];
+        write_apm_entry(
+            &mut data,
+            1,
+            2,
+            "Apple_partition_map",
+            "partition map",
+            1,
+            1,
+        );
+        write_apm_entry(&mut data, 2, 2, "Apple_HFS", "Macintosh HD", 100, 100);
+        let device = MockBlockDevice::with_data_and_size(data, 4096);
+
+        let table = parse_apm(&device, 4096).unwrap();
+
+        assert_eq!(table.table_type, PartitionTableType::Apm);
+        assert!(table.partitions.is_empty());
+    }
+
+    #[test]
+    fn filesystem_probe_offsets_do_not_wrap() {
+        let device = MockBlockDevice::with_data(vec![0u8; 512]);
+
+        assert_eq!(detect_partition_filesystem(&device, u64::MAX - 1), None);
     }
 }

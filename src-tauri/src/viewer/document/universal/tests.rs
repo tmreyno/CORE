@@ -137,6 +137,73 @@ fn test_magic_zip() {
 }
 
 #[test]
+fn test_magic_bytes_tar() {
+    let mut header = vec![0u8; 265];
+    header[257..262].copy_from_slice(b"ustar");
+    assert_eq!(
+        UniversalFormat::detect_by_magic_bytes(&header),
+        Some(UniversalFormat::Tar)
+    );
+}
+
+#[test]
+fn test_magic_bytes_pdf() {
+    assert_eq!(
+        UniversalFormat::detect_by_magic_bytes(b"%PDF-1.7"),
+        Some(UniversalFormat::Pdf)
+    );
+}
+
+#[test]
+fn test_limited_text_preview_reads_to_cap() {
+    let mut f = NamedTempFile::new().unwrap();
+    f.write_all(b"abcdef").unwrap();
+    f.flush().unwrap();
+
+    let (text, truncated) = read_as_text(f.path(), 4).unwrap();
+
+    assert!(truncated);
+    assert_eq!(text, "abcd");
+}
+
+#[test]
+fn test_limited_text_preview_drops_partial_utf8_character() {
+    let mut f = NamedTempFile::new().unwrap();
+    f.write_all("abcé".as_bytes()).unwrap();
+    f.flush().unwrap();
+
+    let (text, truncated) = read_as_text(f.path(), 4).unwrap();
+
+    assert!(truncated);
+    assert_eq!(text, "abc");
+    assert!(!text.contains('\u{fffd}'));
+}
+
+#[test]
+fn test_text_preview_tolerates_invalid_utf8_when_not_truncated() {
+    let mut f = NamedTempFile::new().unwrap();
+    f.write_all(&[b'a', 0xff, b'b']).unwrap();
+    f.flush().unwrap();
+
+    let (text, truncated) = read_as_text(f.path(), 64).unwrap();
+
+    assert!(!truncated);
+    assert_eq!(text, "a\u{fffd}b");
+}
+
+#[test]
+fn test_limited_byte_preview_reads_to_cap() {
+    let mut f = NamedTempFile::new().unwrap();
+    f.write_all(b"abcdef").unwrap();
+    f.flush().unwrap();
+
+    let (bytes, truncated) = read_bytes(f.path(), 4).unwrap();
+
+    assert!(truncated);
+    assert_eq!(bytes, b"abcd");
+}
+
+#[test]
 fn test_magic_7z() {
     assert_eq!(
         detect_bytes(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00, 0x04]),

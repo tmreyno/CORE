@@ -32,6 +32,26 @@ type ParsedSectionsResult = (
     HeaderInfo,
 );
 
+fn decompress_chunk_limited<R: Read>(
+    reader: R,
+    max_size: usize,
+    chunk_index: usize,
+) -> Result<Vec<u8>, ContainerError> {
+    let limit = u64::try_from(max_size)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    let decoder = ZlibDecoder::new(reader);
+    let mut limited_decoder = decoder.take(limit);
+    let mut decompressed = Vec::with_capacity(max_size);
+    limited_decoder.read_to_end(&mut decompressed)?;
+    if decompressed.len() > max_size {
+        return Err(ContainerError::ParseError(format!(
+            "Compressed EWF chunk {chunk_index} expands beyond expected chunk size {max_size}"
+        )));
+    }
+    Ok(decompressed)
+}
+
 // =============================================================================
 // EWF Handle - Main Interface (like libewf_handle)
 // =============================================================================
@@ -696,10 +716,7 @@ impl EwfHandle {
                 let mut chunk_data = if is_compressed {
                     let buffered =
                         std::io::BufReader::with_capacity(65536, file.take(chunk_size as u64 * 2));
-                    let mut decoder = ZlibDecoder::new(buffered);
-                    let mut decompressed = Vec::with_capacity(chunk_size);
-                    decoder.read_to_end(&mut decompressed)?;
-                    decompressed
+                    decompress_chunk_limited(buffered, chunk_size, chunk_idx)?
                 } else {
                     let mut uncompressed = vec![0u8; chunk_size];
                     file.read_exact(&mut uncompressed)?;
@@ -916,10 +933,7 @@ impl EwfHandle {
         let mut chunk_data = if is_compressed {
             let buffered =
                 std::io::BufReader::with_capacity(65536, file.take(chunk_size as u64 * 2));
-            let mut decoder = ZlibDecoder::new(buffered);
-            let mut decompressed = Vec::with_capacity(chunk_size);
-            decoder.read_to_end(&mut decompressed)?;
-            decompressed
+            decompress_chunk_limited(buffered, chunk_size, chunk_index)?
         } else {
             let mut uncompressed = vec![0u8; chunk_size];
             file.read_exact(&mut uncompressed)?;
@@ -1269,5 +1283,38 @@ impl EwfHandle {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+    use std::io::{Cursor, Write};
+
+    fn zlib_compress(data: &[u8]) -> Vec<u8> {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn test_decompress_chunk_limited_allows_expected_size() {
+        let compressed = zlib_compress(b"chunk-bytes");
+
+        let decompressed =
+            decompress_chunk_limited(Cursor::new(compressed), b"chunk-bytes".len(), 7).unwrap();
+
+        assert_eq!(decompressed, b"chunk-bytes");
+    }
+
+    #[test]
+    fn test_decompress_chunk_limited_rejects_oversized_output() {
+        let compressed = zlib_compress(&vec![0xAB; 128]);
+
+        let err = decompress_chunk_limited(Cursor::new(compressed), 64, 3).unwrap_err();
+
+        assert!(matches!(err, ContainerError::ParseError(message) if message.contains("chunk 3")));
     }
 }

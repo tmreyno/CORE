@@ -507,6 +507,7 @@ where
         }
     }
 
+    ensure_verified_byte_count("BLAKE3", bytes_processed, total_size)?;
     progress_callback(total_size, total_size);
     Ok(hasher.finalize().to_hex().to_string())
 }
@@ -580,6 +581,7 @@ where
         }
     }
 
+    ensure_verified_byte_count("XXH3", bytes_processed, total_size)?;
     progress_callback(total_size, total_size);
     Ok(format!("{:016x}", hasher.digest128()))
 }
@@ -686,6 +688,8 @@ where
         .map_err(|_| "Hash thread panicked")?
         .map_err(|e| format!("Hash error: {}", e))?;
 
+    let final_bytes_hashed = bytes_hashed.load(Ordering::Relaxed);
+    ensure_verified_byte_count(algorithm, final_bytes_hashed, total_size)?;
     progress_callback(total_size, total_size);
     Ok(hash)
 }
@@ -909,6 +913,19 @@ fn discover_segments(path: &str) -> Result<(Vec<std::path::PathBuf>, Vec<u64>), 
     discover_numbered_segments(path).map_err(ContainerError::IoError)
 }
 
+fn ensure_verified_byte_count(
+    algorithm: &str,
+    bytes_hashed: u64,
+    expected_size: u64,
+) -> Result<(), ContainerError> {
+    if bytes_hashed != expected_size {
+        return Err(ContainerError::VerificationError(format!(
+            "RAW {algorithm} verification read {bytes_hashed} bytes, expected {expected_size}"
+        )));
+    }
+    Ok(())
+}
+
 // =============================================================================
 // Virtual Filesystem Implementation
 // =============================================================================
@@ -921,6 +938,7 @@ pub use vfs::RawVfs;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_is_raw() {
@@ -931,5 +949,49 @@ mod tests {
         assert!(is_raw("/path/to/image.002").unwrap());
         assert!(!is_raw("/path/to/image.e01").unwrap());
         assert!(!is_raw("/path/to/image.ad1").unwrap());
+    }
+
+    #[test]
+    fn test_verify_pipelined_rejects_short_read() {
+        let path = write_raw_fixture(b"short raw fixture");
+        let err = verify_pipelined(path.to_str().unwrap(), "sha256", 1024, |_, _| {}).unwrap_err();
+
+        assert!(
+            err.to_string().contains("verification read"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_blake3_rejects_short_read() {
+        let path = write_raw_fixture(b"short raw fixture");
+        let err = verify_blake3_optimized(path.to_str().unwrap(), 1024, |_, _| {}).unwrap_err();
+
+        assert!(
+            err.to_string().contains("verification read"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_verify_xxh3_rejects_short_read() {
+        let path = write_raw_fixture(b"short raw fixture");
+        let err = verify_xxh3_optimized(path.to_str().unwrap(), 1024, |_, _| {}).unwrap_err();
+
+        assert!(
+            err.to_string().contains("verification read"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    fn write_raw_fixture(data: &[u8]) -> std::path::PathBuf {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+        let mut output = File::create(&path).unwrap();
+        output.write_all(data).unwrap();
+        path
     }
 }

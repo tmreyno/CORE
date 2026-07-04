@@ -41,6 +41,8 @@ import { canPreview } from "./canPreview";
 import { ViewerSwitch } from "./ViewerSwitch";
 import { ViewerHeader } from "./ViewerHeader";
 import { useTextSelectionMenu } from "../../hooks/useTextSelectionMenu";
+import { commands } from "../../api/commands";
+import { buildEvidenceSourceInput } from "../evidenceSourceInput";
 
 const log = logger.scope("ContainerEntryViewer");
 
@@ -127,6 +129,9 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const entryKey = createMemo(
     () => `${props.entry.containerPath}::${props.entry.entryPath}`,
   );
+  const entrySource = createMemo(() =>
+    buildEvidenceSourceInput(null, props.entry, previewPath() ?? undefined)
+  );
 
   /** Preview path guarded against stale entries */
   const guardedPreviewPath = () => {
@@ -135,6 +140,28 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     if (path && previewPathEntryKey !== key) return null;
     return path;
   };
+
+  let lastPersistedArtifactKey = "";
+  createEffect(() => {
+    const key = entryKey();
+    if (!key || props.entry.isDir || lastPersistedArtifactKey === key) return;
+
+    const source = entrySource();
+    if (!source) return;
+    lastPersistedArtifactKey = key;
+
+    void (async () => {
+      try {
+        if (!(await commands.projectDb.isOpen())) return;
+        await commands.artifact.extractSourceAndInsert({
+          source,
+          extractor: "container-entry-viewer",
+        });
+      } catch (err) {
+        log.warn("Artifact persistence failed:", err);
+      }
+    })();
+  });
 
   const handlePreview = async () => {
     if (props.entry.isDir) return;
@@ -187,9 +214,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       if (!fileCanPreview()) {
         try {
           log.debug("Running content detection for unknown type:", props.entry.name);
-          const detected = await invoke<ContentDetectResult>("detect_content_format", {
-            path: filePath,
-          });
+          const source = buildEvidenceSourceInput(null, props.entry, filePath);
+          const detected =
+            source && source.containerType !== "disk"
+              ? await commands.document.detectContentFormatSource<ContentDetectResult>(source)
+              : await commands.document.detectContentFormat<ContentDetectResult>(filePath);
           log.debug("Content detection result:", detected);
           if (detected.format !== "Binary" || detected.method === "magic") {
             setDetectedFormat(detected);

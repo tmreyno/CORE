@@ -10,6 +10,9 @@ use crate::common::format_size;
 use crate::containers::ContainerError;
 use crate::viewer::types::{HeaderRegion, MetadataField, ParsedMetadata};
 
+const QCOW2_MIN_CLUSTER_BITS: u32 = 9;
+const QCOW2_MAX_CLUSTER_BITS: u32 = 21;
+
 /// Parse raw disk image header and extract metadata
 ///
 /// Raw images have no container header - detect partition table:
@@ -256,10 +259,12 @@ pub fn parse_vmdk_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata
             "Virtual disk capacity in sectors",
         ));
 
-        let capacity_bytes = capacity * 512;
+        let capacity_value = capacity
+            .checked_mul(512)
+            .map(format_size)
+            .unwrap_or_else(|| "Invalid capacity: overflow".to_string());
         fields.push(
-            MetadataField::new("Virtual Capacity", format_size(capacity_bytes), "Structure")
-                .with_offset(12),
+            MetadataField::new("Virtual Capacity", capacity_value, "Structure").with_offset(12),
         );
     }
 
@@ -411,7 +416,6 @@ pub fn parse_qcow2_header(header: &[u8], file_size: u64) -> Result<ParsedMetadat
     // Cluster bits (offset 20-24, big-endian)
     if header.len() >= 24 {
         let cluster_bits = u32::from_be_bytes([header[20], header[21], header[22], header[23]]);
-        let cluster_size = 1u64 << cluster_bits;
 
         regions.push(HeaderRegion::new(
             20,
@@ -422,8 +426,12 @@ pub fn parse_qcow2_header(header: &[u8], file_size: u64) -> Result<ParsedMetadat
         ));
 
         fields.push(
-            MetadataField::new("Cluster Size", format_size(cluster_size), "Structure")
-                .with_offset(20),
+            MetadataField::new(
+                "Cluster Size",
+                qcow2_cluster_size_value(cluster_bits),
+                "Structure",
+            )
+            .with_offset(20),
         );
     }
 
@@ -467,6 +475,19 @@ pub fn parse_qcow2_header(header: &[u8], file_size: u64) -> Result<ParsedMetadat
         fields,
         regions,
     })
+}
+
+fn qcow2_cluster_size_value(cluster_bits: u32) -> String {
+    if !(QCOW2_MIN_CLUSTER_BITS..=QCOW2_MAX_CLUSTER_BITS).contains(&cluster_bits) {
+        return format!(
+            "Invalid cluster bits: {} (expected {}-{})",
+            cluster_bits, QCOW2_MIN_CLUSTER_BITS, QCOW2_MAX_CLUSTER_BITS
+        );
+    }
+
+    1u64.checked_shl(cluster_bits)
+        .map(format_size)
+        .unwrap_or_else(|| "Invalid cluster bits: overflow".to_string())
 }
 
 // =============================================================================
@@ -720,6 +741,19 @@ mod tests {
         assert!(!field.value.is_empty());
     }
 
+    #[test]
+    fn vmdk_capacity_overflow_is_reported() {
+        let header = make_vmdk_header(1, 0, u64::MAX);
+        let result = parse_vmdk_header(&header, 0).unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "Virtual Capacity")
+            .unwrap();
+
+        assert!(field.value.contains("overflow"));
+    }
+
     // =========================================================================
     // VHDx parser tests
     // =========================================================================
@@ -837,6 +871,38 @@ mod tests {
             .find(|f| f.key == "Cluster Size")
             .unwrap();
         assert!(!field.value.is_empty());
+    }
+
+    #[test]
+    fn qcow2_cluster_bits_overflow_is_reported() {
+        let header = make_qcow2_header(3, 0, 64, 0);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "Cluster Size")
+            .unwrap();
+
+        assert!(field.value.contains("Invalid cluster bits"));
+    }
+
+    #[test]
+    fn qcow2_cluster_bits_below_spec_range_is_reported() {
+        let header = make_qcow2_header(3, 0, QCOW2_MIN_CLUSTER_BITS - 1, 0);
+        let result = parse_qcow2_header(&header, 0).unwrap();
+        let field = result
+            .fields
+            .iter()
+            .find(|f| f.key == "Cluster Size")
+            .unwrap();
+
+        assert!(field.value.contains("Invalid cluster bits"));
+    }
+
+    #[test]
+    fn qcow2_cluster_bits_spec_boundaries_are_valid() {
+        assert!(!qcow2_cluster_size_value(QCOW2_MIN_CLUSTER_BITS).contains("Invalid"));
+        assert!(!qcow2_cluster_size_value(QCOW2_MAX_CLUSTER_BITS).contains("Invalid"));
     }
 
     #[test]

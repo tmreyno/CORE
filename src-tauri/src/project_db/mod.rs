@@ -24,6 +24,7 @@ mod schema_tables;
 
 // --- Domain operation modules (add impl methods to ProjectDatabase) ---
 mod activity;
+mod artifacts;
 mod bookmarks;
 mod collections;
 mod evidence;
@@ -33,6 +34,7 @@ mod fts;
 mod migration;
 mod processed;
 mod search;
+mod source_analysis;
 mod ui_state;
 mod utilities;
 mod workflow;

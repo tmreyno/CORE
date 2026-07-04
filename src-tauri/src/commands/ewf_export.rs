@@ -16,7 +16,8 @@
 use libewf_ffi::{
     EwfCaseInfo, EwfCompression, EwfCompressionMethod, EwfFormat, EwfWriter, EwfWriterConfig,
 };
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{Emitter, Window};
@@ -28,9 +29,228 @@ pub use super::ewf_read::{ewf_read_image_info, EwfImageInfoResponse, EwfReadCase
 
 use super::ewf_export_types::EWF_CANCEL_FLAGS;
 use super::ewf_helpers::{
-    format_byte_size, is_system_boot_volume, nix_stat, parse_compression, parse_compression_method,
-    parse_format, walk_dir_files,
+    checked_stream_read_size, format_byte_size, is_system_boot_volume, nix_stat, parse_compression,
+    parse_compression_method, parse_format, validate_snapshot_byte_count, walk_dir_files,
 };
+
+const MAX_EWF_SOURCE_PATHS: usize = 10_000;
+const MAX_EWF_SOURCE_FILES: usize = 250_000;
+
+#[derive(Debug)]
+struct CreatedEwfOutputs {
+    output_path: String,
+    preexisting: HashSet<PathBuf>,
+    cleanup_on_drop: bool,
+}
+
+impl CreatedEwfOutputs {
+    fn new(output_path: &str, format: EwfFormat) -> Result<Self, String> {
+        let primary_path = ewf_primary_output_path(output_path, format);
+        if primary_path.exists() {
+            return Err(format!(
+                "EWF output already exists and will not be overwritten: {}",
+                primary_path.display()
+            ));
+        }
+
+        let preexisting = discover_ewf_output_candidates(output_path)?;
+        if let Some(existing) = preexisting.iter().next() {
+            return Err(format!(
+                "EWF output segment already exists and will not be overwritten: {}",
+                existing.display()
+            ));
+        }
+
+        Ok(Self {
+            output_path: output_path.to_string(),
+            preexisting,
+            cleanup_on_drop: true,
+        })
+    }
+
+    fn disarm(&mut self) {
+        self.cleanup_on_drop = false;
+    }
+}
+
+impl Drop for CreatedEwfOutputs {
+    fn drop(&mut self) {
+        if !self.cleanup_on_drop {
+            return;
+        }
+
+        match discover_ewf_output_candidates(&self.output_path) {
+            Ok(paths) => {
+                for path in paths {
+                    if self.preexisting.contains(&path) {
+                        continue;
+                    }
+                    if let Err(err) = std::fs::remove_file(&path) {
+                        warn!(
+                            path = %path.display(),
+                            error = %err,
+                            "Failed to remove incomplete EWF output segment"
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                warn!(error = %err, "Failed to discover incomplete EWF output segments");
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct EwfCancelRegistration {
+    output_path: String,
+}
+
+impl Drop for EwfCancelRegistration {
+    fn drop(&mut self) {
+        cleanup_ewf_cancel_flag(&self.output_path);
+    }
+}
+
+fn validate_ewf_export_options(options: &EwfExportOptions) -> Result<(), String> {
+    if options.output_path.trim().is_empty() {
+        return Err("EWF export output path is required".to_string());
+    }
+    if options.source_paths.is_empty() {
+        return Err("EWF export requires at least one source path".to_string());
+    }
+    if options.source_paths.len() > MAX_EWF_SOURCE_PATHS {
+        return Err(format!(
+            "EWF export requested {} source paths, exceeding limit {}",
+            options.source_paths.len(),
+            MAX_EWF_SOURCE_PATHS
+        ));
+    }
+    if options
+        .source_paths
+        .iter()
+        .any(|source_path| source_path.trim().is_empty())
+    {
+        return Err("EWF export source paths cannot be empty".to_string());
+    }
+
+    Ok(())
+}
+
+fn register_ewf_cancel_flag(
+    output_path: &str,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<EwfCancelRegistration, String> {
+    let mut flags = EWF_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
+    if flags.contains_key(output_path) {
+        return Err(format!(
+            "An EWF export is already running for output path: {}",
+            output_path
+        ));
+    }
+    flags.insert(output_path.to_string(), cancel_flag);
+    Ok(EwfCancelRegistration {
+        output_path: output_path.to_string(),
+    })
+}
+
+fn cleanup_ewf_cancel_flag(output_path: &str) {
+    if let Ok(mut flags) = EWF_CANCEL_FLAGS.lock() {
+        flags.remove(output_path);
+    }
+}
+
+fn checked_ewf_total_size_add(total: u64, addition: u64, path: &Path) -> Result<u64, String> {
+    total.checked_add(addition).ok_or_else(|| {
+        format!(
+            "EWF export total size overflow while adding {} bytes from {} to current total {} bytes",
+            addition,
+            path.display(),
+            total
+        )
+    })
+}
+
+fn push_ewf_source_file(
+    file_sizes: &mut Vec<(String, u64)>,
+    path: String,
+    size: u64,
+) -> Result<(), String> {
+    if file_sizes.len() >= MAX_EWF_SOURCE_FILES {
+        return Err(format!(
+            "EWF export expanded to more than {} source files",
+            MAX_EWF_SOURCE_FILES
+        ));
+    }
+    file_sizes.push((path, size));
+    Ok(())
+}
+
+fn ewf_primary_output_path(output_path: &str, format: EwfFormat) -> PathBuf {
+    PathBuf::from(format!("{}{}", output_path, format.extension()))
+}
+
+fn discover_ewf_output_candidates(output_path: &str) -> Result<HashSet<PathBuf>, String> {
+    let path = Path::new(output_path);
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let base_name = path
+        .file_name()
+        .ok_or_else(|| format!("Invalid EWF output path: {}", output_path))?
+        .to_string_lossy();
+    let entries = std::fs::read_dir(parent).map_err(|e| {
+        format!(
+            "Failed to read EWF output directory {}: {}",
+            parent.display(),
+            e
+        )
+    })?;
+
+    let mut candidates = HashSet::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| {
+            format!(
+                "Failed to inspect EWF output directory entry in {}: {}",
+                parent.display(),
+                e
+            )
+        })?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if is_ewf_output_candidate_name(&file_name, &base_name) {
+            candidates.insert(entry.path());
+        }
+    }
+
+    Ok(candidates)
+}
+
+fn is_ewf_output_candidate_name(file_name: &str, base_name: &str) -> bool {
+    let Some(extension) = file_name.strip_prefix(base_name).and_then(|suffix| {
+        if suffix.starts_with('.') {
+            Some(&suffix[1..])
+        } else {
+            None
+        }
+    }) else {
+        return false;
+    };
+
+    is_ewf_segment_extension(extension)
+}
+
+fn is_ewf_segment_extension(extension: &str) -> bool {
+    let extension = extension.to_ascii_lowercase();
+    if extension.len() == 3
+        && extension.starts_with('e')
+        && extension[1..].chars().all(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+
+    extension.len() == 4
+        && extension.starts_with("ex")
+        && extension[2..].chars().all(|c| c.is_ascii_digit())
+}
 
 // =============================================================================
 // Tauri Commands
@@ -52,6 +272,7 @@ pub async fn ewf_create_image(
     window: Window,
 ) -> Result<EwfExportResult, String> {
     let start = std::time::Instant::now();
+    validate_ewf_export_options(&options)?;
 
     // Parse format
     let format = match &options.format {
@@ -83,10 +304,7 @@ pub async fn ewf_create_image(
 
     // Set up cancel flag
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    {
-        let mut flags = EWF_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
-        flags.insert(options.output_path.clone(), cancel_flag.clone());
-    }
+    let _cancel_registration = register_ewf_cancel_flag(&options.output_path, cancel_flag.clone())?;
 
     // --- Safety validations ---
 
@@ -138,8 +356,8 @@ pub async fn ewf_create_image(
                 warn!("Directory contains no files: {}", path_str);
             }
             for (fpath, fsize) in dir_files {
-                total_bytes += fsize;
-                file_sizes.push((fpath, fsize));
+                total_bytes = checked_ewf_total_size_add(total_bytes, fsize, Path::new(&fpath))?;
+                push_ewf_source_file(&mut file_sizes, fpath, fsize)?;
             }
             info!(
                 "Expanded directory {} into {} files",
@@ -150,8 +368,8 @@ pub async fn ewf_create_image(
             let metadata = std::fs::metadata(path)
                 .map_err(|e| format!("Failed to read metadata for {}: {}", path_str, e))?;
             let size = metadata.len();
-            total_bytes += size;
-            file_sizes.push((path_str.clone(), size));
+            total_bytes = checked_ewf_total_size_add(total_bytes, size, path)?;
+            push_ewf_source_file(&mut file_sizes, path_str.clone(), size)?;
         }
     }
 
@@ -211,6 +429,7 @@ pub async fn ewf_create_image(
     };
 
     // Create the writer
+    let mut created_outputs = CreatedEwfOutputs::new(&options.output_path, format)?;
     let mut writer = EwfWriter::create(&options.output_path, config)
         .map_err(|e| format!("Failed to create EWF writer: {}", e))?;
 
@@ -233,7 +452,7 @@ pub async fn ewf_create_image(
         None
     };
 
-    for (file_idx, (path_str, _file_size)) in file_sizes.iter().enumerate() {
+    for (file_idx, (path_str, file_size)) in file_sizes.iter().enumerate() {
         if cancel_flag.load(Ordering::Relaxed) {
             warn!("EWF export cancelled");
             return Err("Export cancelled".to_string());
@@ -275,6 +494,7 @@ pub async fn ewf_create_image(
             .map_err(|e| format!("Failed to open {}: {}", path_str, e))?;
         let mut file = std::io::BufReader::with_capacity(chunk_size, file);
         let mut buf = vec![0u8; chunk_size];
+        let mut file_bytes_written = 0u64;
 
         loop {
             if cancel_flag.load(Ordering::Relaxed) {
@@ -282,11 +502,23 @@ pub async fn ewf_create_image(
                 return Err("Export cancelled".to_string());
             }
 
+            let remaining_for_file = file_size.saturating_sub(file_bytes_written);
+            if remaining_for_file == 0 {
+                break;
+            }
+            let read_size = checked_stream_read_size(remaining_for_file, chunk_size)?;
+
             use std::io::Read;
             let bytes_read = file
-                .read(&mut buf)
+                .read(&mut buf[..read_size])
                 .map_err(|e| format!("Failed to read {}: {}", path_str, e))?;
             if bytes_read == 0 {
+                validate_snapshot_byte_count(
+                    "EWF export",
+                    Path::new(path_str),
+                    *file_size,
+                    file_bytes_written,
+                )?;
                 break;
             }
 
@@ -305,7 +537,8 @@ pub async fn ewf_create_image(
                 .write_all(data)
                 .map_err(|e| format!("Failed to write to EWF: {}", e))?;
 
-            global_bytes_written += bytes_read as u64;
+            global_bytes_written = global_bytes_written.saturating_add(bytes_read as u64);
+            file_bytes_written = file_bytes_written.saturating_add(bytes_read as u64);
 
             // Emit progress every 1 MB
             if global_bytes_written % (1024 * 1024) < chunk_size as u64 {
@@ -328,7 +561,21 @@ pub async fn ewf_create_image(
                 );
             }
         }
+
+        validate_snapshot_byte_count(
+            "EWF export",
+            Path::new(path_str),
+            *file_size,
+            file_bytes_written,
+        )?;
     }
+
+    validate_snapshot_byte_count(
+        "EWF export total",
+        Path::new(&options.output_path),
+        total_bytes,
+        global_bytes_written,
+    )?;
 
     // Compute final hashes
     let md5_hex = md5_hasher.map(|h| hex::encode(h.finalize()));
@@ -364,12 +611,7 @@ pub async fn ewf_create_image(
     writer
         .finalize()
         .map_err(|e| format!("Failed to finalize EWF container: {}", e))?;
-
-    // Clean up cancel flag
-    {
-        let mut flags = EWF_CANCEL_FLAGS.lock().map_err(|e| e.to_string())?;
-        flags.remove(&options.output_path);
-    }
+    created_outputs.disarm();
 
     let duration = start.elapsed();
     let format_str = format.extension().trim_start_matches('.').to_string();
@@ -417,5 +659,213 @@ pub fn ewf_cancel_export(output_path: String) -> Result<bool, String> {
         Ok(true)
     } else {
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn minimal_options() -> EwfExportOptions {
+        EwfExportOptions {
+            source_paths: vec!["source.bin".to_string()],
+            output_path: "/tmp/case/image".to_string(),
+            format: None,
+            compression: None,
+            compression_method: None,
+            segment_size: None,
+            case_number: None,
+            evidence_number: None,
+            examiner_name: None,
+            description: None,
+            notes: None,
+            compute_md5: None,
+            compute_sha1: None,
+        }
+    }
+
+    #[test]
+    fn validate_ewf_export_options_rejects_missing_output_path() {
+        let mut options = minimal_options();
+        options.output_path = "  ".to_string();
+
+        let err = validate_ewf_export_options(&options).unwrap_err();
+
+        assert!(err.contains("output path is required"));
+    }
+
+    #[test]
+    fn validate_ewf_export_options_rejects_missing_sources() {
+        let mut options = minimal_options();
+        options.source_paths.clear();
+
+        let err = validate_ewf_export_options(&options).unwrap_err();
+
+        assert!(err.contains("requires at least one source path"));
+    }
+
+    #[test]
+    fn validate_ewf_export_options_rejects_excessive_source_paths() {
+        let mut options = minimal_options();
+        options.source_paths = vec!["source.bin".to_string(); MAX_EWF_SOURCE_PATHS + 1];
+
+        let err = validate_ewf_export_options(&options).unwrap_err();
+
+        assert!(err.contains("exceeding limit"));
+    }
+
+    #[test]
+    fn validate_ewf_export_options_rejects_empty_source_path() {
+        let mut options = minimal_options();
+        options.source_paths.push(" ".to_string());
+
+        let err = validate_ewf_export_options(&options).unwrap_err();
+
+        assert!(err.contains("source paths cannot be empty"));
+    }
+
+    #[test]
+    fn checked_ewf_total_size_add_rejects_overflow() {
+        let path = Path::new("overflow-source.bin");
+        let err = checked_ewf_total_size_add(u64::MAX, 1, path).unwrap_err();
+
+        assert!(err.contains("EWF export total size overflow"));
+        assert!(err.contains("overflow-source.bin"));
+    }
+
+    #[test]
+    fn push_ewf_source_file_rejects_expansion_over_limit() {
+        let mut file_sizes = vec![("source.bin".to_string(), 1); MAX_EWF_SOURCE_FILES];
+
+        let err = push_ewf_source_file(&mut file_sizes, "extra.bin".to_string(), 1).unwrap_err();
+
+        assert!(err.contains("expanded to more than"));
+        assert_eq!(file_sizes.len(), MAX_EWF_SOURCE_FILES);
+    }
+
+    #[test]
+    fn register_ewf_cancel_flag_rejects_duplicate_output_path() {
+        let output_path = unique_output_path();
+        cleanup_ewf_cancel_flag(&output_path);
+
+        let registration =
+            register_ewf_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap();
+        let err =
+            register_ewf_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap_err();
+        drop(registration);
+
+        assert!(err.contains("already running"));
+    }
+
+    #[test]
+    fn ewf_cancel_registration_cleans_up_on_drop() {
+        let output_path = unique_output_path();
+        cleanup_ewf_cancel_flag(&output_path);
+
+        {
+            let _registration =
+                register_ewf_cancel_flag(&output_path, Arc::new(AtomicBool::new(false))).unwrap();
+            assert!(ewf_cancel_export(output_path.clone()).unwrap());
+        }
+
+        assert!(!ewf_cancel_export(output_path).unwrap());
+    }
+
+    #[test]
+    fn ewf_primary_output_path_uses_format_extension() {
+        assert_eq!(
+            ewf_primary_output_path("/tmp/case/image", EwfFormat::Encase5),
+            PathBuf::from("/tmp/case/image.E01")
+        );
+        assert_eq!(
+            ewf_primary_output_path("/tmp/case/image", EwfFormat::V2Encase7),
+            PathBuf::from("/tmp/case/image.Ex01")
+        );
+    }
+
+    #[test]
+    fn is_ewf_output_candidate_name_matches_ewf_segments_only() {
+        assert!(is_ewf_output_candidate_name("image.E01", "image"));
+        assert!(is_ewf_output_candidate_name("image.E99", "image"));
+        assert!(is_ewf_output_candidate_name("image.Ex00", "image"));
+        assert!(is_ewf_output_candidate_name("image.ex01", "image"));
+        assert!(!is_ewf_output_candidate_name("image.txt", "image"));
+        assert!(!is_ewf_output_candidate_name("image.E", "image"));
+        assert!(!is_ewf_output_candidate_name("image.EAA", "image"));
+        assert!(!is_ewf_output_candidate_name("other.E01", "image"));
+    }
+
+    #[test]
+    fn created_ewf_outputs_rejects_existing_primary_segment() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let output_path = dir.path().join("case-image");
+        std::fs::write(dir.path().join("case-image.E01"), b"existing").unwrap();
+
+        let err =
+            CreatedEwfOutputs::new(output_path.to_str().unwrap(), EwfFormat::Encase5).unwrap_err();
+
+        assert!(err.contains("already exists"));
+    }
+
+    #[test]
+    fn created_ewf_outputs_rejects_existing_later_segment() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let output_path = dir.path().join("case-image");
+        std::fs::write(dir.path().join("case-image.E02"), b"existing").unwrap();
+
+        let err =
+            CreatedEwfOutputs::new(output_path.to_str().unwrap(), EwfFormat::Encase5).unwrap_err();
+
+        assert!(err.contains("output segment already exists"));
+    }
+
+    #[test]
+    fn created_ewf_outputs_removes_created_segments_on_drop() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let output_path = dir.path().join("case-image");
+        let e01_path = dir.path().join("case-image.E01");
+        let e02_path = dir.path().join("case-image.E02");
+        let ex_path = dir.path().join("case-image.Ex00");
+        let unrelated_path = dir.path().join("case-image.txt");
+
+        {
+            let _guard =
+                CreatedEwfOutputs::new(output_path.to_str().unwrap(), EwfFormat::Encase5).unwrap();
+            std::fs::write(&e01_path, b"partial").unwrap();
+            std::fs::write(&e02_path, b"partial").unwrap();
+            std::fs::write(&ex_path, b"partial").unwrap();
+            std::fs::write(&unrelated_path, b"keep").unwrap();
+        }
+
+        assert!(!e01_path.exists());
+        assert!(!e02_path.exists());
+        assert!(!ex_path.exists());
+        assert!(unrelated_path.exists());
+    }
+
+    #[test]
+    fn created_ewf_outputs_preserves_segments_after_disarm() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let output_path = dir.path().join("case-image");
+        let e01_path = dir.path().join("case-image.E01");
+
+        {
+            let mut guard =
+                CreatedEwfOutputs::new(output_path.to_str().unwrap(), EwfFormat::Encase5).unwrap();
+            std::fs::write(&e01_path, b"complete").unwrap();
+            guard.disarm();
+        }
+
+        assert!(e01_path.exists());
+    }
+
+    fn unique_output_path() -> String {
+        format!(
+            "/tmp/core-ffx-ewf-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
     }
 }

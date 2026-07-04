@@ -16,8 +16,8 @@
  */
 
 import { createSignal, createEffect, Show, For, on, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import { HiOutlineExclamationTriangle, HiOutlineEnvelope } from "../icons";
+import { commands } from "../../api/commands";
 import { logger } from "../../utils/logger";
 import { FolderNode } from "./FolderNode";
 import { MessageList } from "./MessageList";
@@ -53,8 +53,10 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
   // ── Load folder tree when path changes ──
   createEffect(
     on(
-      () => props.path,
-      async (path) => {
+      () => `${props.path}|${JSON.stringify(props.source ?? null)}`,
+      async () => {
+        const path = props.path;
+        const source = props.source;
         setLoading(true);
         setError(null);
         setPstInfo(null);
@@ -65,7 +67,9 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
 
         try {
           log.info(`Loading PST folders: ${path}`);
-          const info = await invoke<PstInfo>("pst_get_folders", { path });
+          const info = source
+            ? await commands.pst.getFoldersSource<PstInfo>(source)
+            : await commands.pst.getFolders<PstInfo>(path);
           setPstInfo(info);
           log.info(`Loaded ${info.totalFolders} folders from "${info.displayName}"`);
 
@@ -106,11 +110,20 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
 
         try {
           log.info(`Loading messages for folder: ${folder.name} (nodeId=${folder.nodeId})`);
-          const msgs = await invoke<PstMessageSummary[]>("pst_get_messages", {
-            path: props.path,
-            folderNodeId: folder.nodeId,
-            limit: 500,
-          });
+          const source = props.source;
+          const msgs = source
+            ? await commands.pst.getMessagesSource<PstMessageSummary[]>(
+                source,
+                folder.nodeId,
+                undefined,
+                500,
+              )
+            : await commands.pst.getMessages<PstMessageSummary[]>(
+                props.path,
+                folder.nodeId,
+                undefined,
+                500,
+              );
           setMessages(msgs);
           log.info(`Loaded ${msgs.length} messages`);
 
@@ -141,10 +154,16 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
 
     try {
       log.info(`Loading message detail: nodeId=${msg.nodeId}`);
-      const detail = await invoke<PstMessageDetailType>("pst_get_message_detail", {
-        path: props.path,
-        messageNodeId: msg.nodeId,
-      });
+      const source = props.source;
+      const detail = source
+        ? await commands.pst.getMessageDetailSource<PstMessageDetailType>(
+            source,
+            msg.nodeId,
+          )
+        : await commands.pst.getMessageDetail<PstMessageDetailType>(
+            props.path,
+            msg.nodeId,
+          );
       setSelectedMessage(detail);
 
       // Update metadata

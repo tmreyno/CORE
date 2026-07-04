@@ -14,6 +14,7 @@ pub use ffx_common::audit;
 pub use ffx_common::binary;
 pub use ffx_common::container_detect;
 pub use ffx_common::datetime;
+pub use ffx_common::evidence_source;
 pub use ffx_common::filesystem;
 pub use ffx_common::hash;
 pub use ffx_common::hash_cache;

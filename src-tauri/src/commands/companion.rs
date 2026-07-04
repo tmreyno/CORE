@@ -17,8 +17,11 @@
 //! - Directory outputs: `<dir>/ffx-companion.json`
 
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
+
+const COMPANION_FILE_READ_MAX_BYTES: u64 = 16 * 1024 * 1024;
 
 // ─── Shared Sub-Types ─────────────────────────────────────────────────────────
 
@@ -170,6 +173,41 @@ pub fn companion_path_for(output_path: &str) -> PathBuf {
     }
 }
 
+fn read_companion_json_with_limit(path: &Path) -> Result<String, String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("Failed to stat companion file {}: {e}", path.display()))?;
+    if metadata.len() > COMPANION_FILE_READ_MAX_BYTES {
+        return Err(format!(
+            "Companion file is too large: {} bytes > {} bytes",
+            metadata.len(),
+            COMPANION_FILE_READ_MAX_BYTES
+        ));
+    }
+
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("Failed to read companion file {}: {e}", path.display()))?;
+    let mut limited = file.take(COMPANION_FILE_READ_MAX_BYTES.saturating_add(1));
+    let mut bytes = Vec::with_capacity(metadata.len().min(COMPANION_FILE_READ_MAX_BYTES) as usize);
+    limited
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to read companion file {}: {e}", path.display()))?;
+
+    if bytes.len() as u64 > COMPANION_FILE_READ_MAX_BYTES {
+        return Err(format!(
+            "Companion file is too large: read more than {} bytes from {}",
+            COMPANION_FILE_READ_MAX_BYTES,
+            path.display()
+        ));
+    }
+
+    String::from_utf8(bytes).map_err(|e| {
+        format!(
+            "Failed to decode companion file {} as UTF-8: {e}",
+            path.display()
+        )
+    })
+}
+
 // ─── Tauri Commands ───────────────────────────────────────────────────────────
 
 /// Write a companion file alongside an acquisition output.
@@ -210,8 +248,7 @@ pub async fn write_companion_file(
 /// Read and parse a companion file.
 #[tauri::command]
 pub async fn read_companion_file(path: String) -> Result<CompanionFile, String> {
-    let data = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read companion file: {e}"))?;
+    let data = read_companion_json_with_limit(Path::new(&path))?;
     serde_json::from_str(&data).map_err(|e| format!("Failed to parse companion file: {e}"))?
 }
 
@@ -333,7 +370,7 @@ fn scan_dir_recursive(dir: &Path, results: &mut Vec<DiscoveredAcquisition>, dept
 
 /// Parse a single companion file and check whether its output still exists.
 fn parse_companion_at(companion_path: &Path) -> Result<DiscoveredAcquisition, String> {
-    let data = std::fs::read_to_string(companion_path).map_err(|e| format!("Read error: {e}"))?;
+    let data = read_companion_json_with_limit(companion_path)?;
 
     let companion: CompanionFile =
         serde_json::from_str(&data).map_err(|e| format!("Parse error: {e}"))?;
@@ -353,4 +390,77 @@ fn parse_companion_at(companion_path: &Path) -> Result<DiscoveredAcquisition, St
         output_exists,
         output_size,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn companion_json(primary_path: &Path) -> String {
+        format!(
+            r#"{{
+  "version": "1.0",
+  "tool": "CORE-FFX",
+  "toolVersion": "0.1.112",
+  "createdAt": "2026-07-03T00:00:00Z",
+  "acquisitionType": "triage",
+  "source": {{
+    "paths": ["{}"]
+  }},
+  "output": {{
+    "format": "7z",
+    "primaryPath": "{}",
+    "totalBytes": 4
+  }},
+  "timing": {{
+    "startedAt": "2026-07-03T00:00:00Z",
+    "completedAt": "2026-07-03T00:00:01Z",
+    "durationMs": 1000
+  }}
+}}"#,
+            primary_path.display(),
+            primary_path.display()
+        )
+    }
+
+    #[test]
+    fn parse_companion_at_reports_output_size() {
+        let dir = TempDir::new().unwrap();
+        let output_path = dir.path().join("triage.7z");
+        std::fs::write(&output_path, b"test").unwrap();
+        let companion_path = dir.path().join("triage.7z.ffx-companion.json");
+        std::fs::write(&companion_path, companion_json(&output_path)).unwrap();
+
+        let discovered = parse_companion_at(&companion_path).unwrap();
+        assert!(discovered.output_exists);
+        assert_eq!(discovered.output_size, Some(4));
+        assert_eq!(
+            discovered.companion.output.primary_path,
+            output_path.display().to_string()
+        );
+    }
+
+    #[test]
+    fn read_companion_json_with_limit_rejects_oversized_file() {
+        let dir = TempDir::new().unwrap();
+        let companion_path = dir.path().join("huge.ffx-companion.json");
+        std::fs::File::create(&companion_path)
+            .unwrap()
+            .set_len(COMPANION_FILE_READ_MAX_BYTES + 1)
+            .unwrap();
+
+        let err = read_companion_json_with_limit(&companion_path).unwrap_err();
+        assert!(err.contains("Companion file is too large"));
+    }
+
+    #[test]
+    fn read_companion_json_with_limit_rejects_invalid_utf8() {
+        let dir = TempDir::new().unwrap();
+        let companion_path = dir.path().join("invalid.ffx-companion.json");
+        std::fs::write(&companion_path, [0xff]).unwrap();
+
+        let err = read_companion_json_with_limit(&companion_path).unwrap_err();
+        assert!(err.contains("Failed to decode companion file"));
+    }
 }

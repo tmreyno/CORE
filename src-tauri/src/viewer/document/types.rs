@@ -11,6 +11,17 @@ use serde::{Deserialize, Serialize};
 
 use super::DocumentFormat;
 
+const MAX_DOCUMENT_RESPONSE_PAGES: usize = 2_000;
+const MAX_DOCUMENT_ELEMENTS_PER_PAGE: usize = 5_000;
+const MAX_DOCUMENT_ELEMENT_TEXT_CHARS: usize = 16_384;
+const MAX_DOCUMENT_METADATA_CHARS: usize = 4_096;
+const MAX_DOCUMENT_KEYWORDS: usize = 512;
+const MAX_DOCUMENT_TABLE_ROWS: usize = 5_000;
+const MAX_DOCUMENT_TABLE_CELLS_PER_ROW: usize = 1_024;
+const MAX_DOCUMENT_LIST_ITEMS: usize = 10_000;
+const MAX_DOCUMENT_LIST_DEPTH: usize = 32;
+const MAX_DOCUMENT_IMAGE_BASE64_CHARS: usize = 16 * 1024 * 1024;
+
 /// Unified document content model
 ///
 /// This structure represents the content of any document in a format-agnostic way,
@@ -72,6 +83,24 @@ impl DocumentContent {
     /// Add a page to the document
     pub fn add_page(&mut self, page: DocumentPage) {
         self.pages.push(page);
+    }
+
+    /// Normalize response size before returning document content to callers.
+    pub fn normalize_for_response(mut self) -> Self {
+        self.normalize_in_place();
+        self
+    }
+
+    /// Normalize response size in place before returning document content to callers.
+    pub fn normalize_in_place(&mut self) {
+        self.metadata.normalize_for_response();
+        self.pages.truncate(MAX_DOCUMENT_RESPONSE_PAGES);
+        for page in &mut self.pages {
+            page.elements.truncate(MAX_DOCUMENT_ELEMENTS_PER_PAGE);
+            for element in &mut page.elements {
+                element.normalize_for_response();
+            }
+        }
     }
 
     /// Extract all text content as a single string
@@ -236,6 +265,22 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
     }
 }
 
+fn truncate_document_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let mut truncated: String = value.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+fn truncate_option_string(value: &mut Option<String>, max_chars: usize) {
+    if let Some(text) = value {
+        *text = truncate_document_text(text, max_chars);
+    }
+}
+
 impl Default for DocumentContent {
     fn default() -> Self {
         Self::new()
@@ -384,6 +429,21 @@ impl DocumentMetadata {
             && self.page_count.is_none()
             && self.word_count.is_none()
     }
+
+    /// Normalize metadata string fields before returning document content.
+    pub fn normalize_for_response(&mut self) {
+        truncate_option_string(&mut self.title, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.author, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.subject, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.creator, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.producer, MAX_DOCUMENT_METADATA_CHARS);
+        self.keywords = self
+            .keywords
+            .iter()
+            .take(MAX_DOCUMENT_KEYWORDS)
+            .map(|keyword| truncate_document_text(keyword, MAX_DOCUMENT_METADATA_CHARS))
+            .collect();
+    }
 }
 
 fn default_format() -> DocumentFormat {
@@ -418,6 +478,18 @@ pub enum DocumentElement {
 }
 
 impl DocumentElement {
+    /// Normalize nested response data for this element.
+    pub fn normalize_for_response(&mut self) {
+        match self {
+            Self::Paragraph(p) => p.normalize_for_response(),
+            Self::Heading(h) => h.normalize_for_response(),
+            Self::Table(t) => t.normalize_for_response(),
+            Self::List(list) => list.normalize_for_response(0),
+            Self::Image(img) => img.normalize_for_response(),
+            Self::Break => {}
+        }
+    }
+
     /// Convert element to HTML
     pub fn to_html(&self) -> String {
         match self {
@@ -500,6 +572,13 @@ pub struct ParagraphElement {
     pub style: TextStyle,
 }
 
+impl ParagraphElement {
+    fn normalize_for_response(&mut self) {
+        self.text = truncate_document_text(&self.text, MAX_DOCUMENT_ELEMENT_TEXT_CHARS);
+        self.style.normalize_for_response();
+    }
+}
+
 /// Heading element
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeadingElement {
@@ -507,6 +586,12 @@ pub struct HeadingElement {
     pub text: String,
     /// Heading level (1-6)
     pub level: u8,
+}
+
+impl HeadingElement {
+    fn normalize_for_response(&mut self) {
+        self.text = truncate_document_text(&self.text, MAX_DOCUMENT_ELEMENT_TEXT_CHARS);
+    }
 }
 
 /// Table element
@@ -519,11 +604,29 @@ pub struct TableElement {
     pub has_header: bool,
 }
 
+impl TableElement {
+    fn normalize_for_response(&mut self) {
+        self.rows.truncate(MAX_DOCUMENT_TABLE_ROWS);
+        for row in &mut self.rows {
+            row.normalize_for_response();
+        }
+    }
+}
+
 /// Table row
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableRow {
     /// Cells in this row
     pub cells: Vec<TableCell>,
+}
+
+impl TableRow {
+    fn normalize_for_response(&mut self) {
+        self.cells.truncate(MAX_DOCUMENT_TABLE_CELLS_PER_ROW);
+        for cell in &mut self.cells {
+            cell.normalize_for_response();
+        }
+    }
 }
 
 /// Table cell
@@ -536,6 +639,13 @@ pub struct TableCell {
     pub style: TextStyle,
 }
 
+impl TableCell {
+    fn normalize_for_response(&mut self) {
+        self.text = truncate_document_text(&self.text, MAX_DOCUMENT_ELEMENT_TEXT_CHARS);
+        self.style.normalize_for_response();
+    }
+}
+
 /// List element
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListElement {
@@ -546,6 +656,15 @@ pub struct ListElement {
     pub ordered: bool,
 }
 
+impl ListElement {
+    fn normalize_for_response(&mut self, depth: usize) {
+        self.items.truncate(MAX_DOCUMENT_LIST_ITEMS);
+        for item in &mut self.items {
+            item.normalize_for_response(depth);
+        }
+    }
+}
+
 /// List item
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListItem {
@@ -553,6 +672,17 @@ pub struct ListItem {
     pub text: String,
     /// Nested list (for sub-items)
     pub nested: Option<Box<ListElement>>,
+}
+
+impl ListItem {
+    fn normalize_for_response(&mut self, depth: usize) {
+        self.text = truncate_document_text(&self.text, MAX_DOCUMENT_ELEMENT_TEXT_CHARS);
+        if depth + 1 >= MAX_DOCUMENT_LIST_DEPTH {
+            self.nested = None;
+        } else if let Some(nested) = &mut self.nested {
+            nested.normalize_for_response(depth + 1);
+        }
+    }
 }
 
 /// Image element
@@ -570,6 +700,15 @@ pub struct ImageElement {
     pub alt_text: Option<String>,
     /// Image caption
     pub caption: Option<String>,
+}
+
+impl ImageElement {
+    fn normalize_for_response(&mut self) {
+        truncate_option_string(&mut self.data_base64, MAX_DOCUMENT_IMAGE_BASE64_CHARS);
+        truncate_option_string(&mut self.mime_type, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.alt_text, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.caption, MAX_DOCUMENT_METADATA_CHARS);
+    }
 }
 
 /// Text styling options
@@ -597,6 +736,14 @@ pub struct TextStyle {
     pub background: Option<String>,
     /// Text alignment
     pub alignment: Option<TextAlignment>,
+}
+
+impl TextStyle {
+    fn normalize_for_response(&mut self) {
+        truncate_option_string(&mut self.font_family, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.color, MAX_DOCUMENT_METADATA_CHARS);
+        truncate_option_string(&mut self.background, MAX_DOCUMENT_METADATA_CHARS);
+    }
 }
 
 /// Text alignment options
@@ -748,6 +895,168 @@ mod tests {
             elements: vec![DocumentElement::Break],
         });
         assert_eq!(doc.pages.len(), 2);
+    }
+
+    #[test]
+    fn normalize_for_response_caps_metadata_pages_and_elements() {
+        let mut doc = DocumentContent {
+            metadata: DocumentMetadata {
+                title: Some("é".repeat(MAX_DOCUMENT_METADATA_CHARS + 1)),
+                keywords: vec![
+                    "é".repeat(MAX_DOCUMENT_METADATA_CHARS + 1);
+                    MAX_DOCUMENT_KEYWORDS + 8
+                ],
+                ..Default::default()
+            },
+            pages: (0..(MAX_DOCUMENT_RESPONSE_PAGES + 8))
+                .map(|page| DocumentPage {
+                    page_number: page + 1,
+                    elements: Vec::new(),
+                })
+                .collect(),
+        };
+        doc.pages[0].elements = (0..(MAX_DOCUMENT_ELEMENTS_PER_PAGE + 8))
+            .map(|_| {
+                DocumentElement::Paragraph(ParagraphElement {
+                    text: "short".to_string(),
+                    style: TextStyle::default(),
+                })
+            })
+            .collect();
+        doc.pages[0].elements[0] = DocumentElement::Paragraph(ParagraphElement {
+            text: "é".repeat(MAX_DOCUMENT_ELEMENT_TEXT_CHARS + 1),
+            style: TextStyle::default(),
+        });
+
+        doc.normalize_in_place();
+
+        let title = doc.metadata.title.as_deref().unwrap();
+        assert!(title.ends_with("..."));
+        assert_eq!(
+            title.trim_end_matches("...").chars().count(),
+            MAX_DOCUMENT_METADATA_CHARS
+        );
+        assert_eq!(doc.metadata.keywords.len(), MAX_DOCUMENT_KEYWORDS);
+        assert_eq!(doc.pages.len(), MAX_DOCUMENT_RESPONSE_PAGES);
+        assert_eq!(doc.pages[0].elements.len(), MAX_DOCUMENT_ELEMENTS_PER_PAGE);
+        match &doc.pages[0].elements[0] {
+            DocumentElement::Paragraph(paragraph) => {
+                assert!(paragraph.text.ends_with("..."));
+                assert_eq!(
+                    paragraph.text.trim_end_matches("...").chars().count(),
+                    MAX_DOCUMENT_ELEMENT_TEXT_CHARS
+                );
+            }
+            other => panic!("Expected Paragraph, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn normalize_for_response_caps_table_rows_and_cells() {
+        let mut table = TableElement {
+            rows: (0..(MAX_DOCUMENT_TABLE_ROWS + 8))
+                .map(|row| TableRow {
+                    cells: if row == 0 {
+                        (0..(MAX_DOCUMENT_TABLE_CELLS_PER_ROW + 8))
+                            .map(|_| TableCell {
+                                text: "short".to_string(),
+                                style: TextStyle::default(),
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .collect(),
+            has_header: true,
+        };
+        table.rows[0].cells[0].text = "é".repeat(MAX_DOCUMENT_ELEMENT_TEXT_CHARS + 1);
+
+        table.normalize_for_response();
+
+        assert_eq!(table.rows.len(), MAX_DOCUMENT_TABLE_ROWS);
+        assert_eq!(table.rows[0].cells.len(), MAX_DOCUMENT_TABLE_CELLS_PER_ROW);
+        assert!(table.rows[0].cells[0].text.ends_with("..."));
+        assert_eq!(
+            table.rows[0].cells[0]
+                .text
+                .trim_end_matches("...")
+                .chars()
+                .count(),
+            MAX_DOCUMENT_ELEMENT_TEXT_CHARS
+        );
+    }
+
+    #[test]
+    fn normalize_for_response_caps_list_items_and_depth() {
+        let mut list = ListElement {
+            items: (0..(MAX_DOCUMENT_LIST_ITEMS + 8))
+                .map(|_| ListItem {
+                    text: "item".to_string(),
+                    nested: None,
+                })
+                .collect(),
+            ordered: false,
+        };
+        let mut nested = Box::new(ListElement {
+            items: vec![ListItem {
+                text: "deep".to_string(),
+                nested: None,
+            }],
+            ordered: false,
+        });
+        for _ in 0..MAX_DOCUMENT_LIST_DEPTH {
+            nested = Box::new(ListElement {
+                items: vec![ListItem {
+                    text: "deep".to_string(),
+                    nested: Some(nested),
+                }],
+                ordered: false,
+            });
+        }
+        list.items[0].nested = Some(nested);
+
+        list.normalize_for_response(0);
+
+        assert_eq!(list.items.len(), MAX_DOCUMENT_LIST_ITEMS);
+        let mut depth = 0usize;
+        let mut cursor = list.items[0].nested.as_deref();
+        while let Some(current) = cursor {
+            depth += 1;
+            cursor = current
+                .items
+                .first()
+                .and_then(|item| item.nested.as_deref());
+        }
+        assert!(depth <= MAX_DOCUMENT_LIST_DEPTH);
+    }
+
+    #[test]
+    fn normalize_for_response_caps_image_payload_and_labels() {
+        let mut image = ImageElement {
+            data_base64: Some("a".repeat(MAX_DOCUMENT_IMAGE_BASE64_CHARS + 1)),
+            mime_type: Some("é".repeat(MAX_DOCUMENT_METADATA_CHARS + 1)),
+            width: Some(100),
+            height: Some(100),
+            alt_text: Some("é".repeat(MAX_DOCUMENT_METADATA_CHARS + 1)),
+            caption: Some("é".repeat(MAX_DOCUMENT_METADATA_CHARS + 1)),
+        };
+
+        image.normalize_for_response();
+
+        assert!(image.data_base64.as_deref().unwrap().ends_with("..."));
+        assert_eq!(
+            image
+                .data_base64
+                .as_deref()
+                .unwrap()
+                .trim_end_matches("...")
+                .chars()
+                .count(),
+            MAX_DOCUMENT_IMAGE_BASE64_CHARS
+        );
+        assert!(image.alt_text.as_deref().unwrap().ends_with("..."));
+        assert!(image.caption.as_deref().unwrap().ends_with("..."));
     }
 
     #[test]

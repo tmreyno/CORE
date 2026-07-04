@@ -9,11 +9,42 @@
 //! Extracts text from legacy Microsoft Office binary formats using the `cfb`
 //! crate to open OLE2 compound file streams.
 
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 use super::{OfficeParagraph, OfficeTextSection};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
+
+const MAX_CFB_TEXT_STREAM_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_CFB_SOURCE_BYTES: u64 = 100 * 1024 * 1024;
+
+fn ensure_cfb_source_size_allowed(size: u64, format: &str) -> DocumentResult<()> {
+    if size > MAX_CFB_SOURCE_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "{} CFB source exceeds {} MiB limit",
+            format,
+            MAX_CFB_SOURCE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
+fn read_cfb_text_stream<R: Read>(reader: R, stream_name: &str) -> DocumentResult<Vec<u8>> {
+    let mut data = Vec::new();
+    reader
+        .take(MAX_CFB_TEXT_STREAM_BYTES + 1)
+        .read_to_end(&mut data)?;
+
+    if data.len() as u64 > MAX_CFB_TEXT_STREAM_BYTES {
+        return Err(DocumentError::Parse(format!(
+            "CFB stream '{}' exceeds {} MiB text extraction limit",
+            stream_name,
+            MAX_CFB_TEXT_STREAM_BYTES / (1024 * 1024)
+        )));
+    }
+
+    Ok(data)
+}
 
 // =============================================================================
 // Legacy DOC Text Extraction (OLE2 / CFB)
@@ -26,8 +57,15 @@ use crate::viewer::document::error::{DocumentError, DocumentResult};
 /// 1. Try to read the "WordDocument" stream
 /// 2. Extract printable text runs (UTF-16LE or ASCII)
 pub(crate) fn extract_doc_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
+    ensure_cfb_source_size_allowed(std::fs::metadata(path)?.len(), "DOC")?;
+    let data = std::fs::read(path)?;
+    extract_doc_text_from_bytes(&data)
+}
+
+pub(crate) fn extract_doc_text_from_bytes(data: &[u8]) -> DocumentResult<Vec<OfficeTextSection>> {
+    ensure_cfb_source_size_allowed(data.len() as u64, "DOC")?;
     // Validate the file is a valid OLE2/CFB container
-    let _comp = cfb::open(path)
+    let _comp = ::cfb::CompoundFile::open(Cursor::new(data))
         .map_err(|e| DocumentError::Parse(format!("Not a valid OLE2/DOC file: {}", e)))?;
 
     // Try common stream names for text content
@@ -37,19 +75,21 @@ pub(crate) fn extract_doc_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     // Re-open for each stream read (cfb borrows mutably)
     for stream_name in &stream_names {
-        if let Ok(mut comp) = cfb::open(path) {
+        if let Ok(mut comp) = ::cfb::CompoundFile::open(Cursor::new(data)) {
             if comp.is_stream(stream_name) {
                 if let Ok(mut stream) = comp.open_stream(stream_name) {
-                    let mut data = Vec::new();
-                    if stream.read_to_end(&mut data).is_ok() {
-                        // Extract printable text runs from binary data
-                        let text = extract_printable_text(&data);
-                        if !text.is_empty() {
-                            if !all_text.is_empty() {
-                                all_text.push('\n');
+                    match read_cfb_text_stream(&mut stream, stream_name) {
+                        Ok(data) => {
+                            // Extract printable text runs from binary data
+                            let text = extract_printable_text(&data);
+                            if !text.is_empty() {
+                                if !all_text.is_empty() {
+                                    all_text.push('\n');
+                                }
+                                all_text.push_str(&text);
                             }
-                            all_text.push_str(&text);
                         }
+                        Err(err) => return Err(err),
                     }
                 }
             }
@@ -58,8 +98,7 @@ pub(crate) fn extract_doc_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 
     if all_text.is_empty() {
         // Fallback: scan the entire file for printable text runs
-        let data = std::fs::read(path)?;
-        all_text = extract_printable_text(&data);
+        all_text = extract_printable_text(data);
     }
 
     if all_text.is_empty() {
@@ -90,7 +129,14 @@ pub(crate) fn extract_doc_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
 /// PPT files store slide text in the "PowerPoint Document" stream.
 /// We extract printable text runs as a best-effort approach.
 pub(crate) fn extract_ppt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSection>> {
-    let mut comp = cfb::open(path)
+    ensure_cfb_source_size_allowed(std::fs::metadata(path)?.len(), "PPT")?;
+    let data = std::fs::read(path)?;
+    extract_ppt_text_from_bytes(&data)
+}
+
+pub(crate) fn extract_ppt_text_from_bytes(data: &[u8]) -> DocumentResult<Vec<OfficeTextSection>> {
+    ensure_cfb_source_size_allowed(data.len() as u64, "PPT")?;
+    let mut comp = ::cfb::CompoundFile::open(Cursor::new(data))
         .map_err(|e| DocumentError::Parse(format!("Not a valid OLE2/PPT file: {}", e)))?;
 
     let mut all_text = String::new();
@@ -98,17 +144,14 @@ pub(crate) fn extract_ppt_text(path: &Path) -> DocumentResult<Vec<OfficeTextSect
     // The main content stream in PPT files
     if comp.is_stream("/PowerPoint Document") {
         if let Ok(mut stream) = comp.open_stream("/PowerPoint Document") {
-            let mut data = Vec::new();
-            if stream.read_to_end(&mut data).is_ok() {
-                all_text = extract_printable_text(&data);
-            }
+            let data = read_cfb_text_stream(&mut stream, "/PowerPoint Document")?;
+            all_text = extract_printable_text(&data);
         }
     }
 
     if all_text.is_empty() {
         // Fallback: scan entire file
-        let data = std::fs::read(path)?;
-        all_text = extract_printable_text(&data);
+        all_text = extract_printable_text(data);
     }
 
     if all_text.is_empty() {
@@ -216,6 +259,34 @@ fn extract_ascii_text(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_cfb_text_stream_rejects_oversized_stream() {
+        let oversized = std::io::repeat(b'x').take(MAX_CFB_TEXT_STREAM_BYTES + 1);
+
+        let err = read_cfb_text_stream(oversized, "/WordDocument").unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("exceeds 32 MiB text extraction limit"));
+    }
+
+    #[test]
+    fn test_cfb_source_size_rejects_oversized_source() {
+        let err = ensure_cfb_source_size_allowed(MAX_CFB_SOURCE_BYTES + 1, "DOC").unwrap_err();
+
+        assert!(err.to_string().contains("CFB source exceeds"));
+    }
+
+    #[test]
+    fn test_extract_doc_text_rejects_sparse_oversized_source_before_read() {
+        let file = tempfile::Builder::new().suffix(".doc").tempfile().unwrap();
+        file.as_file().set_len(MAX_CFB_SOURCE_BYTES + 1).unwrap();
+
+        let err = extract_doc_text(file.path()).unwrap_err();
+
+        assert!(err.to_string().contains("CFB source exceeds"));
+    }
 
     #[test]
     fn test_extract_ascii_text() {
