@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { render } from "solid-js/web";
+import { save } from "@tauri-apps/plugin-dialog";
 import { SpreadsheetViewer } from "./SpreadsheetViewer";
 import { mockInvoke } from "../__tests__/setup";
 
@@ -242,6 +243,25 @@ describe("SpreadsheetViewer", () => {
       expect(rowNums).toContain("1");
       expect(rowNums).toContain("2");
       expect(rowNums).toContain("3");
+    });
+
+    it("shows a browser-preview message instead of opening a native CSV export dialog", async () => {
+      mockInvoke.mockResolvedValueOnce(mockSpreadsheetInfo);
+      mockInvoke.mockResolvedValueOnce(mockRows);
+
+      const { container } = renderComponent(() => (
+        <SpreadsheetViewer path="/evidence/data.xlsx" />
+      ));
+      await tick();
+
+      const exportButton = container.querySelector('button[title="Export as CSV"]') as HTMLButtonElement;
+      expect(exportButton).not.toBeNull();
+      exportButton.click();
+
+      expect(save).not.toHaveBeenCalled();
+      expect(container.textContent).toContain(
+        "Spreadsheet CSV export is available in the desktop app.",
+      );
     });
   });
 

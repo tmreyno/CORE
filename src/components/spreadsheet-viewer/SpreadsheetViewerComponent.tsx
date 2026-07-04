@@ -38,6 +38,7 @@ import {
 } from "./helpers";
 import { printDocument } from "../document/documentHelpers";
 import type { SpreadsheetMetadataSection } from "../../types/viewerMetadata";
+import { isTauri } from "../../utils/platform";
 import type {
   SpreadsheetViewerProps,
   SpreadsheetInfo,
@@ -45,6 +46,8 @@ import type {
 } from "./types";
 
 const log = logger.scope("SpreadsheetViewer");
+const BROWSER_SPREADSHEET_EXPORT_MESSAGE =
+  "Spreadsheet CSV export is available in the desktop app.";
 
 export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [loading, setLoading] = createSignal(true);
@@ -60,6 +63,7 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [sortCol, setSortCol] = createSignal<number | null>(null);
   const [sortAsc, setSortAsc] = createSignal(true);
   const [copiedCell, setCopiedCell] = createSignal<string | null>(null);
+  const [exportMessage, setExportMessage] = createSignal("");
 
   // Memoized computed values
   const sheets = createMemo(() => info()?.sheets ?? []);
@@ -193,6 +197,12 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
       sheets()[activeSheet()]?.name || "Sheet1";
     const headers = columnHeaders();
 
+    if (!isTauri) {
+      setExportMessage(BROWSER_SPREADSHEET_EXPORT_MESSAGE);
+      return;
+    }
+
+    setExportMessage("");
     try {
       const path = await save({
         title: "Export Spreadsheet as CSV",
@@ -358,6 +368,12 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
           <span class="text-xs text-success animate-fade-in">Copied</span>
         </Show>
       </div>
+
+      <Show when={exportMessage()}>
+        <div class="px-3 py-2 border-b border-border/40 bg-warning/10 text-xs text-warning">
+          {exportMessage()}
+        </div>
+      </Show>
 
       {/* Content */}
       <div class="flex-1 overflow-auto relative">

@@ -35,8 +35,11 @@ import {
 import { CollapsibleGroup, OptionalMetadataRow, SectionHeader, SummaryRow } from "./viewerMetadata/shared";
 import { printDocument } from "./document/documentHelpers";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("LinkedDataPanel");
+const BROWSER_LINKED_DATA_EXPORT_MESSAGE =
+  "Linked data CSV export is available in the desktop app.";
 
 // =============================================================================
 // Props
@@ -62,6 +65,7 @@ type LinkedDataTabId = "tree" | "summary";
 export function LinkedDataPanel(props: LinkedDataPanelProps) {
   const [activeTab, setActiveTab] = createSignal<LinkedDataTabId>("tree");
   const [selectedNode, setSelectedNode] = createSignal<LinkedDataNode | null>(null);
+  const [exportMessage, setExportMessage] = createSignal("");
 
   // ─── Node click handler ──────────────────────────────────────────────
   const handleNodeClick = (node: LinkedDataNode) => {
@@ -145,6 +149,13 @@ export function LinkedDataPanel(props: LinkedDataPanelProps) {
   const handleExportCsv = async () => {
     const flat = flattenTree(props.nodes);
     if (flat.length === 0) return;
+
+    if (!isTauri) {
+      setExportMessage(BROWSER_LINKED_DATA_EXPORT_MESSAGE);
+      return;
+    }
+
+    setExportMessage("");
     try {
       const path = await save({
         title: "Export Linked Data as CSV",
@@ -211,6 +222,12 @@ export function LinkedDataPanel(props: LinkedDataPanelProps) {
           </button>
         </Show>
       </div>
+
+      <Show when={exportMessage()}>
+        <div class="px-3 py-2 border-b border-border/40 bg-warning/10 text-xs text-warning">
+          {exportMessage()}
+        </div>
+      </Show>
 
       {/* Tab content */}
       <div class="flex-1 overflow-y-auto">
