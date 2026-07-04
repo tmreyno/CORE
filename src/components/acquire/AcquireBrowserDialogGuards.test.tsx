@@ -7,7 +7,10 @@ import AcquireExportView from "./AcquireExportView";
 import StartSessionDialog from "./StartSessionDialog";
 import AcquireDashboard from "./AcquireDashboard";
 import AcquireLayout, { type AcquireView } from "./AcquireLayout";
+import AcquireIdentifyView from "./AcquireIdentifyView";
 import type { ExportMode } from "../../hooks/export/types";
+import { mockInvoke } from "../../__tests__/setup";
+import type { DriveInfo } from "../../api/drives";
 
 vi.mock("../export-panel/DriveTreeBrowser", () => ({
   DriveTreeBrowser: () => <div data-testid="drive-tree-browser">Drive tree</div>,
@@ -15,6 +18,15 @@ vi.mock("../export-panel/DriveTreeBrowser", () => ({
 
 vi.mock("../export-panel/ExportPanelComponent", () => ({
   ExportPanelComponent: () => <div data-testid="export-panel">Export panel</div>,
+}));
+
+vi.mock("../Toast", () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  }),
 }));
 
 function renderComponent(component: () => any) {
@@ -194,6 +206,37 @@ describe("acquisition browser dialog guards", () => {
     expect(container.textContent).toContain(
       "Quick hash file selection is available in the desktop app.",
     );
+    dispose();
+  });
+
+  it("does not invoke native system identification in browser preview", () => {
+    const [systemStats, setSystemStats] = createSignal(null as any);
+    const [drives, setDrives] = createSignal<DriveInfo[]>([]);
+    const [evidenceFolder, setEvidenceFolder] = createSignal("");
+    const { container, dispose } = renderComponent(() => (
+      <AcquireIdentifyView
+        onBack={vi.fn()}
+        hasProject={() => true}
+        projectName={() => "Case 1827"}
+        currentUsername="examiner"
+        evidenceBasePath="/case/Evidence"
+        systemStatsData={systemStats}
+        setSystemStatsData={setSystemStats}
+        systemDrivesData={drives}
+        setSystemDrivesData={setDrives}
+        evidenceItemFolder={evidenceFolder}
+        setEvidenceItemFolder={setEvidenceFolder}
+        onOpenCollection={vi.fn()}
+        onOpenBrowse={vi.fn()}
+      />
+    ));
+
+    buttonByText(container, "Identify System").click();
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("get_system_stats");
+    expect(mockInvoke).not.toHaveBeenCalledWith("create_directory", expect.anything());
+    expect(systemStats()).toBeNull();
+    expect(drives()).toEqual([]);
     dispose();
   });
 });

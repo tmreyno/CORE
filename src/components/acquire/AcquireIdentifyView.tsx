@@ -21,6 +21,7 @@ import { DriveTreeBrowser } from "../export-panel/DriveTreeBrowser";
 import { useToast } from "../Toast";
 import SystemInfoPanel from "./SystemInfoPanel";
 import AcquireProcessShell from "./AcquireProcessShell";
+import { isTauri } from "../../utils/platform";
 
 const formatSystemBytes = (bytes: number): string => {
   if (bytes <= 0) return "0 B";
@@ -78,6 +79,14 @@ const AcquireIdentifyView: Component<AcquireIdentifyViewProps> = (props) => {
 
   const runIdentify = async () => {
     if (!props.hasProject()) return;
+    if (!isTauri) {
+      toast.error(
+        "Identify Unavailable",
+        "System identification is available in the desktop app.",
+      );
+      return;
+    }
+
     setIsLoading(true);
     try {
       const [list, stats] = await Promise.all([
