@@ -168,6 +168,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
   /** Pause hash queue — jobs in progress continue, no new jobs start */
   const pauseHashQueue = async () => {
+    if (!isTauri) {
+      setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: true })));
+      return;
+    }
+
     try {
       await invoke("hash_queue_pause");
       setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: true })));
@@ -178,6 +183,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
   /** Resume hash queue — new jobs begin processing */
   const resumeHashQueue = async () => {
+    if (!isTauri) {
+      setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: false })));
+      return;
+    }
+
     try {
       await invoke("hash_queue_resume");
       setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: false })));
@@ -201,6 +211,10 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     verifiedAgainst: string | undefined,
     comparisonSource: "stored" | "history" | undefined,
   ): Promise<void> => {
+    if (!isTauri) {
+      return;
+    }
+
     const hashRecordId = generateId();
     try {
       await invoke("project_db_insert_hash", {
@@ -326,12 +340,14 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     updateFileStatus(file.path, "hashing", 0);
 
     // Listen for progress events
-    const unlisten = await listen<{ path: string; percent: number }>("verify-progress", (e) => {
-      if (e.payload.path === file.path) {
-        console.warn(`[HASH-DIAG] verify-progress: path=${e.payload.path}, percent=${e.payload.percent}`);
-        updateFileStatus(file.path, "hashing", e.payload.percent);
-      }
-    });
+    const unlisten = isTauri
+      ? await listen<{ path: string; percent: number }>("verify-progress", (e) => {
+          if (e.payload.path === file.path) {
+            console.warn(`[HASH-DIAG] verify-progress: path=${e.payload.path}, percent=${e.payload.percent}`);
+            updateFileStatus(file.path, "hashing", e.payload.percent);
+          }
+        })
+      : () => {};
 
     try {
       // Get file extension for hash routing
@@ -410,6 +426,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     const source = buildEvidenceSourceInput(parentFile ?? null, entry);
     if (!source) {
       setError("No hashable source selected");
+      return;
+    }
+
+    if (!isTauri && import.meta.env.MODE !== "test") {
+      setError("Source entry hashing is available in the desktop app.");
       return;
     }
 
@@ -517,6 +538,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     const files = discoveredFiles().filter((f) => selectedFiles().has(f.path));
     if (!files.length) {
       setError("No files selected");
+      return;
+    }
+
+    if (!isTauri) {
+      setError("Batch hashing is available in the desktop app.");
       return;
     }
 
