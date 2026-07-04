@@ -39,6 +39,7 @@ import {
   getRegionColor,
 } from "./constants";
 import { buildHexAnalysisAnnotations } from "./hexAnalysisAnnotations";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("HexViewer");
 const ANALYSIS_SAMPLE_BYTES = 64 * 1024;
@@ -421,6 +422,7 @@ export function useHexData(opts: UseHexDataOptions) {
   // ── Resources: detect file type, parse headers, and run source analysis ──
   const [sourceAnalysisResource] = createResource(sourceKey, async (key) => {
     if (!key) return null;
+    if (!isTauri) return null;
 
     try {
       const source = buildEvidenceSourceInput(
@@ -448,6 +450,7 @@ export function useHexData(opts: UseHexDataOptions) {
 
   const [fileTypeResource] = createResource(sourceKey, async (key) => {
     if (!key) return null;
+    if (!isTauri) return null;
     try {
       const source = buildEvidenceSourceInput(
         opts.file() ?? null,
@@ -466,6 +469,7 @@ export function useHexData(opts: UseHexDataOptions) {
 
   const [metadataResource] = createResource(sourceKey, async (key) => {
     if (!key) return null;
+    if (!isTauri) return null;
     try {
       const source = buildEvidenceSourceInput(
         opts.file() ?? null,

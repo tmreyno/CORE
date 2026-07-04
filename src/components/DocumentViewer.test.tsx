@@ -9,6 +9,10 @@ import { render } from "solid-js/web";
 import { DocumentViewer } from "./DocumentViewer";
 import { mockInvoke } from "../__tests__/setup";
 
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
+
 // Mock the documentHelpers module
 vi.mock("./document/documentHelpers", () => ({
   getFormatIcon: (format: string) => format === "pdf" ? "📄" : "📝",

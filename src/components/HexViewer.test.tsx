@@ -9,6 +9,10 @@ import { render } from "solid-js/web";
 import { HexViewer } from "./HexViewer";
 import { mockInvoke } from "../__tests__/setup";
 
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
+
 // Mock the hooks module used by HexViewer
 const mockReadBytesFromSource = vi.fn();
 const mockGetSourceKey = vi.fn();

@@ -21,6 +21,7 @@ import {
   HiOutlineArrowsPointingOut,
 } from "./icons";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("ImageViewer");
 
 // ============================================================================
@@ -111,6 +112,10 @@ export function ImageViewer(props: ImageViewerProps) {
     setNaturalSize(null);
 
     try {
+      if (!isTauri) {
+        throw new Error("Image evidence viewing is available in the desktop app.");
+      }
+
       const base64Data = props.source
         ? await commands.viewer.readBinarySourceBase64(props.source)
         : await commands.viewer.readBinaryBase64(props.path);
