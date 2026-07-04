@@ -28,6 +28,8 @@ import acquireFolderTemplate from "../../templates/project/acquire-folder-templa
 const log = logger.scope("Wizard");
 const BROWSER_FOLDER_PICKER_MESSAGE =
   "Folder selection is available in the desktop app. In browser preview, use Open Project to load a .cffx file.";
+const BROWSER_DISCOVERY_MESSAGE =
+  "Project folder scanning is available in the desktop app. In browser preview, use Open Project to load a .cffx file.";
 
 export interface HashLoadingProgress {
   current: number;
@@ -173,6 +175,12 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   // ── Discovery ───────────────────────────────────────────────────────────
 
   const discoverEvidence = async (path: string): Promise<string[]> => {
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setDiscoveredEvidence([]);
+      return [];
+    }
+
     try {
       log.debug(" Discovering evidence files in:", path);
       const files = await invoke<string[]>("discover_evidence_files", {
@@ -190,6 +198,12 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const discoverDatabases = async (path: string): Promise<ProcessedDatabase[]> => {
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setDiscoveredDatabases([]);
+      return [];
+    }
+
     try {
       log.debug(" Discovering processed databases in:", path);
       const dbs = await invoke<ProcessedDatabase[]>("scan_for_processed_databases", {
@@ -211,6 +225,22 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     setScanning(true);
     setError(null);
     setScanMessage("Looking for common directory structures...");
+
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setEvidencePath(projectRoot);
+      setProcessedDbPath(projectRoot);
+      setCaseDocumentsPath(projectRoot);
+      setSuggestedEvidence([projectRoot]);
+      setSuggestedProcessed([projectRoot]);
+      setSuggestedCaseDocs([projectRoot]);
+      setDiscoveredEvidence([]);
+      setDiscoveredDatabases([]);
+      setDiscoveredCaseDocCount(0);
+      setStep(1);
+      setScanning(false);
+      return;
+    }
 
     try {
       const commonEvidencePaths = [
@@ -348,6 +378,11 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   const applyFolderTemplate = async (
     rootPath: string,
   ): Promise<Record<string, string> | null> => {
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      return null;
+    }
+
     try {
       const template = isAcquireEdition() ? acquireFolderTemplate : caseFolderTemplate;
       const templateJson = JSON.stringify(template);
@@ -529,6 +564,13 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   const loadHashesForEvidence = async () => {
     const files = discoveredEvidence();
     if (files.length === 0) {
+      finalizeSetup();
+      return;
+    }
+
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setLoadedStoredHashes(new Map());
       finalizeSetup();
       return;
     }
