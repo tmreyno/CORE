@@ -20,6 +20,7 @@ import { QuickActionsBar } from "./components/QuickActionsBar";
 import { AppHeader } from "./components/layout/AppHeader";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
 import type { DiscoveredFile } from "./types";
+import type { SelectedEntry } from "./components/EvidenceTree";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
@@ -871,6 +872,39 @@ function App() {
     toast,
     buildSaveOptions: getSaveOptions,
   });
+
+  const activeHashEntry = (): SelectedEntry | null => {
+    const tab = centerPaneTabs.activeTab();
+    if (tab?.type === "entry" && tab.entry) return tab.entry;
+    if (tab?.type === "document" && tab.documentEntry) return tab.documentEntry;
+    if (tab) return null;
+    return selectedContainerEntry();
+  };
+
+  const parentFileForEntry = (entry: SelectedEntry): DiscoveredFile | null => {
+    const active = fileManager.activeFile();
+    if (active?.path === entry.containerPath || (entry.isDiskFile && active?.path === entry.entryPath)) {
+      return active;
+    }
+
+    return (
+      fileManager
+        .discoveredFiles()
+        .find((file) => file.path === entry.containerPath || (entry.isDiskFile && file.path === entry.entryPath)) ??
+      null
+    );
+  };
+
+  const handleHashActive = () => {
+    const entry = activeHashEntry();
+    if (entry && !entry.isDir) {
+      void hashManager.hashEntry(entry, parentFileForEntry(entry));
+      return;
+    }
+
+    const active = fileManager.activeFile();
+    if (active) void hashManager.hashSingleFile(active);
+  };
   
   // ===========================================================================
   // Keyboard Handler Hook - manages global shortcuts
@@ -918,6 +952,8 @@ function App() {
     onOpenHelp: () => centerPaneTabs.openHelpTab(),
     onOpenExport: () => openExportWithDrives(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
+    onHashActive: handleHashActive,
+    hasHashTarget: () => !!activeHashEntry() || !!fileManager.activeFile(),
     onCycleTheme: () => themeActions.cycleTheme(),
     onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
     onShowEvidence: () => { setLeftCollapsed(false); setLeftPanelTab("evidence"); },
@@ -995,10 +1031,7 @@ function App() {
       toast.info(current ? "Auto-save disabled" : "Auto-save enabled");
     },
     onHashSelected: () => hashManager.hashSelectedFiles(),
-    onHashActive: () => {
-      const active = fileManager.activeFile();
-      if (active) hashManager.hashSingleFile(active);
-    },
+    onHashActive: handleHashActive,
     onStartTour: () => tour.start(),
     onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
     onShowActivity: () => { setLeftCollapsed(false); setLeftPanelTab("activity"); },

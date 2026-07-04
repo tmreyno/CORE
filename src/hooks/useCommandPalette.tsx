@@ -71,6 +71,10 @@ export interface CommandPaletteConfig {
   onOpenExport?: () => void;
   /** Toggle quick actions bar */
   onToggleQuickActions?: () => void;
+  /** Hash the currently active evidence file or selected source entry. */
+  onHashActive?: () => void;
+  /** Whether an active hash target exists. */
+  hasHashTarget?: Accessor<boolean>;
   /** Cycle through themes */
   onCycleTheme?: () => void;
   /** Navigate to sidebar tabs */
@@ -228,10 +232,14 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "Hash",
       shortcut: "cmd+h",
       onSelect: () => {
+        if (config.onHashActive) {
+          config.onHashActive();
+          return;
+        }
         const active = fileManager.activeFile();
         if (active) hashManager.hashSingleFile(active);
       },
-      disabled: !fileManager.activeFile(),
+      disabled: config.hasHashTarget ? !config.hasHashTarget() : !fileManager.activeFile(),
     },
     {
       id: "export",
