@@ -34,6 +34,7 @@ import { generateId } from "../types/project";
 import { dbSync } from "./project/useProjectDbSync";
 import { buildLocalFileHashSourceFields } from "../utils/hashSourceIdentity";
 import { buildEvidenceSourceInput } from "../components/evidenceSourceInput";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("HashComputation");
 
@@ -305,14 +306,18 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
     // Check if confirmation is required
     if (getPreference("confirmBeforeHash")) {
-      log.debug("Showing confirmation dialog");
-      const confirmed = await ask(
-        `Compute hash for "${file.filename}" (${formatBytes(file.size)})?\n\nThis may take some time for large files.`,
-        { title: "Confirm Hash", kind: "info" },
-      );
-      if (!confirmed) {
-        log.debug("User cancelled hash operation");
-        return;
+      if (!isTauri) {
+        log.info("Skipping native hash confirmation outside Tauri runtime");
+      } else {
+        log.debug("Showing confirmation dialog");
+        const confirmed = await ask(
+          `Compute hash for "${file.filename}" (${formatBytes(file.size)})?\n\nThis may take some time for large files.`,
+          { title: "Confirm Hash", kind: "info" },
+        );
+        if (!confirmed) {
+          log.debug("User cancelled hash operation");
+          return;
+        }
       }
     }
 
@@ -409,11 +414,15 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     }
 
     if (getPreference("confirmBeforeHash")) {
-      const confirmed = await ask(
-        `Compute hash for "${entry.name}" (${formatBytes(entry.size)})?\n\nThis hashes the selected source entry, not just the parent container file.`,
-        { title: "Confirm Hash", kind: "info" },
-      );
-      if (!confirmed) return;
+      if (!isTauri) {
+        log.info("Skipping native source-entry hash confirmation outside Tauri runtime");
+      } else {
+        const confirmed = await ask(
+          `Compute hash for "${entry.name}" (${formatBytes(entry.size)})?\n\nThis hashes the selected source entry, not just the parent container file.`,
+          { title: "Confirm Hash", kind: "info" },
+        );
+        if (!confirmed) return;
+      }
     }
 
     const algorithm = selectedHashAlgorithm();

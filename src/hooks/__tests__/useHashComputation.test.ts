@@ -5,12 +5,14 @@
 // =============================================================================
 
 import { createRoot, createSignal } from "solid-js";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockInvoke, mockListen } from "../../__tests__/setup";
 import { useHashComputation } from "../useHashComputation";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
 import type { SelectedEntry } from "../../components/EvidenceTree/types";
 import type { FileHashInfo, HashHistoryEntry } from "../../types/hash";
+import { getPreference } from "../../components/preferences";
 
 vi.mock("../../components/preferences", () => ({
   getPreference: vi.fn((key: string) => {
@@ -144,6 +146,43 @@ describe("useHashComputation.hashEntry", () => {
         hash: "A".repeat(64),
         verified: null,
       });
+
+      dispose();
+    });
+  });
+
+  it("does not open a native confirmation dialog for entry hashing outside a Tauri runtime", async () => {
+    vi.mocked(getPreference).mockImplementation((key: string) => {
+      if (key === "confirmBeforeHash") return true;
+      if (key === "copyHashToClipboard") return false;
+      return 0;
+    });
+
+    await createRoot(async (dispose) => {
+      const [selectedFiles, setSelectedFiles] = createSignal<Set<string>>(new Set());
+      const [fileHashMap, setFileHashMap] = createSignal<Map<string, FileHashInfo>>(new Map());
+      const computation = useHashComputation({
+        discoveredFiles: () => [makeFile()],
+        selectedFiles,
+        setSelectedFiles,
+        fileInfoMap: () => new Map<string, ContainerInfo>(),
+        setWorking: vi.fn(),
+        setOk: vi.fn(),
+        setError: vi.fn(),
+        updateFileStatus: vi.fn(),
+        updateFileStatusThrottled: vi.fn(),
+        loadFileInfo: vi.fn(),
+        selectedHashAlgorithm: () => "SHA-256",
+        fileHashMap,
+        setFileHashMap,
+        hashHistory: () => new Map<string, HashHistoryEntry[]>(),
+        recordHashToHistory: vi.fn(),
+      });
+
+      const hash = await computation.hashEntry(makeEntry(), makeFile());
+
+      expect(ask).not.toHaveBeenCalled();
+      expect(hash).toBe("A".repeat(64));
 
       dispose();
     });
