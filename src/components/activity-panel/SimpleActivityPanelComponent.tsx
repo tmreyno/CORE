@@ -8,6 +8,7 @@ import { Show, For, Component, createMemo } from "solid-js";
 import { getDirname } from "../../utils/pathUtils";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 import { ActivityCard } from "./ActivityCard";
 import type { SimpleActivityPanelProps } from "./types";
 
@@ -44,6 +45,11 @@ export const SimpleActivityPanelComponent: Component<SimpleActivityPanelProps> =
     );
 
     const handleOpenDestination = async (path: string) => {
+      if (!isTauri) {
+        log.info("Open destination is available in the desktop app.");
+        return;
+      }
+
       try {
         const dir = getDirname(path) || path;
         await invoke("plugin:opener|open_path", { path: dir });
