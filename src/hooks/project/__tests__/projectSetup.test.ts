@@ -3,9 +3,10 @@
 // =============================================================================
 
 import { describe, it, expect, vi } from "vitest";
-import { createDocumentEntry, handleOpenDirectory } from "../projectSetup";
+import { createDocumentEntry, handleOpenDirectory, handleProjectSetupComplete } from "../projectSetup";
 import { open as mockOpen } from "@tauri-apps/plugin-dialog";
 import type { CaseDocument } from "../../../types";
+import { mockInvoke } from "../../../__tests__/setup";
 
 function makeDoc(overrides: Partial<CaseDocument> = {}): CaseDocument {
   return {
@@ -90,6 +91,85 @@ describe("handleOpenDirectory", () => {
     expect(params.toast.info).toHaveBeenCalledWith(
       "Desktop App Required",
       expect.stringContaining("Directory project setup is available in the desktop app"),
+    );
+  });
+});
+
+describe("handleProjectSetupComplete browser runtime guards", () => {
+  it("initializes browser project state without desktop filesystem or database work", async () => {
+    const fileManager = {
+      setScanDir: vi.fn(),
+      scanForFiles: vi.fn(),
+      discoveredFiles: vi.fn(() => []),
+      fileInfoMap: vi.fn(() => new Map()),
+      loadStoredHashesInBackground: vi.fn(),
+    };
+    const hashManager = {
+      importPreloadedStoredHashes: vi.fn(),
+      hashHistory: vi.fn(() => []),
+    };
+    const processedDbManager = {
+      databases: vi.fn(() => []),
+      selectedDatabase: vi.fn(() => null),
+      addDatabases: vi.fn(),
+      selectDatabase: vi.fn(),
+    };
+    const projectManager = {
+      createProject: vi.fn().mockResolvedValue({}),
+      updateLocations: vi.fn(),
+      saveProject: vi.fn(),
+      logActivity: vi.fn(),
+    };
+    const params = {
+      fileManager,
+      hashManager,
+      processedDbManager,
+      projectManager,
+      setShowProjectWizard: vi.fn(),
+      setCaseDocumentsPath: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setPendingProjectRoot: vi.fn(),
+      toast: {
+        success: vi.fn(),
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+
+    await handleProjectSetupComplete(params as any, {
+      projectName: "Browser Case",
+      projectRoot: "/browser/project",
+      evidencePath: "/browser/project/Evidence",
+      processedDbPath: "/browser/project/Processed",
+      caseDocumentsPath: "/browser/project/Case.Documents",
+      exportsPath: "/browser/project/Exports",
+      discoveredEvidence: [],
+      discoveredDatabases: [],
+      loadStoredHashes: true,
+    });
+
+    expect(projectManager.createProject).toHaveBeenCalledWith(
+      "/browser/project",
+      "Browser Case",
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(projectManager.updateLocations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_root: "/browser/project",
+        evidence_path: "/browser/project/Evidence",
+        case_documents_path: "/browser/project/Case.Documents",
+      }),
+    );
+    expect(fileManager.scanForFiles).not.toHaveBeenCalled();
+    expect(fileManager.loadStoredHashesInBackground).not.toHaveBeenCalled();
+    expect(processedDbManager.addDatabases).not.toHaveBeenCalled();
+    expect(projectManager.saveProject).not.toHaveBeenCalled();
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(params.toast.info).toHaveBeenCalledWith(
+      "Browser Preview",
+      expect.stringContaining("Folder creation"),
     );
   });
 });
