@@ -106,25 +106,17 @@ pub fn info(path: &str) -> Result<EwfInfo, ContainerError> {
     if let Some(first_segment) = handle.segments.first() {
         for section in &first_segment.sections {
             match section.section_type.as_str() {
-                "header" => {
-                    if header_section_offset.is_none() {
-                        header_section_offset = Some(section.offset_in_segment);
-                    }
+                "header" if header_section_offset.is_none() => {
+                    header_section_offset = Some(section.offset_in_segment);
                 }
-                "volume" | "disk" => {
-                    if volume_section_offset.is_none() {
-                        volume_section_offset = Some(section.offset_in_segment);
-                    }
+                "volume" | "disk" if volume_section_offset.is_none() => {
+                    volume_section_offset = Some(section.offset_in_segment);
                 }
-                "hash" => {
-                    if hash_section_offset.is_none() {
-                        hash_section_offset = Some(section.offset_in_segment);
-                    }
+                "hash" if hash_section_offset.is_none() => {
+                    hash_section_offset = Some(section.offset_in_segment);
                 }
-                "digest" => {
-                    if digest_section_offset.is_none() {
-                        digest_section_offset = Some(section.offset_in_segment);
-                    }
+                "digest" if digest_section_offset.is_none() => {
+                    digest_section_offset = Some(section.offset_in_segment);
                 }
                 _ => {}
             }

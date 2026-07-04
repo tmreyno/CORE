@@ -803,15 +803,11 @@ fn extract_metadata_info(metadata: &Option<Vec<MetadataEntry>>) -> MetadataInfo 
         match entry.category {
             // HASH_INFO category (0x01)
             HASH_INFO => match entry.key {
-                MD5_HASH => {
-                    if entry.data.len() >= 16 {
-                        info.md5_hash = Some(hex::encode(&entry.data[0..16]));
-                    }
+                MD5_HASH if entry.data.len() >= 16 => {
+                    info.md5_hash = Some(hex::encode(&entry.data[0..16]));
                 }
-                SHA1_HASH => {
-                    if entry.data.len() >= 20 {
-                        info.sha1_hash = Some(hex::encode(&entry.data[0..20]));
-                    }
+                SHA1_HASH if entry.data.len() >= 20 => {
+                    info.sha1_hash = Some(hex::encode(&entry.data[0..20]));
                 }
                 _ => {}
             },
@@ -844,11 +840,9 @@ fn extract_metadata_info(metadata: &Option<Vec<MetadataEntry>>) -> MetadataInfo 
                             MODIFIED_TIME => {
                                 info.modified_time = Some(unix_time as i64);
                             }
-                            CHANGE_TIME => {
+                            CHANGE_TIME if info.created_time.is_none() => {
                                 // Change time - could be used as created if needed
-                                if info.created_time.is_none() {
-                                    info.created_time = Some(unix_time as i64);
-                                }
+                                info.created_time = Some(unix_time as i64);
                             }
                             _ => {}
                         }
