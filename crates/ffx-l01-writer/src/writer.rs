@@ -270,10 +270,7 @@ impl L01Writer {
         let mut merged_compressed = Vec::new();
         let mut merged_table = ChunkTable::new(0); // base_offset set later
 
-        for (compressed, table) in all_compressed_data
-            .into_iter()
-            .zip(all_chunk_tables.into_iter())
-        {
+        for (compressed, table) in all_compressed_data.into_iter().zip(all_chunk_tables) {
             let base = merged_compressed.len() as u64;
             for chunk in &table.chunks {
                 merged_table.add_chunk(
