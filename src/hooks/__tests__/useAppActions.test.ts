@@ -82,6 +82,8 @@ const mockProjectManager = () => ({
   projectPath: () => "/case/project.cffx",
   autoSaveEnabled: () => false as boolean,
   setAutoSaveEnabled: vi.fn(),
+  startAutoSave: vi.fn(),
+  stopAutoSave: vi.fn(),
   modified: () => false as boolean,
   saveProject: vi.fn().mockResolvedValue({ success: true }),
   saveProjectAs: vi.fn().mockResolvedValue({ success: true }),
@@ -572,6 +574,30 @@ describe("createContextMenuBuilders", () => {
       const items = getSaveContextMenuItems();
       items.find((i) => i.id === "auto-save")!.onSelect!();
       expect(pm.setAutoSaveEnabled).toHaveBeenCalledWith(true);
+      expect(pm.startAutoSave).toHaveBeenCalledOnce();
+      expect(pm.stopAutoSave).not.toHaveBeenCalled();
+    });
+
+    it("auto-save toggle stops the timer when disabling", () => {
+      const fm = mockFileManager();
+      const hm = mockHashManager();
+      const pm = mockProjectManager();
+      (pm as any).autoSaveEnabled = () => true;
+      const toast = mockToast();
+
+      const { getSaveContextMenuItems } = createContextMenuBuilders({
+        fileManager: fm as any,
+        hashManager: hm as any,
+        projectManager: pm as any,
+        toast,
+        buildSaveOptions: () => null,
+      });
+
+      const items = getSaveContextMenuItems();
+      items.find((i) => i.id === "auto-save")!.onSelect!();
+      expect(pm.setAutoSaveEnabled).toHaveBeenCalledWith(false);
+      expect(pm.stopAutoSave).toHaveBeenCalledOnce();
+      expect(pm.startAutoSave).not.toHaveBeenCalled();
     });
   });
 });

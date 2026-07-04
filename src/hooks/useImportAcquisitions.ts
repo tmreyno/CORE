@@ -174,7 +174,7 @@ export function useImportAcquisitions() {
             continue;
           }
 
-          importSingleAcquisition(c, options);
+          await importSingleAcquisition(c, options);
           result.imported++;
           log.info(`Imported: ${outputPath}`);
         } catch (err) {
@@ -223,10 +223,10 @@ export function useImportAcquisitions() {
 
 // ─── Import logic (DB writes) ───────────────────────────────────────────────
 
-function importSingleAcquisition(
+async function importSingleAcquisition(
   c: CompanionFile,
   options?: ImportAcquisitionsOptions,
-): void {
+): Promise<void> {
   const now = new Date().toISOString();
   const outputPath = c.output.primaryPath;
   const filename = basename(outputPath);
@@ -242,25 +242,27 @@ function importSingleAcquisition(
     segmentCount: c.output.segments?.length ?? 1,
     discoveredAt: now,
   };
-  dbSync.upsertEvidenceFile(evidenceFile);
+  await dbSync.upsertEvidenceFileAsync(evidenceFile);
 
   // 2. Hash records (source = 'imported')
   const fileId = outputPath;
+  const hashWrites: Promise<void>[] = [];
   if (c.hashes.md5) {
-    dbSync.insertHash(
+    hashWrites.push(dbSync.insertHashAsync(
       buildHashRecord(fileId, "MD5", c.hashes.md5, c.timing.completedAt),
-    );
+    ));
   }
   if (c.hashes.sha1) {
-    dbSync.insertHash(
+    hashWrites.push(dbSync.insertHashAsync(
       buildHashRecord(fileId, "SHA-1", c.hashes.sha1, c.timing.completedAt),
-    );
+    ));
   }
   if (c.hashes.sha256) {
-    dbSync.insertHash(
+    hashWrites.push(dbSync.insertHashAsync(
       buildHashRecord(fileId, "SHA-256", c.hashes.sha256, c.timing.completedAt),
-    );
+    ));
   }
+  await Promise.all(hashWrites);
 
   // 3. Evidence collection + collected item
   const collectionId = uniqueId("ec-import");
@@ -276,7 +278,7 @@ function importSingleAcquisition(
     createdAt: now,
     modifiedAt: now,
   };
-  dbSync.upsertEvidenceCollection(collection);
+  await dbSync.upsertEvidenceCollectionAsync(collection);
 
   const itemId = uniqueId("ci-import");
   const typeLabel = TYPE_LABELS[c.acquisitionType] || c.acquisitionType;
@@ -306,7 +308,7 @@ function importSingleAcquisition(
     hashComputedAt: hashSnapshot ? c.timing.completedAt : undefined,
     building: c.system?.hostname || "",
   };
-  dbSync.upsertCollectedItem(item);
+  await dbSync.upsertCollectedItemAsync(item);
 
   // 4. Notify caller to add file to tree
   if (options?.onFileImported) {

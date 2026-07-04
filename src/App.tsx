@@ -1069,9 +1069,14 @@ function App() {
       if (tabId) centerPaneTabs.closeTab(tabId);
     },
     onToggleAutoSave: () => {
-      const current = projectManager.autoSaveEnabled();
-      projectManager.setAutoSaveEnabled(!current);
-      toast.info(current ? "Auto-save disabled" : "Auto-save enabled");
+      const enabled = !projectManager.autoSaveEnabled();
+      projectManager.setAutoSaveEnabled(enabled);
+      if (enabled) {
+        projectManager.startAutoSave();
+      } else {
+        projectManager.stopAutoSave();
+      }
+      toast.info(enabled ? "Auto-save enabled" : "Auto-save disabled");
     },
     onHashSelected: () => hashManager.hashSelectedFiles(),
     onHashActive: handleHashActive,
@@ -1904,10 +1909,12 @@ function App() {
         bookmarkCount={projectManager.bookmarkCount()}
         noteCount={projectManager.noteCount()}
         onAutoSaveToggle={() => {
-          if (projectManager.modified()) {
-            handleSaveProject();
+          const enabled = !projectManager.autoSaveEnabled();
+          projectManager.setAutoSaveEnabled(enabled);
+          if (enabled) {
+            projectManager.startAutoSave();
           } else {
-            projectManager.setAutoSaveEnabled(!projectManager.autoSaveEnabled());
+            projectManager.stopAutoSave();
           }
         }}
         onEvidenceClick={() => { setLeftCollapsed(false); setLeftPanelTab("evidence"); }}

@@ -271,10 +271,13 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
         label: "Auto-save", 
         checked: projectManager.autoSaveEnabled(),
         onSelect: () => {
-          projectManager.setAutoSaveEnabled(!projectManager.autoSaveEnabled());
-          if (projectManager.autoSaveEnabled()) {
+          const enabled = !projectManager.autoSaveEnabled();
+          projectManager.setAutoSaveEnabled(enabled);
+          if (enabled) {
+            projectManager.startAutoSave();
             toast.success("Auto-save enabled", "Project will be saved automatically");
           } else {
+            projectManager.stopAutoSave();
             toast.info("Auto-save disabled");
           }
         }

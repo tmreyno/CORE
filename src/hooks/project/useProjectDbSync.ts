@@ -88,6 +88,15 @@ function syncInvoke<T>(cmd: string, args: Record<string, unknown>): void {
   trackPendingInvoke(request);
 }
 
+async function asyncInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T | undefined> {
+  if (!isTauri) {
+    log.debug(`DbSync: skipping ${cmd} outside Tauri runtime`);
+    return undefined;
+  }
+
+  return invoke<T>(cmd, args);
+}
+
 async function flushPendingWrites(timeoutMs = 5_000): Promise<{
   timedOut: boolean;
   pendingCount: number;
@@ -270,6 +279,10 @@ function syncUpsertEvidenceFile(file: DbEvidenceFile): void {
   syncInvoke("project_db_upsert_evidence_file", { file });
 }
 
+async function upsertEvidenceFile(file: DbEvidenceFile): Promise<void> {
+  await asyncInvoke("project_db_upsert_evidence_file", { file });
+}
+
 /** Batch insert/update evidence files in a single transaction (awaitable). */
 async function batchUpsertEvidenceFiles(files: DbEvidenceFile[]): Promise<number> {
   if (files.length === 0) return 0;
@@ -283,6 +296,10 @@ async function batchUpsertEvidenceFiles(files: DbEvidenceFile[]): Promise<number
 
 function syncInsertHash(hash: DbProjectHash): void {
   syncInvoke("project_db_insert_hash", { hash });
+}
+
+async function insertHash(hash: DbProjectHash): Promise<void> {
+  await asyncInvoke("project_db_insert_hash", { hash });
 }
 
 function syncInsertVerification(v: DbProjectVerification): void {
@@ -457,6 +474,10 @@ function syncUpsertEvidenceCollection(record: DbEvidenceCollection): void {
   syncInvoke("project_db_upsert_evidence_collection", { record });
 }
 
+async function upsertEvidenceCollection(record: DbEvidenceCollection): Promise<void> {
+  await asyncInvoke("project_db_upsert_evidence_collection", { record });
+}
+
 function syncDeleteEvidenceCollection(id: string): void {
   syncInvoke("project_db_delete_evidence_collection", { id });
 }
@@ -467,6 +488,10 @@ function syncDeleteEvidenceCollection(id: string): void {
 
 function syncUpsertCollectedItem(record: DbCollectedItem): void {
   syncInvoke("project_db_upsert_collected_item", { record });
+}
+
+async function upsertCollectedItem(record: DbCollectedItem): Promise<void> {
+  await asyncInvoke("project_db_upsert_collected_item", { record });
 }
 
 function syncDeleteCollectedItem(id: string): void {
@@ -550,8 +575,10 @@ export const dbSync = {
 
   // Evidence & Hashes
   upsertEvidenceFile: syncUpsertEvidenceFile,
+  upsertEvidenceFileAsync: upsertEvidenceFile,
   batchUpsertEvidenceFiles,
   insertHash: syncInsertHash,
+  insertHashAsync: insertHash,
   insertVerification: syncInsertVerification,
 
   // Reports
@@ -582,8 +609,10 @@ export const dbSync = {
 
   // Evidence Collections & Collected Items
   upsertEvidenceCollection: syncUpsertEvidenceCollection,
+  upsertEvidenceCollectionAsync: upsertEvidenceCollection,
   deleteEvidenceCollection: syncDeleteEvidenceCollection,
   upsertCollectedItem: syncUpsertCollectedItem,
+  upsertCollectedItemAsync: upsertCollectedItem,
   deleteCollectedItem: syncDeleteCollectedItem,
 
   // Evidence Data Alternatives (Conflict Resolution)
