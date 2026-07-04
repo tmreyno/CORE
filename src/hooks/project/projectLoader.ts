@@ -22,6 +22,7 @@ import { getDirname } from "../../utils/pathUtils";
 import { getContainerBrowserMode } from "../../components/EvidenceTree/containerDetection";
 import type { LeftPanelTab } from "../../components";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
@@ -56,6 +57,7 @@ export interface HandleLoadProjectParams {
     success: (title: string, message?: string) => void;
     error: (title: string, message?: string) => void;
     warning: (title: string, message?: string) => void;
+    info?: (title: string, message?: string) => void;
   };
   /** Optional: Path to load (if not provided, shows file picker) */
   projectPath?: string;
@@ -257,11 +259,24 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     // <select> value won't match any new option.
     fileManager.setScanDir("");
 
+    if (!isTauri && !projectPath) {
+      toast.info?.(
+        "Open Project",
+        "Choose a .cffx project file in the browser file picker.",
+      );
+    }
+
     // Load project, optionally from a specific path
     const result = await projectManager.loadProject(projectPath);
     if (!result.project) {
       // Restore previous scanDir on cancel / failure
       fileManager.setScanDir(previousScanDir);
+      if (!isTauri && result.error === "Open cancelled") {
+        toast.info?.(
+          "Open Cancelled",
+          "No project file was selected. Use Open Project and choose a .cffx file.",
+        );
+      }
       if (result.error && result.error !== "Open cancelled") {
         toast.error("Load Failed", result.error);
       }

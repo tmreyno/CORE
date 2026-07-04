@@ -4,8 +4,8 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, expect, it } from "vitest";
-import { restoreCenterTabs } from "../projectLoader";
+import { describe, expect, it, vi } from "vitest";
+import { handleLoadProject, restoreCenterTabs } from "../projectLoader";
 import type { DiscoveredFile } from "../../../types";
 import type { ProjectTab } from "../../../types/project";
 
@@ -51,5 +51,54 @@ describe("projectLoader", () => {
       isArchiveEntry: false,
       containerType: "EnCase (E01)",
     });
+  });
+
+  it("shows browser file picker and cancel feedback when Open Project has no selection", async () => {
+    const setScanDir = vi.fn();
+    const toast = {
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    };
+
+    await handleLoadProject({
+      fileManager: {
+        scanDir: () => "/previous/evidence",
+        setScanDir,
+      },
+      hashManager: {},
+      projectManager: {
+        loadProject: vi.fn().mockResolvedValue({ project: null, error: "Open cancelled" }),
+      },
+      processedDbManager: {},
+      setLeftWidth: vi.fn(),
+      setRightWidth: vi.fn(),
+      setLeftCollapsed: vi.fn(),
+      setRightCollapsed: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setCurrentViewMode: vi.fn(),
+      setEntryContentViewMode: vi.fn(),
+      setCaseDocumentsPath: vi.fn(),
+      setTreeExpansionState: vi.fn(),
+      setSelectedContainerEntry: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setCaseDocuments: vi.fn(),
+      setCenterTabs: vi.fn(),
+      setActiveTabId: vi.fn(),
+      setCenterViewMode: vi.fn(),
+      toast,
+    } as any);
+
+    expect(setScanDir).toHaveBeenCalledWith("");
+    expect(setScanDir).toHaveBeenCalledWith("/previous/evidence");
+    expect(toast.info).toHaveBeenCalledWith(
+      "Open Project",
+      "Choose a .cffx project file in the browser file picker.",
+    );
+    expect(toast.info).toHaveBeenCalledWith(
+      "Open Cancelled",
+      "No project file was selected. Use Open Project and choose a .cffx file.",
+    );
   });
 });
