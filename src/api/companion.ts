@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../utils/platform";
 
 // --- Types matching src-tauri/src/commands/companion.rs ---
 
@@ -90,6 +91,12 @@ export async function writeCompanionFile(
   outputPath: string,
   data: CompanionFileInput,
 ): Promise<string> {
+  if (!isTauri) {
+    void outputPath;
+    void data;
+    throw new Error("Companion sidecar writing is available in the desktop app.");
+  }
+
   return invoke<string>("write_companion_file", {
     outputPath,
     data,
@@ -99,11 +106,21 @@ export async function writeCompanionFile(
 export async function readCompanionFile(
   companionPath: string,
 ): Promise<CompanionFile> {
+  if (!isTauri) {
+    void companionPath;
+    throw new Error("Companion sidecar reading is available in the desktop app.");
+  }
+
   return invoke<CompanionFile>("read_companion_file", { companionPath });
 }
 
 export async function findCompanionFile(
   outputPath: string,
 ): Promise<string | null> {
+  if (!isTauri) {
+    void outputPath;
+    return null;
+  }
+
   return invoke<string | null>("find_companion_file", { evidencePath: outputPath });
 }
