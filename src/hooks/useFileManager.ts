@@ -296,6 +296,11 @@ export function useFileManager() {
   // Browse for directory
   const browseScanDir = async (): Promise<void> => {
     log.debug("browseScanDir called");
+    if (!isTauri) {
+      setError("Directory browsing is available in the desktop app. In browser preview, open a .cffx project file instead.");
+      return;
+    }
+
     try {
       const defaultPath = getLastPath("evidence");
       log.debug(`Opening directory picker, defaultPath=${defaultPath}`);
@@ -328,6 +333,11 @@ export function useFileManager() {
     if (!targetDir.trim()) {
       log.debug("No directory specified");
       setError("Select a directory first");
+      return;
+    }
+
+    if (!isTauri) {
+      setError("Evidence directory scanning is available in the desktop app. Browser preview can restore evidence only from a .cffx cache.");
       return;
     }
     

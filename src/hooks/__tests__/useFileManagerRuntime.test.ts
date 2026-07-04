@@ -17,4 +17,25 @@ describe("useFileManager runtime guards", () => {
     expect(mockListen).not.toHaveBeenCalledWith("system-stats", expect.any(Function));
     expect(() => cleanup()).not.toThrow();
   });
+
+  it("does not open a native directory picker outside a Tauri runtime", async () => {
+    const fileManager = useFileManager();
+
+    await fileManager.browseScanDir();
+
+    expect(fileManager.statusKind()).toBe("error");
+    expect(fileManager.statusMessage()).toContain("Directory browsing is available in the desktop app");
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("does not invoke streaming scan outside a Tauri runtime", async () => {
+    const fileManager = useFileManager();
+
+    await fileManager.scanForFiles("/cases/evidence");
+
+    expect(fileManager.statusKind()).toBe("error");
+    expect(fileManager.statusMessage()).toContain("Evidence directory scanning is available in the desktop app");
+    expect(mockListen).not.toHaveBeenCalledWith("scan-file-found", expect.any(Function));
+    expect(mockInvoke).not.toHaveBeenCalledWith("scan_directory_streaming", expect.anything());
+  });
 });
