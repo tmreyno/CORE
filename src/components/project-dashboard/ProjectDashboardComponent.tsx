@@ -22,6 +22,8 @@ import {
   HiOutlineShieldCheck,
   HiOutlineArrowUpTray,
   HiOutlineClipboardDocumentList,
+  HiOutlineFolderOpen,
+  HiOutlinePlusCircle,
 } from "../icons";
 import type { ProjectDbStats } from "../../types/projectDb";
 import { formatBytes } from "../../utils";
@@ -125,6 +127,22 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
               <span class="text-3xl">📂</span>
               <p>No project loaded</p>
               <p class="text-xs">Open or create a project to see the dashboard</p>
+              <Show when={props.onOpenProject || props.onNewProject}>
+                <div class="flex items-center justify-center gap-2 pt-2">
+                  <Show when={props.onNewProject}>
+                    <button class="btn btn-primary btn-sm" onClick={() => props.onNewProject?.()}>
+                      <HiOutlinePlusCircle class="w-4 h-4" />
+                      New Project
+                    </button>
+                  </Show>
+                  <Show when={props.onOpenProject}>
+                    <button class="btn btn-secondary btn-sm" onClick={() => props.onOpenProject?.()}>
+                      <HiOutlineFolderOpen class="w-4 h-4" />
+                      Open Project
+                    </button>
+                  </Show>
+                </div>
+              </Show>
             </div>
           </div>
         }

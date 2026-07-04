@@ -816,6 +816,20 @@ function App() {
     if (!canProceed) return;
     await globalLoading.run("Loading project…", () => _handleLoadProject(path));
   };
+  const handleOpenRecentProject = async (path: string) => {
+    if (isAcquireEdition()) {
+      if (!sessionManager) return;
+      try {
+        await sessionManager.load(path);
+        toast.success("Session Loaded", `Loaded ${getBasename(path)}`);
+      } catch (e) {
+        toast.error("Failed to Load Session", String(e));
+      }
+      return;
+    }
+
+    await handleLoadProject(path);
+  };
   const handleSaveProject = () =>
     globalLoading.run("Saving project…", () => _handleSaveProject());
   const handleSaveProjectAs = () =>
@@ -1210,7 +1224,7 @@ function App() {
         onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
         onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
         recentProjects={welcomeModalRecentProjects}
-        onSelectRecentProject={isAcquireEdition() ? ((path: string) => sessionManager?.load(path).then(() => toast.success("Session Loaded")).catch((e: unknown) => toast.error("Failed", String(e)))) : handleLoadProject}
+        onSelectRecentProject={handleOpenRecentProject}
         tour={tour}
         showProjectWizard={showProjectWizard}
         setShowProjectWizard={setShowProjectWizard}
@@ -1434,7 +1448,7 @@ function App() {
               onHelp={() => centerPaneTabs.openHelpTab()}
               onCommandPalette={() => setShowCommandPalette(true)}
               onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
-              onOpenRecentProject={(path) => handleLoadProject(path)}
+              onOpenRecentProject={handleOpenRecentProject}
               onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
               projectName={() => (isAcquireEdition() ? sessionManager?.projectName() : projectManager.projectName()) || undefined}
               hasProject={acquireHasProject}
@@ -1604,6 +1618,8 @@ function App() {
               onExportSources={handleExportSources}
               onSourceAdd={handleSourceAdd}
               onSourceRemove={handleSourceRemove}
+              onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
+              onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
             />
           </aside>
         </Show>
