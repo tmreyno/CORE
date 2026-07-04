@@ -561,7 +561,7 @@ fn collect_dir_files_at_depth(
         if file_type.is_file() {
             let rel_path = path
                 .strip_prefix(base)
-                .map(|p| p.to_string_lossy().to_string())
+                .map(relative_export_path)
                 .unwrap_or_else(|_| {
                     path.file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -573,6 +573,13 @@ fn collect_dir_files_at_depth(
         }
     }
     Ok(())
+}
+
+fn relative_export_path(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Export/copy files to a destination directory with optional forensic features
