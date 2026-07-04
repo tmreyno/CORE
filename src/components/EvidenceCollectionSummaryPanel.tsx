@@ -83,6 +83,12 @@ export function EvidenceCollectionSummaryPanel(props: EvidenceCollectionSummaryP
       setAllItems([]);
       return;
     }
+    if (!isTauri) {
+      setCollections([]);
+      setAllItems([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [cols, items] = await Promise.all([

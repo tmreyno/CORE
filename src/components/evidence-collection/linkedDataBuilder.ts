@@ -25,6 +25,7 @@ import type {
 import type { LinkedDataNode, NodeMetadata } from "../LinkedDataTree";
 import { getBasename } from "../../utils/pathUtils";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("linkedDataBuilder");
 
@@ -33,6 +34,8 @@ const log = logger.scope("linkedDataBuilder");
 // =============================================================================
 
 async function fetchEvidenceFiles(): Promise<Map<string, DbEvidenceFile>> {
+  if (!isTauri) return new Map();
+
   try {
     const files = await invoke<DbEvidenceFile[]>("project_db_get_evidence_files");
     const map = new Map<string, DbEvidenceFile>();
@@ -52,6 +55,8 @@ async function fetchHashesForFile(fileId: string): Promise<{
   hashAlgorithm?: string;
   hashValue?: string;
 }> {
+  if (!isTauri) return { hashStatus: "none" };
+
   try {
     const hashes = await invoke<DbProjectHash[]>(
       "project_db_get_hashes_for_file",
@@ -92,6 +97,8 @@ async function fetchHashesForFile(fileId: string): Promise<{
 }
 
 async function fetchCollection(collectionId: string): Promise<DbEvidenceCollection | null> {
+  if (!isTauri) return null;
+
   try {
     const collections = await invoke<DbEvidenceCollection[]>(
       "project_db_get_evidence_collections",
@@ -179,6 +186,8 @@ export async function buildLinkedDataTree(
   collectionId: string,
   caseNumber?: string,
 ): Promise<LinkedDataNode[]> {
+  if (!isTauri) return [];
+
   try {
     // Parallel fetch: collected items, COC items, evidence files, collection record
     const [collectedItems, cocItems, evidenceFileMap, collection] = await Promise.all([

@@ -31,6 +31,7 @@ import {
 } from "../icons";
 import type { DbEvidenceCollection, DbCollectedItem } from "../../types/projectDb";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("AcquireCollectionSummary");
 
@@ -91,6 +92,12 @@ const AcquireCollectionSummary: Component<AcquireCollectionSummaryProps> = (prop
     if (!props.hasProject()) {
       setCollections([]);
       setAllItems([]);
+      return;
+    }
+    if (!isTauri) {
+      setCollections([]);
+      setAllItems([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
