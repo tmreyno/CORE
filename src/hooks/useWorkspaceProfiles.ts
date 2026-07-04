@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("WorkspaceProfiles");
 
 // =============================================================================
@@ -166,6 +167,13 @@ export function useWorkspaceProfiles() {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+  const skipOutsideTauri = (): boolean => {
+    if (isTauri) return false;
+    setLoading(false);
+    setError(null);
+    return true;
+  };
+
   // =========================================================================
   // Profile Listing & Retrieval
   // =========================================================================
@@ -174,6 +182,11 @@ export function useWorkspaceProfiles() {
    * List all available profiles
    */
   const listProfiles = async (): Promise<ProfileSummary[]> => {
+    if (skipOutsideTauri()) {
+      setProfiles([]);
+      return [];
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -194,6 +207,11 @@ export function useWorkspaceProfiles() {
    * Get a profile by ID (uses profile_get command)
    */
   const getProfile = async (id: string): Promise<WorkspaceProfile | null> => {
+    if (skipOutsideTauri()) {
+      setCurrentProfile(null);
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -214,6 +232,11 @@ export function useWorkspaceProfiles() {
    * Get the currently active profile
    */
   const getActiveProfile = async (): Promise<WorkspaceProfile | null> => {
+    if (skipOutsideTauri()) {
+      setCurrentProfile(null);
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -238,6 +261,10 @@ export function useWorkspaceProfiles() {
    * Set the active profile (uses profile_set_active command)
    */
   const setActiveProfile = async (id: string): Promise<boolean> => {
+    if (skipOutsideTauri()) {
+      return false;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -260,6 +287,10 @@ export function useWorkspaceProfiles() {
    * Add a new profile (uses profile_add command)
    */
   const addProfile = async (profile: WorkspaceProfile): Promise<boolean> => {
+    if (skipOutsideTauri()) {
+      return false;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -280,6 +311,10 @@ export function useWorkspaceProfiles() {
    * Update an existing profile (uses profile_update command)
    */
   const updateProfile = async (profile: WorkspaceProfile): Promise<boolean> => {
+    if (skipOutsideTauri()) {
+      return false;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -303,6 +338,10 @@ export function useWorkspaceProfiles() {
    * Delete a profile (uses profile_delete command)
    */
   const deleteProfile = async (id: string): Promise<boolean> => {
+    if (skipOutsideTauri()) {
+      return false;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -326,6 +365,10 @@ export function useWorkspaceProfiles() {
    * Clone a profile with a new name (uses profile_clone command)
    */
   const cloneProfile = async (sourceId: string, newName: string): Promise<string | null> => {
+    if (skipOutsideTauri()) {
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -353,6 +396,10 @@ export function useWorkspaceProfiles() {
    * Export a profile to JSON string
    */
   const exportProfile = async (id: string): Promise<string | null> => {
+    if (skipOutsideTauri()) {
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -372,6 +419,10 @@ export function useWorkspaceProfiles() {
    * Import a profile from JSON string
    */
   const importProfile = async (json: string): Promise<string | null> => {
+    if (skipOutsideTauri()) {
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
