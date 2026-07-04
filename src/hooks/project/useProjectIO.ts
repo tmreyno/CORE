@@ -15,6 +15,7 @@ import { logAuditAction } from "../../utils/telemetry";
 import { logger as appLogger } from "../../utils/logger";
 import { addRecentProject } from "../../components/preferences";
 import { getBasename } from "../../utils/pathUtils";
+import { isTauri } from "../../utils/platform";
 import { dbSync } from "./useProjectDbSync";
 import { seedDatabaseFromProject } from "./useProjectDbRead";
 
@@ -57,6 +58,78 @@ import type {
 
 export function uniqueProjectFilePaths(tabs: ProjectTab[]): string[] {
   return Array.from(new Set(tabs.map(tab => tab.file_path).filter(Boolean)));
+}
+
+type BrowserProjectFile = {
+  path: string;
+  project: FFXProject;
+};
+
+export function parseBrowserProjectFile(content: string, fallbackPath: string): BrowserProjectFile {
+  const parsed = JSON.parse(content) as Partial<FFXProject>;
+
+  if (!parsed || typeof parsed !== "object" || !parsed.name || !parsed.root_path) {
+    throw new Error("Selected file is not a valid CORE-FFX project");
+  }
+
+  return {
+    path: fallbackPath,
+    project: {
+      ...(parsed as FFXProject),
+      version: typeof parsed.version === "number" ? parsed.version : PROJECT_FILE_VERSION,
+      project_id: parsed.project_id || generateId(),
+      tabs: parsed.tabs || [],
+      users: parsed.users || [],
+      sessions: parsed.sessions || [],
+      activity_log: parsed.activity_log || [],
+      bookmarks: parsed.bookmarks || [],
+      notes: parsed.notes || [],
+      tags: parsed.tags || [],
+      reports: parsed.reports || [],
+      saved_searches: parsed.saved_searches || [],
+      recent_directories: parsed.recent_directories || [],
+      open_directories: parsed.open_directories || [],
+    },
+  };
+}
+
+function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
+  if (typeof document === "undefined") {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".cffx,application/json";
+    input.style.display = "none";
+
+    const cleanup = () => {
+      input.remove();
+    };
+
+    input.addEventListener("change", async () => {
+      try {
+        const file = input.files?.[0];
+        if (!file) {
+          cleanup();
+          resolve(null);
+          return;
+        }
+
+        const content = await file.text();
+        const fallbackPath = file.name.endsWith(".cffx") ? file.name : `${file.name}.cffx`;
+        cleanup();
+        resolve(parseBrowserProjectFile(content, fallbackPath));
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    }, { once: true });
+
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 /**
@@ -722,6 +795,37 @@ export function createProjectIO(
       // If no path provided, show file picker
       if (!loadPath) {
         log.debug("loadProject: No path provided, showing file picker");
+        if (!isTauri) {
+          const selected = await pickBrowserProjectFile();
+
+          if (!selected) {
+            log.debug("loadProject: User cancelled browser file picker");
+            return { project: null, error: "Open cancelled" };
+          }
+
+          loadPath = selected.path;
+          const project = selected.project;
+          const browserProjectPath = selected.path;
+          log.debug(`loadProject: Browser selected ${loadPath}`);
+
+          batch(() => {
+            setters.setProject(project);
+            setters.setProjectPath(browserProjectPath);
+            setters.setModified(false);
+            setters.setError(null);
+          });
+
+          await startNewSession();
+          autoSave.startAutoSave();
+          addRecentProject(loadPath, project.name);
+          logger.logActivity('project', 'load', `Project loaded: ${project.name}`, loadPath);
+
+          return {
+            project,
+            warnings: ["Loaded in browser preview mode; desktop project database features are unavailable."],
+          };
+        }
+
         const selected = await open({
           filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
           title: "Open Project",
@@ -734,6 +838,12 @@ export function createProjectIO(
         }
         loadPath = selected as string;
         log.debug(`loadProject: User selected ${loadPath}`);
+      }
+
+      if (!isTauri) {
+        const errorMsg = "Browser preview can only open project files through the Open Project file picker.";
+        setters.setError(errorMsg);
+        return { project: null, error: errorMsg };
       }
 
       // Load via Tauri
@@ -780,7 +890,9 @@ export function createProjectIO(
           setters.setModified(false);
           setters.setError(null);
         });
-        invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+        if (isTauri) {
+          invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+        }
         log.info(`loadProject: batch signal setters took ${(performance.now() - t0).toFixed(1)}ms`);
 
         // Start a new session for this user

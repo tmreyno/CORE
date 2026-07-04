@@ -21,10 +21,13 @@ import type { ProcessedDatabase } from "../../types/processed";
 import type { StoredHash } from "../../types";
 import type { ProjectLocations, ProjectSetupWizardProps } from "./types";
 import { isAcquireEdition } from "../../utils/edition";
+import { isTauri } from "../../utils/platform";
 import caseFolderTemplate from "../../templates/project/case-folder-template.json";
 import acquireFolderTemplate from "../../templates/project/acquire-folder-template.json";
 
 const log = logger.scope("Wizard");
+const BROWSER_FOLDER_PICKER_MESSAGE =
+  "Folder selection is available in the desktop app. In browser preview, use Open Project to load a .cffx file.";
 
 export interface HashLoadingProgress {
   current: number;
@@ -369,7 +372,14 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
 
   // ── Browse handlers ─────────────────────────────────────────────────────
 
+  const canUseNativeFolderPicker = () => {
+    if (isTauri) return true;
+    setError(BROWSER_FOLDER_PICKER_MESSAGE);
+    return false;
+  };
+
   const browseProjectRoot = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Project Folder",
@@ -392,6 +402,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const browseAndCreateTemplate = async (name: string, examiner: string) => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Location for Case Folders",
@@ -444,6 +455,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const browseEvidence = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Evidence Directory",
@@ -464,6 +476,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const browseProcessed = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Processed Database Directory",
@@ -484,6 +497,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const browseCaseDocs = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Case Documents Directory",

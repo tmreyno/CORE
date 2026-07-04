@@ -16,6 +16,8 @@
 import { createSignal, type Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
+import { addRecentProject } from "../../components/preferences";
+import { getBasename } from "../../utils/pathUtils";
 import type {
   AcquisitionSession,
   SessionAcquisitionRecord,
@@ -149,6 +151,7 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
     log.info(`invoke write_text_file (+${(performance.now() - t0).toFixed(0)}ms)`);
     await invoke("write_text_file", { path: filePath, content: json });
     log.info(`write_text_file done (+${(performance.now() - t0).toFixed(0)}ms)`);
+    addRecentProject(filePath, opts.caseName || opts.caseNumber || getBasename(filePath));
 
     log.info(`Session created: ${filePath} (total=${(performance.now() - t0).toFixed(0)}ms)`);
     addActivity({ action: "session_created", description: `Session created for case ${opts.caseNumber}` });
@@ -165,6 +168,7 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
 
     setSession(parsed);
     setSessionPath(path);
+    addRecentProject(path, parsed.caseName || parsed.caseNumber || getBasename(path));
     log.info(`Session loaded: ${path}`);
     addActivity({ action: "session_loaded", description: `Session loaded from ${path}` });
   }

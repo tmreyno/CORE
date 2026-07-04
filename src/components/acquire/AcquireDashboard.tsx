@@ -52,6 +52,7 @@ import {
   ChevronRightIcon,
 } from "../icons";
 import { APP_NAME } from "../../utils/edition";
+import { isTauri } from "../../utils/platform";
 import type { PortableConfig } from "../../api/portable";
 import { checkFullDiskAccess, openFullDiskAccessSettings } from "../../api/fda";
 import type { FullDiskAccessStatus } from "../../api/fda";
@@ -520,12 +521,13 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
               </div>
             </button>
           </div>
-          <Show when={props.onOpenRecentProject}>
+          <Show when={props.onOpenRecentProject && isTauri}>
             <div class="mt-2 max-w-md w-full">
               <RecentProjectsList
                 onOpenProject={props.onOpenRecentProject!}
                 maxItems={5}
                 compact
+                pathFilter={(path) => path.toLowerCase().endsWith(".acquisition.json")}
               />
             </div>
           </Show>

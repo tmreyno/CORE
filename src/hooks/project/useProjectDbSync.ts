@@ -19,6 +19,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
 import { getBasename } from "../../utils/pathUtils";
+import { isTauri } from "../../utils/platform";
 import type {
   DbBookmark,
   DbNote,
@@ -76,6 +77,11 @@ function trackPendingInvoke<T>(promise: Promise<T>): void {
  * Logs errors but never throws — the .cffx is still the primary store.
  */
 function syncInvoke<T>(cmd: string, args: Record<string, unknown>): void {
+  if (!isTauri) {
+    log.debug(`DbSync: skipping ${cmd} outside Tauri runtime`);
+    return;
+  }
+
   const request = invoke<T>(cmd, args).catch((err) => {
     log.warn(`DbSync: ${cmd} failed (non-fatal):`, err);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { uniqueProjectFilePaths } from "../useProjectIO";
+import { parseBrowserProjectFile, uniqueProjectFilePaths } from "../useProjectIO";
 import type { ProjectTab } from "../../../types/project";
 
 describe("uniqueProjectFilePaths", () => {
@@ -42,5 +42,30 @@ describe("uniqueProjectFilePaths", () => {
       "/evidence/disk.E01",
       "/case/report.pdf",
     ]);
+  });
+});
+
+describe("parseBrowserProjectFile", () => {
+  it("parses a minimal cffx project for browser preview loading", () => {
+    const result = parseBrowserProjectFile(
+      JSON.stringify({
+        name: "Seed Case",
+        root_path: "/cases/seed",
+        version: 1,
+      }),
+      "seed.cffx",
+    );
+
+    expect(result.path).toBe("seed.cffx");
+    expect(result.project.name).toBe("Seed Case");
+    expect(result.project.root_path).toBe("/cases/seed");
+    expect(result.project.tabs).toEqual([]);
+    expect(result.project.project_id).toBeTruthy();
+  });
+
+  it("rejects non-project json", () => {
+    expect(() => parseBrowserProjectFile("{}", "bad.cffx")).toThrow(
+      "Selected file is not a valid CORE-FFX project",
+    );
   });
 });

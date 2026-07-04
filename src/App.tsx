@@ -27,6 +27,7 @@ import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
 import { isAcquireEdition, isFullEdition } from "./utils/edition";
+import { isTauri } from "./utils/platform";
 import { zoomIn, zoomOut, zoomReset, restoreZoom } from "./utils/zoom";
 import type { AcquireView } from "./components/acquire/AcquireLayout";
 import AcquireLayout from "./components/acquire/AcquireLayout";
@@ -69,6 +70,9 @@ interface ProjectCloseModalState {
   error: string | null;
   steps: ProjectCloseModalStep[];
 }
+
+const isCffxProjectPath = (path: string) => path.toLowerCase().endsWith(".cffx");
+const isAcquisitionSessionPath = (path: string) => path.toLowerCase().endsWith(".acquisition.json");
 
 // AcquireLayout is eagerly imported (not lazy) because it is the primary view
 // in the Acquire edition and is always needed on initial render. Lazy-loading it
@@ -526,7 +530,12 @@ function App() {
   const welcomeModalRecentProjects = createMemo(() => {
     // Re-read on showWelcomeModal change to ensure freshness
     void showWelcomeModal();
-    return getRecentProjects().map(p => ({
+    if (!isTauri) return [];
+    return getRecentProjects().filter((project) =>
+      isAcquireEdition()
+        ? isAcquisitionSessionPath(project.path)
+        : isCffxProjectPath(project.path),
+    ).map(p => ({
       path: p.path,
       name: p.name,
       lastOpened: p.lastOpened,
@@ -819,6 +828,10 @@ function App() {
   const handleOpenRecentProject = async (path: string) => {
     if (isAcquireEdition()) {
       if (!sessionManager) return;
+      if (!isAcquisitionSessionPath(path)) {
+        toast.error("Cannot Open Recent Item", "Acquire can only open .acquisition.json session files.");
+        return;
+      }
       try {
         await sessionManager.load(path);
         toast.success("Session Loaded", `Loaded ${getBasename(path)}`);
@@ -828,6 +841,10 @@ function App() {
       return;
     }
 
+    if (!isCffxProjectPath(path)) {
+      toast.error("Cannot Open Recent Item", "Full Suite can only open .cffx project files.");
+      return;
+    }
     await handleLoadProject(path);
   };
   const handleSaveProject = () =>
