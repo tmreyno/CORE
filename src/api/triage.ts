@@ -17,6 +17,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types
@@ -124,6 +125,10 @@ export interface TriageResult {
 export async function getTriageProfiles(): Promise<
   [TriageProfile[], TriageCategory[]]
 > {
+  if (!isTauri) {
+    return [[], []];
+  }
+
   return invoke<[TriageProfile[], TriageCategory[]]>("triage_get_profiles");
 }
 
@@ -140,6 +145,10 @@ export async function getTriageProfiles(): Promise<
 export async function triageCollect(
   options: TriageOptions
 ): Promise<TriageResult> {
+  if (!isTauri) {
+    throw new Error("Forensic triage collection is available in the desktop app.");
+  }
+
   return invoke<TriageResult>("triage_collect", { options });
 }
 
@@ -147,6 +156,10 @@ export async function triageCollect(
  * Cancel an in-progress triage collection.
  */
 export async function triageCancel(): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke<void>("triage_cancel");
 }
 
@@ -159,6 +172,11 @@ export async function triageCancel(): Promise<void> {
 export async function listenTriageProgress(
   callback: (progress: TriageProgress) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void callback;
+    return () => {};
+  }
+
   return listen<TriageProgress>("triage-progress", (event) => {
     callback(event.payload);
   });
