@@ -28,6 +28,7 @@ import {
 import type { ProjectDbStats } from "../../types/projectDb";
 import { formatBytes } from "../../utils";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 import type { ProjectDashboardProps } from "./types";
 import { formatTimeAgo } from "./helpers";
 import { StatCard } from "./StatCard";
@@ -50,6 +51,10 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
 
   // Try to load db stats (non-blocking)
   onMount(async () => {
+    if (!isTauri) {
+      return;
+    }
+
     try {
       const stats = await invoke<ProjectDbStats>("project_db_get_stats");
       setDbStats(stats);
