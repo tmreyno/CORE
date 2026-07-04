@@ -228,11 +228,9 @@ fn common_run_event(_app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
         tauri::RunEvent::Reopen {
             has_visible_windows,
             ..
-        } => {
-            if !has_visible_windows {
-                if let Err(e) = menu::create_new_window_from_app(_app_handle) {
-                    eprintln!("Failed to create window on reopen: {e}");
-                }
+        } if !has_visible_windows => {
+            if let Err(e) = menu::create_new_window_from_app(_app_handle) {
+                eprintln!("Failed to create window on reopen: {e}");
             }
         }
         _ => {}

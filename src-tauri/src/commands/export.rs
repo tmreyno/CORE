@@ -874,11 +874,10 @@ fn run_export_inner(
     }
 
     let duration_ms = start_time.elapsed().as_millis() as u64;
-    let avg_speed = if duration_ms > 0 {
-        bytes_copied.saturating_mul(1000) / duration_ms
-    } else {
-        0
-    };
+    let avg_speed = bytes_copied
+        .saturating_mul(1000)
+        .checked_div(duration_ms)
+        .unwrap_or(0);
 
     // Generate manifest and reports if requested
     let mut json_manifest_path = None;

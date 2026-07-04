@@ -65,10 +65,7 @@ fn copy_triage_file_snapshot(
     let mut buf = vec![0u8; TRIAGE_COPY_CHUNK_SIZE];
     let mut copied: u64 = 0;
 
-    loop {
-        let Some(to_read) = checked_triage_copy_read_len(file_size, copied)? else {
-            break;
-        };
+    while let Some(to_read) = checked_triage_copy_read_len(file_size, copied)? {
         let n = reader.read(&mut buf[..to_read])?;
         if n == 0 {
             validate_snapshot_byte_count("Triage copy", src_path, file_size, copied)

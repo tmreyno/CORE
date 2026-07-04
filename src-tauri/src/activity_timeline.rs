@@ -398,7 +398,7 @@ fn compute_type_distribution(project: &FFXProject) -> Vec<TypeDistribution> {
         })
         .collect();
 
-    result.sort_by(|a, b| b.count.cmp(&a.count));
+    result.sort_by_key(|entry| std::cmp::Reverse(entry.count));
     result
 }
 
@@ -446,7 +446,7 @@ fn compute_user_activity(project: &FFXProject) -> Vec<UserActivity> {
     }
 
     let mut result: Vec<_> = user_map.into_values().collect();
-    result.sort_by(|a, b| b.total_activities.cmp(&a.total_activities));
+    result.sort_by_key(|entry| std::cmp::Reverse(entry.total_activities));
     result
 }
 
@@ -488,7 +488,7 @@ fn identify_peak_periods(project: &FFXProject) -> Vec<PeakPeriod> {
         })
         .collect();
 
-    peaks.sort_by(|a, b| b.activity_count.cmp(&a.activity_count));
+    peaks.sort_by_key(|entry| std::cmp::Reverse(entry.activity_count));
     peaks.truncate(5);
     peaks
 }

@@ -195,11 +195,9 @@ fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) -> DocumentResult<()> {
                             meta.word_count = Some(n);
                         }
                     }
-                    "Characters" | "CharactersWithSpaces" => {
-                        if meta.char_count.is_none() {
-                            if let Ok(n) = text.parse::<u32>() {
-                                meta.char_count = Some(n);
-                            }
+                    "Characters" | "CharactersWithSpaces" if meta.char_count.is_none() => {
+                        if let Ok(n) = text.parse::<u32>() {
+                            meta.char_count = Some(n);
                         }
                     }
                     _ => {}
