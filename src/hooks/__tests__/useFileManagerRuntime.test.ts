@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, expect, it } from "vitest";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { mockInvoke, mockListen } from "../../__tests__/setup";
 import { useFileManager } from "../useFileManager";
 
@@ -37,5 +38,20 @@ describe("useFileManager runtime guards", () => {
     expect(fileManager.statusMessage()).toContain("Evidence directory scanning is available in the desktop app");
     expect(mockListen).not.toHaveBeenCalledWith("scan-file-found", expect.any(Function));
     expect(mockInvoke).not.toHaveBeenCalledWith("scan_directory_streaming", expect.anything());
+  });
+
+  it("does not open a native large-container prompt outside a Tauri runtime", async () => {
+    const fileManager = useFileManager();
+    const file = {
+      path: "/evidence/large.E01",
+      filename: "large.E01",
+      container_type: "ewf",
+      size: 51 * 1024 * 1024 * 1024,
+    };
+
+    await fileManager.selectAndViewFile(file);
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(fileManager.activeFile()).toBe(file);
   });
 });

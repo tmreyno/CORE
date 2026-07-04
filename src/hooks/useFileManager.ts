@@ -574,11 +574,17 @@ export function useFileManager() {
       const thresholdBytes = thresholdGb * 1024 * 1024 * 1024;
       
       if (file.size > thresholdBytes) {
-        const confirmed = await ask(
-          `This container (${formatBytes(file.size)}) exceeds ${thresholdGb}GB.\n\nLarge containers may take longer to process and use more memory. Continue?`,
-          { title: "Large Container", kind: "warning" }
-        );
-        if (!confirmed) return;
+        if (!isTauri) {
+          log.info(
+            `Skipping native large-container confirmation outside Tauri runtime for ${file.filename}`,
+          );
+        } else {
+          const confirmed = await ask(
+            `This container (${formatBytes(file.size)}) exceeds ${thresholdGb}GB.\n\nLarge containers may take longer to process and use more memory. Continue?`,
+            { title: "Large Container", kind: "warning" },
+          );
+          if (!confirmed) return;
+        }
       }
     }
     
