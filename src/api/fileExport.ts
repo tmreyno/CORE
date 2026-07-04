@@ -17,6 +17,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { formatBytes } from "../utils";
+import { isTauri } from "../utils/platform";
 
 /**
  * Progress event during copy/export operations
@@ -151,6 +152,14 @@ export async function exportFiles(
   options?: ExportOptions,
   onProgress?: (progress: CopyProgress) => void
 ): Promise<CopyResult> {
+  if (!isTauri) {
+    void sources;
+    void destination;
+    void options;
+    void onProgress;
+    throw new Error("File export is available in the desktop app.");
+  }
+
   let unlistenFn: UnlistenFn | undefined;
 
   try {
@@ -204,6 +213,11 @@ export function formatDuration(ms: number): string {
  * @returns true if the cancel was accepted, false if no matching operation found
  */
 export async function cancelExport(operationId: string): Promise<boolean> {
+  if (!isTauri) {
+    void operationId;
+    return false;
+  }
+
   return invoke<boolean>("cancel_export", { operationId });
 }
 

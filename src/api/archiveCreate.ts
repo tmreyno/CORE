@@ -18,6 +18,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { formatBytes } from "../utils";
+import { isTauri } from "../utils/platform";
 
 // Re-export for consumers that import from archiveCreate
 export { formatBytes };
@@ -165,6 +166,14 @@ export async function createArchive(
   options?: CreateArchiveOptions,
   onProgress?: (progress: ArchiveCreateProgress) => void
 ): Promise<string> {
+  if (!isTauri) {
+    void archivePath;
+    void inputPaths;
+    void options;
+    void onProgress;
+    throw new Error("Archive creation is available in the desktop app.");
+  }
+
   let unlisten: UnlistenFn | null = null;
 
   try {
@@ -218,6 +227,12 @@ export async function listenToProgress(
   /** Optional archive path filter — only forward events for this archive */
   filterArchivePath?: string,
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void callback;
+    void filterArchivePath;
+    return () => {};
+  }
+
   return await listen<ArchiveCreateProgress>("archive-create-progress", (event) => {
     if (!filterArchivePath || event.payload.archivePath === filterArchivePath) {
       callback(event.payload);
@@ -244,6 +259,12 @@ export async function testArchive(
   archivePath: string,
   password?: string
 ): Promise<boolean> {
+  if (!isTauri) {
+    void archivePath;
+    void password;
+    throw new Error("Archive testing is available in the desktop app.");
+  }
+
   return await invoke<boolean>("test_7z_archive", {
     archivePath,
     password: password || null,
@@ -270,6 +291,12 @@ export async function estimateSize(
   inputPaths: string[],
   compressionLevel: number = CompressionLevel.Normal
 ): Promise<[number, number]> {
+  if (!isTauri) {
+    void inputPaths;
+    void compressionLevel;
+    throw new Error("Archive size estimation is available in the desktop app.");
+  }
+
   return await invoke<[number, number]>("estimate_archive_size", {
     inputPaths,
     compressionLevel,
@@ -283,6 +310,11 @@ export async function estimateSize(
  * @returns Promise resolving when cancelled
  */
 export async function cancelCreation(archivePath: string): Promise<void> {
+  if (!isTauri) {
+    void archivePath;
+    return;
+  }
+
   return await invoke<void>("cancel_archive_creation", {
     archivePath,
   });
@@ -403,6 +435,13 @@ export async function repairArchive(
   repairedPath: string,
   onProgress?: (progress: ArchiveRepairProgress) => void
 ): Promise<string> {
+  if (!isTauri) {
+    void corruptedPath;
+    void repairedPath;
+    void onProgress;
+    throw new Error("Archive repair is available in the desktop app.");
+  }
+
   let unlisten: UnlistenFn | null = null;
 
   try {
@@ -436,6 +475,11 @@ export async function repairArchive(
 export async function listenToRepairProgress(
   callback: (progress: ArchiveRepairProgress) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void callback;
+    return () => {};
+  }
+
   return await listen<ArchiveRepairProgress>("archive-repair-progress", (event) =>
     callback(event.payload)
   );
@@ -459,6 +503,14 @@ export async function listenToRepairProgress(
 export async function validateArchive(
   archivePath: string
 ): Promise<ArchiveValidationResult> {
+  if (!isTauri) {
+    void archivePath;
+    return {
+      isValid: false,
+      errorMessage: "Archive validation is available in the desktop app.",
+    };
+  }
+
   return await invoke<ArchiveValidationResult>("validate_7z_archive", {
     archivePath,
   });
@@ -496,6 +548,14 @@ export async function extractSplitArchive(
   password?: string,
   onProgress?: (progress: SplitExtractProgress) => void
 ): Promise<string> {
+  if (!isTauri) {
+    void firstVolume;
+    void outputDir;
+    void password;
+    void onProgress;
+    throw new Error("Split archive extraction is available in the desktop app.");
+  }
+
   let unlisten: UnlistenFn | null = null;
 
   try {
@@ -530,6 +590,11 @@ export async function extractSplitArchive(
 export async function listenToSplitExtractProgress(
   callback: (progress: SplitExtractProgress) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void callback;
+    return () => {};
+  }
+
   return await listen<SplitExtractProgress>("split-extract-progress", (event) =>
     callback(event.payload)
   );
@@ -553,6 +618,12 @@ export async function encryptDataNative(
   data: Uint8Array,
   password: string
 ): Promise<Uint8Array> {
+  if (!isTauri) {
+    void data;
+    void password;
+    throw new Error("Native encryption is available in the desktop app.");
+  }
+
   const encrypted = await invoke<number[]>("encrypt_data_native", {
     data: Array.from(data),
     password,
@@ -578,6 +649,12 @@ export async function decryptDataNative(
   encryptedData: Uint8Array,
   password: string
 ): Promise<Uint8Array> {
+  if (!isTauri) {
+    void encryptedData;
+    void password;
+    throw new Error("Native decryption is available in the desktop app.");
+  }
+
   const decrypted = await invoke<number[]>("decrypt_data_native", {
     encryptedData: Array.from(encryptedData),
     password,
@@ -601,6 +678,10 @@ export async function decryptDataNative(
  * ```
  */
 export async function getLastArchiveError(): Promise<DetailedArchiveError | null> {
+  if (!isTauri) {
+    return null;
+  }
+
   return await invoke<DetailedArchiveError | null>("get_last_archive_error");
 }
 
@@ -610,5 +691,9 @@ export async function getLastArchiveError(): Promise<DetailedArchiveError | null
  * @returns Promise resolving when cleared
  */
 export async function clearLastArchiveError(): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return await invoke<void>("clear_last_archive_error");
 }
