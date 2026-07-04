@@ -7,7 +7,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("ActivityTimeline");
+const BROWSER_TIMELINE_MESSAGE =
+  "Activity timeline analysis is available in the desktop app.";
 
 // =============================================================================
 // Type Definitions - Aligned with backend activity_timeline.rs
@@ -132,11 +135,23 @@ export function useActivityTimeline() {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+  const ensureDesktopRuntime = () => {
+    if (isTauri) return true;
+    setLoading(false);
+    setError(BROWSER_TIMELINE_MESSAGE);
+    return false;
+  };
+
   /**
    * Compute timeline visualization data for a project
    * Uses timeline_compute_visualization backend command
    */
   const computeVisualization = async (project: FFXProject): Promise<TimelineVisualization | null> => {
+    if (!ensureDesktopRuntime()) {
+      setVisualization(null);
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -164,6 +179,8 @@ export function useActivityTimeline() {
     project: FFXProject,
     exportedBy: string = "user"
   ): Promise<TimelineExport | null> => {
+    if (!ensureDesktopRuntime()) return null;
+
     try {
       setLoading(true);
       setError(null);
@@ -190,6 +207,8 @@ export function useActivityTimeline() {
     project: FFXProject,
     exportedBy: string = "user"
   ): Promise<string | null> => {
+    if (!ensureDesktopRuntime()) return null;
+
     try {
       setLoading(true);
       setError(null);
