@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component, Show } from "solid-js";
+import { Component, Show, createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Toggle } from "../ui";
 import { SettingGroup, SettingRow, SettingsSelect } from "../settings";
@@ -12,8 +12,12 @@ import type { AppPreferences, ReportPreset } from "../preferences";
 import { getActiveUserProfile } from "../preferences";
 import { REPORT_PRESETS } from "../report/constants";
 import { HiOutlineUserCircle } from "../icons";
+import { isTauri } from "../../utils/platform";
 import { logger } from "../../utils/logger";
 const log = logger.scope("ReportsTab");
+
+const BROWSER_LOGO_MESSAGE =
+  "Logo file browsing is available in the desktop app. In browser preview, enter the logo path manually.";
 
 interface ReportsSettingsProps {
   preferences: AppPreferences;
@@ -21,7 +25,14 @@ interface ReportsSettingsProps {
 }
 
 export const ReportsSettings: Component<ReportsSettingsProps> = (props) => {
+  const [browseMessage, setBrowseMessage] = createSignal<string | null>(null);
+
   const handleBrowseLogo = async () => {
+    if (!isTauri) {
+      setBrowseMessage(BROWSER_LOGO_MESSAGE);
+      return;
+    }
+
     try {
       const selected = await open({
         multiple: false,
@@ -72,6 +83,14 @@ export const ReportsSettings: Component<ReportsSettingsProps> = (props) => {
       </SettingGroup>
 
       <SettingGroup title="Branding" description="Organization branding for reports">
+        <Show when={browseMessage()}>
+          {(message) => (
+            <div class="text-xs text-warning bg-warning/10 border border-warning/20 rounded px-2 py-1.5 mb-2">
+              {message()}
+            </div>
+          )}
+        </Show>
+
         <Show when={getActiveUserProfile()}>
           {(profile) => (
             <div class="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-accent/5 border border-accent/20 text-xs">

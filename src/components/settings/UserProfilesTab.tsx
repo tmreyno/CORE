@@ -23,8 +23,12 @@ import {
   createEmptyProfile,
   applyProfileToPreferences,
 } from "../preferences";
+import { isTauri } from "../../utils/platform";
 import { logger } from "../../utils/logger";
 const log = logger.scope("UserProfilesTab");
+
+const BROWSER_LOGO_MESSAGE =
+  "Logo file browsing is available in the desktop app. In browser preview, enter the logo path manually.";
 
 interface UserProfilesSettingsProps {
   preferences: AppPreferences;
@@ -35,6 +39,7 @@ export const UserProfilesSettings: Component<UserProfilesSettingsProps> = (props
   const [editingProfile, setEditingProfile] = createSignal<UserProfile | null>(null);
   const [isNew, setIsNew] = createSignal(false);
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
+  const [browseMessage, setBrowseMessage] = createSignal<string | null>(null);
 
   const profiles = () => props.preferences.userProfiles || [];
   const defaultId = () => props.preferences.defaultUserProfileId || "";
@@ -107,6 +112,11 @@ export const UserProfilesSettings: Component<UserProfilesSettingsProps> = (props
   };
 
   const handleBrowseLogo = async () => {
+    if (!isTauri) {
+      setBrowseMessage(BROWSER_LOGO_MESSAGE);
+      return;
+    }
+
     try {
       const selected = await open({
         multiple: false,
@@ -399,6 +409,13 @@ export const UserProfilesSettings: Component<UserProfilesSettingsProps> = (props
                   </div>
                   <div>
                     <label class="label">Report Logo</label>
+                    <Show when={browseMessage()}>
+                      {(message) => (
+                        <div class="text-xs text-warning bg-warning/10 border border-warning/20 rounded px-2 py-1.5 mb-2">
+                          {message()}
+                        </div>
+                      )}
+                    </Show>
                     <div class="flex items-center gap-2">
                       <input
                         type="text"
