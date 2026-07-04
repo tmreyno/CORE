@@ -22,6 +22,7 @@ import { joinPath } from "../../utils/pathUtils";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isAcquireEdition } from "../../utils/edition";
+import { isTauri } from "../../utils/platform";
 import caseFolderTemplate from "../../templates/project/case-folder-template.json";
 import acquireFolderTemplate from "../../templates/project/acquire-folder-template.json";
 
@@ -69,6 +70,14 @@ export interface HandleOpenDirectoryParams {
  */
 export async function handleOpenDirectory(params: HandleOpenDirectoryParams) {
   const { setPendingProjectRoot, setShowProjectWizard, toast } = params;
+
+  if (!isTauri) {
+    toast.info(
+      "Desktop App Required",
+      "Directory project setup is available in the desktop app. In browser preview, use Open Project to load a .cffx file.",
+    );
+    return;
+  }
 
   try {
     const selected = await open({

@@ -2,8 +2,9 @@
 // projectSetup — createDocumentEntry tests
 // =============================================================================
 
-import { describe, it, expect } from "vitest";
-import { createDocumentEntry } from "../projectSetup";
+import { describe, it, expect, vi } from "vitest";
+import { createDocumentEntry, handleOpenDirectory } from "../projectSetup";
+import { open as mockOpen } from "@tauri-apps/plugin-dialog";
 import type { CaseDocument } from "../../../types";
 
 function makeDoc(overrides: Partial<CaseDocument> = {}): CaseDocument {
@@ -66,5 +67,29 @@ describe("createDocumentEntry", () => {
     expect(entry.metadata?.document_type).toBeUndefined();
     expect(entry.metadata?.case_number).toBeUndefined();
     expect(entry.metadata?.evidence_id).toBeUndefined();
+  });
+});
+
+describe("handleOpenDirectory", () => {
+  it("does not open the native directory picker outside Tauri", async () => {
+    const params = {
+      setPendingProjectRoot: vi.fn(),
+      setShowProjectWizard: vi.fn(),
+      toast: {
+        success: vi.fn(),
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+
+    await handleOpenDirectory(params);
+
+    expect(mockOpen).not.toHaveBeenCalled();
+    expect(params.setPendingProjectRoot).not.toHaveBeenCalled();
+    expect(params.setShowProjectWizard).not.toHaveBeenCalled();
+    expect(params.toast.info).toHaveBeenCalledWith(
+      "Desktop App Required",
+      expect.stringContaining("Directory project setup is available in the desktop app"),
+    );
   });
 });

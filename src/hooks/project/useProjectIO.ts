@@ -585,7 +585,9 @@ export function createProjectIO(
       setters.setCurrentSessionId(proj.current_session_id || null);
       setters.setModified(true);
     });
-    invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+    if (isTauri) {
+      invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+    }
     log.debug(`createProject: Project created, modified=true, name=${proj.name}`);
 
     // Start auto-save if enabled
@@ -660,6 +662,12 @@ export function createProjectIO(
       }
       if (!proj.root_path) {
         return { success: false, error: "No root path specified" };
+      }
+
+      if (!isTauri) {
+        const errorMsg = "Project saving is available in the desktop app. Browser preview can load .cffx files but cannot write them back to disk.";
+        setters.setError(errorMsg);
+        return { success: false, error: errorMsg };
       }
 
       // Deep check for nulls in numeric fields - log any found
@@ -767,6 +775,13 @@ export function createProjectIO(
    * Save project to a new location (Save As)
    */
   const saveProjectAs = async (options: BuildProjectOptions): Promise<ProjectSaveResult> => {
+    if (!isTauri) {
+      return {
+        success: false,
+        error: "Project Save As is available in the desktop app.",
+      };
+    }
+
     const defaultPath = await getDefaultProjectPath(options.rootPath);
     const selected = await save({
       defaultPath,
