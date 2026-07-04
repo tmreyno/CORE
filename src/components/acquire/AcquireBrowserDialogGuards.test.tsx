@@ -6,6 +6,8 @@ import AcquireVerifyView from "./AcquireVerifyView";
 import AcquireExportView from "./AcquireExportView";
 import StartSessionDialog from "./StartSessionDialog";
 import AcquireDashboard from "./AcquireDashboard";
+import AcquireLayout, { type AcquireView } from "./AcquireLayout";
+import type { ExportMode } from "../../hooks/export/types";
 
 vi.mock("../export-panel/DriveTreeBrowser", () => ({
   DriveTreeBrowser: () => <div data-testid="drive-tree-browser">Drive tree</div>,
@@ -148,6 +150,49 @@ describe("acquisition browser dialog guards", () => {
     expect(open).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       "Output folder browsing is available in the desktop app.",
+    );
+    dispose();
+  });
+
+  it("shows a browser-preview message instead of opening the native quick verify picker", () => {
+    const [view, setView] = createSignal<AcquireView>("dashboard");
+    const [mode, setMode] = createSignal<ExportMode>("native");
+    const { container, dispose } = renderComponent(() => (
+      <AcquireLayout
+        onSettings={vi.fn()}
+        onHelp={vi.fn()}
+        onCommandPalette={vi.fn()}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        projectName={() => "Case 1827"}
+        hasProject={() => true}
+        evidenceCount={() => 0}
+        initialSources={() => []}
+        initialExaminerName={() => "examiner"}
+        onExportComplete={vi.fn()}
+        onActivityCreate={vi.fn()}
+        onActivityUpdate={vi.fn()}
+        onVerifyHashes={vi.fn()}
+        acquireView={view}
+        setAcquireView={setView}
+        initialExportMode={mode}
+        setInitialExportMode={setMode}
+        isPortable={() => false}
+        portableConfig={() => null}
+        initialSystemStats={{
+          osName: "macOS",
+          cpuCores: 8,
+          memoryTotal: 16 * 1024 * 1024 * 1024,
+        } as any}
+        initialDrives={[]}
+      />
+    ));
+
+    buttonByTitle(container, "Quick Hash File").click();
+
+    expect(open).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      "Quick hash file selection is available in the desktop app.",
     );
     dispose();
   });
