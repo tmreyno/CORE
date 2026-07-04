@@ -8,6 +8,7 @@ import { createSignal } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
 import { getBasename } from '../utils';
 import { logger } from '../utils/logger';
+import { isTauri } from '../utils/platform';
 import type { 
   ProcessedDatabase, ArtifactCategorySummary, AxiomCaseInfo, AxiomKeywordFile
 } from '../types/processed';
@@ -51,6 +52,10 @@ export function useProcessedDatabases() {
   const loadAxiomDetails = async (db: ProcessedDatabase): Promise<void> => {
     if (db.db_type !== 'MagnetAxiom') return;
     if (axiomCaseInfo()[db.path]) return; // Already loaded
+    if (!isTauri) {
+      log.debug("Skipping AXIOM detail loading outside Tauri runtime");
+      return;
+    }
     
     const loadingSet = new Set(loadingDetails());
     loadingSet.add(db.path);
