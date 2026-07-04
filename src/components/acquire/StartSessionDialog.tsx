@@ -15,6 +15,7 @@ import {
   HiOutlineFolderOpen,
   HiOutlineArchiveBoxArrowDown,
 } from "../icons";
+import { isTauri } from "../../utils/platform";
 
 interface StartSessionDialogProps {
   isOpen: boolean;
@@ -28,12 +29,16 @@ interface StartSessionDialogProps {
   defaultExaminer?: string;
 }
 
+const BROWSER_OUTPUT_FOLDER_MESSAGE =
+  "Output folder browsing is available in the desktop app. In browser preview, enter the folder path manually.";
+
 const StartSessionDialog: Component<StartSessionDialogProps> = (props) => {
   const [caseNumber, setCaseNumber] = createSignal("");
   const [examiner, setExaminer] = createSignal(props.defaultExaminer ?? "");
   const [caseName, setCaseName] = createSignal("");
   const [outputFolder, setOutputFolder] = createSignal("");
   const [creating, setCreating] = createSignal(false);
+  const [browseMessage, setBrowseMessage] = createSignal("");
 
   const canCreate = () =>
     caseNumber().trim().length > 0 &&
@@ -41,6 +46,12 @@ const StartSessionDialog: Component<StartSessionDialogProps> = (props) => {
     outputFolder().trim().length > 0;
 
   async function handleBrowse() {
+    if (!isTauri) {
+      setBrowseMessage(BROWSER_OUTPUT_FOLDER_MESSAGE);
+      return;
+    }
+
+    setBrowseMessage("");
     const selected = await open({ directory: true, title: "Select Output Folder" });
     if (selected && typeof selected === "string") {
       setOutputFolder(selected);
@@ -152,7 +163,7 @@ const StartSessionDialog: Component<StartSessionDialogProps> = (props) => {
                   placeholder="Select folder..."
                   value={outputFolder()}
                   onInput={(e) => setOutputFolder(e.currentTarget.value)}
-                  readOnly
+                  readOnly={isTauri}
                 />
                 <button class="btn-sm" onClick={handleBrowse}>
                   <HiOutlineFolderOpen class="w-icon-sm h-icon-sm" />
@@ -162,6 +173,11 @@ const StartSessionDialog: Component<StartSessionDialogProps> = (props) => {
               <p class="text-2xs text-txt-muted mt-1">
                 The session file and all acquisitions will be saved here.
               </p>
+              <Show when={browseMessage()}>
+                <p class="text-2xs text-warning mt-1">
+                  {browseMessage()}
+                </p>
+              </Show>
             </div>
           </div>
 

@@ -82,6 +82,9 @@ const EvidenceCollectionPanel = lazy(() =>
   })),
 );
 
+const BROWSER_DASHBOARD_DESTINATION_MESSAGE =
+  "Output folder browsing is available in the desktop app.";
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -234,6 +237,7 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
 
   // ── Manual destination override (browse button) ──
   const [manualDestination, setManualDestination] = createSignal("");
+  const [destinationMessage, setDestinationMessage] = createSignal("");
 
   // ── Acquisition runner ──
   const effectiveDestination = () =>
@@ -390,6 +394,12 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   }
 
   async function handleBrowseDestination() {
+    if (!isTauri) {
+      setDestinationMessage(BROWSER_DASHBOARD_DESTINATION_MESSAGE);
+      return;
+    }
+
+    setDestinationMessage("");
     try {
       const selected = await open({ directory: true, title: "Select output folder" });
       if (selected && typeof selected === "string") {
@@ -601,6 +611,7 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
                 onIdentify={() => props.onAction("identify")}
                 onQuickVerify={props.onQuickVerify}
                 destination={effectiveDestination}
+                destinationMessage={destinationMessage}
                 onBrowseDestination={handleBrowseDestination}
                 onSelectSource={handleDriveSelect}
                 selectedPaths={selectedPaths}
@@ -655,6 +666,7 @@ interface SelectionPhaseProps {
   onIdentify: () => void;
   onQuickVerify?: () => void;
   destination: Accessor<string>;
+  destinationMessage: Accessor<string>;
   onBrowseDestination: () => void;
   onSelectSource: (path: string) => void;
   selectedPaths: Accessor<Set<string>>;
@@ -695,6 +707,11 @@ const SelectionPhase: Component<SelectionPhaseProps> = (p) => {
           </button>
         </div>
       </div>
+      <Show when={p.destinationMessage()}>
+        <div class="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-2xs text-warning">
+          {p.destinationMessage()}
+        </div>
+      </Show>
 
       {/* Volatile data toggles */}
       <div class="flex flex-col gap-1.5">

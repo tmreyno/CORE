@@ -4,6 +4,8 @@ import { createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import AcquireVerifyView from "./AcquireVerifyView";
 import AcquireExportView from "./AcquireExportView";
+import StartSessionDialog from "./StartSessionDialog";
+import AcquireDashboard from "./AcquireDashboard";
 
 vi.mock("../export-panel/DriveTreeBrowser", () => ({
   DriveTreeBrowser: () => <div data-testid="drive-tree-browser">Drive tree</div>,
@@ -24,6 +26,12 @@ function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
     candidate.textContent?.includes(text),
   );
+  expect(button).toBeDefined();
+  return button as HTMLButtonElement;
+}
+
+function buttonByTitle(container: HTMLElement, title: string): HTMLButtonElement {
+  const button = container.querySelector(`button[title="${title}"]`);
   expect(button).toBeDefined();
   return button as HTMLButtonElement;
 }
@@ -98,6 +106,48 @@ describe("acquisition browser dialog guards", () => {
     expect(open).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       "Acquire source file and folder selection is available in the desktop app.",
+    );
+    dispose();
+  });
+
+  it("allows manual output folder entry instead of opening a native session folder picker", () => {
+    const { container, dispose } = renderComponent(() => (
+      <StartSessionDialog isOpen onClose={vi.fn()} onCreate={vi.fn()} defaultExaminer="examiner" />
+    ));
+
+    buttonByText(container, "Browse").click();
+
+    const outputInput = container.querySelector('input[placeholder="Select folder..."]') as HTMLInputElement;
+    expect(open).not.toHaveBeenCalled();
+    expect(outputInput.readOnly).toBe(false);
+    expect(container.textContent).toContain(
+      "Output folder browsing is available in the desktop app.",
+    );
+    dispose();
+  });
+
+  it("shows a browser-preview message instead of opening a native dashboard destination picker", () => {
+    const { container, dispose } = renderComponent(() => (
+      <AcquireDashboard
+        onAction={vi.fn()}
+        onSettings={vi.fn()}
+        onHelp={vi.fn()}
+        onCommandPalette={vi.fn()}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        projectName={() => "Case 1827"}
+        hasProject={() => true}
+        evidenceCount={() => 0}
+        isPortable={() => false}
+        portableConfig={() => null}
+      />
+    ));
+
+    buttonByTitle(container, "Choose output folder").click();
+
+    expect(open).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      "Output folder browsing is available in the desktop app.",
     );
     dispose();
   });
