@@ -6,6 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,12 @@ export async function createAff4Image(
   options: Aff4ExportOptions,
   onProgress?: (progress: Aff4ExportProgress) => void,
 ): Promise<Aff4ExportResult> {
+  if (!isTauri) {
+    void options;
+    void onProgress;
+    throw new Error("AFF4 image creation is available in the desktop app.");
+  }
+
   let unlisten: UnlistenFn | undefined;
 
   try {
@@ -70,5 +77,10 @@ export async function createAff4Image(
 }
 
 export async function cancelAff4Export(outputPath: string): Promise<boolean> {
+  if (!isTauri) {
+    void outputPath;
+    return false;
+  }
+
   return invoke<boolean>("aff4_cancel_export", { outputPath });
 }
