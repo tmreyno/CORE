@@ -7,6 +7,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { HiOutlineInformationCircle } from "../../icons";
 import type { Accessor } from "solid-js";
+import { ToolsBrowserDialogMessage, createToolsBrowserDialogGuard } from "./browserDialogGuard";
 
 interface ExtractTabProps {
   firstVolume: Accessor<string>;
@@ -16,6 +17,8 @@ interface ExtractTabProps {
 }
 
 export function ExtractTab(props: ExtractTabProps) {
+  const browserDialog = createToolsBrowserDialogGuard();
+
   return (
     <div class="space-y-3">
       <div class="info-card">
@@ -27,6 +30,7 @@ export function ExtractTab(props: ExtractTabProps) {
           </div>
         </div>
       </div>
+      <ToolsBrowserDialogMessage message={browserDialog.message} />
       <div class="space-y-2">
         <label class="label">First Volume</label>
         <div class="flex gap-2">
@@ -38,6 +42,7 @@ export function ExtractTab(props: ExtractTabProps) {
             placeholder="Select first volume (.001)..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await open({ directory: false, multiple: false });
             if (selected) props.setFirstVolume(selected as string);
           }}>
@@ -56,6 +61,7 @@ export function ExtractTab(props: ExtractTabProps) {
             placeholder="Extract to..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await open({ directory: true, multiple: false });
             if (selected) props.setOutputDir(selected as string);
           }}>

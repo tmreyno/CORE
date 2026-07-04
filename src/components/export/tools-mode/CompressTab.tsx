@@ -9,6 +9,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { HiOutlineInformationCircle } from "../../icons";
 import { LZMA_COMPRESSION_LEVELS } from "../../../api/lzmaApi";
 import type { Accessor } from "solid-js";
+import { ToolsBrowserDialogMessage, createToolsBrowserDialogGuard } from "./browserDialogGuard";
 
 interface CompressTabProps {
   algorithm: Accessor<"lzma" | "lzma2">;
@@ -22,6 +23,8 @@ interface CompressTabProps {
 }
 
 export function CompressTab(props: CompressTabProps) {
+  const browserDialog = createToolsBrowserDialogGuard();
+
   return (
     <div class="space-y-3">
       <div class="info-card">
@@ -33,6 +36,7 @@ export function CompressTab(props: CompressTabProps) {
           </div>
         </div>
       </div>
+      <ToolsBrowserDialogMessage message={browserDialog.message} />
 
       <div class="space-y-2">
         <label class="label">Algorithm</label>
@@ -88,6 +92,7 @@ export function CompressTab(props: CompressTabProps) {
             placeholder="Select file to compress..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await open({ directory: false, multiple: false });
             if (selected) props.setInputPath(selected as string);
           }}>
@@ -107,6 +112,7 @@ export function CompressTab(props: CompressTabProps) {
             placeholder={`Output path (.${props.algorithm() === "lzma" ? "lzma" : "xz"})...`}
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const ext = props.algorithm() === "lzma" ? "lzma" : "xz";
             const selected = await save({ filters: [{ name: `${ext.toUpperCase()} File`, extensions: [ext] }] });
             if (selected) props.setOutputPath(selected as string);

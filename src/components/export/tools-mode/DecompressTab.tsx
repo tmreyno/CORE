@@ -7,6 +7,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { HiOutlineInformationCircle } from "../../icons";
 import type { Accessor } from "solid-js";
+import { ToolsBrowserDialogMessage, createToolsBrowserDialogGuard } from "./browserDialogGuard";
 
 interface DecompressTabProps {
   inputPath: Accessor<string>;
@@ -16,6 +17,8 @@ interface DecompressTabProps {
 }
 
 export function DecompressTab(props: DecompressTabProps) {
+  const browserDialog = createToolsBrowserDialogGuard();
+
   return (
     <div class="space-y-3">
       <div class="info-card">
@@ -27,6 +30,7 @@ export function DecompressTab(props: DecompressTabProps) {
           </div>
         </div>
       </div>
+      <ToolsBrowserDialogMessage message={browserDialog.message} />
       <div class="space-y-2">
         <label class="label">Compressed File</label>
         <div class="flex gap-2">
@@ -38,6 +42,7 @@ export function DecompressTab(props: DecompressTabProps) {
             placeholder="Select .lzma or .xz file..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await open({ directory: false, multiple: false, filters: [{ name: "LZMA Files", extensions: ["lzma", "xz"] }] });
             if (selected) props.setInputPath(selected as string);
           }}>
@@ -56,6 +61,7 @@ export function DecompressTab(props: DecompressTabProps) {
             placeholder="Decompressed output path..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await save({});
             if (selected) props.setOutputPath(selected as string);
           }}>
