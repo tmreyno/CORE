@@ -18,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../utils/logger";
 import { addRecentProject } from "../../components/preferences";
 import { getBasename } from "../../utils/pathUtils";
+import { isTauri } from "../../utils/platform";
 import type {
   AcquisitionSession,
   SessionAcquisitionRecord,
@@ -50,6 +51,7 @@ interface AcquisitionSessionManager {
   // Lifecycle
   create: (opts: CreateSessionOpts) => Promise<void>;
   load: (path: string) => Promise<void>;
+  loadParsed: (parsed: AcquisitionSession, path: string) => void;
   close: () => void;
 
   // Mutations — all auto-save
@@ -103,6 +105,7 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
       if (!s || !p) return;
       const updated = { ...s, modifiedAt: new Date().toISOString() };
       setSession(updated);
+      if (!isTauri) return;
       const json = JSON.stringify(updated, null, 2);
       invoke("write_text_file", { path: p, content: json }).catch((err) => {
         log.warn("Session save failed:", err);
@@ -128,17 +131,19 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
       caseName: opts.caseName,
     });
 
-    // Gather system info at session creation
-    try {
-      log.info(`invoke get_hostname (+${(performance.now() - t0).toFixed(0)}ms)`);
-      const hostname = await invoke<string>("get_hostname").catch(() => "");
-      log.info(`get_hostname done (+${(performance.now() - t0).toFixed(0)}ms)`);
-      const username = await invoke<string>("get_current_username").catch(() => "");
-      log.info(`get_current_username done (+${(performance.now() - t0).toFixed(0)}ms)`);
-      newSession.system.hostname = hostname;
-      newSession.system.username = username;
-    } catch (e) {
-      log.warn("Failed to gather system info:", e);
+    if (isTauri) {
+      // Gather system info at session creation
+      try {
+        log.info(`invoke get_hostname (+${(performance.now() - t0).toFixed(0)}ms)`);
+        const hostname = await invoke<string>("get_hostname").catch(() => "");
+        log.info(`get_hostname done (+${(performance.now() - t0).toFixed(0)}ms)`);
+        const username = await invoke<string>("get_current_username").catch(() => "");
+        log.info(`get_current_username done (+${(performance.now() - t0).toFixed(0)}ms)`);
+        newSession.system.hostname = hostname;
+        newSession.system.username = username;
+      } catch (e) {
+        log.warn("Failed to gather system info:", e);
+      }
     }
 
     log.info(`setSession() (+${(performance.now() - t0).toFixed(0)}ms)`);
@@ -146,11 +151,15 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
     setSessionPath(filePath);
     log.info(`signals updated (+${(performance.now() - t0).toFixed(0)}ms)`);
 
-    // Write initial file
-    const json = JSON.stringify(newSession, null, 2);
-    log.info(`invoke write_text_file (+${(performance.now() - t0).toFixed(0)}ms)`);
-    await invoke("write_text_file", { path: filePath, content: json });
-    log.info(`write_text_file done (+${(performance.now() - t0).toFixed(0)}ms)`);
+    if (isTauri) {
+      // Write initial file
+      const json = JSON.stringify(newSession, null, 2);
+      log.info(`invoke write_text_file (+${(performance.now() - t0).toFixed(0)}ms)`);
+      await invoke("write_text_file", { path: filePath, content: json });
+      log.info(`write_text_file done (+${(performance.now() - t0).toFixed(0)}ms)`);
+    } else {
+      log.info("Browser preview acquisition session created in memory");
+    }
     addRecentProject(filePath, opts.caseName || opts.caseNumber || getBasename(filePath));
 
     log.info(`Session created: ${filePath} (total=${(performance.now() - t0).toFixed(0)}ms)`);
@@ -160,7 +169,10 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
   async function load(path: string): Promise<void> {
     const content = await invoke<string>("read_text_file", { path });
     const parsed = JSON.parse(content) as AcquisitionSession;
+    loadParsed(parsed, path);
+  }
 
+  function loadParsed(parsed: AcquisitionSession, path: string): void {
     // Basic validation
     if (!parsed.version || !parsed.caseNumber) {
       throw new Error("Invalid acquisition session file");
@@ -182,8 +194,10 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
       const p = sessionPath();
       if (s && p) {
         const updated = { ...s, modifiedAt: new Date().toISOString() };
-        const json = JSON.stringify(updated, null, 2);
-        invoke("write_text_file", { path: p, content: json }).catch(() => {});
+        if (isTauri) {
+          const json = JSON.stringify(updated, null, 2);
+          invoke("write_text_file", { path: p, content: json }).catch(() => {});
+        }
       }
     }
     setSession(null);
@@ -238,6 +252,7 @@ export function useAcquisitionSession(): AcquisitionSessionManager {
     evidenceFolder,
     create,
     load,
+    loadParsed,
     close,
     addAcquisition,
     updateAcquisition,

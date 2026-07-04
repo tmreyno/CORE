@@ -216,6 +216,8 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   // Start FDA checks + listeners when a project becomes active
   createEffect(() => {
     if (!props.hasProject()) return;
+    if (!isTauri) return;
+
     // Defer initial check 2s so it doesn't compete with session creation
     // or project setup operations on the Tauri thread pool
     setTimeout(() => recheckFda(), 2000);
