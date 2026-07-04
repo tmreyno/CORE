@@ -43,8 +43,11 @@ import { ViewerHeader } from "./ViewerHeader";
 import { useTextSelectionMenu } from "../../hooks/useTextSelectionMenu";
 import { commands } from "../../api/commands";
 import { buildEvidenceSourceInput } from "../evidenceSourceInput";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("ContainerEntryViewer");
+const BROWSER_ENTRY_VIEW_MESSAGE =
+  "Container entry preview is available in the desktop app.";
 
 export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const [previewPath, setPreviewPath] = createSignal<string | null>(null);
@@ -142,6 +145,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const detectEntryContent = async (
     capturedKey: string,
   ): Promise<ContentDetectResult | null> => {
+    if (!isTauri) {
+      if (capturedKey === entryKey()) setAutoMode("hex");
+      return null;
+    }
+
     const source = buildEvidenceSourceInput(null, props.entry, previewPath() ?? undefined);
     if (!source) return null;
 
@@ -172,6 +180,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
   let lastPersistedArtifactKey = "";
   createEffect(() => {
+    if (!isTauri) return;
+
     const key = entryKey();
     if (!key || props.entry.isDir || lastPersistedArtifactKey === key) return;
 
@@ -201,6 +211,10 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     setPreviewError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_ENTRY_VIEW_MESSAGE);
+      }
+
       if (!fileCanPreview() && !detectedCanPreview()) {
         const detected = await detectEntryContent(capturedKey);
         if (!detected || detected.viewerType === "Hex") {

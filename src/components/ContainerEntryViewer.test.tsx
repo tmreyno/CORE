@@ -10,6 +10,11 @@ import { ContainerEntryViewer } from "./ContainerEntryViewer";
 import { mockInvoke } from "../__tests__/setup";
 import type { SelectedEntry } from "./EvidenceTree";
 
+vi.mock("../utils/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../utils/platform")>()),
+  isTauri: true,
+}));
+
 // Polyfill ResizeObserver for JSDOM (used by PdfViewer)
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class ResizeObserver {
