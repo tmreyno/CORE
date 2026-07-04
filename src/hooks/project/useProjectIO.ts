@@ -66,6 +66,7 @@ type BrowserProjectFile = {
 };
 
 let activeBrowserProjectPickerCancel: (() => void) | null = null;
+const BROWSER_PROJECT_PICKER_CANCEL_GRACE_MS = 1_500;
 
 export function parseBrowserProjectFile(content: string, fallbackPath: string): BrowserProjectFile {
   const parsed = JSON.parse(content) as Partial<FFXProject>;
@@ -148,7 +149,7 @@ export function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
         if (!input.files?.length) {
           finish(null);
         }
-      }, 250);
+      }, BROWSER_PROJECT_PICKER_CANCEL_GRACE_MS);
     }
 
     activeBrowserProjectPickerCancel = cancelCurrent;

@@ -409,6 +409,11 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
 
   const canUseNativeFolderPicker = () => {
     if (isTauri) return true;
+    if (props.onOpenProject) {
+      props.onClose();
+      props.onOpenProject();
+      return false;
+    }
     setError(BROWSER_FOLDER_PICKER_MESSAGE);
     return false;
   };

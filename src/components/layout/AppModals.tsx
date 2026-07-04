@@ -224,6 +224,7 @@ export const AppModals: Component<AppModalsProps> = (props) => {
           props.setPendingProjectRoot(null);
         }}
         onComplete={props.onProjectSetupComplete}
+        onOpenProject={props.onOpenProject}
       />
     </>
   );

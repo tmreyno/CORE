@@ -76,6 +76,7 @@ describe("parseBrowserProjectFile", () => {
 
 describe("pickBrowserProjectFile", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -116,6 +117,43 @@ describe("pickBrowserProjectFile", () => {
       project: {
         name: "Browser Case",
         root_path: "/cases/browser",
+      },
+    });
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it("does not cancel immediately when focus returns before the change event", async () => {
+    vi.useFakeTimers();
+    const file = {
+      name: "delayed.cffx",
+      text: async () =>
+        JSON.stringify({
+          name: "Delayed Case",
+          root_path: "/cases/delayed",
+        }),
+    };
+
+    vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
+      this: HTMLInputElement,
+    ) {
+      window.dispatchEvent(new Event("focus"));
+      window.setTimeout(() => {
+        Object.defineProperty(this, "files", {
+          configurable: true,
+          value: [file],
+        });
+        this.dispatchEvent(new Event("change"));
+      }, 300);
+    });
+
+    const pick = pickBrowserProjectFile();
+    await vi.advanceTimersByTimeAsync(300);
+
+    await expect(pick).resolves.toMatchObject({
+      path: "delayed.cffx",
+      project: {
+        name: "Delayed Case",
+        root_path: "/cases/delayed",
       },
     });
     expect(document.querySelector('input[type="file"]')).toBeNull();

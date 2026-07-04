@@ -59,4 +59,22 @@ describe("useWizardState browser runtime guards", () => {
     expect(state.error()).toBe(BROWSER_DISCOVERY_MESSAGE);
     dispose();
   });
+
+  it("routes browser folder selection to Open Project when a fallback is provided", async () => {
+    const onClose = vi.fn();
+    const onOpenProject = vi.fn();
+    const { state, dispose } = createState({
+      isOpen: true,
+      onClose,
+      onOpenProject,
+    });
+
+    await state.browseProjectRoot();
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOpenProject).toHaveBeenCalledTimes(1);
+    expect(state.error()).toBeNull();
+    dispose();
+  });
 });
