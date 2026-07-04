@@ -29,6 +29,7 @@ import type { ImportAcquisitionsOptions } from "../../hooks/useImportAcquisition
 import type { DiscoveredAcquisition } from "../../api/importAcquisitions";
 import type { DiscoveredFile } from "../../types/container";
 import { formatBytes } from "../../utils";
+import { isTauri } from "../../utils/platform";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,9 @@ const TYPE_BADGES: Record<string, { label: string; color: string }> = {
   triage: { label: "Triage", color: "text-info" },
 };
 
+const BROWSER_DIRECTORY_PICKER_MESSAGE =
+  "Acquisition directory browsing is available in the desktop app. In browser preview, enter the path manually.";
+
 function getTypeBadge(acquisitionType: string) {
   return TYPE_BADGES[acquisitionType] || { label: acquisitionType, color: "text-txt-muted" };
 }
@@ -75,6 +79,7 @@ function formatDate(iso: string): string {
 export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> = (props) => {
   const [scanDir, setScanDir] = createSignal("");
   const [hasScanned, setHasScanned] = createSignal(false);
+  const [browseMessage, setBrowseMessage] = createSignal<string | null>(null);
 
   const importer = useImportAcquisitions();
 
@@ -95,6 +100,11 @@ export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> 
   // ── Actions ──
 
   async function handleBrowse() {
+    if (!isTauri) {
+      setBrowseMessage(BROWSER_DIRECTORY_PICKER_MESSAGE);
+      return;
+    }
+
     const dir = await open({ directory: true, title: "Select acquisition directory" });
     if (typeof dir === "string") {
       setScanDir(dir);
@@ -177,6 +187,15 @@ export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> 
           </Show>
 
           {/* ── Error ── */}
+          <Show when={browseMessage()}>
+            {(message) => (
+              <div class="flex items-center gap-2 p-3 rounded-lg bg-warning/10 text-warning text-sm">
+                <HiOutlineInformationCircle class="w-icon-sm h-icon-sm shrink-0" />
+                <span>{message()}</span>
+              </div>
+            )}
+          </Show>
+
           <Show when={importer.error()}>
             <div class="flex items-center gap-2 p-3 rounded-lg bg-error/10 text-error text-sm">
               <HiOutlineExclamationTriangle class="w-icon-sm h-icon-sm shrink-0" />
