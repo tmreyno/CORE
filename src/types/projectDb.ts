@@ -12,6 +12,8 @@
  * @core-suite/types.
  */
 
+import type { DbCollectedItem as CoreDbCollectedItem } from "@core-suite/types";
+
 /** File extension for project databases */
 export const PROJECT_DB_EXTENSION = ".ffxdb";
 
@@ -29,7 +31,6 @@ export type {
   DbCocAuditEntry,
   DbCocItem,
   DbCocTransfer,
-  DbCollectedItem,
   DbEvidenceCollection,
   DbEvidenceDataAlternative,
   DbEvidenceFile,
@@ -52,6 +53,14 @@ export type {
   FtsSearchResult,
   ProjectDbStats,
 } from "@core-suite/types";
+
+export interface DbCollectedItem extends CoreDbCollectedItem {
+  sourceId?: string;
+  sourceRefJson?: string;
+  hashAlgorithm?: string;
+  hashValue?: string;
+  hashComputedAt?: string;
+}
 
 export interface EvidenceCollectionPackageImportSummary {
   sourceApp: string;
