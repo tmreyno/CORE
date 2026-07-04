@@ -120,4 +120,25 @@ describe("pickBrowserProjectFile", () => {
     });
     expect(document.querySelector('input[type="file"]')).toBeNull();
   });
+
+  it("cancels a stale browser picker when a new picker starts", async () => {
+    let clickCount = 0;
+    vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
+      this: HTMLInputElement,
+    ) {
+      clickCount += 1;
+      if (clickCount === 2) {
+        this.dispatchEvent(new Event("cancel"));
+      }
+    });
+
+    const firstPick = pickBrowserProjectFile();
+    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(1);
+
+    const secondPick = pickBrowserProjectFile();
+
+    await expect(firstPick).resolves.toBeNull();
+    await expect(secondPick).resolves.toBeNull();
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
 });

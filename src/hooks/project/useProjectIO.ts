@@ -65,6 +65,8 @@ type BrowserProjectFile = {
   project: FFXProject;
 };
 
+let activeBrowserProjectPickerCancel: (() => void) | null = null;
+
 export function parseBrowserProjectFile(content: string, fallbackPath: string): BrowserProjectFile {
   const parsed = JSON.parse(content) as Partial<FFXProject>;
 
@@ -98,6 +100,8 @@ export function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
     return Promise.resolve(null);
   }
 
+  activeBrowserProjectPickerCancel?.();
+
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
@@ -110,6 +114,9 @@ export function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
       window.removeEventListener("focus", handleWindowFocus);
       if (focusCheck !== undefined) {
         window.clearTimeout(focusCheck);
+      }
+      if (activeBrowserProjectPickerCancel === cancelCurrent) {
+        activeBrowserProjectPickerCancel = null;
       }
       input.remove();
     };
@@ -128,6 +135,10 @@ export function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
       reject(err);
     };
 
+    const cancelCurrent = () => {
+      finish(null);
+    };
+
     function handleWindowFocus() {
       if (focusCheck !== undefined) {
         window.clearTimeout(focusCheck);
@@ -139,6 +150,8 @@ export function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
         }
       }, 250);
     }
+
+    activeBrowserProjectPickerCancel = cancelCurrent;
 
     input.addEventListener("cancel", () => {
       finish(null);
