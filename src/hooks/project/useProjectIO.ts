@@ -55,6 +55,10 @@ import type {
   ProjectCloseResult,
 } from "./types";
 
+export function uniqueProjectFilePaths(tabs: ProjectTab[]): string[] {
+  return Array.from(new Set(tabs.map(tab => tab.file_path).filter(Boolean)));
+}
+
 /**
  * Create project I/O functions
  */
@@ -415,7 +419,7 @@ export function createProjectIO(
         view_mode: viewMode,
       } : undefined,
       file_selection: {
-        selected_paths: tabs.filter(t => t.file_path).map(t => t.file_path),
+        selected_paths: uniqueProjectFilePaths(tabs),
         active_path: computedActiveTabPath,
         timestamp: now,
       },
