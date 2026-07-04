@@ -175,6 +175,7 @@ export const AppSecondaryModals: Component<AppSecondaryModalsProps> = (props) =>
               <ImportAcquisitionsWizard
                 onClose={() => props.setShowImportWizard(false)}
                 onFileImported={(file) => props.fileManager.addDiscoveredFile(file)}
+                onImportComplete={() => props.projectManager.markModified()}
                 knownPaths={new Set(props.fileManager.discoveredFiles().map(f => f.path))}
               />
             );
