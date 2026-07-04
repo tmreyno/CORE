@@ -52,6 +52,29 @@ describe("useFileManager runtime guards", () => {
     await fileManager.selectAndViewFile(file);
 
     expect(ask).not.toHaveBeenCalled();
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(fileManager.activeFile()).toBe(file);
+  });
+
+  it("does not invoke container metadata loaders outside a Tauri runtime", async () => {
+    const fileManager = useFileManager();
+    const file = {
+      path: "/evidence/source.AD1",
+      filename: "source.AD1",
+      container_type: "ad1",
+      size: 1024,
+    };
+
+    fileManager.restoreDiscoveredFiles([file]);
+
+    await expect(fileManager.loadFileInfo(file)).rejects.toThrow(
+      "Container metadata loading is available in the desktop app",
+    );
+    await fileManager.loadAllInfo();
+    await fileManager.loadStoredHashesInBackground();
+    await fileManager.selectAndViewFile(file);
+
+    expect(mockInvoke).not.toHaveBeenCalled();
     expect(fileManager.activeFile()).toBe(file);
   });
 });

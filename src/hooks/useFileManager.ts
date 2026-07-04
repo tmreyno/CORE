@@ -17,6 +17,8 @@ import { dbSync } from "./project/useProjectDbSync";
 import { isTauri } from "../utils/platform";
 
 const log = logger.scope("FileManager");
+const BROWSER_METADATA_MESSAGE =
+  "Container metadata loading is available in the desktop app. Browser preview can use cached .cffx metadata only.";
 
 // System stats interface (matches Rust struct with serde rename_all = "camelCase")
 export interface NetworkInterfaceInfo {
@@ -422,6 +424,10 @@ export function useFileManager() {
   const loadStoredHashesInBackground = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
+    if (!isTauri) {
+      setOk(`Restored ${files.length} file(s) from project cache`);
+      return;
+    }
     
     let loaded = 0;
     const total = files.length;
@@ -484,6 +490,15 @@ export function useFileManager() {
 
   // Load file info for a single file
   const loadFileInfo = async (file: DiscoveredFile, includeTree = false): Promise<ContainerInfo> => {
+    const cached = fileInfoMap().get(file.path);
+    if (cached) {
+      return cached;
+    }
+    if (!isTauri) {
+      updateFileStatus(file.path, "metadata-unavailable", 0, BROWSER_METADATA_MESSAGE);
+      throw new Error(BROWSER_METADATA_MESSAGE);
+    }
+
     updateFileStatus(file.path, "reading-metadata", 0);
     try {
       const result = await invoke<ContainerInfo>("logical_info", { inputPath: file.path, includeTree });
@@ -509,6 +524,10 @@ export function useFileManager() {
   const loadAllInfo = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
+    if (!isTauri) {
+      setOk(`Restored ${files.length} file(s) from project cache`);
+      return;
+    }
     
     const total = files.length;
     let loaded = 0;
@@ -601,13 +620,15 @@ export function useFileManager() {
     const existingInfo = fileInfoMap().get(file.path);
     
     // Load basic container info (without tree) if not already cached
-    if (!existingInfo) {
+    if (!existingInfo && isTauri) {
       try {
         await loadFileInfo(file, false);  // Fast: ~3ms for AD1, ~5s for E01
       } catch (err) {
         // Log but don't propagate - file may have missing segments
         log.warn(`Failed to load info for ${file.filename}:`, normalizeError(err));
       }
+    } else if (!existingInfo) {
+      updateFileStatus(file.path, "metadata-unavailable", 0, BROWSER_METADATA_MESSAGE);
     }
     // Tree is populated by EvidenceTree via V2 lazy loading APIs
   };
