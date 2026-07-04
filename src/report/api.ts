@@ -66,6 +66,8 @@ export interface HashRecord {
   value: string;
   computed_at?: string;
   verified?: boolean;
+  source_id?: string;
+  source_ref?: unknown;
 }
 
 export interface ImageInfo {
@@ -455,6 +457,24 @@ function buildHashAppendix(evidence: ProjectDbReportEvidence): string {
     for (const summary of evidence.verificationResultSummaries) {
       lines.push(
         `| ${summary.result} | ${summary.count} | ${summary.hashCount} | ${summary.latestVerifiedAt || "-"} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (evidence.hashRecords.length > 0) {
+    lines.push("### Hash Records");
+    lines.push("");
+    lines.push("| Item | Source | Algorithm | Hash Value | Computed At | Verified |");
+    lines.push("| --- | --- | --- | --- | --- | --- |");
+    for (const record of evidence.hashRecords.slice(0, 250)) {
+      lines.push(
+        `| ${record.item || "-"} | ${record.source_id || "-"} | ${record.algorithm} | \`${record.value}\` | ${record.computed_at || "-"} | ${record.verified ?? "-"} |`,
+      );
+    }
+    if (evidence.hashRecords.length > 250) {
+      lines.push(
+        `| ... | ... | ... | ... | ... | ${evidence.hashRecords.length - 250} more records omitted |`,
       );
     }
     lines.push("");

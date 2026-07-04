@@ -499,12 +499,23 @@ impl DocxGenerator {
     fn add_hash_section(&self, docx: Docx, report: &ForensicReport) -> Docx {
         let docx = self.add_section_header(docx, "Hash Verification");
 
-        let mut table = Table::new(vec![TableRow::new(vec![
-            self.header_cell("Item"),
+        let include_source = report.hash_records.iter().any(|record| {
+            record
+                .source_id
+                .as_deref()
+                .is_some_and(|source| !source.is_empty())
+        });
+
+        let mut header = vec![self.header_cell("Item")];
+        if include_source {
+            header.push(self.header_cell("Source"));
+        }
+        header.extend([
             self.header_cell("Algorithm"),
             self.header_cell("Hash Value"),
             self.header_cell("Status"),
-        ])]);
+        ]);
+        let mut table = Table::new(vec![TableRow::new(header)]);
 
         for record in &report.hash_records {
             let status = match record.verified {
@@ -513,12 +524,16 @@ impl DocxGenerator {
                 None => "Not recorded",
             };
 
-            table = table.add_row(TableRow::new(vec![
-                self.data_cell(&record.item),
+            let mut row = vec![self.data_cell(&record.item)];
+            if include_source {
+                row.push(self.data_cell(record.source_id.as_deref().unwrap_or("-")));
+            }
+            row.extend([
                 self.data_cell(record.algorithm.as_str()),
                 self.data_cell(&record.value),
                 self.data_cell(status),
-            ]));
+            ]);
+            table = table.add_row(TableRow::new(row));
         }
 
         docx.add_table(table).add_paragraph(Paragraph::new())
@@ -760,6 +775,8 @@ mod tests {
                 value: "abcdef1234567890".to_string(),
                 computed_at: None,
                 verified: Some(true),
+                source_id: None,
+                source_ref: None,
             }],
             ..Default::default()
         });

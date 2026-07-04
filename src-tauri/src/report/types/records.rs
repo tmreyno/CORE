@@ -91,6 +91,12 @@ pub struct HashRecord {
     /// Verification status
     #[serde(default)]
     pub verified: Option<bool>,
+    /// Source-aware hash identifier from the project database.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    /// Serialized evidence source reference, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<serde_json::Value>,
 }
 
 impl Default for HashRecord {
@@ -101,6 +107,8 @@ impl Default for HashRecord {
             value: String::new(),
             computed_at: None,
             verified: None,
+            source_id: None,
+            source_ref: None,
         }
     }
 }

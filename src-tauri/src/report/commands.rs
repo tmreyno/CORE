@@ -383,6 +383,8 @@ pub fn extract_evidence_from_containers(
                     value: h.hash.clone(),
                     computed_at: None,
                     verified: h.verified,
+                    source_id: None,
+                    source_ref: None,
                 });
             }
         }
@@ -394,6 +396,8 @@ pub fn extract_evidence_from_containers(
                 value: h.hash.clone(),
                 computed_at: Some(chrono::Utc::now()),
                 verified: h.verified,
+                source_id: None,
+                source_ref: None,
             });
         }
 
@@ -752,6 +756,11 @@ fn hash_record_from_project_db(item: &str, hash: &DbProjectHash) -> HashRecord {
         value: hash.hash_value.clone(),
         computed_at: parse_project_datetime(Some(&hash.computed_at)),
         verified: None,
+        source_id: hash.source_id.clone(),
+        source_ref: hash
+            .source_ref_json
+            .as_deref()
+            .and_then(parse_artifact_source_ref),
     }
 }
 
@@ -1826,8 +1835,11 @@ mod tests {
         let hash = DbProjectHash {
             id: "hash_1".to_string(),
             file_id: "ev_1".to_string(),
-            source_id: None,
-            source_ref_json: None,
+            source_id: Some("ad1:/case/logical.ad1:/docs/a.txt".to_string()),
+            source_ref_json: Some(
+                r#"{"kind":"containerEntry","containerPath":"/case/logical.ad1","entryPath":"/docs/a.txt","containerType":"ad1"}"#
+                    .to_string(),
+            ),
             algorithm: "BLAKE3".to_string(),
             hash_value: "abc".to_string(),
             computed_at: "2026-02-16T10:01:00Z".to_string(),
@@ -1841,6 +1853,18 @@ mod tests {
         assert_eq!(record.item, "disk.E01");
         assert!(matches!(record.algorithm, HashAlgorithm::Blake3));
         assert!(record.computed_at.is_some());
+        assert_eq!(
+            record.source_id.as_deref(),
+            Some("ad1:/case/logical.ad1:/docs/a.txt")
+        );
+        assert_eq!(
+            record
+                .source_ref
+                .as_ref()
+                .and_then(|value| value.get("entryPath"))
+                .and_then(|value| value.as_str()),
+            Some("/docs/a.txt")
+        );
     }
 
     #[test]
