@@ -323,6 +323,45 @@ describe("ContainerEntryViewer", () => {
       dispose();
     });
 
+    it("does not extract unknown hex-only entries in auto mode", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_content_format_source") {
+          return {
+            format: "Binary",
+            viewerType: "Hex",
+            description: "Unknown binary data",
+            mimeType: "application/octet-stream",
+            method: "fallback",
+          };
+        }
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "pagefile.sys",
+        size: 4_294_967_296,
+        isVfsEntry: true,
+      });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(300);
+
+      expect(mockInvoke).toHaveBeenCalledWith("detect_content_format_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "/files/test.bin",
+          containerType: "ad1",
+          size: 4_294_967_296,
+        }),
+      });
+      expect(
+        mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp"),
+      ).toBe(false);
+      dispose();
+    });
+
     it("triggers content detection for registry hive (.dat) files", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {

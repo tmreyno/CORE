@@ -19,6 +19,7 @@ import type { DiscoveredFile, CaseDocument, ContainerInfo, AxiomCaseInfo, Artifa
 import type { ProjectTab } from "../../types/project";
 import type { useFileManager, useHashManager, useProject, useProcessedDatabases } from "../../hooks";
 import { getDirname } from "../../utils/pathUtils";
+import { getContainerBrowserMode } from "../../components/EvidenceTree/containerDetection";
 import type { LeftPanelTab } from "../../components";
 import { logger } from "../../utils/logger";
 
@@ -65,7 +66,7 @@ export interface HandleLoadProjectParams {
 /**
  * Helper to restore CenterTabs from project tabs
  */
-function restoreCenterTabs(
+export function restoreCenterTabs(
   projectTabs: ProjectTab[],
   discoveredFiles: DiscoveredFile[],
   processedDatabases: import("../../types/processed").ProcessedDatabase[],
@@ -107,17 +108,26 @@ function restoreCenterTabs(
         break;
       }
       case "entry": {
-        if (savedTab.entry_path && savedTab.entry_container_path) {
+        const containerPath = savedTab.entry_container_path || savedTab.file_path;
+        if (savedTab.entry_path && containerPath) {
+          const matchedFile = discoveredFiles.find((f) => f.path === containerPath);
+          const containerType =
+            matchedFile?.container_type || savedTab.container_type || "";
+          const browserMode = getContainerBrowserMode(containerType);
           restoredTabs.push({
             id: savedTab.id || `entry:${savedTab.entry_path}`,
             type: "entry",
             title: savedTab.entry_name || savedTab.name,
+            subtitle: matchedFile?.filename || savedTab.subtitle,
             entry: {
-              containerPath: savedTab.entry_container_path,
+              containerPath,
               entryPath: savedTab.entry_path,
               name: savedTab.entry_name || savedTab.name,
               size: 0,
               isDir: false,
+              isVfsEntry: browserMode === "vfs",
+              isArchiveEntry: browserMode === "archive",
+              containerType,
             },
             closable: true,
           });
@@ -437,16 +447,12 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
           );
 
           // Restore active tab and view mode
-          if (
-            project.center_pane_state?.active_tab_id &&
-            setActiveTabId
-          ) {
-            setActiveTabId(project.center_pane_state.active_tab_id);
-          } else if (
-            restoredCenterTabs.length > 0 &&
-            setActiveTabId
-          ) {
-            setActiveTabId(restoredCenterTabs[0].id);
+          if (setActiveTabId) {
+            const savedActiveId = project.center_pane_state?.active_tab_id;
+            const restoredActiveTab = savedActiveId
+              ? restoredCenterTabs.find((tab) => tab.id === savedActiveId)
+              : undefined;
+            setActiveTabId((restoredActiveTab || restoredCenterTabs[0]).id);
           }
 
           if (
