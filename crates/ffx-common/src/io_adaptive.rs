@@ -265,11 +265,9 @@ impl AdaptiveStats {
 
     /// Get average read size
     pub fn avg_read_size(&self) -> u64 {
-        if self.read_count > 0 {
-            self.bytes_processed / self.read_count
-        } else {
-            0
-        }
+        self.bytes_processed
+            .checked_div(self.read_count)
+            .unwrap_or(0)
     }
 }
 

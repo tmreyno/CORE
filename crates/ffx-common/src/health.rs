@@ -493,7 +493,7 @@ fn collect_error_metrics(
 
     // Sort by count descending, take top 10
     let mut top_error_types: Vec<(String, u64)> = error_types.into_iter().collect();
-    top_error_types.sort_by(|a, b| b.1.cmp(&a.1));
+    top_error_types.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     top_error_types.truncate(10);
 
     // Calculate error rate (simplified - assumes errors are recent)
