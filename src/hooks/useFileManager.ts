@@ -14,6 +14,7 @@ import { logAuditAction } from "../utils/telemetry";
 import { logger } from "../utils/logger";
 import { getPreference, getLastPath, setLastPath } from "../components/preferences";
 import { dbSync } from "./project/useProjectDbSync";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("FileManager");
 
@@ -105,6 +106,11 @@ export function useFileManager() {
   
   // Setup system stats listener
   const setupSystemStatsListener = async (): Promise<() => void> => {
+    if (!isTauri) {
+      log.debug("Skipping system stats listener outside Tauri runtime");
+      return () => {};
+    }
+
     // Fire-and-forget initial stats fetch — don't block mount on backend response.
     // The 2-second system-stats monitor will populate stats shortly anyway.
     invoke<SystemStats>("get_system_stats")

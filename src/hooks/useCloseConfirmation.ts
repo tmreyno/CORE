@@ -20,6 +20,7 @@ import {
 import type { UseCloseConfirmationOptions } from "@core-suite/desktop-hooks";
 export type { UseCloseConfirmationOptions } from "@core-suite/desktop-hooks";
 import { createDesktopHookLogger } from "./desktopHookLogger";
+import { isTauri } from "../utils/platform";
 
 const log = createDesktopHookLogger("CloseConfirmation");
 
@@ -30,6 +31,11 @@ const log = createDesktopHookLogger("CloseConfirmation");
  * a native dialog asking the user to save or discard changes.
  */
 export function useCloseConfirmation(options: UseCloseConfirmationOptions) {
+  if (!isTauri) {
+    log.debug?.("Skipping close confirmation hook outside Tauri runtime", options);
+    return;
+  }
+
   return useSharedCloseConfirmation(options, { log });
 }
 
@@ -41,5 +47,10 @@ export async function confirmUnsavedChanges(options?: {
   title?: string;
   message?: string;
 }): Promise<"save" | "discard" | "cancel"> {
+  if (!isTauri) {
+    log.debug?.("Skipping native unsaved-changes confirmation outside Tauri runtime", options);
+    return "cancel";
+  }
+
   return confirmSharedUnsavedChanges(options, { log });
 }

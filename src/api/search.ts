@@ -16,6 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types (mirror Rust search::query types)
@@ -189,6 +190,10 @@ export async function searchQuery(
 export async function onIndexProgress(
   callback: (progress: IndexProgress) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    return () => {};
+  }
+
   return listen<IndexProgress>("search-index-progress", (event) => {
     callback(event.payload);
   });

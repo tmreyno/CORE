@@ -17,6 +17,10 @@ vi.mock("@core-suite/desktop-hooks", () => ({
   setWindowTitle: sharedHooks.setWindowTitle,
 }));
 
+vi.mock("../../utils/platform", () => ({
+  isTauri: true,
+}));
+
 vi.mock("../../utils/logger", () => ({
   logger: {
     scope: () => ({

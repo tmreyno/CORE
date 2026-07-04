@@ -17,6 +17,10 @@ vi.mock("@core-suite/desktop-hooks", () => ({
   confirmUnsavedChanges: sharedHooks.confirmUnsavedChanges,
 }));
 
+vi.mock("../../utils/platform", () => ({
+  isTauri: true,
+}));
+
 vi.mock("../../utils/logger", () => ({
   logger: {
     scope: () => ({

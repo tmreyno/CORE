@@ -21,6 +21,7 @@ import type { UseWindowTitleOptions } from "@core-suite/desktop-hooks";
 export type { UseWindowTitleOptions } from "@core-suite/desktop-hooks";
 import { createDesktopHookLogger } from "./desktopHookLogger";
 import { APP_NAME } from "../utils/edition";
+import { isTauri } from "../utils/platform";
 
 const log = createDesktopHookLogger("WindowTitle");
 
@@ -33,6 +34,11 @@ const log = createDesktopHookLogger("WindowTitle");
  * - Unsaved changes: "● ProjectName - CORE-FFX"
  */
 export function useWindowTitle(options: UseWindowTitleOptions) {
+  if (!isTauri) {
+    log.debug?.("Skipping window title hook outside Tauri runtime");
+    return;
+  }
+
   return useSharedWindowTitle(options, { appName: APP_NAME, log });
 }
 
@@ -40,5 +46,10 @@ export function useWindowTitle(options: UseWindowTitleOptions) {
  * Set window title directly (useful for one-off updates)
  */
 export async function setWindowTitle(title: string): Promise<void> {
+  if (!isTauri) {
+    log.debug?.("Skipping window title update outside Tauri runtime", title);
+    return;
+  }
+
   return setSharedWindowTitle(title, { log });
 }

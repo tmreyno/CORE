@@ -63,7 +63,9 @@ export const isMobile = isIOS || isAndroid;
 export const isDesktop = !isMobile;
 
 /** Detect Tauri environment */
-export const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+export const isTauri =
+  typeof window !== 'undefined' &&
+  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
 // =============================================================================
 // Platform Object (Alternative API)
