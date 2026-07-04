@@ -20,8 +20,12 @@ import type { ProcessedDatabasesManager } from '../hooks/useProcessedDatabases';
 import { ProcessedDatabaseItem } from './processed/ProcessedDatabaseItem';
 import { ProcessedDatabaseEmptyState } from './processed/ProcessedDatabaseEmptyState';
 import { ProcessedDatabaseToolbar } from './processed/ProcessedDatabaseToolbar';
+import { isTauri } from "../utils/platform";
 import { logger } from "../utils/logger";
 const log = logger.scope("ProcessedDatabase");
+
+const BROWSER_DATABASE_DIALOG_MESSAGE =
+  "Processed database file and folder selection is available in the desktop app.";
 
 interface ProcessedDatabasePanelProps {
   /** Manager hook for shared state (optional for backward compatibility) */
@@ -101,6 +105,11 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
 
   /** Scan a directory for processed databases */
   const scanDirectory = async () => {
+    if (!isTauri) {
+      setError(BROWSER_DATABASE_DIALOG_MESSAGE);
+      return;
+    }
+
     try {
       const selected = await open({
         directory: true,
@@ -144,6 +153,11 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
 
   /** Add a specific database file */
   const addDatabaseFile = async () => {
+    if (!isTauri) {
+      setError(BROWSER_DATABASE_DIALOG_MESSAGE);
+      return;
+    }
+
     try {
       const selected = await open({
         multiple: true,
