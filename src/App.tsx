@@ -823,6 +823,10 @@ function App() {
   const handleLoadProject = async (path?: string) => {
     const canProceed = await closeCurrentProject("switch-project");
     if (!canProceed) return;
+    if (!isTauri && !path) {
+      await _handleLoadProject();
+      return;
+    }
     await globalLoading.run("Loading project…", () => _handleLoadProject(path));
   };
   const handleOpenRecentProject = async (path: string) => {

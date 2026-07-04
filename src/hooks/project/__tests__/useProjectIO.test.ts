@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { parseBrowserProjectFile, uniqueProjectFilePaths } from "../useProjectIO";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  parseBrowserProjectFile,
+  pickBrowserProjectFile,
+  uniqueProjectFilePaths,
+} from "../useProjectIO";
 import type { ProjectTab } from "../../../types/project";
 
 describe("uniqueProjectFilePaths", () => {
@@ -67,5 +71,53 @@ describe("parseBrowserProjectFile", () => {
     expect(() => parseBrowserProjectFile("{}", "bad.cffx")).toThrow(
       "Selected file is not a valid CORE-FFX project",
     );
+  });
+});
+
+describe("pickBrowserProjectFile", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("resolves null when the browser file picker is cancelled", async () => {
+    const clickSpy = vi
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(function (this: HTMLInputElement) {
+        this.dispatchEvent(new Event("cancel"));
+      });
+
+    await expect(pickBrowserProjectFile()).resolves.toBeNull();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it("parses the selected browser project file", async () => {
+    const file = {
+      name: "browser.cffx",
+      text: async () =>
+        JSON.stringify({
+          name: "Browser Case",
+          root_path: "/cases/browser",
+        }),
+    };
+
+    vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
+      this: HTMLInputElement,
+    ) {
+      Object.defineProperty(this, "files", {
+        configurable: true,
+        value: [file],
+      });
+      this.dispatchEvent(new Event("change"));
+    });
+
+    await expect(pickBrowserProjectFile()).resolves.toMatchObject({
+      path: "browser.cffx",
+      project: {
+        name: "Browser Case",
+        root_path: "/cases/browser",
+      },
+    });
+    expect(document.querySelector('input[type="file"]')).toBeNull();
   });
 });

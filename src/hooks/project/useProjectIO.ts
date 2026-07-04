@@ -93,7 +93,7 @@ export function parseBrowserProjectFile(content: string, fallbackPath: string): 
   };
 }
 
-function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
+export function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
   if (typeof document === "undefined") {
     return Promise.resolve(null);
   }
@@ -103,30 +103,64 @@ function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
     input.type = "file";
     input.accept = ".cffx,application/json";
     input.style.display = "none";
+    let settled = false;
+    let focusCheck: number | undefined;
 
     const cleanup = () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      if (focusCheck !== undefined) {
+        window.clearTimeout(focusCheck);
+      }
       input.remove();
     };
+
+    const finish = (selected: BrowserProjectFile | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(selected);
+    };
+
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    function handleWindowFocus() {
+      if (focusCheck !== undefined) {
+        window.clearTimeout(focusCheck);
+      }
+
+      focusCheck = window.setTimeout(() => {
+        if (!input.files?.length) {
+          finish(null);
+        }
+      }, 250);
+    }
+
+    input.addEventListener("cancel", () => {
+      finish(null);
+    }, { once: true });
 
     input.addEventListener("change", async () => {
       try {
         const file = input.files?.[0];
         if (!file) {
-          cleanup();
-          resolve(null);
+          finish(null);
           return;
         }
 
         const content = await file.text();
         const fallbackPath = file.name.endsWith(".cffx") ? file.name : `${file.name}.cffx`;
-        cleanup();
-        resolve(parseBrowserProjectFile(content, fallbackPath));
+        finish(parseBrowserProjectFile(content, fallbackPath));
       } catch (err) {
-        cleanup();
-        reject(err);
+        fail(err);
       }
     }, { once: true });
 
+    window.addEventListener("focus", handleWindowFocus);
     document.body.appendChild(input);
     input.click();
   });
@@ -804,7 +838,6 @@ export function createProjectIO(
   ): Promise<{ project: FFXProject | null; error?: string; warnings?: string[] }> => {
     log.debug(`loadProject called with customPath=${customPath}`);
     try {
-      setters.setLoading(true);
       let loadPath = customPath;
 
       // If no path provided, show file picker
@@ -822,6 +855,7 @@ export function createProjectIO(
           const project = selected.project;
           const browserProjectPath = selected.path;
           log.debug(`loadProject: Browser selected ${loadPath}`);
+          setters.setLoading(true);
 
           batch(() => {
             setters.setProject(project);
@@ -854,6 +888,8 @@ export function createProjectIO(
         loadPath = selected as string;
         log.debug(`loadProject: User selected ${loadPath}`);
       }
+
+      setters.setLoading(true);
 
       if (!isTauri) {
         const errorMsg = "Browser preview can only open project files through the Open Project file picker.";
