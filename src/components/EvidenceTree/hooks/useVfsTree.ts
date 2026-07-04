@@ -15,6 +15,7 @@ import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { VfsMountInfo, VfsEntry } from "../../../types";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 
 const log = logger.scope("VfsTree");
 
@@ -66,6 +67,9 @@ export function useVfsTree(): UseVfsTreeReturn {
       log.debug(`mountVfsContainer - returning cached mount with ${cached.partitions.length} partitions (${(performance.now() - startTime).toFixed(1)}ms)`);
       return cached;
     }
+    if (!isTauri) {
+      return null;
+    }
 
     try {
       log.debug("mountVfsContainer - invoking vfs_mount_image...");
@@ -100,6 +104,9 @@ export function useVfsTree(): UseVfsTreeReturn {
     if (cached) {
       log.debug(`loadVfsChildren - returning ${cached.length} cached entries`);
       return cached;
+    }
+    if (!isTauri) {
+      return [];
     }
 
     try {

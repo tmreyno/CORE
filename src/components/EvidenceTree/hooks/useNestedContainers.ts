@@ -15,6 +15,7 @@ import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { NestedContainerEntry, NestedContainerInfo } from "../../../types";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 const log = logger.scope("NestedContainers");
 
 /** Cache key format: parentPath::nestedPath */
@@ -138,6 +139,9 @@ export function useNestedContainers(): UseNestedContainersReturn {
     // Check cache first
     const cached = nestedEntriesCache().get(cacheKey);
     if (cached) return cached;
+    if (!isTauri) {
+      return [];
+    }
     
     // Set loading state
     setLoadingNested(prev => new Set([...prev, cacheKey]));
@@ -175,6 +179,9 @@ export function useNestedContainers(): UseNestedContainersReturn {
     // Check cache first
     const cached = nestedInfoCache().get(cacheKey);
     if (cached) return cached;
+    if (!isTauri) {
+      return null;
+    }
     
     try {
       const info = await invoke<NestedContainerInfo>("nested_container_get_info", {
@@ -219,6 +226,13 @@ export function useNestedContainers(): UseNestedContainersReturn {
   
   // Clear all nested container cache (called on app cleanup)
   const clearNestedCache = async (): Promise<void> => {
+    if (!isTauri) {
+      setNestedEntriesCache(new Map());
+      setNestedInfoCache(new Map());
+      setExpandedNestedPaths(new Set<string>());
+      return;
+    }
+
     try {
       await invoke("nested_container_clear_cache");
       setNestedEntriesCache(new Map());

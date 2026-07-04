@@ -16,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ArchiveTreeEntry } from "../../../types";
 import { getContainerType, isContainerFile } from "../containerDetection";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 
 const log = logger.scope("ArchiveTree");
 
@@ -85,6 +86,9 @@ export function useArchiveTree(): UseArchiveTreeReturn {
       log.debug(`loadArchiveMetadata - returning cached meta, entryCount=${cached.entry_count}`);
       return cached;
     }
+    if (!isTauri) {
+      return null;
+    }
     
     try {
       log.debug("loadArchiveMetadata - invoking archive_get_metadata");
@@ -115,6 +119,9 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     if (cached) {
       log.debug(`loadArchiveTree - returning ${cached.length} cached entries (${(performance.now() - startTime).toFixed(1)}ms)`);
       return cached;
+    }
+    if (!isTauri) {
+      return [];
     }
 
     try {
@@ -262,6 +269,9 @@ export function useArchiveTree(): UseArchiveTreeReturn {
   ): Promise<void> => {
     if (!onOpenNestedContainer) {
       log.warn("No callback provided for nested containers");
+      return;
+    }
+    if (!isTauri) {
       return;
     }
     

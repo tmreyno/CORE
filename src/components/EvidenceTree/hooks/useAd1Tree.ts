@@ -15,6 +15,7 @@ import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { TreeEntry, Ad1ContainerSummary } from "../../../types";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 
 const log = logger.scope("Ad1Tree");
 
@@ -107,6 +108,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (cached) {
       return cached;
     }
+    if (!isTauri) {
+      return null;
+    }
 
     try {
       const status = await invoke<ContainerStatus>("container_get_status_v2", {
@@ -140,6 +144,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (cached) {
       log.debug("loadAd1Info - returning cached info");
       return cached;
+    }
+    if (!isTauri) {
+      return null;
     }
 
     try {
@@ -200,6 +207,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
       log.debug(`loadRootChildren - returning ${cached.length} cached children (${(performance.now() - startTime).toFixed(1)}ms)`);
       return cached;
     }
+    if (!isTauri) {
+      return [];
+    }
     
     try {
       log.debug(`loadRootChildren - invoking container_get_root_children_v2...`);
@@ -255,6 +265,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
     
     const cached = childrenCache().get(cacheKey);
     if (cached) return cached;
+    if (!isTauri) {
+      return [];
+    }
     
     try {
       const children = await invoke<TreeEntry[]>("container_get_children_at_addr_v2", {
@@ -423,6 +436,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (cached) {
       return cached;
     }
+    if (!isTauri) {
+      return null;
+    }
 
     try {
       const metadata = await invoke<ItemMetadata>("container_get_item_metadata_v2", {
@@ -460,6 +476,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
       return itemAddrs
         .map(addr => metadataCache().get(`${containerPath}::${addr}`))
         .filter((m): m is ItemMetadata => m !== undefined);
+    }
+    if (!isTauri) {
+      return [];
     }
 
     try {
