@@ -911,8 +911,7 @@ impl MarkdownGenerator {
         s.replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace("\r\n", "\\n")
-            .replace('\r', "\\n")
-            .replace('\n', "\\n")
+            .replace(['\r', '\n'], "\\n")
     }
 
     fn render_rich_text_md(&self, text: &str) -> String {

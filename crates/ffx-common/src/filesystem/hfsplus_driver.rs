@@ -89,9 +89,20 @@ fn checked_hfsplus_read_advance(current_offset: u64, bytes_read: usize) -> Resul
     checked_hfsplus_add_u64(current_offset, bytes_read, "HFS+ logical read offset")
 }
 
-fn bounded_hfsplus_read_len(logical_size: u64, offset: u64, requested: usize) -> Option<usize> {
-    let remaining = logical_size.checked_sub(offset)?;
-    Some(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
+fn bounded_hfsplus_read_len(
+    logical_size: u64,
+    offset: u64,
+    requested: usize,
+) -> Result<usize, VfsError> {
+    if offset > logical_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested,
+        });
+    }
+
+    let remaining = logical_size - offset;
+    Ok(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
 }
 
 fn read_hfsplus_exact(
@@ -1010,14 +1021,11 @@ impl HfsPlusDriver {
         offset: u64,
         size: usize,
     ) -> Result<Vec<u8>, VfsError> {
-        if offset >= fork.logical_size {
+        let actual_size = bounded_hfsplus_read_len(fork.logical_size, offset, size)?;
+        if actual_size == 0 {
             return Ok(Vec::new());
         }
 
-        let actual_size =
-            bounded_hfsplus_read_len(fork.logical_size, offset, size).ok_or_else(|| {
-                VfsError::IoError("HFS+ fork read offset exceeded logical size".into())
-            })?;
         let mut result = vec![0u8; actual_size];
         let mut bytes_read = 0usize;
         let mut current_offset = offset;
@@ -1294,9 +1302,16 @@ mod tests {
 
     #[test]
     fn test_bounded_hfsplus_read_len_rejects_underflow() {
-        assert_eq!(bounded_hfsplus_read_len(8, 4, 16), Some(4));
-        assert_eq!(bounded_hfsplus_read_len(8, 8, 16), Some(0));
-        assert_eq!(bounded_hfsplus_read_len(8, 9, 16), None);
+        assert_eq!(bounded_hfsplus_read_len(8, 4, 16).unwrap(), 4);
+        assert_eq!(bounded_hfsplus_read_len(8, 8, 16).unwrap(), 0);
+        let err = bounded_hfsplus_read_len(8, 9, 16).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 9,
+                size: 16
+            }
+        ));
     }
 
     #[test]

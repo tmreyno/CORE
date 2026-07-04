@@ -1057,7 +1057,7 @@ mod tests {
     #[test]
     fn source_indicators_cap_extracted_value_length() {
         let mut fixture = b"https://".to_vec();
-        fixture.extend(std::iter::repeat(b'a').take(MAX_INDICATOR_VALUE_BYTES + 32));
+        fixture.extend(std::iter::repeat_n(b'a', MAX_INDICATOR_VALUE_BYTES + 32));
 
         let indicators = extract_source_indicators(&fixture, 0);
 

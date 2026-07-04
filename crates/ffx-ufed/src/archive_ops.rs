@@ -126,11 +126,18 @@ pub trait ArchiveOps: Send + Sync {
         size: usize,
     ) -> Result<Vec<u8>, ContainerError> {
         let data = self.read_archive_file(archive_path, entry_path)?;
-        let start = usize::try_from(offset)
-            .map_err(|_| ContainerError::InvalidFormat("Archive range offset too large".into()))?;
-        if start >= data.len() {
+        let entry_size = data.len() as u64;
+        if offset > entry_size {
+            return Err(ContainerError::InvalidFormat(format!(
+                "Archive range offset {offset} beyond entry size {entry_size}"
+            )));
+        }
+        if offset == entry_size || size == 0 {
             return Ok(Vec::new());
         }
+
+        let start = usize::try_from(offset)
+            .map_err(|_| ContainerError::InvalidFormat("Archive range offset too large".into()))?;
         let end = start.saturating_add(size).min(data.len());
         Ok(data[start..end].to_vec())
     }
@@ -256,8 +263,12 @@ mod tests {
             b"cde"
         );
         assert_eq!(
-            read_archive_file_range("case.ufdr", "files/report.txt", 99, 3).unwrap(),
+            read_archive_file_range("case.ufdr", "files/report.txt", 6, 3).unwrap(),
             b""
         );
+        let err = read_archive_file_range("case.ufdr", "files/report.txt", 99, 3).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Archive range offset 99 beyond entry size 6"));
     }
 }

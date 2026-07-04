@@ -390,16 +390,17 @@ impl VirtualFileSystem for RawVfs {
 
                     let total_size = h.total_size();
 
-                    if offset >= total_size {
+                    if offset > total_size {
+                        return Err(VfsError::OutOfBounds { offset, size });
+                    }
+
+                    if offset == total_size || size == 0 {
                         return Ok(Vec::new());
                     }
 
                     h.position = offset;
 
-                    let Some(actual_size) = bounded_physical_read_len(total_size, offset, size)
-                    else {
-                        return Ok(Vec::new());
-                    };
+                    let actual_size = bounded_physical_read_len(total_size, offset, size)?;
                     let mut buf = vec![0u8; actual_size];
 
                     let bytes_read = h
@@ -425,13 +426,21 @@ impl VirtualFileSystem for RawVfs {
     }
 }
 
-fn bounded_physical_read_len(total_size: u64, offset: u64, requested_size: usize) -> Option<usize> {
-    let remaining = total_size.checked_sub(offset)?;
-    if remaining == 0 {
-        return None;
+fn bounded_physical_read_len(
+    total_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, VfsError> {
+    if offset > total_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
     }
+
+    let remaining = total_size - offset;
     let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
-    Some(requested_size.min(remaining))
+    Ok(requested_size.min(remaining))
 }
 
 fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
@@ -454,18 +463,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_bounded_physical_read_len_rejects_eof() {
-        assert_eq!(bounded_physical_read_len(10, 10, 4), None);
+    fn test_bounded_physical_read_len_allows_exact_eof() {
+        assert_eq!(bounded_physical_read_len(10, 10, 4).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_physical_read_len_rejects_offset_past_eof() {
+        let err = bounded_physical_read_len(10, 11, 4).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 11,
+                size: 4
+            }
+        ));
     }
 
     #[test]
     fn test_bounded_physical_read_len_clamps_to_remaining() {
-        assert_eq!(bounded_physical_read_len(10, 8, 5), Some(2));
+        assert_eq!(bounded_physical_read_len(10, 8, 5).unwrap(), 2);
     }
 
     #[test]
     fn test_bounded_physical_read_len_handles_large_remaining() {
-        assert_eq!(bounded_physical_read_len(u64::MAX, 0, 8), Some(8));
+        assert_eq!(bounded_physical_read_len(u64::MAX, 0, 8).unwrap(), 8);
     }
 
     #[test]

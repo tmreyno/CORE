@@ -584,6 +584,15 @@ mod tests {
         assert_eq!(source.len().unwrap(), 6);
         assert_eq!(source.read_range(2, 3).unwrap(), b"cde");
         assert_eq!(source.read_range(6, 10).unwrap(), b"");
+        let err = source.read_range(7, 1).unwrap_err();
+        assert!(matches!(
+            err,
+            EvidenceSourceError::InvalidRange {
+                offset: 7,
+                size: 6,
+                ..
+            }
+        ));
         assert_eq!(
             source.source_ref(),
             EvidenceSourceRef::ContainerEntry {

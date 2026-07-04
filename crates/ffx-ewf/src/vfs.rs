@@ -462,11 +462,10 @@ impl VirtualFileSystem for EwfVfs {
                     let total_size =
                         handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
 
-                    if offset >= total_size {
+                    let actual_size = bounded_ewf_read_len(total_size, offset, size)?;
+                    if actual_size == 0 {
                         return Ok(Vec::new());
                     }
-
-                    let actual_size = size.min((total_size - offset) as usize);
 
                     handle
                         .read_at(offset, actual_size)
@@ -500,11 +499,10 @@ impl VirtualFileSystem for EwfVfs {
                     let total_size =
                         handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
 
-                    if offset >= total_size {
+                    let actual_size = bounded_ewf_read_len(total_size, offset, size)?;
+                    if actual_size == 0 {
                         return Ok(Vec::new());
                     }
-
-                    let actual_size = size.min((total_size - offset) as usize);
 
                     handle
                         .read_at(offset, actual_size)
@@ -597,20 +595,8 @@ impl Seek for EwfBlockReader {
 
         let new_pos = match pos {
             SeekFrom::Start(p) => p,
-            SeekFrom::Current(p) => {
-                if p >= 0 {
-                    self.position.saturating_add(p as u64)
-                } else {
-                    self.position.saturating_sub((-p) as u64)
-                }
-            }
-            SeekFrom::End(p) => {
-                if p >= 0 {
-                    size.saturating_add(p as u64)
-                } else {
-                    size.saturating_sub((-p) as u64)
-                }
-            }
+            SeekFrom::Current(p) => checked_ewf_seek_position(self.position, p)?,
+            SeekFrom::End(p) => checked_ewf_seek_position(size, p)?,
         };
         self.position = new_pos;
         Ok(new_pos)
@@ -618,6 +604,35 @@ impl Seek for EwfBlockReader {
 }
 
 impl BlockReader for EwfBlockReader {}
+
+fn checked_ewf_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
+    if delta >= 0 {
+        base.checked_add(delta as u64).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "EWF seek overflow")
+        })
+    } else {
+        base.checked_sub(delta.unsigned_abs()).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "EWF seek before start")
+        })
+    }
+}
+
+fn bounded_ewf_read_len(
+    total_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, VfsError> {
+    if offset > total_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
+    }
+
+    let remaining = total_size - offset;
+    let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+    Ok(requested_size.min(remaining))
+}
 
 // =============================================================================
 // Tests
@@ -734,5 +749,45 @@ mod tests {
         let mode = EwfVfsMode::Logical;
         let cloned = mode;
         assert_eq!(mode, cloned);
+    }
+
+    #[test]
+    fn test_checked_ewf_seek_position_rejects_underflow() {
+        assert!(checked_ewf_seek_position(0, -1).is_err());
+        assert!(checked_ewf_seek_position(10, -11).is_err());
+    }
+
+    #[test]
+    fn test_checked_ewf_seek_position_rejects_overflow() {
+        assert!(checked_ewf_seek_position(u64::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn test_checked_ewf_seek_position_allows_valid_offsets() {
+        assert_eq!(checked_ewf_seek_position(10, -5).unwrap(), 5);
+        assert_eq!(checked_ewf_seek_position(10, 5).unwrap(), 15);
+    }
+
+    #[test]
+    fn test_bounded_ewf_read_len_allows_exact_eof() {
+        assert_eq!(bounded_ewf_read_len(10, 10, 4).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_ewf_read_len_rejects_offset_past_eof() {
+        let err = bounded_ewf_read_len(10, 11, 4).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 11,
+                size: 4
+            }
+        ));
+    }
+
+    #[test]
+    fn test_bounded_ewf_read_len_clamps_to_remaining() {
+        assert_eq!(bounded_ewf_read_len(10, 8, 5).unwrap(), 2);
+        assert_eq!(bounded_ewf_read_len(u64::MAX, 0, 8).unwrap(), 8);
     }
 }

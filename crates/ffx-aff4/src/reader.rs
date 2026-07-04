@@ -244,11 +244,10 @@ impl<R: Read + Seek> Aff4Reader<R> {
             .ok_or_else(|| Aff4Error::StreamNotFound(stream_urn.to_string()))?
             .clone();
 
-        if offset >= stream_info.size {
+        let to_read = bounded_aff4_stream_read_len(offset, buf.len(), stream_info.size)?;
+        if to_read == 0 {
             return Ok(0);
         }
-
-        let to_read = clamp_read_len(buf.len(), stream_info.size - offset);
 
         // Resolve through map if available
         if let Some(map) = self.maps.get(stream_urn).cloned() {
@@ -349,13 +348,9 @@ impl<R: Read + Seek> Aff4Reader<R> {
             entries
         };
 
-        if chunk_in_bevy >= entries.len() {
-            return Ok(0); // Beyond the last chunk in this bevy
-        }
-
         // Read only the compressed chunk bytes from the bevy ZIP member.
         let data_path = uri::bevy_data_path(stream_urn, &self.volume_urn, bevy_index);
-        let entry = &entries[chunk_in_bevy];
+        let entry = required_bevy_index_entry(&entries, chunk_in_bevy, stream_urn, bevy_index)?;
         let compressed =
             read_zip_member_range(&mut self.archive, &data_path, entry.offset, entry.length)?
                 .ok_or(Aff4Error::MissingMember(data_path))?;
@@ -876,6 +871,37 @@ fn validate_stream_layout(
     Ok((chunk_size, chunks_per_segment))
 }
 
+fn bounded_aff4_stream_read_len(
+    offset: u64,
+    requested_len: usize,
+    stream_size: u64,
+) -> Aff4Result<usize> {
+    if offset > stream_size {
+        return Err(Aff4Error::SeekOutOfRange {
+            offset,
+            size: stream_size,
+        });
+    }
+
+    let remaining = stream_size - offset;
+    let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+    Ok(requested_len.min(remaining))
+}
+
+fn required_bevy_index_entry<'a>(
+    entries: &'a [BevyIndexEntry],
+    chunk_in_bevy: usize,
+    stream_urn: &str,
+    bevy_index: u32,
+) -> Aff4Result<&'a BevyIndexEntry> {
+    entries.get(chunk_in_bevy).ok_or_else(|| {
+        Aff4Error::InvalidContainer(format!(
+            "Stream {stream_urn} missing chunk {chunk_in_bevy} in bevy {bevy_index}: bevy index has {} entries",
+            entries.len()
+        ))
+    })
+}
+
 fn required_decompressed_chunk_slice<'a>(
     decompressed: &'a [u8],
     offset_in_chunk: usize,
@@ -1001,6 +1027,38 @@ mod tests {
         let err = validate_stream_layout(&stream.urn, &stream).unwrap_err();
         assert!(
             matches!(err, Aff4Error::InvalidContainer(message) if message.contains("chunkSize 0"))
+        );
+    }
+
+    #[test]
+    fn test_bounded_aff4_stream_read_len_allows_exact_eof() {
+        assert_eq!(bounded_aff4_stream_read_len(1024, 512, 1024).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_aff4_stream_read_len_rejects_offset_past_eof() {
+        let err = bounded_aff4_stream_read_len(1025, 512, 1024).unwrap_err();
+        assert!(matches!(
+            err,
+            Aff4Error::SeekOutOfRange {
+                offset: 1025,
+                size: 1024
+            }
+        ));
+    }
+
+    #[test]
+    fn test_bounded_aff4_stream_read_len_clamps_to_remaining() {
+        assert_eq!(bounded_aff4_stream_read_len(1000, 512, 1024).unwrap(), 24);
+        assert_eq!(bounded_aff4_stream_read_len(0, 8, u64::MAX).unwrap(), 8);
+    }
+
+    #[test]
+    fn test_required_bevy_index_entry_rejects_missing_chunk() {
+        let err = required_bevy_index_entry(&[], 2, "aff4://stream", 0).unwrap_err();
+
+        assert!(
+            matches!(err, Aff4Error::InvalidContainer(message) if message.contains("missing chunk 2"))
         );
     }
 

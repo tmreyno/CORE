@@ -1037,35 +1037,6 @@ fn read_7z_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_checked_native_entry_buffer_allows_small_capacity() {
-        let data = checked_native_entry_buffer(16, "test entry").unwrap();
-        assert!(data.capacity() >= 16);
-    }
-
-    #[test]
-    fn test_checked_native_entry_buffer_rejects_huge_capacity() {
-        assert!(checked_native_entry_buffer(u64::MAX, "test entry").is_err());
-    }
-
-    #[test]
-    fn test_checked_native_entry_size_rejects_configured_limit() {
-        assert!(
-            checked_native_entry_size(MAX_NATIVE_ARCHIVE_ENTRY_BYTES + 1, "test entry").is_err()
-        );
-    }
-
-    #[test]
-    fn test_read_to_end_limited_allows_small_reader() {
-        let data = read_to_end_limited(&b"archive bytes"[..], "test reader").unwrap();
-        assert_eq!(data, b"archive bytes");
-    }
-}
-
 /// Read a single entry from a TAR archive (optionally compressed).
 fn read_tar_entry_native(
     archive_path: &str,
@@ -1170,4 +1141,33 @@ fn read_compressed_stream(
 
     debug!(path = %archive_path, bytes = data.len(), "Read compressed stream (native)");
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checked_native_entry_buffer_allows_small_capacity() {
+        let data = checked_native_entry_buffer(16, "test entry").unwrap();
+        assert!(data.capacity() >= 16);
+    }
+
+    #[test]
+    fn test_checked_native_entry_buffer_rejects_huge_capacity() {
+        assert!(checked_native_entry_buffer(u64::MAX, "test entry").is_err());
+    }
+
+    #[test]
+    fn test_checked_native_entry_size_rejects_configured_limit() {
+        assert!(
+            checked_native_entry_size(MAX_NATIVE_ARCHIVE_ENTRY_BYTES + 1, "test entry").is_err()
+        );
+    }
+
+    #[test]
+    fn test_read_to_end_limited_allows_small_reader() {
+        let data = read_to_end_limited(&b"archive bytes"[..], "test reader").unwrap();
+        assert_eq!(data, b"archive bytes");
+    }
 }

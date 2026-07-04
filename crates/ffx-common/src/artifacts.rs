@@ -202,9 +202,13 @@ pub fn extract_normalized_artifact(
 
 fn artifact_id(source_ref: &EvidenceSourceRef, size: u64) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(serde_json::to_vec(source_ref).unwrap_or_default());
+    hasher.update(artifact_id_source_bytes(source_ref));
     hasher.update(size.to_le_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+fn artifact_id_source_bytes(source_ref: &EvidenceSourceRef) -> Vec<u8> {
+    serde_json::to_vec(source_ref).unwrap_or_else(|_| source_ref.display_id().into_bytes())
 }
 
 fn bounded_read_len(source_size: u64, requested: usize) -> usize {
@@ -374,6 +378,12 @@ fn refine_type_from_extension(
         "py" => Some(("text/x-python", "Python Source", "text")),
         "rs" => Some(("text/rust", "Rust Source", "text")),
         "sql" => Some(("application/sql", "SQL Script", "text")),
+        "jpg" | "jpeg" => Some(("image/jpeg", "JPEG Image", "image")),
+        "png" => Some(("image/png", "PNG Image", "image")),
+        "gif" => Some(("image/gif", "GIF Image", "image")),
+        "bmp" => Some(("image/bmp", "Bitmap Image", "image")),
+        "tif" | "tiff" => Some(("image/tiff", "TIFF Image", "image")),
+        "webp" => Some(("image/webp", "WebP Image", "image")),
         _ => None,
     };
 
@@ -555,7 +565,7 @@ fn insert_plist_string_keys(
     keys: &[&str],
 ) {
     for key in keys {
-        if let Some(value) = dictionary.get(*key).and_then(plist_scalar_string) {
+        if let Some(value) = dictionary.get(key).and_then(plist_scalar_string) {
             metadata.insert(format!("plist.{key}"), value);
         }
     }
@@ -2285,6 +2295,22 @@ mod tests {
     }
 
     #[test]
+    fn refines_image_artifact_type_from_extension_when_magic_is_short() {
+        let file = write_temp_file(".webp", b"RIFF");
+        let source = LocalFileByteSource::new(file.path());
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "image");
+        assert_eq!(artifact.mime_type.as_deref(), Some("image/webp"));
+        assert_eq!(artifact.type_description, "WebP Image");
+        assert_eq!(artifact.confidence, "medium");
+        assert!(!artifact.metadata.contains_key("image.width"));
+        assert!(!artifact.metadata.contains_key("image.height"));
+    }
+
+    #[test]
     fn extracts_png_image_dimensions() {
         let mut bytes = Vec::from(&b"\x89PNG\r\n\x1a\n"[..]);
         bytes.extend_from_slice(&13u32.to_be_bytes());
@@ -3010,5 +3036,29 @@ JVBERi0xLjQ=
             extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
 
         assert_eq!(first.id, second.id);
+    }
+
+    #[test]
+    fn artifact_id_differs_for_different_sources_with_same_size() {
+        let first = EvidenceSourceRef::LocalFile {
+            path: "/case/source-a.log".to_string(),
+        };
+        let second = EvidenceSourceRef::LocalFile {
+            path: "/case/source-b.log".to_string(),
+        };
+
+        assert_ne!(artifact_id(&first, 128), artifact_id(&second, 128));
+    }
+
+    #[test]
+    fn artifact_id_source_bytes_use_serialized_source_ref() {
+        let source_ref = EvidenceSourceRef::ContainerEntry {
+            container_path: "/case/image.E01".to_string(),
+            entry_path: "/Users/alice/file.txt".to_string(),
+            container_type: "ewf".to_string(),
+        };
+        let expected = serde_json::to_vec(&source_ref).unwrap();
+
+        assert_eq!(artifact_id_source_bytes(&source_ref), expected);
     }
 }

@@ -230,11 +230,16 @@ pub fn get_database_info(path: impl AsRef<Path>) -> DocumentResult<DatabaseInfo>
         .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         .map_err(|e| DocumentError::Parse(format!("Failed to list tables: {}", e)))?;
 
-    let table_names: Vec<String> = stmt
-        .query_map([], |row| row.get(0))
-        .map_err(|e| DocumentError::Parse(format!("Failed to read table names: {}", e)))?
-        .filter_map(|r| r.ok())
-        .collect();
+    let table_names_iter = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| DocumentError::Parse(format!("Failed to read table names: {}", e)))?;
+    let mut table_names = Vec::new();
+    for result in table_names_iter {
+        table_names.push(
+            result
+                .map_err(|e| DocumentError::Parse(format!("Failed to read table name: {}", e)))?,
+        );
+    }
 
     // Get table summaries with row counts and column counts
     let mut tables = Vec::new();
@@ -269,11 +274,15 @@ pub fn get_database_info(path: impl AsRef<Path>) -> DocumentResult<DatabaseInfo>
         .prepare("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name")
         .map_err(|e| DocumentError::Parse(format!("Failed to list views: {}", e)))?;
 
-    let views: Vec<String> = stmt
-        .query_map([], |row| row.get(0))
-        .map_err(|e| DocumentError::Parse(format!("Failed to read view names: {}", e)))?
-        .filter_map(|r| r.ok())
-        .collect();
+    let view_names_iter = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| DocumentError::Parse(format!("Failed to read view names: {}", e)))?;
+    let mut views = Vec::new();
+    for result in view_names_iter {
+        views.push(
+            result.map_err(|e| DocumentError::Parse(format!("Failed to read view name: {}", e)))?,
+        );
+    }
 
     Ok(DatabaseInfo {
         path: path.to_string_lossy().to_string(),
@@ -301,7 +310,7 @@ pub fn get_table_schema(
         .prepare(&format!("PRAGMA table_info({})", safe_name))
         .map_err(|e| DocumentError::Parse(format!("Failed to get table info: {}", e)))?;
 
-    let columns: Vec<ColumnInfo> = stmt
+    let column_iter = stmt
         .query_map([], |row| {
             Ok(ColumnInfo {
                 index: row.get::<_, i32>(0)? as usize,
@@ -312,9 +321,14 @@ pub fn get_table_schema(
                 is_primary_key: row.get::<_, i32>(5).unwrap_or(0) != 0,
             })
         })
-        .map_err(|e| DocumentError::Parse(format!("Failed to read column info: {}", e)))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .map_err(|e| DocumentError::Parse(format!("Failed to read column info: {}", e)))?;
+    let mut columns = Vec::new();
+    for result in column_iter {
+        columns.push(
+            result
+                .map_err(|e| DocumentError::Parse(format!("Failed to read column info: {}", e)))?,
+        );
+    }
 
     // Get row count
     let row_count: i64 = conn
@@ -337,11 +351,16 @@ pub fn get_table_schema(
         .prepare(&format!("PRAGMA index_list({})", safe_name))
         .map_err(|e| DocumentError::Parse(format!("Failed to list indexes: {}", e)))?;
 
-    let indexes: Vec<String> = idx_stmt
-        .query_map([], |row| row.get(1))
-        .map_err(|e| DocumentError::Parse(format!("Failed to read indexes: {}", e)))?
-        .filter_map(|r| r.ok())
-        .collect();
+    let index_iter = idx_stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| DocumentError::Parse(format!("Failed to read indexes: {}", e)))?;
+    let mut indexes = Vec::new();
+    for result in index_iter {
+        indexes.push(
+            result
+                .map_err(|e| DocumentError::Parse(format!("Failed to read index name: {}", e)))?,
+        );
+    }
 
     Ok(TableSchema {
         name: table_name.to_string(),
@@ -395,15 +414,17 @@ pub fn query_table_rows(
         .query_map(rusqlite::params![page_size as i64, offset as i64], |row| {
             let mut row_data = Vec::with_capacity(col_count);
             for i in 0..col_count {
-                let val: SqlValue = row.get(i).unwrap_or(SqlValue::Null);
+                let val: SqlValue = row.get(i)?;
                 row_data.push(format_sql_value(&val));
             }
             Ok(row_data)
         })
         .map_err(|e| DocumentError::Parse(format!("Failed to query rows: {}", e)))?;
 
-    for row_data in row_iter.flatten() {
-        rows.push(row_data);
+    for row_data in row_iter {
+        rows.push(
+            row_data.map_err(|e| DocumentError::Parse(format!("Failed to read row: {}", e)))?,
+        );
     }
 
     Ok(TableRows {

@@ -416,15 +416,24 @@ pub fn pst_list_messages(
         let row_node_id: u32 = row.id().into();
 
         // Try to read the message to get its properties
-        let msg_entry_id = match store.properties().make_entry_id(row_node_id.into()) {
-            Ok(eid) => eid,
-            Err(_) => continue,
-        };
+        let msg_entry_id = store
+            .properties()
+            .make_entry_id(row_node_id.into())
+            .map_err(|e| {
+                DocumentError::InvalidDocument(format!(
+                    "Failed to make message entry ID for row node {}: {}",
+                    row_node_id, e
+                ))
+            })?;
 
-        let msg = match UnicodeMessage::read(store.clone(), &msg_entry_id, Some(MSG_PROP_IDS)) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
+        let msg = UnicodeMessage::read(store.clone(), &msg_entry_id, Some(MSG_PROP_IDS)).map_err(
+            |e| {
+                DocumentError::InvalidDocument(format!(
+                    "Failed to read message row node {}: {}",
+                    row_node_id, e
+                ))
+            },
+        )?;
 
         let props = MsgProps(msg.properties());
 
@@ -494,10 +503,13 @@ pub fn pst_get_message(path: &str, message_node_id: u32) -> DocumentResult<PstMe
         let col_descs = tc_info.columns();
 
         for row in att_table.rows_matrix().take(MAX_PST_ATTACHMENTS) {
-            let cols = match row.columns(tc_info) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+            let attachment_node_id: u32 = row.id().into();
+            let cols = row.columns(tc_info).map_err(|e| {
+                DocumentError::InvalidDocument(format!(
+                    "Failed to read attachment table row {}: {}",
+                    attachment_node_id, e
+                ))
+            })?;
 
             let mut filename: Option<String> = None;
             let mut size: Option<i32> = None;
@@ -506,11 +518,16 @@ pub fn pst_get_message(path: &str, message_node_id: u32) -> DocumentResult<PstMe
             // Read column values using the table context column descriptors
             for (i, col_desc) in col_descs.iter().enumerate() {
                 if let Some(Some(col_val)) = cols.get(i) {
-                    let prop_val =
-                        match store.read_table_column(att_table, col_val, col_desc.prop_type()) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
+                    let prop_val = store
+                        .read_table_column(att_table, col_val, col_desc.prop_type())
+                        .map_err(|e| {
+                            DocumentError::InvalidDocument(format!(
+                                "Failed to read attachment property 0x{:04X} from row {}: {}",
+                                col_desc.prop_id(),
+                                attachment_node_id,
+                                e
+                            ))
+                        })?;
                     let prop_id = col_desc.prop_id();
                     if prop_id == PID_TAG_ATTACH_LONG_FILENAME
                         || prop_id == PID_TAG_ATTACH_FILENAME
@@ -590,15 +607,22 @@ fn walk_folders(
         let row_node_id: u32 = row.id().into();
 
         // Try to open this subfolder
-        let sub_entry_id = match store.properties().make_entry_id(row_node_id.into()) {
-            Ok(eid) => eid,
-            Err(_) => continue,
-        };
+        let sub_entry_id = store
+            .properties()
+            .make_entry_id(row_node_id.into())
+            .map_err(|e| {
+                DocumentError::InvalidDocument(format!(
+                    "Failed to make folder entry ID for row node {}: {}",
+                    row_node_id, e
+                ))
+            })?;
 
-        let sub_folder = match UnicodeFolder::read(store.clone(), &sub_entry_id) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
+        let sub_folder = UnicodeFolder::read(store.clone(), &sub_entry_id).map_err(|e| {
+            DocumentError::InvalidDocument(format!(
+                "Failed to read folder row node {}: {}",
+                row_node_id, e
+            ))
+        })?;
 
         let sub_props = sub_folder.properties();
         let name = sub_props
@@ -677,7 +701,9 @@ mod tests {
 
     #[test]
     fn pst_body_limit_is_larger_than_field_limit() {
-        assert!(MAX_PST_BODY_CHARS > MAX_PST_FIELD_CHARS);
+        const {
+            assert!(MAX_PST_BODY_CHARS > MAX_PST_FIELD_CHARS);
+        }
     }
 
     #[test]

@@ -29,7 +29,7 @@ fn table_exists(db: &ProjectDatabase, name: &str) -> bool {
 }
 
 fn hex_digest(ch: char, len: usize) -> String {
-    std::iter::repeat(ch).take(len).collect()
+    std::iter::repeat_n(ch, len).collect()
 }
 
 fn make_existing_collection(id: &str) -> DbEvidenceCollection {

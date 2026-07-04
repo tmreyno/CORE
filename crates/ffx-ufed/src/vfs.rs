@@ -264,11 +264,15 @@ impl UfedVfs {
             .as_ref()
             .ok_or_else(|| VfsError::Internal("No real path for entry".to_string()))?;
 
-        if offset >= entry.attr.size || size == 0 {
+        if offset > entry.attr.size {
+            return Err(VfsError::OutOfBounds { offset, size });
+        }
+
+        if offset == entry.attr.size || size == 0 {
             return Ok(Vec::new());
         }
 
-        let read_len = bounded_range_len(entry.attr.size, offset, size);
+        let read_len = bounded_range_len(entry.attr.size, offset, size)?;
         let mut file = File::open(real_path).map_err(|e| VfsError::IoError(e.to_string()))?;
         file.seek(SeekFrom::Start(offset))
             .map_err(|e| VfsError::IoError(e.to_string()))?;
@@ -281,10 +285,21 @@ impl UfedVfs {
     }
 }
 
-fn bounded_range_len(total_size: u64, offset: u64, requested_size: usize) -> usize {
-    let remaining = total_size.saturating_sub(offset);
+fn bounded_range_len(
+    total_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, VfsError> {
+    if offset > total_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
+    }
+
+    let remaining = total_size - offset;
     let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
-    requested_size.min(remaining)
+    Ok(requested_size.min(remaining))
 }
 
 impl VirtualFileSystem for UfedVfs {
@@ -363,9 +378,29 @@ mod tests {
 
     #[test]
     fn bounded_range_len_clamps_to_available_bytes() {
-        assert_eq!(bounded_range_len(10, 4, 8), 6);
-        assert_eq!(bounded_range_len(10, 4, 2), 2);
-        assert_eq!(bounded_range_len(u64::MAX, u64::MAX - 3, usize::MAX), 3);
+        assert_eq!(bounded_range_len(10, 4, 8).unwrap(), 6);
+        assert_eq!(bounded_range_len(10, 4, 2).unwrap(), 2);
+        assert_eq!(
+            bounded_range_len(u64::MAX, u64::MAX - 3, usize::MAX).unwrap(),
+            3
+        );
+    }
+
+    #[test]
+    fn bounded_range_len_allows_exact_eof() {
+        assert_eq!(bounded_range_len(10, 10, 8).unwrap(), 0);
+    }
+
+    #[test]
+    fn bounded_range_len_rejects_offset_past_eof() {
+        let err = bounded_range_len(10, 11, 8).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 11,
+                size: 8
+            }
+        ));
     }
 
     #[test]
@@ -379,7 +414,14 @@ mod tests {
 
         assert_eq!(vfs.read("/evidence.bin", 2, 3).unwrap(), b"cde");
         assert_eq!(vfs.read("/evidence.bin", 6, 3).unwrap(), b"");
-        assert_eq!(vfs.read("/evidence.bin", u64::MAX, 3).unwrap(), b"");
+        let err = vfs.read("/evidence.bin", u64::MAX, 3).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: u64::MAX,
+                size: 3
+            }
+        ));
     }
 
     #[cfg(unix)]

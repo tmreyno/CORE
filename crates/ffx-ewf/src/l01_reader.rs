@@ -1220,7 +1220,7 @@ mod tests {
 
     #[test]
     fn test_decompress_zlib_rejects_output_past_declared_size() {
-        let compressed = zlib_compress(&vec![0x41; 128]);
+        let compressed = zlib_compress(&[0x41; 128]);
 
         let err = decompress_zlib(&compressed, 64).unwrap_err();
 

@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, Write};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use zip::write::SimpleFileOptions;
@@ -305,7 +305,7 @@ fn write_small_file<W: Write + Seek>(
     entry: &mut Aff4LogicalEntry,
     file_urn: &str,
     volume_urn: &str,
-    source_path: &PathBuf,
+    source_path: &Path,
 ) -> Aff4Result<()> {
     // Read the snapshotted file length. Do not chase bytes appended after
     // enumeration, and do not accept sources that became shorter.
@@ -359,11 +359,7 @@ fn write_small_file<W: Write + Seek>(
     Ok(())
 }
 
-fn validate_logical_entry_size(
-    source_path: &PathBuf,
-    expected: u64,
-    actual: u64,
-) -> Aff4Result<()> {
+fn validate_logical_entry_size(source_path: &Path, expected: u64, actual: u64) -> Aff4Result<()> {
     if actual == expected {
         return Ok(());
     }
@@ -387,7 +383,7 @@ fn write_large_file<W: Write + Seek>(
     entry: &mut Aff4LogicalEntry,
     file_urn: &str,
     volume_urn: &str,
-    source_path: &PathBuf,
+    source_path: &Path,
     cancel_flag: Option<&AtomicBool>,
 ) -> Aff4Result<()> {
     let chunk_size = config.chunk_size as usize;

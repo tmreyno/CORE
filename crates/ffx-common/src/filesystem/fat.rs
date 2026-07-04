@@ -251,36 +251,36 @@ impl FilesystemDriver for FatDriver {
             .seek(SeekFrom::End(0))
             .map_err(|e| VfsError::IoError(format!("Failed to get file size: {}", e)))?;
 
-        if offset >= file_size {
+        let actual_size = bounded_fat_read_len(file_size, offset, size)?;
+        if actual_size == 0 {
             return Ok(Vec::new());
         }
 
         file.seek(SeekFrom::Start(offset))
             .map_err(|e| VfsError::IoError(format!("Failed to seek: {}", e)))?;
 
-        let actual_size = match bounded_fat_read_len(file_size, offset, size) {
-            Some(actual_size) => actual_size,
-            None => return Ok(Vec::new()),
-        };
         let mut buf = vec![0u8; actual_size];
 
-        let bytes_read = file
-            .read(&mut buf)
-            .map_err(|e| VfsError::IoError(format!("Failed to read file: {}", e)))?;
-
-        buf.truncate(bytes_read);
+        read_fat_file_exact(&mut file, &mut buf, &normalized, offset)?;
         Ok(buf)
     }
 }
 
-fn bounded_fat_read_len(file_size: u64, offset: u64, requested_size: usize) -> Option<usize> {
-    let remaining = file_size.checked_sub(offset)?;
-    if remaining == 0 {
-        return None;
+fn bounded_fat_read_len(
+    file_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, VfsError> {
+    if offset > file_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
     }
 
+    let remaining = file_size - offset;
     let remaining_usize = usize::try_from(remaining).unwrap_or(usize::MAX);
-    Some(requested_size.min(remaining_usize))
+    Ok(requested_size.min(remaining_usize))
 }
 
 fn checked_fat_absolute_offset(base: u64, position: u64) -> Option<u64> {
@@ -299,6 +299,20 @@ fn checked_fat_read_position_advance(position: u64, bytes_read: usize) -> std::i
             std::io::ErrorKind::InvalidInput,
             "FAT read position overflow",
         )
+    })
+}
+
+fn read_fat_file_exact<R: Read>(
+    file: &mut R,
+    buf: &mut [u8],
+    path: &str,
+    offset: u64,
+) -> Result<(), VfsError> {
+    file.read_exact(buf).map_err(|e| {
+        VfsError::IoError(format!(
+            "FAT file range read failed for {path} at offset {offset}: expected {} bytes: {e}",
+            buf.len()
+        ))
     })
 }
 
@@ -526,18 +540,30 @@ mod tests {
     }
 
     #[test]
-    fn test_bounded_fat_read_len_rejects_eof() {
-        assert_eq!(bounded_fat_read_len(128, 128, 16), None);
+    fn test_bounded_fat_read_len_allows_exact_eof() {
+        assert_eq!(bounded_fat_read_len(128, 128, 16).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_fat_read_len_rejects_offset_past_eof() {
+        let err = bounded_fat_read_len(128, 129, 16).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 129,
+                size: 16
+            }
+        ));
     }
 
     #[test]
     fn test_bounded_fat_read_len_clamps_to_remaining() {
-        assert_eq!(bounded_fat_read_len(128, 120, 16), Some(8));
+        assert_eq!(bounded_fat_read_len(128, 120, 16).unwrap(), 8);
     }
 
     #[test]
     fn test_bounded_fat_read_len_handles_large_remaining() {
-        assert_eq!(bounded_fat_read_len(u64::MAX, 0, 32), Some(32));
+        assert_eq!(bounded_fat_read_len(u64::MAX, 0, 32).unwrap(), 32);
     }
 
     #[test]
@@ -571,5 +597,17 @@ mod tests {
         let err = checked_fat_seek_position(u64::MAX, 1).expect_err("seek overflow should fail");
 
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_read_fat_file_exact_rejects_short_read() {
+        let mut file = std::io::Cursor::new(vec![1u8, 2]);
+        let mut buf = [0u8; 4];
+
+        let err = read_fat_file_exact(&mut file, &mut buf, "/short.bin", 0)
+            .expect_err("short FAT range read should fail");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+        assert!(err.to_string().contains("expected 4 bytes"));
     }
 }

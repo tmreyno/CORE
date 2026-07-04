@@ -39,13 +39,35 @@ fn checked_vfs_read_size(file_size: u64, offset: u64, requested: usize) -> Resul
         ));
     }
 
-    if offset >= file_size {
+    if offset > file_size {
+        return Err(format!(
+            "VFS read offset is beyond EOF: offset {offset} > file size {file_size}"
+        ));
+    }
+
+    if offset == file_size {
         return Ok(0);
     }
 
-    let remaining = file_size.saturating_sub(offset);
+    let remaining = file_size - offset;
     usize::try_from(remaining.min(requested as u64))
         .map_err(|_| "VFS read range is too large for this platform".to_string())
+}
+
+fn ensure_vfs_read_len(actual: usize, expected: usize, file_path: &str) -> Result<(), String> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    if actual < expected {
+        Err(format!(
+            "VFS backend returned incomplete data for {file_path}: expected {expected} bytes, received {actual}"
+        ))
+    } else {
+        Err(format!(
+            "VFS backend returned too many bytes for {file_path}: requested {expected}, received {actual}"
+        ))
+    }
 }
 
 /// Type-erased VFS wrapper for the handle pool
@@ -493,6 +515,7 @@ pub async fn vfs_read_file(
                 data.len()
             ));
         }
+        ensure_vfs_read_len(data.len(), read_size, &filePath)?;
         Ok(data)
     })
     .await
@@ -534,9 +557,14 @@ mod tests {
     }
 
     #[test]
-    fn checked_vfs_read_size_returns_zero_at_or_past_eof() {
+    fn checked_vfs_read_size_returns_zero_at_eof() {
         assert_eq!(checked_vfs_read_size(100, 100, 64).unwrap(), 0);
-        assert_eq!(checked_vfs_read_size(100, 150, 64).unwrap(), 0);
+    }
+
+    #[test]
+    fn checked_vfs_read_size_rejects_offset_past_eof() {
+        let err = checked_vfs_read_size(100, 150, 64).unwrap_err();
+        assert!(err.contains("beyond EOF"));
     }
 
     #[test]
@@ -544,6 +572,15 @@ mod tests {
         let err = checked_vfs_read_size(100, 0, VFS_MAX_READ_BYTES + 1).unwrap_err();
 
         assert!(err.contains("VFS read request is too large"));
+    }
+
+    #[test]
+    fn ensure_vfs_read_len_rejects_short_read() {
+        let err = ensure_vfs_read_len(2, 3, "/file.bin").unwrap_err();
+
+        assert!(err.contains("incomplete data"), "unexpected: {err}");
+        assert!(err.contains("expected 3 bytes"), "unexpected: {err}");
+        assert!(err.contains("received 2"), "unexpected: {err}");
     }
 
     #[test]

@@ -574,12 +574,11 @@ impl ExtDriver {
         size: usize,
     ) -> Result<Vec<u8>, VfsError> {
         let file_size = inode.size();
-        if offset >= file_size {
+        let actual_size = bounded_ext_read_len(file_size, offset, size)?;
+        if actual_size == 0 {
             return Ok(Vec::new());
         }
 
-        let actual_size = bounded_ext_read_len(file_size, offset, size)
-            .ok_or_else(|| VfsError::IoError("EXT read offset exceeded file size".to_string()))?;
         let mut result = vec![0u8; actual_size];
         let mut bytes_read = 0usize;
         let mut current_offset = offset;
@@ -904,9 +903,16 @@ fn checked_ext_group_desc_capacity(count: usize) -> Result<Vec<ExtBlockGroupDesc
     Ok(descs)
 }
 
-fn bounded_ext_read_len(file_size: u64, offset: u64, requested: usize) -> Option<usize> {
-    let remaining = file_size.checked_sub(offset)?;
-    Some(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
+fn bounded_ext_read_len(file_size: u64, offset: u64, requested: usize) -> Result<usize, VfsError> {
+    if offset > file_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested,
+        });
+    }
+
+    let remaining = file_size - offset;
+    Ok(requested.min(usize::try_from(remaining).unwrap_or(usize::MAX)))
 }
 
 fn read_ext_exact(
@@ -1244,9 +1250,16 @@ mod tests {
 
     #[test]
     fn test_bounded_ext_read_len_rejects_underflow() {
-        assert_eq!(bounded_ext_read_len(8, 4, 16), Some(4));
-        assert_eq!(bounded_ext_read_len(8, 8, 16), Some(0));
-        assert_eq!(bounded_ext_read_len(8, 9, 16), None);
+        assert_eq!(bounded_ext_read_len(8, 4, 16).unwrap(), 4);
+        assert_eq!(bounded_ext_read_len(8, 8, 16).unwrap(), 0);
+        let err = bounded_ext_read_len(8, 9, 16).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 9,
+                size: 16
+            }
+        ));
     }
 
     #[test]

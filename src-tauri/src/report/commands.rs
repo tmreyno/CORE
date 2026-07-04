@@ -97,6 +97,8 @@ pub async fn preview_report(
 /// Get available output formats
 #[tauri::command]
 pub fn get_output_formats() -> Vec<FormatInfo> {
+    let typst_supported = OutputFormat::Typst.is_supported();
+
     vec![
         FormatInfo {
             format: OutputFormat::Pdf,
@@ -130,9 +132,13 @@ pub fn get_output_formats() -> Vec<FormatInfo> {
         FormatInfo {
             format: OutputFormat::Typst,
             name: "Typst".to_string(),
-            description: "Modern typesetting format - Coming soon".to_string(),
+            description: if typst_supported {
+                "Modern typesetting format - Best for high-quality source reports".to_string()
+            } else {
+                "Modern typesetting format - Requires the typst-reports feature".to_string()
+            },
             extension: "typ".to_string(),
-            supported: false,
+            supported: typst_supported,
         },
     ]
 }
@@ -806,7 +812,14 @@ fn artifact_summary_from_project_db(artifact: &DbNormalizedArtifact) -> ReportAr
 }
 
 fn parse_artifact_source_ref(source_ref_json: &str) -> Option<serde_json::Value> {
-    serde_json::from_str(source_ref_json).ok()
+    match serde_json::from_str(source_ref_json) {
+        Ok(value) => Some(value),
+        Err(error) => Some(serde_json::json!({
+            "invalidSourceRef": true,
+            "parseError": truncate_report_text(&error.to_string(), MAX_REPORT_FIELD_CHARS),
+            "raw": truncate_report_text(source_ref_json, MAX_REPORT_FIELD_CHARS),
+        })),
+    }
 }
 
 fn parse_artifact_metadata(metadata_json: Option<&str>) -> BTreeMap<String, String> {
@@ -814,42 +827,53 @@ fn parse_artifact_metadata(metadata_json: Option<&str>) -> BTreeMap<String, Stri
         return BTreeMap::new();
     };
 
-    serde_json::from_str::<BTreeMap<String, String>>(metadata_json)
-        .map(|metadata| {
-            metadata
-                .into_iter()
+    match serde_json::from_str::<BTreeMap<String, String>>(metadata_json) {
+        Ok(metadata) => metadata
+            .into_iter()
+            .take(MAX_REPORT_METADATA_ENTRIES)
+            .map(|(key, value)| {
+                (
+                    truncate_report_text(&key, MAX_REPORT_FIELD_CHARS),
+                    truncate_report_text(&value, MAX_REPORT_FIELD_CHARS),
+                )
+            })
+            .collect(),
+        Err(map_error) => match serde_json::from_str::<serde_json::Value>(metadata_json) {
+            Ok(serde_json::Value::Object(object)) => object
+                .iter()
                 .take(MAX_REPORT_METADATA_ENTRIES)
                 .map(|(key, value)| {
                     (
-                        truncate_report_text(&key, MAX_REPORT_FIELD_CHARS),
-                        truncate_report_text(&value, MAX_REPORT_FIELD_CHARS),
+                        truncate_report_text(key, MAX_REPORT_FIELD_CHARS),
+                        truncate_report_text(
+                            &metadata_value_to_string(value),
+                            MAX_REPORT_FIELD_CHARS,
+                        ),
                     )
                 })
-                .collect()
-        })
-        .or_else(|_| {
-            serde_json::from_str::<serde_json::Value>(metadata_json).map(|value| {
-                value
-                    .as_object()
-                    .map(|object| {
-                        object
-                            .iter()
-                            .take(MAX_REPORT_METADATA_ENTRIES)
-                            .map(|(key, value)| {
-                                (
-                                    truncate_report_text(key, MAX_REPORT_FIELD_CHARS),
-                                    truncate_report_text(
-                                        &metadata_value_to_string(value),
-                                        MAX_REPORT_FIELD_CHARS,
-                                    ),
-                                )
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-        })
-        .unwrap_or_default()
+                .collect(),
+            Ok(_) => artifact_metadata_parse_error(
+                "artifact metadata JSON is not an object",
+                metadata_json,
+            ),
+            Err(value_error) => {
+                artifact_metadata_parse_error(&format!("{map_error}; {value_error}"), metadata_json)
+            }
+        },
+    }
+}
+
+fn artifact_metadata_parse_error(error: &str, raw: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (
+            "metadata.parseError".to_string(),
+            truncate_report_text(error, MAX_REPORT_FIELD_CHARS),
+        ),
+        (
+            "metadata.raw".to_string(),
+            truncate_report_text(raw, MAX_REPORT_FIELD_CHARS),
+        ),
+    ])
 }
 
 fn metadata_value_to_string(value: &serde_json::Value) -> String {
@@ -1099,38 +1123,9 @@ The examination process included:
 
     builder = builder.methodology(methodology);
 
-    // Build with minimal required fields
-    builder.build().unwrap_or_else(|_| {
-        // Return a truly minimal report if builder fails
-        ForensicReport {
-            metadata: ReportMetadata {
-                title: "Forensic Examination Report".to_string(),
-                report_number: "".to_string(),
-                version: "1.0".to_string(),
-                classification: Classification::Confidential,
-                generated_at: chrono::Utc::now(),
-                generated_by: "FFX Forensic File Xplorer".to_string(),
-            },
-            case_info: CaseInfo::default(),
-            examiner: ExaminerInfo::default(),
-            executive_summary: None,
-            scope: None,
-            methodology: Some(methodology.to_string()),
-            evidence_items: vec![],
-            chain_of_custody: vec![],
-            findings: vec![],
-            timeline: vec![],
-            hash_records: vec![],
-            tools: vec![],
-            conclusions: None,
-            appendices: vec![],
-            signatures: vec![],
-            notes: None,
-            report_type: None,
-            coc_items: None,
-            evidence_collection: None,
-        }
-    })
+    builder
+        .build()
+        .expect("report template builder should include required case and examiner fields")
 }
 
 #[cfg(feature = "ai-assistant")]
@@ -1528,10 +1523,13 @@ mod tests {
     }
 
     #[test]
-    fn test_get_output_formats_typst_not_supported() {
+    fn test_get_output_formats_typst_support_matches_feature_flag() {
         let formats = get_output_formats();
         let typst = formats.iter().find(|f| f.extension == "typ").unwrap();
         assert_eq!(typst.name, "Typst");
+        #[cfg(feature = "typst-reports")]
+        assert!(typst.supported);
+        #[cfg(not(feature = "typst-reports"))]
         assert!(!typst.supported);
     }
 
@@ -2091,8 +2089,44 @@ mod tests {
 
         let summary = artifact_summary_from_project_db(&artifact);
 
-        assert!(summary.metadata.is_empty());
-        assert!(summary.source_ref.is_none());
+        assert!(summary
+            .metadata
+            .get("metadata.parseError")
+            .is_some_and(|error| !error.is_empty()));
+        assert_eq!(
+            summary.metadata.get("metadata.raw").map(String::as_str),
+            Some("{not-valid-json")
+        );
+        assert_eq!(
+            summary
+                .source_ref
+                .as_ref()
+                .and_then(|value| value.get("invalidSourceRef"))
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            summary
+                .source_ref
+                .as_ref()
+                .and_then(|value| value.get("raw"))
+                .and_then(serde_json::Value::as_str),
+            Some("{not-valid-json")
+        );
+    }
+
+    #[test]
+    fn test_artifact_summary_marks_non_object_metadata_json() {
+        let metadata = parse_artifact_metadata(Some("[1,2,3]"));
+
+        assert_eq!(
+            metadata.get("metadata.parseError").map(String::as_str),
+            Some("artifact metadata JSON is not an object")
+        );
+        assert_eq!(
+            metadata.get("metadata.raw").map(String::as_str),
+            Some("[1,2,3]")
+        );
     }
 
     #[test]
@@ -2531,6 +2565,9 @@ mod tests {
             .metadata
             .title
             .starts_with("Forensic Examination Report"));
+        assert_eq!(report.case_info.case_number, "");
+        assert_eq!(report.examiner.name, "");
+        assert!(report.methodology.is_some());
     }
 
     // =========================================================================

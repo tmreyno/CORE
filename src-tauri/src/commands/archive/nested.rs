@@ -168,9 +168,18 @@ fn read_l01_entry_range(
     let mut handle = ewf::EwfHandle::open(container_path)
         .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
     let read_offset = checked_l01_entry_read_offset(entry.data_offset, offset)?;
-    handle
+    let data = handle
         .read_at(read_offset, read_size)
-        .map_err(|e| format!("Failed to read L01 entry '{}': {}", entry_path, e))
+        .map_err(|e| format!("Failed to read L01 entry '{}': {}", entry_path, e))?;
+    if data.len() > read_size {
+        return Err(format!(
+            "L01 reader returned too many bytes for '{}': requested {read_size}, received {}",
+            entry_path,
+            data.len()
+        ));
+    }
+    ensure_nested_range_read_len(data.len(), read_size, "L01 reader", entry_path)?;
+    Ok(data)
 }
 
 fn checked_l01_entry_read_offset(data_offset: u64, offset: u64) -> Result<u64, String> {
@@ -282,6 +291,7 @@ fn read_ufed_entry_range(
             data.len()
         ));
     }
+    ensure_nested_range_read_len(data.len(), read_size, "UFED VFS", entry_path)?;
     Ok(data)
 }
 
@@ -315,12 +325,38 @@ fn ensure_nested_full_read_len(len: usize, context: &str) -> Result<(), String> 
 
 fn bounded_nested_read_size(total_size: u64, offset: u64, size: usize) -> Result<usize, String> {
     let size = checked_nested_range_request_size(size)?;
-    if offset >= total_size || size == 0 {
+    if size == 0 || offset == total_size {
         return Ok(0);
+    }
+    if offset > total_size {
+        return Err(format!(
+            "Nested entry chunk offset is beyond EOF: offset {offset} > size {total_size}"
+        ));
     }
     let available = total_size - offset;
     usize::try_from(available.min(size as u64))
         .map_err(|_| "Nested entry range is too large to read".to_string())
+}
+
+fn ensure_nested_range_read_len(
+    actual: usize,
+    expected: usize,
+    context: &str,
+    entry_path: &str,
+) -> Result<(), String> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    if actual < expected {
+        Err(format!(
+            "{context} returned incomplete data for '{entry_path}': expected {expected} bytes, received {actual}"
+        ))
+    } else {
+        Err(format!(
+            "{context} returned too many bytes for '{entry_path}': expected {expected} bytes, received {actual}"
+        ))
+    }
 }
 
 fn checked_nested_copy_offset(
@@ -503,8 +539,10 @@ pub(crate) fn read_nested_container_entry_range(
             if read_size == 0 {
                 return Ok(Vec::new());
             }
-            ad1::read_entry_chunk(&temp_path, entry_path, offset, read_size)
-                .map_err(|e| format!("Failed to read nested AD1 entry '{}': {}", entry_path, e))
+            let data = ad1::read_entry_chunk(&temp_path, entry_path, offset, read_size)
+                .map_err(|e| format!("Failed to read nested AD1 entry '{}': {}", entry_path, e))?;
+            ensure_nested_range_read_len(data.len(), read_size, "Nested AD1 reader", entry_path)?;
+            Ok(data)
         }
         "l01" => read_l01_entry_range(&temp_path, entry_path, offset, size),
         "ufed" | "ufd" | "ufdr" | "ufdx" => {
@@ -536,6 +574,7 @@ pub(crate) fn read_nested_container_entry_range(
                     data.len()
                 ));
             }
+            ensure_nested_range_read_len(data.len(), read_size, "Nested archive VFS", entry_path)?;
             Ok(data)
         }
     }
@@ -1253,8 +1292,15 @@ mod tests {
     }
 
     #[test]
-    fn bounded_nested_read_size_returns_zero_past_eof() {
-        assert_eq!(bounded_nested_read_size(100, 150, 64).unwrap(), 0);
+    fn bounded_nested_read_size_returns_zero_at_eof() {
+        assert_eq!(bounded_nested_read_size(100, 100, 64).unwrap(), 0);
+    }
+
+    #[test]
+    fn bounded_nested_read_size_rejects_offset_past_eof() {
+        let err = bounded_nested_read_size(100, 150, 64).unwrap_err();
+
+        assert!(err.contains("offset 150 > size 100"), "unexpected: {err}");
     }
 
     #[test]
@@ -1262,6 +1308,15 @@ mod tests {
         let err = checked_nested_copy_offset(90, 16, 100, "/nested.zip").unwrap_err();
 
         assert!(err.contains("too many bytes"), "unexpected: {}", err);
+    }
+
+    #[test]
+    fn ensure_nested_range_read_len_rejects_short_read() {
+        let err = ensure_nested_range_read_len(2, 3, "Nested archive VFS", "file.bin").unwrap_err();
+
+        assert!(err.contains("incomplete data"), "unexpected: {err}");
+        assert!(err.contains("expected 3 bytes"), "unexpected: {err}");
+        assert!(err.contains("received 2"), "unexpected: {err}");
     }
 
     #[test]
@@ -1291,6 +1346,10 @@ mod tests {
         )
         .unwrap()
         .is_empty());
+        let err =
+            read_nested_container_entry_range(&outer_path, "inner.zip", "nested/file.txt", 7, 3)
+                .unwrap_err();
+        assert!(err.contains("offset 7 > size 6"), "unexpected: {err}");
     }
 
     #[test]

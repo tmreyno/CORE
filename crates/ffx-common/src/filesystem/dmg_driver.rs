@@ -378,24 +378,54 @@ impl Read for MemoryBlockReader {
 impl Seek for MemoryBlockReader {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let new_pos = match pos {
-            SeekFrom::Start(offset) => offset as i64,
-            SeekFrom::End(offset) => self.data.len() as i64 + offset,
-            SeekFrom::Current(offset) => self.position as i64 + offset,
+            SeekFrom::Start(offset) => usize::try_from(offset).map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "DMG memory seek offset too large",
+                )
+            })?,
+            SeekFrom::End(offset) => checked_memory_seek_position(self.data.len(), offset)?,
+            SeekFrom::Current(offset) => checked_memory_seek_position(self.position, offset)?,
         };
 
-        if new_pos < 0 {
-            return Err(std::io::Error::new(
+        self.position = new_pos;
+        u64::try_from(self.position).map_err(|_| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "Seek before start of data",
-            ));
-        }
-
-        self.position = new_pos as usize;
-        Ok(self.position as u64)
+                "DMG memory seek offset does not fit in u64",
+            )
+        })
     }
 }
 
 impl BlockReader for MemoryBlockReader {}
+
+fn checked_memory_seek_position(base: usize, delta: i64) -> std::io::Result<usize> {
+    if delta >= 0 {
+        let delta = usize::try_from(delta).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "DMG memory seek offset too large",
+            )
+        })?;
+        base.checked_add(delta).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "DMG memory seek overflow")
+        })
+    } else {
+        let delta = usize::try_from(delta.unsigned_abs()).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "DMG memory seek offset too large",
+            )
+        })?;
+        base.checked_sub(delta).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "DMG memory seek before start",
+            )
+        })
+    }
+}
 
 // =============================================================================
 // Tests
@@ -488,5 +518,25 @@ mod tests {
         let mut buf = [0u8; 2];
         let read = reader.read(&mut buf).unwrap();
         assert_eq!(read, 0);
+    }
+
+    #[test]
+    fn test_memory_block_reader_seek_rejects_before_start() {
+        let device = MemoryBlockDevice::new(vec![0, 1, 2, 3]);
+        let mut reader = device.reader_at(0);
+
+        assert!(reader.seek(SeekFrom::Current(-1)).is_err());
+        assert!(reader.seek(SeekFrom::End(-5)).is_err());
+    }
+
+    #[test]
+    fn test_checked_memory_seek_position_rejects_overflow() {
+        assert!(checked_memory_seek_position(usize::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn test_checked_memory_seek_position_allows_valid_offsets() {
+        assert_eq!(checked_memory_seek_position(10, -4).unwrap(), 6);
+        assert_eq!(checked_memory_seek_position(10, 4).unwrap(), 14);
     }
 }

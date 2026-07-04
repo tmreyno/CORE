@@ -21,6 +21,7 @@
 #![allow(unused_imports)]
 
 use super::ewf_helpers::validate_snapshot_byte_count;
+use crate::common::csv_row;
 use rayon::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1615,7 +1616,7 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
     let mut file = std::fs::File::create(&manifest_path)
         .map_err(|e| format!("Cannot create manifest: {e}"))?;
 
-    writeln!(file, "relative_path,category,size_bytes,modified")
+    file.write_all(csv_row(&["relative_path", "category", "size_bytes", "modified"]).as_bytes())
         .map_err(|e| format!("Write header failed: {e}"))?;
 
     fn walk_dir(
@@ -1624,18 +1625,18 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
         out: &mut std::fs::File,
         depth: usize,
         rows_written: &mut usize,
-    ) {
+    ) -> Result<(), String> {
         if depth > TRIAGE_MAX_TRAVERSAL_DEPTH {
             warn!(
                 "Skipping triage manifest directory {}: maximum traversal depth {} exceeded",
                 dir.display(),
                 TRIAGE_MAX_TRAVERSAL_DEPTH
             );
-            return;
+            return Ok(());
         }
 
         let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
+            return Ok(());
         };
         for entry in entries.flatten() {
             if *rows_written >= TRIAGE_MAX_TRAVERSAL_FILES {
@@ -1643,12 +1644,12 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                     "Stopping triage manifest at {} files",
                     TRIAGE_MAX_TRAVERSAL_FILES
                 );
-                return;
+                return Ok(());
             }
 
             let path = entry.path();
             if path.is_dir() {
-                walk_dir(&path, base, out, depth + 1, rows_written);
+                walk_dir(&path, base, out, depth + 1, rows_written)?;
             } else if path.is_file() {
                 // Skip the manifest file itself
                 if path
@@ -1659,7 +1660,7 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                     continue;
                 }
                 let rel = path.strip_prefix(base).unwrap_or(&path);
-                let rel_str = rel.to_string_lossy().replace(',', ";"); // escape commas
+                let rel_str = rel.to_string_lossy();
                 let category = rel
                     .components()
                     .next()
@@ -1678,14 +1679,25 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                         Some(format!("{secs}"))
                     })
                     .unwrap_or_default();
-                let _ = writeln!(out, "{rel_str},{category},{size},{modified}");
+                let size = size.to_string();
+                out.write_all(
+                    csv_row(&[
+                        rel_str.as_ref(),
+                        category.as_str(),
+                        size.as_str(),
+                        &modified,
+                    ])
+                    .as_bytes(),
+                )
+                .map_err(|e| format!("Write manifest row failed for {}: {e}", path.display()))?;
                 *rows_written += 1;
             }
         }
+        Ok(())
     }
 
     let mut rows_written = 0usize;
-    walk_dir(output_dir, output_dir, &mut file, 0, &mut rows_written);
+    walk_dir(output_dir, output_dir, &mut file, 0, &mut rows_written)?;
     info!("Triage manifest written: {}", manifest_path.display());
     Ok(())
 }
@@ -2231,6 +2243,7 @@ mod tests {
         push_triage_collection_file, write_triage_manifest, SecretFinding, TRIAGE_COPY_CHUNK_SIZE,
         TRIAGE_MAX_COLLECTION_FILES, TRIAGE_MAX_SECRET_FINDINGS, TRIAGE_MAX_TRAVERSAL_DEPTH,
     };
+    use std::path::Path;
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -2412,5 +2425,37 @@ mod tests {
         write_triage_manifest(dir.path()).unwrap();
         let manifest = std::fs::read_to_string(dir.path().join("triage_manifest.csv")).unwrap();
         assert_eq!(manifest.lines().count(), 1);
+    }
+
+    #[test]
+    fn write_triage_manifest_escapes_csv_fields_without_mutating_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let category = "category,one";
+        let file_name = "report,final.txt";
+        let category_dir = dir.path().join(category);
+        std::fs::create_dir(&category_dir).unwrap();
+        std::fs::write(category_dir.join(file_name), b"evidence").unwrap();
+
+        write_triage_manifest(dir.path()).unwrap();
+
+        let manifest = std::fs::read_to_string(dir.path().join("triage_manifest.csv")).unwrap();
+        let relative_path = Path::new(category)
+            .join(file_name)
+            .to_string_lossy()
+            .into_owned();
+        let expected_row_prefix = format!("\"{relative_path}\",\"{category}\",8,");
+
+        assert!(
+            manifest.starts_with("relative_path,category,size_bytes,modified\n"),
+            "manifest header was not canonical CSV: {manifest}"
+        );
+        assert!(
+            manifest.contains(&expected_row_prefix),
+            "manifest did not preserve and quote comma-containing fields: {manifest}"
+        );
+        assert!(
+            !manifest.contains("category;one"),
+            "manifest mutated commas instead of CSV-escaping fields: {manifest}"
+        );
     }
 }

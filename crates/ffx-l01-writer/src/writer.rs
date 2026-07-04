@@ -1127,13 +1127,10 @@ fn discover_l01_output_candidates(base_path: &Path) -> Result<HashSet<PathBuf>, 
 }
 
 fn is_l01_output_candidate_name(file_name: &str, base_stem: &str) -> bool {
-    let Some(extension) = file_name.strip_prefix(base_stem).and_then(|suffix| {
-        if suffix.starts_with('.') {
-            Some(&suffix[1..])
-        } else {
-            None
-        }
-    }) else {
+    let Some(extension) = file_name
+        .strip_prefix(base_stem)
+        .and_then(|suffix| suffix.strip_prefix('.'))
+    else {
         return false;
     };
 

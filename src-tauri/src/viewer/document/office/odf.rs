@@ -14,6 +14,7 @@ use std::path::Path;
 
 use super::{OfficeMetadata, OfficeParagraph, OfficeTextSection};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
+use zip::result::ZipError;
 
 const MAX_ODF_XML_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -54,9 +55,17 @@ pub(crate) fn extract_odf_metadata_from_reader<R: Read + Seek>(
 
     let mut meta = OfficeMetadata::default();
 
-    if let Ok(mut entry) = archive.by_name("meta.xml") {
-        if let Ok(xml_data) = read_odf_xml_entry(&mut entry, "meta.xml") {
-            parse_odf_meta_xml(&xml_data, &mut meta);
+    match archive.by_name("meta.xml") {
+        Ok(mut entry) => {
+            let xml_data = read_odf_xml_entry(&mut entry, "meta.xml")?;
+            parse_odf_meta_xml(&xml_data, &mut meta)?;
+        }
+        Err(ZipError::FileNotFound) => {}
+        Err(e) => {
+            return Err(DocumentError::Parse(format!(
+                "Failed to read ODF metadata entry 'meta.xml': {}",
+                e
+            )));
         }
     }
 
@@ -64,7 +73,7 @@ pub(crate) fn extract_odf_metadata_from_reader<R: Read + Seek>(
 }
 
 /// Parse ODF meta.xml for document metadata
-fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
+fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) -> DocumentResult<()> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -81,7 +90,13 @@ fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
 
                 // Check for page-count in attributes of document-statistic
                 if current_tag == "document-statistic" {
-                    for attr in e.attributes().flatten() {
+                    for attr in e.attributes() {
+                        let attr = attr.map_err(|e| {
+                            DocumentError::Parse(format!(
+                                "Failed to parse ODF document-statistic attribute: {}",
+                                e
+                            ))
+                        })?;
                         let key =
                             String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
                         let val = String::from_utf8_lossy(&attr.value).to_string();
@@ -95,7 +110,13 @@ fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
                 }
             }
             Ok(Event::Text(ref e)) if in_element => {
-                let text = e.unescape().unwrap_or_default().trim().to_string();
+                let text = e
+                    .unescape()
+                    .map_err(|e| {
+                        DocumentError::Parse(format!("Failed to decode ODF metadata text: {}", e))
+                    })?
+                    .trim()
+                    .to_string();
                 if text.is_empty() {
                     continue;
                 }
@@ -123,7 +144,13 @@ fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
                 // Handle self-closing elements like <meta:document-statistic ... />
                 let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                 if name == "document-statistic" {
-                    for attr in e.attributes().flatten() {
+                    for attr in e.attributes() {
+                        let attr = attr.map_err(|e| {
+                            DocumentError::Parse(format!(
+                                "Failed to parse ODF document-statistic attribute: {}",
+                                e
+                            ))
+                        })?;
                         let key =
                             String::from_utf8_lossy(attr.key.local_name().as_ref()).to_string();
                         let val = String::from_utf8_lossy(&attr.value).to_string();
@@ -140,10 +167,17 @@ fn parse_odf_meta_xml(xml: &str, meta: &mut OfficeMetadata) {
                 in_element = false;
             }
             Ok(Event::Eof) => break,
-            Err(_) => break,
+            Err(e) => {
+                return Err(DocumentError::Parse(format!(
+                    "Failed to parse ODF metadata XML: {}",
+                    e
+                )));
+            }
             _ => {}
         }
     }
+
+    Ok(())
 }
 
 // =============================================================================
@@ -171,7 +205,7 @@ pub(crate) fn extract_odt_text_from_reader<R: Read + Seek>(
         read_odf_xml_entry(&mut entry, "content.xml")?
     };
 
-    let paragraphs = extract_odf_paragraphs(&xml_data)
+    let paragraphs = extract_odf_paragraphs(&xml_data)?
         .into_iter()
         .map(OfficeParagraph::normal)
         .collect();
@@ -209,7 +243,7 @@ pub(crate) fn extract_odp_text_from_reader<R: Read + Seek>(
 
     // For ODP, extract all paragraphs as one section (slide separation
     // would require tracking <draw:page> boundaries, which adds complexity)
-    let paragraphs = extract_odf_paragraphs(&xml_data)
+    let paragraphs = extract_odf_paragraphs(&xml_data)?
         .into_iter()
         .map(OfficeParagraph::normal)
         .collect();
@@ -223,7 +257,7 @@ pub(crate) fn extract_odp_text_from_reader<R: Read + Seek>(
 /// Extract paragraphs from ODF content.xml.
 ///
 /// Looks for text content within `<text:p>` and `<text:span>` elements.
-fn extract_odf_paragraphs(xml: &str) -> Vec<String> {
+fn extract_odf_paragraphs(xml: &str) -> DocumentResult<Vec<String>> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -265,9 +299,10 @@ fn extract_odf_paragraphs(xml: &str) -> Vec<String> {
                 }
             }
             Ok(Event::Text(ref e)) if depth > 0 => {
-                if let Ok(text) = e.unescape() {
-                    current_paragraph.push_str(&text);
-                }
+                let text = e.unescape().map_err(|e| {
+                    DocumentError::Parse(format!("Failed to decode ODF paragraph text: {}", e))
+                })?;
+                current_paragraph.push_str(&text);
             }
             Ok(Event::End(ref e)) => {
                 let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
@@ -283,12 +318,17 @@ fn extract_odf_paragraphs(xml: &str) -> Vec<String> {
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => break,
+            Err(e) => {
+                return Err(DocumentError::Parse(format!(
+                    "Failed to parse ODF content XML: {}",
+                    e
+                )));
+            }
             _ => {}
         }
     }
 
-    paragraphs
+    Ok(paragraphs)
 }
 
 // =============================================================================
@@ -324,7 +364,7 @@ mod tests {
         </office:document-meta>"#;
 
         let mut meta = OfficeMetadata::default();
-        parse_odf_meta_xml(xml, &mut meta);
+        parse_odf_meta_xml(xml, &mut meta).unwrap();
 
         assert_eq!(meta.title.as_deref(), Some("ODT Test"));
         assert_eq!(meta.creator.as_deref(), Some("LibreOffice User"));
@@ -333,6 +373,16 @@ mod tests {
         assert_eq!(meta.page_count, Some(3));
         assert_eq!(meta.word_count, Some(500));
         assert_eq!(meta.char_count, Some(2500));
+    }
+
+    #[test]
+    fn test_parse_odf_meta_xml_rejects_invalid_entity() {
+        let xml = r#"<office:document-meta><dc:title>bad &unknown; entity</dc:title></office:document-meta>"#;
+        let mut meta = OfficeMetadata::default();
+
+        let err = parse_odf_meta_xml(xml, &mut meta).unwrap_err();
+
+        assert!(err.to_string().contains("ODF metadata text"));
     }
 
     #[test]
@@ -349,10 +399,19 @@ mod tests {
             </office:body>
         </office:document-content>"#;
 
-        let paragraphs = extract_odf_paragraphs(xml);
+        let paragraphs = extract_odf_paragraphs(xml).unwrap();
         assert_eq!(paragraphs.len(), 3);
         assert_eq!(paragraphs[0], "First paragraph of the document.");
         assert_eq!(paragraphs[1], "Second paragraph with styled text.");
         assert_eq!(paragraphs[2], "A Heading");
+    }
+
+    #[test]
+    fn test_extract_odf_paragraphs_rejects_invalid_entity() {
+        let xml = r#"<office:document-content><office:body><office:text><text:p>bad &unknown; entity</text:p></office:text></office:body></office:document-content>"#;
+
+        let err = extract_odf_paragraphs(xml).unwrap_err();
+
+        assert!(err.to_string().contains("ODF paragraph text"));
     }
 }

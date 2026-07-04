@@ -476,7 +476,13 @@ fn read_local_header(path_ref: &Path, max_bytes: usize) -> std::io::Result<Vec<u
 #[command]
 pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse, String> {
     let path_ref = std::path::Path::new(&path);
-    let header = read_local_header(path_ref, 265).unwrap_or_default();
+    let header = read_local_header(path_ref, 265).map_err(|e| {
+        format!(
+            "Failed to read local header for {}: {}",
+            path_ref.display(),
+            e
+        )
+    })?;
 
     Ok(detect_content_format_from_header(path_ref, &header))
 }
@@ -1347,6 +1353,19 @@ mod tests {
         assert_eq!(detected.format, "Xlsx");
         assert_eq!(detected.viewer_type, "Spreadsheet");
         assert_eq!(detected.method, "magic");
+    }
+
+    #[tokio::test]
+    async fn detect_content_format_rejects_missing_local_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.pdf");
+
+        let err = detect_content_format(path.to_string_lossy().to_string())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("Failed to read local header"));
+        assert!(err.contains("missing.pdf"));
     }
 
     #[tokio::test]

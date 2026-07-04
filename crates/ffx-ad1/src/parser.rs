@@ -799,7 +799,14 @@ impl Session {
         offset: u64,
         size: usize,
     ) -> Result<Vec<u8>, ContainerError> {
-        if item.decompressed_size == 0 || size == 0 || offset >= item.decompressed_size {
+        if offset > item.decompressed_size {
+            return Err(ContainerError::ParseError(format!(
+                "AD1 read offset {offset} beyond item '{}' decompressed size {}",
+                item.name, item.decompressed_size
+            )));
+        }
+
+        if offset == item.decompressed_size || size == 0 {
             return Ok(Vec::new());
         }
 
@@ -1131,7 +1138,13 @@ impl Session {
         size: usize,
         len: u64,
     ) -> Result<Option<(u64, u64)>, ContainerError> {
-        if offset >= len || size == 0 {
+        if offset > len {
+            return Err(ContainerError::ParseError(format!(
+                "AD1 read offset {offset} beyond output size {len}"
+            )));
+        }
+
+        if offset == len || size == 0 {
             return Ok(None);
         }
         let end = offset.saturating_add(size as u64).min(len);
@@ -1549,6 +1562,15 @@ mod tests {
             Some((4, 6))
         );
         assert_eq!(Session::bounded_output_range(6, 4, 6).unwrap(), None);
+    }
+
+    #[test]
+    fn test_bounded_output_range_rejects_offset_past_eof() {
+        let err = Session::bounded_output_range(7, 4, 6).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("AD1 read offset 7 beyond output size 6"));
     }
 
     #[test]

@@ -322,6 +322,21 @@ fn checked_chunk_span(start: u64, end: u64) -> Result<u64, Ad1Error> {
     })
 }
 
+fn ensure_decompressed_size(
+    item_name: &str,
+    actual: usize,
+    expected: usize,
+) -> Result<(), Ad1Error> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    Err(Ad1Error::DecompressionError(format!(
+        "Item '{}' decompressed size mismatch: expected {}, got {}",
+        item_name, expected, actual
+    )))
+}
+
 /// Get metadata for a specific item by address (on-demand loading)
 ///
 /// This is used to load hashes, timestamps, and attributes for items
@@ -897,6 +912,13 @@ pub fn decompress_file_data(session: &SessionV2, item: &ItemHeader) -> Result<Ve
         return Ok(Vec::new());
     }
 
+    if item.zlib_metadata_addr == 0 {
+        return Err(Ad1Error::InvalidFormat(format!(
+            "Item '{}' has size but no zlib metadata",
+            item.name
+        )));
+    }
+
     // Check cache first
     if let Ok(mut cache) = FILE_CACHE.lock() {
         if let Some(cached_data) = cache.search(item.offset) {
@@ -953,13 +975,7 @@ pub fn decompress_file_data(session: &SessionV2, item: &ItemHeader) -> Result<Ve
         decompressed.extend_from_slice(&chunk_data);
     }
 
-    if decompressed.len() != expected_decompressed_size {
-        warn!(
-            "Decompressed size mismatch: expected {}, got {}",
-            item.decompressed_size,
-            decompressed.len()
-        );
-    }
+    ensure_decompressed_size(&item.name, decompressed.len(), expected_decompressed_size)?;
 
     // Add to cache
     if let Ok(mut cache) = FILE_CACHE.lock() {
@@ -1050,5 +1066,24 @@ mod tests {
     #[test]
     fn test_checked_chunk_span_rejects_reversed_addresses() {
         assert!(checked_chunk_span(10, 5).is_err());
+    }
+
+    #[test]
+    fn test_ensure_decompressed_size_accepts_exact_match() {
+        assert!(ensure_decompressed_size("file.bin", 16, 16).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_decompressed_size_rejects_short_output() {
+        let err = ensure_decompressed_size("file.bin", 15, 16).unwrap_err();
+        assert!(matches!(err, Ad1Error::DecompressionError(_)));
+        assert!(err.to_string().contains("expected 16, got 15"));
+    }
+
+    #[test]
+    fn test_ensure_decompressed_size_rejects_overlong_output() {
+        let err = ensure_decompressed_size("file.bin", 17, 16).unwrap_err();
+        assert!(matches!(err, Ad1Error::DecompressionError(_)));
+        assert!(err.to_string().contains("expected 16, got 17"));
     }
 }

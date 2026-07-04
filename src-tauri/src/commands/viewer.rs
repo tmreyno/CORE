@@ -78,7 +78,8 @@ fn read_binary_base64_chunk_for_source(
     }
     let actual_offset = offset;
     let remaining = total_size - actual_offset;
-    let read_size = usize::try_from(remaining.min(size as u64)).unwrap_or(size);
+    let read_size = usize::try_from(remaining.min(size as u64))
+        .map_err(|_| "Binary chunk read size does not fit this platform".to_string())?;
     let data = if read_size == 0 {
         Vec::new()
     } else {

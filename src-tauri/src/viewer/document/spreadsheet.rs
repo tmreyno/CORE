@@ -172,22 +172,18 @@ pub fn read_spreadsheet_info(path: impl AsRef<Path>) -> DocumentResult<Spreadshe
             // CSV/TSV files are single-sheet; count rows and columns
             let is_tsv = ext == "tsv";
             let delimiter = if is_tsv { b'\t' } else { b',' };
-            let (row_count, col_count) = match csv::ReaderBuilder::new()
+            let reader = csv::ReaderBuilder::new()
                 .has_headers(false)
                 .delimiter(delimiter)
                 .from_path(path)
-            {
-                Ok(mut reader) => {
-                    let mut rows = 0usize;
-                    let mut max_cols = 0usize;
-                    for record in reader.records().flatten() {
-                        rows += 1;
-                        max_cols = max_cols.max(record.len());
-                    }
-                    (rows, max_cols)
-                }
-                Err(_) => (0, 0),
-            };
+                .map_err(|e| {
+                    DocumentError::Parse(format!(
+                        "Failed to open {}: {}",
+                        if is_tsv { "TSV" } else { "CSV" },
+                        e
+                    ))
+                })?;
+            let (row_count, col_count) = csv_sheet_dimensions(reader)?;
             let sheets = vec![SheetInfo {
                 name: "Sheet1".to_string(),
                 row_count,
@@ -220,16 +216,11 @@ pub fn read_spreadsheet_info_bytes(
         "csv" | "tsv" => {
             let is_tsv = ext == "tsv";
             let delimiter = if is_tsv { b'\t' } else { b',' };
-            let mut reader = csv::ReaderBuilder::new()
+            let reader = csv::ReaderBuilder::new()
                 .has_headers(false)
                 .delimiter(delimiter)
                 .from_reader(Cursor::new(data));
-            let mut rows = 0usize;
-            let mut max_cols = 0usize;
-            for record in reader.records().flatten() {
-                rows += 1;
-                max_cols = max_cols.max(record.len());
-            }
+            let (rows, max_cols) = csv_sheet_dimensions(reader)?;
             (
                 vec![SheetInfo {
                     name: "Sheet1".to_string(),
@@ -261,6 +252,17 @@ pub fn read_spreadsheet_info_bytes(
         sheets,
         total_sheets,
     })
+}
+
+fn csv_sheet_dimensions<R: Read>(mut reader: csv::Reader<R>) -> DocumentResult<(usize, usize)> {
+    let mut rows = 0usize;
+    let mut max_cols = 0usize;
+    for result in reader.records() {
+        let record = result.map_err(|e| DocumentError::Parse(format!("CSV parse error: {}", e)))?;
+        rows = rows.saturating_add(1);
+        max_cols = max_cols.max(record.len());
+    }
+    Ok((rows, max_cols))
 }
 
 fn sheet_infos_from_workbook<RS, R>(workbook: &mut R) -> Vec<SheetInfo>
@@ -637,6 +639,25 @@ mod tests {
         assert_eq!(info.total_sheets, 1);
         assert_eq!(info.sheets[0].row_count, 3);
         assert_eq!(info.sheets[0].col_count, 3);
+    }
+
+    #[test]
+    fn read_spreadsheet_info_bytes_rejects_malformed_csv_source_metadata() {
+        let data = b"name,count\n\"unterminated\n";
+
+        let err = read_spreadsheet_info_bytes("container.ad1:tables/bad.csv", data).unwrap_err();
+
+        assert!(err.to_string().contains("CSV parse error"));
+    }
+
+    #[test]
+    fn read_spreadsheet_info_rejects_missing_csv_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.csv");
+
+        let err = read_spreadsheet_info(&path).unwrap_err();
+
+        assert!(err.to_string().contains("Failed to open CSV"));
     }
 
     #[test]

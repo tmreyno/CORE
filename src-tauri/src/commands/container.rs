@@ -51,10 +51,31 @@ fn checked_l01_read_offset(data_offset: u64, offset: u64) -> Option<u64> {
     data_offset.checked_add(offset)
 }
 
-fn checked_l01_chunk_size(entry_size: u64, offset: u64, requested_size: usize) -> usize {
-    let remaining = entry_size.saturating_sub(offset);
+fn l01_entry_content_size(entry_size: u64, data_size: u64) -> u64 {
+    if entry_size > 0 {
+        entry_size
+    } else {
+        data_size
+    }
+}
+
+fn checked_l01_chunk_size(
+    entry_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, String> {
+    if offset > entry_size {
+        return Err(format!(
+            "L01 chunk offset is beyond EOF: offset {offset} > entry size {entry_size}"
+        ));
+    }
+    if offset == entry_size {
+        return Ok(0);
+    }
+
+    let remaining = entry_size - offset;
     let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
-    requested_size.min(remaining)
+    Ok(requested_size.min(remaining))
 }
 
 fn checked_container_chunk_request_size(requested_size: usize) -> Result<usize, String> {
@@ -72,13 +93,39 @@ fn bounded_container_chunk_read_size(
     requested_size: usize,
 ) -> Result<usize, String> {
     let requested_size = checked_container_chunk_request_size(requested_size)?;
-    if offset >= entry_size {
+    if offset > entry_size {
+        return Err(format!(
+            "Container chunk offset is beyond EOF: offset {offset} > entry size {entry_size}"
+        ));
+    }
+    if offset == entry_size {
         return Ok(0);
     }
 
-    let remaining = entry_size.saturating_sub(offset);
+    let remaining = entry_size - offset;
     usize::try_from(remaining.min(requested_size as u64))
         .map_err(|_| "Container chunk range is too large for this platform".to_string())
+}
+
+fn ensure_container_chunk_read_len(
+    actual: usize,
+    expected: usize,
+    context: &str,
+    entry_path: &str,
+) -> Result<(), String> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    if actual < expected {
+        Err(format!(
+            "{context} returned incomplete data for '{entry_path}': expected {expected} bytes, received {actual}"
+        ))
+    } else {
+        Err(format!(
+            "{context} returned too many bytes for '{entry_path}': expected {expected} bytes, received {actual}"
+        ))
+    }
 }
 
 fn read_bounded_vfs_entry_chunk(
@@ -105,6 +152,7 @@ fn read_bounded_vfs_entry_chunk(
             data.len()
         ));
     }
+    ensure_container_chunk_read_len(data.len(), read_size, context, entry_path)?;
     Ok(data)
 }
 
@@ -171,15 +219,18 @@ pub async fn container_read_entry_chunk(
                 .ok_or_else(|| format!("Entry not found in L01: {}", entryPath))?;
             let mut handle = ewf::EwfHandle::open(&containerPath)
                 .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
-            let actual_size = checked_l01_chunk_size(entry.size, offset, requested_size);
+            let entry_size = l01_entry_content_size(entry.size, entry.data_size);
+            let actual_size = checked_l01_chunk_size(entry_size, offset, requested_size)?;
             if actual_size == 0 {
                 return Ok(Vec::new());
             }
             let read_offset = checked_l01_read_offset(entry.data_offset, offset)
                 .ok_or_else(|| "Invalid L01 chunk offset".to_string())?;
-            handle
+            let data = handle
                 .read_at(read_offset, actual_size)
-                .map_err(|e| format!("Failed to read L01 chunk: {}", e))
+                .map_err(|e| format!("Failed to read L01 chunk: {}", e))?;
+            ensure_container_chunk_read_len(data.len(), actual_size, "L01 reader", &entryPath)?;
+            Ok(data)
         } else if ewf::is_ewf(&containerPath).unwrap_or(false) {
             // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
             let vfs = ewf::vfs::EwfVfs::open(&containerPath)
@@ -682,13 +733,25 @@ mod tests {
     }
 
     #[test]
-    fn test_checked_l01_chunk_size_clamps_to_remaining_entry_bytes() {
-        assert_eq!(checked_l01_chunk_size(100, 90, 64), 10);
+    fn test_l01_entry_content_size_uses_data_size_fallback() {
+        assert_eq!(l01_entry_content_size(0, 128), 128);
+        assert_eq!(l01_entry_content_size(256, 128), 256);
     }
 
     #[test]
-    fn test_checked_l01_chunk_size_returns_zero_past_eof() {
-        assert_eq!(checked_l01_chunk_size(100, 150, 64), 0);
+    fn test_checked_l01_chunk_size_clamps_to_remaining_entry_bytes() {
+        assert_eq!(checked_l01_chunk_size(100, 90, 64).unwrap(), 10);
+    }
+
+    #[test]
+    fn test_checked_l01_chunk_size_returns_zero_at_eof() {
+        assert_eq!(checked_l01_chunk_size(100, 100, 64).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_checked_l01_chunk_size_rejects_offset_past_eof() {
+        let err = checked_l01_chunk_size(100, 150, 64).unwrap_err();
+        assert!(err.contains("beyond EOF"));
     }
 
     #[test]
@@ -715,8 +778,23 @@ mod tests {
     }
 
     #[test]
-    fn test_bounded_container_chunk_read_size_returns_zero_past_eof() {
-        assert_eq!(bounded_container_chunk_read_size(100, 150, 64).unwrap(), 0);
+    fn test_bounded_container_chunk_read_size_returns_zero_at_eof() {
+        assert_eq!(bounded_container_chunk_read_size(100, 100, 64).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_container_chunk_read_size_rejects_offset_past_eof() {
+        let err = bounded_container_chunk_read_size(100, 150, 64).unwrap_err();
+        assert!(err.contains("beyond EOF"));
+    }
+
+    #[test]
+    fn test_ensure_container_chunk_read_len_rejects_short_read() {
+        let err = ensure_container_chunk_read_len(2, 3, "EWF", "/evidence.bin").unwrap_err();
+
+        assert!(err.contains("incomplete data"), "unexpected: {err}");
+        assert!(err.contains("expected 3 bytes"), "unexpected: {err}");
+        assert!(err.contains("received 2"), "unexpected: {err}");
     }
 
     #[test]

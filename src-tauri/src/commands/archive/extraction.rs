@@ -184,6 +184,7 @@ fn read_dmg_entry_range(
             data.len()
         ));
     }
+    ensure_archive_range_read_len(data.len(), read_size, "DMG filesystem", &normalized_path)?;
     Ok(data)
 }
 
@@ -198,12 +199,38 @@ fn checked_archive_range_request_size(size: usize) -> Result<usize, String> {
 
 fn bounded_archive_read_size(total_size: u64, offset: u64, size: usize) -> Result<usize, String> {
     let size = checked_archive_range_request_size(size)?;
-    if offset >= total_size || size == 0 {
+    if size == 0 || offset == total_size {
         return Ok(0);
+    }
+    if offset > total_size {
+        return Err(format!(
+            "Archive entry chunk offset is beyond EOF: offset {offset} > size {total_size}"
+        ));
     }
     let available = total_size - offset;
     usize::try_from(available.min(size as u64))
         .map_err(|_| "Archive entry range is too large to read".to_string())
+}
+
+fn ensure_archive_range_read_len(
+    actual: usize,
+    expected: usize,
+    context: &str,
+    entry_path: &str,
+) -> Result<(), String> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    if actual < expected {
+        Err(format!(
+            "{context} returned incomplete data for '{entry_path}': expected {expected} bytes, received {actual}"
+        ))
+    } else {
+        Err(format!(
+            "{context} returned too many bytes for '{entry_path}': expected {expected} bytes, received {actual}"
+        ))
+    }
 }
 
 pub(crate) fn read_archive_entry_bytes(
@@ -280,7 +307,7 @@ pub(crate) fn read_archive_entry_range(
 
     if entry_path.starts_with("(Compressed") {
         let data = read_archive_entry_bytes(container_path, entry_path)?;
-        return Ok(slice_chunk(&data, offset, size as u64));
+        return slice_chunk(&data, offset, size as u64);
     }
 
     if extension == "dmg" {
@@ -307,24 +334,31 @@ pub(crate) fn read_archive_entry_range(
                 data.len()
             ));
         }
+        ensure_archive_range_read_len(data.len(), read_size, "Archive VFS", entry_path)?;
         return Ok(data);
     }
 
     let data = read_archive_entry_bytes(container_path, entry_path)?;
-    Ok(slice_chunk(&data, offset, size as u64))
+    slice_chunk(&data, offset, size as u64)
 }
 
-fn slice_chunk(data: &[u8], offset: u64, size: u64) -> Vec<u8> {
-    let Some(start) = usize::try_from(offset).ok() else {
-        return Vec::new();
-    };
-    if start >= data.len() {
-        return Vec::new();
+fn slice_chunk(data: &[u8], offset: u64, size: u64) -> Result<Vec<u8>, String> {
+    let total_size = data.len() as u64;
+    if size == 0 || offset == total_size {
+        return Ok(Vec::new());
     }
+    if offset > total_size {
+        return Err(format!(
+            "Archive entry chunk offset is beyond EOF: offset {offset} > size {total_size}"
+        ));
+    }
+    let Some(start) = usize::try_from(offset).ok() else {
+        return Err("Archive entry chunk offset is too large".to_string());
+    };
 
     let requested = usize::try_from(size).unwrap_or(usize::MAX);
     let end = start.saturating_add(requested).min(data.len());
-    data[start..end].to_vec()
+    Ok(data[start..end].to_vec())
 }
 
 fn archive_entry_temp_filename(entry_path: &str) -> String {
@@ -593,17 +627,24 @@ mod tests {
 
     #[test]
     fn test_slice_chunk_valid_range() {
-        assert_eq!(slice_chunk(b"abcdef", 2, 3), b"cde");
+        assert_eq!(slice_chunk(b"abcdef", 2, 3).unwrap(), b"cde");
     }
 
     #[test]
-    fn test_slice_chunk_out_of_bounds_returns_empty() {
-        assert!(slice_chunk(b"abcdef", 99, 10).is_empty());
+    fn test_slice_chunk_allows_offset_at_eof() {
+        assert!(slice_chunk(b"abcdef", 6, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_slice_chunk_rejects_offset_past_eof() {
+        let err = slice_chunk(b"abcdef", 99, 10).unwrap_err();
+
+        assert!(err.contains("offset 99 > size 6"), "unexpected: {err}");
     }
 
     #[test]
     fn test_slice_chunk_huge_size_saturates_to_end() {
-        assert_eq!(slice_chunk(b"abcdef", 4, u64::MAX), b"ef");
+        assert_eq!(slice_chunk(b"abcdef", 4, u64::MAX).unwrap(), b"ef");
     }
 
     #[test]
@@ -630,8 +671,24 @@ mod tests {
     }
 
     #[test]
-    fn bounded_archive_read_size_returns_zero_past_eof() {
-        assert_eq!(bounded_archive_read_size(100, 150, 64).unwrap(), 0);
+    fn bounded_archive_read_size_returns_zero_at_eof() {
+        assert_eq!(bounded_archive_read_size(100, 100, 64).unwrap(), 0);
+    }
+
+    #[test]
+    fn bounded_archive_read_size_rejects_offset_past_eof() {
+        let err = bounded_archive_read_size(100, 150, 64).unwrap_err();
+
+        assert!(err.contains("offset 150 > size 100"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn ensure_archive_range_read_len_rejects_short_read() {
+        let err = ensure_archive_range_read_len(2, 3, "Archive VFS", "file.bin").unwrap_err();
+
+        assert!(err.contains("incomplete data"), "unexpected: {err}");
+        assert!(err.contains("expected 3 bytes"), "unexpected: {err}");
+        assert!(err.contains("received 2"), "unexpected: {err}");
     }
 
     #[test]
@@ -669,6 +726,8 @@ mod tests {
         assert!(read_archive_entry_range(&path, "nested/file.txt", 6, 3)
             .unwrap()
             .is_empty());
+        let err = read_archive_entry_range(&path, "nested/file.txt", 7, 3).unwrap_err();
+        assert!(err.contains("offset 7 > size 6"), "unexpected: {err}");
     }
 
     #[test]

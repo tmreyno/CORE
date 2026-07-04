@@ -225,13 +225,10 @@ fn discover_ewf_output_candidates(output_path: &str) -> Result<HashSet<PathBuf>,
 }
 
 fn is_ewf_output_candidate_name(file_name: &str, base_name: &str) -> bool {
-    let Some(extension) = file_name.strip_prefix(base_name).and_then(|suffix| {
-        if suffix.starts_with('.') {
-            Some(&suffix[1..])
-        } else {
-            None
-        }
-    }) else {
+    let Some(extension) = file_name
+        .strip_prefix(base_name)
+        .and_then(|suffix| suffix.strip_prefix('.'))
+    else {
         return false;
     };
 

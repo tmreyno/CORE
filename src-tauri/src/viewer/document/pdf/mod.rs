@@ -140,44 +140,63 @@ impl PdfDocument {
             ..Default::default()
         };
 
-        // Try to get document info dictionary
-        if let Ok(info_ref) = doc.trailer.get(b"Info") {
-            if let Ok(info_ref) = info_ref.as_reference() {
-                if let Ok(info) = doc.get_object(info_ref) {
-                    if let Ok(dict) = info.as_dict() {
-                        // Extract standard PDF metadata fields
-                        if let Ok(title) = dict.get(b"Title") {
-                            metadata.title = Self::pdf_metadata_string_to_string(title);
-                        }
-                        if let Ok(author) = dict.get(b"Author") {
-                            metadata.author = Self::pdf_metadata_string_to_string(author);
-                        }
-                        if let Ok(subject) = dict.get(b"Subject") {
-                            metadata.subject = Self::pdf_metadata_string_to_string(subject);
-                        }
-                        if let Ok(creator) = dict.get(b"Creator") {
-                            metadata.creator = Self::pdf_metadata_string_to_string(creator);
-                        }
-                        if let Ok(producer) = dict.get(b"Producer") {
-                            metadata.producer = Self::pdf_metadata_string_to_string(producer);
-                        }
-                        if let Ok(keywords) = dict.get(b"Keywords") {
-                            if let Some(kw) = Self::pdf_metadata_string_to_string(keywords) {
-                                metadata.keywords = kw
-                                    .split(',')
-                                    .take(MAX_PDF_KEYWORDS)
-                                    .map(|s| s.trim().to_string())
-                                    .filter(|s| !s.is_empty())
-                                    .map(|s| truncate_pdf_text(&s, MAX_PDF_METADATA_CHARS))
-                                    .collect();
-                            }
-                        }
-                    }
+        // Metadata is optional, but a present malformed Info dictionary should be visible.
+        if let Ok(info_obj) = doc.trailer.get(b"Info") {
+            let info_dict = match info_obj {
+                lopdf::Object::Reference(info_ref) => doc
+                    .get_object(*info_ref)
+                    .map_err(|e| {
+                        DocumentError::Pdf(format!("Failed to read PDF Info dictionary: {}", e))
+                    })?
+                    .as_dict()
+                    .map_err(|e| {
+                        DocumentError::Pdf(format!("PDF Info object is not a dictionary: {}", e))
+                    })?,
+                lopdf::Object::Dictionary(dict) => dict,
+                lopdf::Object::Null => return Ok(metadata),
+                _ => {
+                    return Err(DocumentError::Pdf(
+                        "PDF trailer Info entry is not a dictionary reference".to_string(),
+                    ));
                 }
-            }
+            };
+            self.extract_metadata_from_info_dict(info_dict, &mut metadata)?;
         }
 
         Ok(metadata)
+    }
+
+    fn extract_metadata_from_info_dict(
+        &self,
+        dict: &lopdf::Dictionary,
+        metadata: &mut DocumentMetadata,
+    ) -> DocumentResult<()> {
+        if let Ok(title) = dict.get(b"Title") {
+            metadata.title = Some(Self::pdf_metadata_string_to_string("Title", title)?);
+        }
+        if let Ok(author) = dict.get(b"Author") {
+            metadata.author = Some(Self::pdf_metadata_string_to_string("Author", author)?);
+        }
+        if let Ok(subject) = dict.get(b"Subject") {
+            metadata.subject = Some(Self::pdf_metadata_string_to_string("Subject", subject)?);
+        }
+        if let Ok(creator) = dict.get(b"Creator") {
+            metadata.creator = Some(Self::pdf_metadata_string_to_string("Creator", creator)?);
+        }
+        if let Ok(producer) = dict.get(b"Producer") {
+            metadata.producer = Some(Self::pdf_metadata_string_to_string("Producer", producer)?);
+        }
+        if let Ok(keywords) = dict.get(b"Keywords") {
+            let kw = Self::pdf_metadata_string_to_string("Keywords", keywords)?;
+            metadata.keywords = kw
+                .split(',')
+                .take(MAX_PDF_KEYWORDS)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .map(|s| truncate_pdf_text(&s, MAX_PDF_METADATA_CHARS))
+                .collect();
+        }
+        Ok(())
     }
 
     fn normalize_metadata(metadata: &mut DocumentMetadata) {
@@ -194,37 +213,30 @@ impl PdfDocument {
             .collect();
     }
 
-    fn pdf_metadata_string_to_string(obj: &lopdf::Object) -> Option<String> {
+    fn pdf_metadata_string_to_string(
+        field_name: &str,
+        obj: &lopdf::Object,
+    ) -> DocumentResult<String> {
         Self::pdf_string_to_string(obj)
             .map(|value| truncate_pdf_text(&value, MAX_PDF_METADATA_CHARS))
+            .map_err(|e| {
+                DocumentError::Pdf(format!(
+                    "Failed to decode PDF metadata field '{}': {}",
+                    field_name, e
+                ))
+            })
     }
 
     /// Convert PDF string object to Rust String
-    fn pdf_string_to_string(obj: &lopdf::Object) -> Option<String> {
+    fn pdf_string_to_string(obj: &lopdf::Object) -> Result<String, lopdf::Error> {
         match obj {
             lopdf::Object::String(bytes, _) => {
-                // Try UTF-8 first
-                if let Ok(s) = String::from_utf8(bytes.clone()) {
-                    return Some(s);
+                if bytes.starts_with(b"\xFE\xFF") && (bytes.len() - 2) % 2 != 0 {
+                    return Err(lopdf::Error::StringDecode);
                 }
-                // Try UTF-16BE (PDF standard)
-                if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
-                    let utf16: Vec<u16> = bytes[2..]
-                        .chunks(2)
-                        .map(|chunk| {
-                            if chunk.len() == 2 {
-                                u16::from_be_bytes([chunk[0], chunk[1]])
-                            } else {
-                                0
-                            }
-                        })
-                        .collect();
-                    return String::from_utf16(&utf16).ok();
-                }
-                // Fallback to lossy conversion
-                Some(String::from_utf8_lossy(bytes).to_string())
+                lopdf::decode_text_string(obj)
             }
-            _ => None,
+            _ => Err(lopdf::Error::Type),
         }
     }
 
@@ -436,15 +448,15 @@ mod tests {
     #[test]
     fn test_pdf_string_to_string_utf8() {
         let obj = lopdf::Object::String(b"Hello World".to_vec(), lopdf::StringFormat::Literal);
-        let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, Some("Hello World".to_string()));
+        let result = PdfDocument::pdf_string_to_string(&obj).unwrap();
+        assert_eq!(result, "Hello World");
     }
 
     #[test]
     fn test_pdf_string_to_string_empty() {
         let obj = lopdf::Object::String(vec![], lopdf::StringFormat::Literal);
-        let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, Some(String::new()));
+        let result = PdfDocument::pdf_string_to_string(&obj).unwrap();
+        assert_eq!(result, "");
     }
 
     #[test]
@@ -452,8 +464,8 @@ mod tests {
         // UTF-16 BE BOM (0xFE 0xFF) followed by "AB" in UTF-16 BE
         let bytes = vec![0xFE, 0xFF, 0x00, 0x41, 0x00, 0x42];
         let obj = lopdf::Object::String(bytes, lopdf::StringFormat::Literal);
-        let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, Some("AB".to_string()));
+        let result = PdfDocument::pdf_string_to_string(&obj).unwrap();
+        assert_eq!(result, "AB");
     }
 
     #[test]
@@ -467,40 +479,47 @@ mod tests {
             0x00, 0xE9, // 'é'
         ];
         let obj = lopdf::Object::String(bytes, lopdf::StringFormat::Literal);
-        let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, Some("café".to_string()));
+        let result = PdfDocument::pdf_string_to_string(&obj).unwrap();
+        assert_eq!(result, "café");
     }
 
     #[test]
     fn test_pdf_string_to_string_non_string_type() {
         let obj = lopdf::Object::Integer(42);
         let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, None);
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_pdf_string_to_string_boolean_type() {
         let obj = lopdf::Object::Boolean(true);
         let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, None);
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_pdf_string_to_string_name_type() {
         let obj = lopdf::Object::Name(b"SomeName".to_vec());
         let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, None);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_pdf_string_to_string_lossy_fallback() {
-        // Invalid UTF-8 bytes without UTF-16 BOM → lossy conversion
-        let bytes = vec![0x48, 0x65, 0x6C, 0x6C, 0x6F, 0xFF, 0xFE];
+    fn test_pdf_string_to_string_decodes_pdf_doc_encoding() {
+        // No BOM means PDFDocEncoding, where 0x8B decodes to U+2030.
+        let bytes = vec![b't', b'e', b'x', b't', 0x8B];
         let obj = lopdf::Object::String(bytes, lopdf::StringFormat::Literal);
+        let result = PdfDocument::pdf_string_to_string(&obj).unwrap();
+
+        assert_eq!(result, "text‰");
+    }
+
+    #[test]
+    fn test_pdf_string_to_string_rejects_odd_utf16be() {
+        let obj = lopdf::Object::String(vec![0xFE, 0xFF, 0x00], lopdf::StringFormat::Hexadecimal);
         let result = PdfDocument::pdf_string_to_string(&obj);
-        assert!(result.is_some());
-        let s = result.unwrap();
-        assert!(s.starts_with("Hello"));
+
+        assert!(result.is_err());
     }
 
     #[test]
@@ -509,8 +528,49 @@ mod tests {
             b"Simple ASCII text 123!@#".to_vec(),
             lopdf::StringFormat::Hexadecimal,
         );
-        let result = PdfDocument::pdf_string_to_string(&obj);
-        assert_eq!(result, Some("Simple ASCII text 123!@#".to_string()));
+        let result = PdfDocument::pdf_string_to_string(&obj).unwrap();
+        assert_eq!(result, "Simple ASCII text 123!@#");
+    }
+
+    #[test]
+    fn extract_metadata_from_info_dict_decodes_fields() {
+        let doc = PdfDocument::new();
+        let mut dict = lopdf::Dictionary::new();
+        dict.set(
+            b"Title".to_vec(),
+            lopdf::Object::String(b"Report".to_vec(), lopdf::StringFormat::Literal),
+        );
+        dict.set(
+            b"Keywords".to_vec(),
+            lopdf::Object::String(
+                b"forensics, evidence".to_vec(),
+                lopdf::StringFormat::Literal,
+            ),
+        );
+        let mut metadata = DocumentMetadata::default();
+
+        doc.extract_metadata_from_info_dict(&dict, &mut metadata)
+            .unwrap();
+
+        assert_eq!(metadata.title.as_deref(), Some("Report"));
+        assert_eq!(metadata.keywords, vec!["forensics", "evidence"]);
+    }
+
+    #[test]
+    fn extract_metadata_from_info_dict_rejects_bad_string() {
+        let doc = PdfDocument::new();
+        let mut dict = lopdf::Dictionary::new();
+        dict.set(
+            b"Title".to_vec(),
+            lopdf::Object::String(vec![0xFE, 0xFF, 0x00], lopdf::StringFormat::Hexadecimal),
+        );
+        let mut metadata = DocumentMetadata::default();
+
+        let err = doc
+            .extract_metadata_from_info_dict(&dict, &mut metadata)
+            .unwrap_err();
+
+        assert!(err.to_string().contains("Title"));
     }
 
     #[test]
@@ -583,8 +643,7 @@ mod tests {
     #[test]
     fn test_split_into_pages_caps_form_feed_pages() {
         let doc = PdfDocument::new();
-        let text = std::iter::repeat("page")
-            .take(MAX_PDF_RESPONSE_PAGES + 8)
+        let text = std::iter::repeat_n("page", MAX_PDF_RESPONSE_PAGES + 8)
             .collect::<Vec<_>>()
             .join("\x0C");
 
@@ -686,8 +745,7 @@ mod tests {
     #[test]
     fn test_parse_text_elements_caps_element_count() {
         let doc = PdfDocument::new();
-        let text = std::iter::repeat("paragraph")
-            .take(MAX_PDF_ELEMENTS_PER_PAGE + 8)
+        let text = std::iter::repeat_n("paragraph", MAX_PDF_ELEMENTS_PER_PAGE + 8)
             .collect::<Vec<_>>()
             .join("\n\n");
 

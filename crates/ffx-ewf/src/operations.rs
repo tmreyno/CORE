@@ -744,7 +744,7 @@ where
     } else if let Some(hasher) = blake2_hasher {
         Ok(hex::encode(hasher.finalize()))
     } else if let Some(hasher) = xxh3_hasher {
-        Ok(format!("{:016x}", hasher.digest128()))
+        Ok(format_xxh3_digest128(hasher.digest128()))
     } else if let Some(hasher) = xxh64_hasher {
         Ok(format!("{:016x}", hasher.digest()))
     } else if let Some(hasher) = crc32_hasher {
@@ -987,7 +987,7 @@ where
     } else if let Some(hasher) = blake2_hasher {
         Ok(hex::encode(hasher.finalize()))
     } else if let Some(hasher) = xxh3_hasher {
-        Ok(format!("{:016x}", hasher.digest128()))
+        Ok(format_xxh3_digest128(hasher.digest128()))
     } else if let Some(hasher) = xxh64_hasher {
         Ok(format!("{:016x}", hasher.digest()))
     } else if let Some(hasher) = crc32_hasher {
@@ -995,6 +995,10 @@ where
     } else {
         Err(ContainerError::ParseError("Unknown hash algorithm".into()))
     }
+}
+
+fn format_xxh3_digest128(digest: u128) -> String {
+    format!("{digest:032x}")
 }
 
 fn ensure_ewf_media_bytes_hashed(
@@ -1077,6 +1081,13 @@ mod tests {
             "unexpected error: {}",
             err
         );
+    }
+
+    #[test]
+    fn test_format_xxh3_digest128_preserves_leading_zeroes() {
+        let formatted = format_xxh3_digest128(0x1);
+        assert_eq!(formatted, "00000000000000000000000000000001");
+        assert_eq!(formatted.len(), 32);
     }
 
     #[test]

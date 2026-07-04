@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_parse_error_info_clamps_declared_count_to_payload_entries() {
         let mut file = tempfile::tempfile().unwrap();
-        file.write_all(&vec![0u8; SECTION_HEADER_SIZE]).unwrap();
+        file.write_all(&[0u8; SECTION_HEADER_SIZE]).unwrap();
         file.write_all(&3u32.to_le_bytes()).unwrap();
         file.write_all(&[0u8; 8]).unwrap();
         file.write_all(&1u32.to_le_bytes()).unwrap();
