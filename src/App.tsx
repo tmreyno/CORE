@@ -408,6 +408,14 @@ function App() {
   /** Open a file dialog to pick and load an existing .acquisition.json session */
   const handleLoadSession = async () => {
     if (!sessionManager) return;
+    if (!isTauri) {
+      toast.error(
+        "Session Open Unavailable",
+        "Acquisition session file browsing is available in the desktop app.",
+      );
+      return;
+    }
+
     const selected = await open({
       title: "Open Acquisition Session",
       filters: [{ name: "Acquisition Session", extensions: ["acquisition.json"] }],
@@ -1091,6 +1099,14 @@ function App() {
     onImportAcquisitions: () => setShowImportWizard(true),
     onProjectRecovery: () => { if (projectManager.hasProject()) setShowRecoveryModal(true); },
     onCollectLogs: async () => {
+      if (!isTauri) {
+        toast.error(
+          "Log Collection Unavailable",
+          "Support log collection is available in the desktop app.",
+        );
+        return;
+      }
+
       try {
         const datePart = new Date().toISOString().slice(0, 10);
         const path = await save({
@@ -1544,6 +1560,14 @@ function App() {
               onExportBookmarks={async () => {
                 const proj = projectManager.project();
                 if (!proj?.bookmarks?.length) return;
+                if (!isTauri) {
+                  toast.error(
+                    "Bookmark Export Unavailable",
+                    "Bookmark export file saving is available in the desktop app.",
+                  );
+                  return;
+                }
+
                 try {
                   const path = await save({
                     title: "Export Bookmarks",
