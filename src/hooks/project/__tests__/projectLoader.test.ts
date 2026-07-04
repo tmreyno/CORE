@@ -101,4 +101,75 @@ describe("projectLoader", () => {
       "No project file was selected. Use Open Project and choose a .cffx file.",
     );
   });
+
+  it("does not scan evidence directories after a browser project load without cache", async () => {
+    const setScanDir = vi.fn();
+    const scanForFiles = vi.fn().mockRejectedValue(new Error("desktop-only scan"));
+    const toast = {
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    };
+
+    await handleLoadProject({
+      fileManager: {
+        scanDir: () => "",
+        setScanDir,
+        scanForFiles,
+        restoreDiscoveredFiles: vi.fn(),
+        restoreFileInfoMap: vi.fn(),
+        setTypeFilter: vi.fn(),
+        setActiveFile: vi.fn(),
+      },
+      hashManager: {
+        restoreFileHashMap: vi.fn(),
+        restoreHashHistory: vi.fn(),
+      },
+      projectManager: {
+        loadProject: vi.fn().mockResolvedValue({
+          project: {
+            name: "Browser Project",
+            root_path: "/cases/browser",
+            tabs: [],
+            hash_history: { files: {} },
+            evidence_cache: undefined,
+            processed_databases: undefined,
+          },
+          warnings: [],
+        }),
+        updateLocations: vi.fn(),
+      },
+      processedDbManager: {
+        databases: () => [],
+        restoreFullState: vi.fn(),
+        restoreFromProject: vi.fn(),
+      },
+      setLeftWidth: vi.fn(),
+      setRightWidth: vi.fn(),
+      setLeftCollapsed: vi.fn(),
+      setRightCollapsed: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setCurrentViewMode: vi.fn(),
+      setEntryContentViewMode: vi.fn(),
+      setCaseDocumentsPath: vi.fn(),
+      setTreeExpansionState: vi.fn(),
+      setSelectedContainerEntry: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setCaseDocuments: vi.fn(),
+      setCenterTabs: vi.fn(),
+      setActiveTabId: vi.fn(),
+      setCenterViewMode: vi.fn(),
+      toast,
+    } as any);
+
+    expect(scanForFiles).not.toHaveBeenCalled();
+    expect(setScanDir).toHaveBeenCalledWith("/cases/browser");
+    expect(toast.info).toHaveBeenCalledWith(
+      "Browser Preview",
+      "Loaded project metadata. Evidence scanning is available in the desktop app.",
+    );
+    expect(toast.success).toHaveBeenCalledWith("Project Loaded", "Opened: Browser Project");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
 });

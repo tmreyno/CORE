@@ -376,7 +376,14 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       );
     } else {
       log.debug("No evidence cache, scanning directory...");
-      await fileManager.scanForFiles(initialScanDir);
+      if (isTauri) {
+        await fileManager.scanForFiles(initialScanDir);
+      } else {
+        toast.info?.(
+          "Browser Preview",
+          "Loaded project metadata. Evidence scanning is available in the desktop app.",
+        );
+      }
     }
 
     // ===========================================================================
