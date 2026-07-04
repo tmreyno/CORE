@@ -40,6 +40,7 @@
 import { createSignal, createEffect } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 import type { 
   LazyLoadConfig, 
   LazyTreeEntry, 
@@ -48,6 +49,8 @@ import type {
 } from "../types/lazy-loading";
 
 const log = logger.scope("LazyLoading");
+const BROWSER_LAZY_LOADING_MESSAGE =
+  "Evidence container lazy loading is available in the desktop app.";
 
 // =============================================================================
 // TYPES
@@ -140,6 +143,14 @@ export function useLazyLoading(
   // === Computed ===
   const isLoading = () => isLoadingRoot() || isLoadingChildren().size > 0;
 
+  const setBrowserUnavailable = (): void => {
+    const unavailable = new Error(BROWSER_LAZY_LOADING_MESSAGE);
+    setError(unavailable);
+    setIsLoadingRoot(false);
+    setIsLoadingChildren(new Set<string>());
+    options.onError?.(unavailable);
+  };
+
   // === Actions ===
 
   /**
@@ -148,6 +159,11 @@ export function useLazyLoading(
   const loadSummary = async (): Promise<ContainerSummary | null> => {
     const path = containerPath();
     if (!path) return null;
+    if (!isTauri) {
+      setSummary(null);
+      setBrowserUnavailable();
+      return null;
+    }
 
     try {
       setError(null);
@@ -174,6 +190,14 @@ export function useLazyLoading(
   ): Promise<LazyLoadResult | null> => {
     const path = containerPath();
     if (!path) return null;
+    if (!isTauri) {
+      setRootChildren([]);
+      setRootOffset(0);
+      setRootTotalCount(0);
+      setHasMoreRoot(false);
+      setBrowserUnavailable();
+      return null;
+    }
 
     try {
       setError(null);
@@ -231,6 +255,10 @@ export function useLazyLoading(
   ): Promise<LazyLoadResult | null> => {
     const path = containerPath();
     if (!path) return null;
+    if (!isTauri) {
+      setBrowserUnavailable();
+      return null;
+    }
 
     try {
       setError(null);
@@ -312,6 +340,12 @@ export function useLazyLoading(
   const updateSettings = async (
     settings: Partial<LazyLoadConfig>
   ): Promise<LazyLoadConfig> => {
+    if (!isTauri) {
+      const next = { ...config(), ...settings };
+      setConfig(next);
+      return next;
+    }
+
     try {
       const result = await invoke<LazyLoadConfig>("lazy_update_settings", {
         batchSize: settings.batch_size,
@@ -330,6 +364,10 @@ export function useLazyLoading(
    * Refresh settings from backend
    */
   const refreshSettings = async (): Promise<LazyLoadConfig> => {
+    if (!isTauri) {
+      return config();
+    }
+
     try {
       const result = await invoke<LazyLoadConfig>("lazy_get_settings");
       setConfig(result);
@@ -400,6 +438,10 @@ export function useLazyLoading(
 export async function getContainerSummary(
   containerPath: string
 ): Promise<ContainerSummary> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<ContainerSummary>("lazy_get_container_summary", {
     containerPath,
   });
@@ -413,6 +455,10 @@ export async function getRootChildren(
   offset?: number,
   limit?: number
 ): Promise<LazyLoadResult> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadResult>("lazy_get_root_children", {
     containerPath,
     offset,
@@ -429,6 +475,10 @@ export async function getChildren(
   offset?: number,
   limit?: number
 ): Promise<LazyLoadResult> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadResult>("lazy_get_children", {
     containerPath,
     parentPath,
@@ -441,6 +491,10 @@ export async function getChildren(
  * Get current lazy loading settings
  */
 export async function getLazyLoadSettings(): Promise<LazyLoadConfig> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadConfig>("lazy_get_settings");
 }
 
@@ -454,6 +508,10 @@ export async function updateLazyLoadSettings(
     paginationThreshold: number;
   }>
 ): Promise<LazyLoadConfig> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadConfig>("lazy_update_settings", settings);
 }
 
