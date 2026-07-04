@@ -22,6 +22,7 @@ import { logger } from "../../utils/logger";
 import { FolderNode } from "./FolderNode";
 import { MessageList } from "./MessageList";
 import { MessageDetail } from "./MessageDetail";
+import { isTauri } from "../../utils/platform";
 import type { PstViewerProps } from "./types";
 import type {
   PstInfo,
@@ -31,6 +32,8 @@ import type {
 } from "../../types/pst";
 
 const log = logger.scope("PstViewer");
+const BROWSER_PST_VIEW_MESSAGE =
+  "PST evidence viewing is available in the desktop app.";
 
 // ============================================================================
 // Main Component
@@ -66,6 +69,10 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
         setSelectedMessageId(null);
 
         try {
+          if (!isTauri) {
+            throw new Error(BROWSER_PST_VIEW_MESSAGE);
+          }
+
           log.info(`Loading PST folders: ${path}`);
           const info = source
             ? await commands.pst.getFoldersSource<PstInfo>(source)
@@ -109,6 +116,10 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
         setSelectedMessageId(null);
 
         try {
+          if (!isTauri) {
+            throw new Error(BROWSER_PST_VIEW_MESSAGE);
+          }
+
           log.info(`Loading messages for folder: ${folder.name} (nodeId=${folder.nodeId})`);
           const source = props.source;
           const msgs = source
@@ -153,6 +164,10 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
     setMessageLoading(true);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_PST_VIEW_MESSAGE);
+      }
+
       log.info(`Loading message detail: nodeId=${msg.nodeId}`);
       const source = props.source;
       const detail = source

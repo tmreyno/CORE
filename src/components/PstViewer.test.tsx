@@ -9,6 +9,10 @@ import { render } from "solid-js/web";
 import { PstViewer } from "./PstViewer";
 import { mockInvoke } from "../__tests__/setup";
 
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
+
 // Helper to render and return the container
 function renderComponent(component: () => any) {
   const container = document.createElement("div");

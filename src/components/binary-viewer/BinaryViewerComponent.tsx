@@ -29,6 +29,7 @@ import { ExportsPanel } from "./ExportsPanel";
 
 export function BinaryViewer(props: BinaryViewerProps) {
   const bv = useBinaryData(props);
+  const isDesktopOnlyError = () => bv.error()?.includes("available in the desktop app") ?? false;
 
   return (
     <div class={`binary-viewer flex flex-col h-full ${props.class || ""}`}>
@@ -63,12 +64,21 @@ export function BinaryViewer(props: BinaryViewerProps) {
             fallback={
               <div class="flex flex-col items-center gap-3 text-txt-muted p-6 max-w-md mx-auto text-center">
                 <HiOutlineExclamationTriangle class="w-10 h-10 text-warning" />
-                <span class="font-medium text-txt">Not a recognized executable</span>
-                <p class="text-sm leading-relaxed">
-                  <span class="font-mono text-xs bg-bg-secondary px-1.5 py-0.5 rounded">{bv.filename()}</span>{" "}
-                  has a binary file extension but is not a PE, ELF, or Mach-O executable.
-                  Use the <span class="font-semibold text-txt">Hex</span> button in the toolbar to inspect the raw bytes.
-                </p>
+                <span class="font-medium text-txt">
+                  {isDesktopOnlyError() ? "Binary Analysis Unavailable" : "Not a recognized executable"}
+                </span>
+                <Show
+                  when={isDesktopOnlyError()}
+                  fallback={
+                    <p class="text-sm leading-relaxed">
+                      <span class="font-mono text-xs bg-bg-secondary px-1.5 py-0.5 rounded">{bv.filename()}</span>{" "}
+                      has a binary file extension but is not a PE, ELF, or Mach-O executable.
+                      Use the <span class="font-semibold text-txt">Hex</span> button in the toolbar to inspect the raw bytes.
+                    </p>
+                  }
+                >
+                  <p class="text-sm leading-relaxed">{bv.error()}</p>
+                </Show>
                 <button onClick={bv.loadBinary} class="btn btn-secondary btn-sm mt-1">Retry Analysis</button>
               </div>
             }

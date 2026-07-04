@@ -11,8 +11,11 @@ import { logger } from "../../utils/logger";
 import type { BinaryMetadataSection } from "../../types/viewerMetadata";
 import type { BinaryInfo, BinaryViewerProps, ImportInfo } from "./types";
 import { formatBadge, formatHex, formatTimestamp } from "./helpers";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("BinaryViewer");
+const BROWSER_BINARY_VIEW_MESSAGE =
+  "Binary evidence analysis is available in the desktop app.";
 
 export interface UseBinaryDataReturn {
   loading: Accessor<boolean>;
@@ -47,6 +50,10 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_BINARY_VIEW_MESSAGE);
+      }
+
       const data = props.source
         ? await commands.binary.analyzeSource<BinaryInfo>(props.source)
         : await commands.binary.analyze<BinaryInfo>(props.path);

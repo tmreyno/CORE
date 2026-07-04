@@ -48,6 +48,8 @@ import type {
 const log = logger.scope("SpreadsheetViewer");
 const BROWSER_SPREADSHEET_EXPORT_MESSAGE =
   "Spreadsheet CSV export is available in the desktop app.";
+const BROWSER_SPREADSHEET_VIEW_MESSAGE =
+  "Spreadsheet evidence viewing is available in the desktop app.";
 
 export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [loading, setLoading] = createSignal(true);
@@ -100,6 +102,10 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_SPREADSHEET_VIEW_MESSAGE);
+      }
+
       const result = props.source
         ? await commands.spreadsheet.infoSource<SpreadsheetInfo>(props.source)
         : await commands.spreadsheet.info<SpreadsheetInfo>(props.path);
@@ -128,6 +134,10 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     setSortCol(null);
     setSortAsc(true);
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_SPREADSHEET_VIEW_MESSAGE);
+      }
+
       const sheetName = sheetInfo.sheets[sheetIndex].name;
       const data = props.source
         ? await commands.spreadsheet.readSheetSource<CellValue[][]>(

@@ -11,8 +11,11 @@ import { logger } from "../../utils/logger";
 import type { EmailMetadataSection } from "../../types/viewerMetadata";
 import type { EmailInfo, EmailViewerProps } from "./types";
 import { isEml, isMbox, isMsg } from "./helpers";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("EmailViewer");
+const BROWSER_EMAIL_VIEW_MESSAGE =
+  "Email evidence viewing is available in the desktop app.";
 
 export interface UseEmailDataReturn {
   loading: Accessor<boolean>;
@@ -48,6 +51,10 @@ export function useEmailData(props: EmailViewerProps): UseEmailDataReturn {
     setSelectedIndex(0);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_EMAIL_VIEW_MESSAGE);
+      }
+
       if (isMsg(props.path)) {
         const info = props.source
           ? await commands.email.parseMsgSource<EmailInfo>(props.source)

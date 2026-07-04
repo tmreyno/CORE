@@ -13,8 +13,11 @@ import PdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { loadPdfDocument, renderPdfPage, generateThumbnailsBatch } from "./pdfHelpers";
 import { logger } from "../../utils/logger";
 import type { HashSourceInput } from "../../api/commands";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("PdfViewer");
+const BROWSER_PDF_VIEW_MESSAGE =
+  "PDF evidence viewing is available in the desktop app.";
 
 // Set up PDF.js worker - bundled locally via Vite (no CDN needed)
 GlobalWorkerOptions.workerSrc = PdfWorkerUrl;
@@ -50,6 +53,10 @@ export function usePdfViewer(
     setThumbnails([]);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_PDF_VIEW_MESSAGE);
+      }
+
       const pdf = await loadPdfDocument(getPath(), getSource?.());
       setPdfDoc(pdf);
       setNumPages(pdf.numPages);

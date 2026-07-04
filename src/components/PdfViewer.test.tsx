@@ -8,6 +8,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
 import { PdfViewer } from "./PdfViewer";
 
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
+
 // Mock pdfjs-dist before importing anything that depends on it
 vi.mock("pdfjs-dist", () => ({
   GlobalWorkerOptions: { workerSrc: "" },

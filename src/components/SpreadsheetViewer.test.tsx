@@ -4,11 +4,15 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
 import { save } from "@tauri-apps/plugin-dialog";
 import { SpreadsheetViewer } from "./SpreadsheetViewer";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -245,9 +249,10 @@ describe("SpreadsheetViewer", () => {
       expect(rowNums).toContain("3");
     });
 
-    it("shows a browser-preview message instead of opening a native CSV export dialog", async () => {
+    it("opens the native CSV export dialog", async () => {
       mockInvoke.mockResolvedValueOnce(mockSpreadsheetInfo);
       mockInvoke.mockResolvedValueOnce(mockRows);
+      vi.mocked(save).mockResolvedValueOnce(null);
 
       const { container } = renderComponent(() => (
         <SpreadsheetViewer path="/evidence/data.xlsx" />
@@ -258,10 +263,11 @@ describe("SpreadsheetViewer", () => {
       expect(exportButton).not.toBeNull();
       exportButton.click();
 
-      expect(save).not.toHaveBeenCalled();
-      expect(container.textContent).toContain(
-        "Spreadsheet CSV export is available in the desktop app.",
-      );
+      expect(save).toHaveBeenCalledWith({
+        title: "Export Spreadsheet as CSV",
+        defaultPath: "Sheet1.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
     });
   });
 

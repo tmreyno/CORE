@@ -16,8 +16,11 @@ import { logger } from "../../utils/logger";
 import { commands, type HashSourceInput } from "../../api/commands";
 import type { DatabaseMetadataSection } from "../../types/viewerMetadata";
 import type { DatabaseInfo, TableSchema, TableRows } from "./types";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("DatabaseViewer");
+const BROWSER_DATABASE_VIEW_MESSAGE =
+  "Database evidence viewing is available in the desktop app.";
 
 export const PAGE_SIZE = 100;
 
@@ -44,6 +47,10 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_DATABASE_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const info = source
         ? await commands.sqlite.getInfoSource<DatabaseInfo>(source)
@@ -72,6 +79,10 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
     setRowsLoading(true);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_DATABASE_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const [schemaResult, rowsResult] = await Promise.all([
         source
@@ -108,6 +119,10 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
     setCurrentPage(page);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_DATABASE_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const rows = source
         ? await commands.sqlite.queryTableSource<TableRows>(

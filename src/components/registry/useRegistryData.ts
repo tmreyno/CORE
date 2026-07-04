@@ -15,6 +15,7 @@ import { createSignal, createEffect, createMemo, on } from "solid-js";
 import { logger } from "../../utils/logger";
 import { commands, type HashSourceInput } from "../../api/commands";
 import type { RegistryMetadataSection } from "../../types/viewerMetadata";
+import { isTauri } from "../../utils/platform";
 import type {
   RegistryHiveInfo,
   RegistrySubkeysResponse,
@@ -23,6 +24,8 @@ import type {
 } from "./types";
 
 const log = logger.scope("RegistryViewer");
+const BROWSER_REGISTRY_VIEW_MESSAGE =
+  "Registry evidence viewing is available in the desktop app.";
 
 export interface UseRegistryDataOptions {
   path: () => string;
@@ -46,6 +49,10 @@ export function useRegistryData(opts: UseRegistryDataOptions) {
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_REGISTRY_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const info = source
         ? await commands.registry.getInfoSource<RegistryHiveInfo>(source)
@@ -89,6 +96,10 @@ export function useRegistryData(opts: UseRegistryDataOptions) {
 
     if (!node.loaded) {
       try {
+        if (!isTauri) {
+          throw new Error(BROWSER_REGISTRY_VIEW_MESSAGE);
+        }
+
         const source = opts.source?.();
         const response = source
           ? await commands.registry.getSubkeysSource<RegistrySubkeysResponse>(
@@ -125,6 +136,10 @@ export function useRegistryData(opts: UseRegistryDataOptions) {
     setValuesLoading(true);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_REGISTRY_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const keyInfo = source
         ? await commands.registry.getKeyInfoSource<RegistryKeyInfo>(
