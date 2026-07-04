@@ -592,6 +592,11 @@ export function createProjectIO(
    * Check if a project exists for the given root directory
    */
   const checkProjectExists = async (rootPath: string): Promise<string | null> => {
+    if (!isTauri) {
+      void rootPath;
+      return null;
+    }
+
     try {
       return await invoke<string | null>("project_check_exists", { rootPath });
     } catch (e) {
@@ -604,6 +609,12 @@ export function createProjectIO(
    * Get the default project path for a root directory
    */
   const getDefaultProjectPath = async (rootPath: string): Promise<string> => {
+    if (!isTauri) {
+      const trimmed = rootPath.replace(/\/+$/, "");
+      const baseName = trimmed.split(/[\\/]/).filter(Boolean).pop() || "CORE-FFX-Project";
+      return `${baseName}.cffx`;
+    }
+
     return await invoke<string>("project_get_default_path", { rootPath });
   };
 
@@ -1040,27 +1051,35 @@ export function createProjectIO(
       }
 
       emitProgress("checkpoint-db", "running", "Checkpointing the project database WAL.");
-      try {
-        await invoke("project_db_wal_checkpoint");
-        emitProgress("checkpoint-db", "completed", "Project database checkpoint completed.");
-      } catch (err) {
-        emitProgress(
-          "checkpoint-db",
-          "warning",
-          err instanceof Error ? err.message : String(err),
-        );
+      if (!isTauri) {
+        emitProgress("checkpoint-db", "completed", "Project database checkpoint skipped in browser preview.");
+      } else {
+        try {
+          await invoke("project_db_wal_checkpoint");
+          emitProgress("checkpoint-db", "completed", "Project database checkpoint completed.");
+        } catch (err) {
+          emitProgress(
+            "checkpoint-db",
+            "warning",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
 
       emitProgress("close-db", "running", "Closing the project database connection.");
-      try {
-        await invoke("project_db_close");
-        emitProgress("close-db", "completed", "Project database closed.");
-      } catch (err) {
-        emitProgress(
-          "close-db",
-          "warning",
-          err instanceof Error ? err.message : String(err),
-        );
+      if (!isTauri) {
+        emitProgress("close-db", "completed", "Project database close skipped in browser preview.");
+      } else {
+        try {
+          await invoke("project_db_close");
+          emitProgress("close-db", "completed", "Project database closed.");
+        } catch (err) {
+          emitProgress(
+            "close-db",
+            "warning",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
 
       emitProgress("clear-state", "running", "Clearing in-memory project state and UI bindings.");
@@ -1071,7 +1090,9 @@ export function createProjectIO(
         setters.setError(null);
         setters.setCurrentSessionId(null);
       });
-      await invoke("set_project_menu_state", { hasProject: false }).catch(() => {});
+      if (isTauri) {
+        await invoke("set_project_menu_state", { hasProject: false }).catch(() => {});
+      }
       emitProgress("clear-state", "completed", "Project state cleared.");
 
       return {

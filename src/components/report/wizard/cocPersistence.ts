@@ -14,6 +14,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 import type { COCItem, EvidenceCollectionData } from "../types";
 import type {
   DbCocItem,
@@ -43,6 +44,11 @@ const log = logger.scope("CocPersistence");
  * know the save succeeded — critical for forensic chain of custody data.
  */
 export async function persistCocItemsToDb(items: COCItem[]): Promise<void> {
+  if (!isTauri) {
+    void items;
+    throw new Error("Chain-of-custody database persistence is available in the desktop app.");
+  }
+
   for (const item of items) {
     const dbItem = cocItemToDb(item);
     await invoke("project_db_upsert_coc_item", { record: dbItem });
@@ -65,6 +71,14 @@ export async function persistEvidenceCollectionToDb(
   caseNumber?: string,
   status?: string
 ): Promise<void> {
+  if (!isTauri) {
+    void data;
+    void collectionId;
+    void caseNumber;
+    void status;
+    throw new Error("Evidence collection database persistence is available in the desktop app.");
+  }
+
   const { collection, items } = evidenceCollectionToDb(
     data,
     collectionId,
@@ -93,6 +107,11 @@ export async function persistEvidenceCollectionToDb(
 export async function loadCocItemsFromDb(
   caseNumber?: string
 ): Promise<COCItem[]> {
+  if (!isTauri) {
+    void caseNumber;
+    return [];
+  }
+
   try {
     const dbItems = await invoke<DbCocItem[]>("project_db_get_coc_items", {
       caseNumber: caseNumber || null,
@@ -127,6 +146,11 @@ export async function loadCocItemsFromDb(
 export async function loadEvidenceCollectionFromDb(
   caseNumber?: string
 ): Promise<{ data: EvidenceCollectionData; collectionId: string } | null> {
+  if (!isTauri) {
+    void caseNumber;
+    return null;
+  }
+
   try {
     const collections = await invoke<DbEvidenceCollection[]>(
       "project_db_get_evidence_collections",
@@ -158,6 +182,11 @@ export async function loadEvidenceCollectionFromDb(
 export async function loadEvidenceCollectionById(
   collectionId: string
 ): Promise<{ data: EvidenceCollectionData; collectionId: string; status: string } | null> {
+  if (!isTauri) {
+    void collectionId;
+    return null;
+  }
+
   try {
     const collection = await invoke<DbEvidenceCollection>(
       "project_db_get_evidence_collection_by_id",
@@ -185,6 +214,11 @@ export async function loadEvidenceCollectionById(
 export async function loadAllEvidenceCollections(
   caseNumber?: string
 ): Promise<DbEvidenceCollection[]> {
+  if (!isTauri) {
+    void caseNumber;
+    return [];
+  }
+
   try {
     return await invoke<DbEvidenceCollection[]>(
       "project_db_get_evidence_collections",
@@ -203,6 +237,12 @@ export async function updateEvidenceCollectionStatus(
   collectionId: string,
   newStatus: string
 ): Promise<boolean> {
+  if (!isTauri) {
+    void collectionId;
+    void newStatus;
+    return false;
+  }
+
   try {
     await invoke("project_db_update_evidence_collection_status", {
       id: collectionId,
@@ -221,6 +261,11 @@ export async function updateEvidenceCollectionStatus(
 export async function deleteEvidenceCollection(
   collectionId: string
 ): Promise<boolean> {
+  if (!isTauri) {
+    void collectionId;
+    return false;
+  }
+
   try {
     await invoke("project_db_delete_evidence_collection", { id: collectionId });
     return true;

@@ -18,6 +18,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
+import { isTauri } from "../utils/platform";
 import type { 
   DbSession, 
   DbFileRecord, 
@@ -31,18 +32,46 @@ import type {
 // Session Operations
 // ============================================================================
 
+const browserSettings = new Map<string, string>();
+
+function browserSession(rootPath: string): DbSession {
+  const now = new Date().toISOString();
+  const trimmed = rootPath.replace(/\/+$/, "");
+  const name = trimmed.split(/[\\/]/).filter(Boolean).pop() || "Browser Session";
+  return {
+    id: `browser-session:${rootPath}`,
+    name,
+    root_path: rootPath,
+    created_at: now,
+    last_opened_at: now,
+  };
+}
+
 /** Get or create a session for a directory path */
 export async function getOrCreateSession(rootPath: string): Promise<DbSession> {
+  if (!isTauri) {
+    return browserSession(rootPath);
+  }
+
   return invoke<DbSession>("db_get_or_create_session", { rootPath });
 }
 
 /** Get recent sessions */
 export async function getRecentSessions(limit: number = 10): Promise<DbSession[]> {
+  if (!isTauri) {
+    void limit;
+    return [];
+  }
+
   return invoke<DbSession[]>("db_get_recent_sessions", { limit });
 }
 
 /** Get the last opened session */
 export async function getLastSession(): Promise<DbSession | null> {
+  if (!isTauri) {
+    return null;
+  }
+
   return invoke<DbSession | null>("db_get_last_session");
 }
 
@@ -74,16 +103,32 @@ export function createFileRecord(
 
 /** Save or update a file record */
 export async function upsertFile(file: DbFileRecord): Promise<void> {
+  if (!isTauri) {
+    void file;
+    return;
+  }
+
   return invoke("db_upsert_file", { file });
 }
 
 /** Get all files for a session */
 export async function getFilesForSession(sessionId: string): Promise<DbFileRecord[]> {
+  if (!isTauri) {
+    void sessionId;
+    return [];
+  }
+
   return invoke<DbFileRecord[]>("db_get_files_for_session", { sessionId });
 }
 
 /** Get a file by path */
 export async function getFileByPath(sessionId: string, path: string): Promise<DbFileRecord | null> {
+  if (!isTauri) {
+    void sessionId;
+    void path;
+    return null;
+  }
+
   return invoke<DbFileRecord | null>("db_get_file_by_path", { sessionId, path });
 }
 
@@ -114,11 +159,21 @@ export function createHashRecord(
 
 /** Insert a hash record */
 export async function insertHash(hash: DbHashRecord): Promise<void> {
+  if (!isTauri) {
+    void hash;
+    return;
+  }
+
   return invoke("db_insert_hash", { hash });
 }
 
 /** Get all hashes for a file */
 export async function getHashesForFile(fileId: string): Promise<DbHashRecord[]> {
+  if (!isTauri) {
+    void fileId;
+    return [];
+  }
+
   return invoke<DbHashRecord[]>("db_get_hashes_for_file", { fileId });
 }
 
@@ -128,6 +183,13 @@ export async function getLatestHash(
   algorithm: string,
   segmentIndex?: number
 ): Promise<DbHashRecord | null> {
+  if (!isTauri) {
+    void fileId;
+    void algorithm;
+    void segmentIndex;
+    return null;
+  }
+
   return invoke<DbHashRecord | null>("db_get_latest_hash", { 
     fileId, 
     algorithm, 
@@ -158,11 +220,21 @@ export function createVerificationRecord(
 
 /** Insert a verification record */
 export async function insertVerification(verification: DbVerificationRecord): Promise<void> {
+  if (!isTauri) {
+    void verification;
+    return;
+  }
+
   return invoke("db_insert_verification", { verification });
 }
 
 /** Get verifications for a file */
 export async function getVerificationsForFile(fileId: string): Promise<DbVerificationRecord[]> {
+  if (!isTauri) {
+    void fileId;
+    return [];
+  }
+
   return invoke<DbVerificationRecord[]>("db_get_verifications_for_file", { fileId });
 }
 
@@ -172,11 +244,22 @@ export async function getVerificationsForFile(fileId: string): Promise<DbVerific
 
 /** Save open tabs for a session */
 export async function saveOpenTabs(sessionId: string, tabs: DbOpenTabRecord[]): Promise<void> {
+  if (!isTauri) {
+    void sessionId;
+    void tabs;
+    return;
+  }
+
   return invoke("db_save_open_tabs", { sessionId, tabs });
 }
 
 /** Get open tabs for a session */
 export async function getOpenTabs(sessionId: string): Promise<DbOpenTabRecord[]> {
+  if (!isTauri) {
+    void sessionId;
+    return [];
+  }
+
   return invoke<DbOpenTabRecord[]>("db_get_open_tabs", { sessionId });
 }
 
@@ -201,11 +284,20 @@ export function createTabRecords(
 
 /** Set a setting value */
 export async function setSetting(key: string, value: string): Promise<void> {
+  if (!isTauri) {
+    browserSettings.set(key, value);
+    return;
+  }
+
   return invoke("db_set_setting", { key, value });
 }
 
 /** Get a setting value */
 export async function getSetting(key: string): Promise<string | null> {
+  if (!isTauri) {
+    return browserSettings.get(key) ?? null;
+  }
+
   return invoke<string | null>("db_get_setting", { key });
 }
 
