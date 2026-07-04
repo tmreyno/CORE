@@ -145,7 +145,7 @@ jobs:
 
           if [ "$DRY_RUN" = "true" ]; then
             echo "🏃 DRY RUN — would bump ${CURRENT} → ${NEW_VERSION}"
-            echo "   Files: package.json, package-lock.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, Cargo.lock, CHANGELOG.md"
+            echo "   Files: package.json, package-lock.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, Cargo.lock, README.md, CHANGELOG.md"
             echo "   Tag: v${NEW_VERSION}"
             exit 0
           fi
@@ -178,22 +178,45 @@ jobs:
           cargo metadata --format-version=1 --no-deps > /dev/null
           echo "✅ Cargo.lock → ${NEW_VERSION}"
 
+          # ── Update README.md version badge ──
+          node -e "
+            const fs = require('fs');
+            const path = 'README.md';
+            let readme = fs.readFileSync(path, 'utf8');
+            readme = readme.replace(/version-\d+\.\d+\.\d+-blue/g, 'version-${NEW_VERSION}-blue');
+            fs.writeFileSync(path, readme);
+          "
+          echo "✅ README.md badge → ${NEW_VERSION}"
+
           # ── Update CHANGELOG.md ──
           DATE=$(date -u +"%Y-%m-%d")
-          if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
-            # Insert new version heading after [Unreleased] section header
-            # Use node to avoid sed multi-line continuation breaking YAML
-            node -e "
-              const fs = require('fs');
-              let cl = fs.readFileSync('CHANGELOG.md', 'utf8');
-              const entry = '\n\n## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n- Nightly release build (${BUMP_TYPE} bump)';
-              cl = cl.replace(/^## \[Unreleased\]/m, '## [Unreleased]' + entry);
-              fs.writeFileSync('CHANGELOG.md', cl);
-            "
-            echo "CHANGELOG.md updated with [${NEW_VERSION}] entry"
-          else
-            echo "No [Unreleased] section found - CHANGELOG.md not updated"
-          fi
+          CURRENT_VERSION="${CURRENT}" NEW_VERSION="${NEW_VERSION}" RELEASE_DATE="${DATE}" BUMP_TYPE="${BUMP_TYPE}" node <<'NODE'
+          const fs = require('fs');
+          const current = process.env.CURRENT_VERSION;
+          const next = process.env.NEW_VERSION;
+          const date = process.env.RELEASE_DATE;
+          const bumpType = process.env.BUMP_TYPE;
+          const path = 'CHANGELOG.md';
+          let changelog = fs.readFileSync(path, 'utf8');
+
+          if (!/^## \[Unreleased\]/m.test(changelog)) {
+            throw new Error('No [Unreleased] section found in CHANGELOG.md');
+          }
+
+          const entry = `\n\n## [${next}] - ${date}\n\n### Changed\n- Nightly release build (${bumpType} bump)`;
+          changelog = changelog.replace(/^## \[Unreleased\]/m, `## [Unreleased]${entry}`);
+
+          const unreleasedRef = `[Unreleased]: https://github.com/tmreyno/CORE/compare/v${next}...HEAD`;
+          const releaseRef = `[${next}]: https://github.com/tmreyno/CORE/compare/v${current}...v${next}`;
+          if (/^\[Unreleased\]:\s+.+$/m.test(changelog)) {
+            changelog = changelog.replace(/^\[Unreleased\]:\s+.+$/m, `${unreleasedRef}\n${releaseRef}`);
+          } else {
+            changelog += `\n${unreleasedRef}\n${releaseRef}\n`;
+          }
+
+          fs.writeFileSync(path, changelog);
+          NODE
+          echo "✅ CHANGELOG.md entry and refs → ${NEW_VERSION}"
 
           # ── Verify all files updated ──
           echo ""
@@ -203,6 +226,7 @@ jobs:
           echo "tauri.conf.json:   $(node -e "console.log(JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version)")"
           echo "Cargo.toml:        $(grep '^version' src-tauri/Cargo.toml | head -1)"
           echo "Cargo.lock:        $(grep -A1 'name = \"core-ffx\"' Cargo.lock | grep version | head -1)"
+          echo "README.md:         $(grep -o 'version-[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*-blue' README.md | head -1)"
 
       - name: Commit version bump
         if: steps.check.outputs.skipped != 'true' && github.event.inputs.dry_run != 'true'
@@ -212,7 +236,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml Cargo.lock CHANGELOG.md
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml Cargo.lock README.md CHANGELOG.md
           git commit -m "chore: bump version to ${NEW_VERSION} [nightly]"
 
           echo "✅ Committed version bump"
