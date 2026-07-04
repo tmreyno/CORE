@@ -15,11 +15,8 @@ use crate::project_db::{
     ProjectDatabase,
 };
 use core_types::evidence_collection_contract::EVIDENCE_COLLECTION_PACKAGE_VERSION;
-use core_types::mobile::{
-    MobileEvidenceCollectionPackage, MobileEvidenceCollectionPackageCocItem,
-    MobileEvidenceCollectionPackageCollection, MobileProject,
-};
-use serde::{de::DeserializeOwned, Serialize};
+use core_types::mobile::{MobileEvidenceCollectionPackageCocItem, MobileProject};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
@@ -36,6 +33,25 @@ const MAX_COLLECTION_JSON_CHARS: usize = 65_536;
 const MAX_COLLECTION_JSON_DEPTH: usize = 4;
 const MAX_COLLECTION_JSON_ITEMS: usize = 256;
 const COLLECTION_TRUNCATED_SUFFIX: &str = "... [truncated]";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EvidenceCollectionPackage {
+    export_version: String,
+    exported_at: String,
+    source_app: String,
+    project: MobileProject,
+    collections: Vec<EvidenceCollectionPackageCollection>,
+    coc_items: Vec<MobileEvidenceCollectionPackageCocItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EvidenceCollectionPackageCollection {
+    #[serde(flatten)]
+    collection: DbEvidenceCollection,
+    items: Vec<DbCollectedItem>,
+}
 
 fn convert_shared_type<TSrc, TDst>(value: &TSrc, label: &str) -> Result<TDst, String>
 where
@@ -238,15 +254,15 @@ fn build_linked_coc_items(
 }
 
 fn convert_import_package(
-    package: MobileEvidenceCollectionPackage,
+    package: EvidenceCollectionPackage,
 ) -> Result<ImportedEvidenceCollectionPackage, String> {
     let collections = package
         .collections
         .into_iter()
         .map(|entry| {
             Ok(ImportedEvidenceCollectionPackageCollection {
-                collection: convert_shared_type(&entry.collection, "package collection")?,
-                items: convert_shared_type(&entry.items, "package collected items")?,
+                collection: entry.collection,
+                items: entry.items,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -278,7 +294,7 @@ fn build_evidence_collection_package(
     db: &ProjectDatabase,
     collection_id: &str,
     source_app: &str,
-) -> Result<MobileEvidenceCollectionPackage, String> {
+) -> Result<EvidenceCollectionPackage, String> {
     let collection = bounded_evidence_collection(
         db.get_evidence_collection_by_id(collection_id)
             .map_err(|e| {
@@ -300,17 +316,15 @@ fn build_evidence_collection_package(
         .take(MAX_COLLECTION_RESPONSE_ROWS)
         .map(bounded_collected_item)
         .collect();
+    let coc_items = build_linked_coc_items(db, &items)?;
 
-    Ok(MobileEvidenceCollectionPackage {
+    Ok(EvidenceCollectionPackage {
         export_version: EVIDENCE_COLLECTION_PACKAGE_VERSION.to_string(),
         exported_at: chrono::Utc::now().to_rfc3339(),
         source_app: source_app.to_string(),
         project: load_mobile_project(db, &collection),
-        collections: vec![MobileEvidenceCollectionPackageCollection {
-            collection: convert_shared_type(&collection, "evidence collection")?,
-            items: convert_shared_type(&items, "collected items")?,
-        }],
-        coc_items: build_linked_coc_items(db, &items)?,
+        collections: vec![EvidenceCollectionPackageCollection { collection, items }],
+        coc_items,
     })
 }
 
@@ -395,7 +409,7 @@ pub fn project_db_import_evidence_collection_package(
         EVIDENCE_COLLECTION_PACKAGE_READ_MAX_BYTES,
         "evidence collection package",
     )?;
-    let package = serde_json::from_str::<MobileEvidenceCollectionPackage>(&content)
+    let package = serde_json::from_str::<EvidenceCollectionPackage>(&content)
         .map_err(|e| format!("Failed to parse evidence collection package: {}", e))?;
     let imported = convert_import_package(package)?;
 
