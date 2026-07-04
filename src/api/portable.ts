@@ -12,6 +12,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../utils/platform";
 
 /** Configuration for portable mode path redirection. */
 export interface PortableConfig {
@@ -47,10 +48,18 @@ export interface PortableStatus {
 
 /** Query the portable mode status. */
 export async function getPortableStatus(): Promise<PortableStatus> {
+  if (!isTauri) {
+    return { isPortable: false, config: null };
+  }
+
   return invoke<PortableStatus>("portable_get_status");
 }
 
 /** Ensure the portable data directory structure exists. */
 export async function ensurePortableDirs(): Promise<string> {
+  if (!isTauri) {
+    throw new Error("Portable directory setup is available in the desktop app.");
+  }
+
   return invoke<string>("portable_ensure_dirs");
 }
