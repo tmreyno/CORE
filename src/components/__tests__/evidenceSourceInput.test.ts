@@ -54,6 +54,67 @@ describe("buildEvidenceSourceInput", () => {
     });
   });
 
+  it("preserves explicit VFS source type from the evidence file", () => {
+    const source = buildEvidenceSourceInput(
+      null,
+      makeEntry({
+        containerPath: "/case/disk.raw",
+        entryPath: "/Users/alice/report.pdf",
+        name: "report.pdf",
+        isVfsEntry: true,
+        containerType: "raw",
+      }),
+    );
+
+    expect(source).toEqual({
+      containerPath: "/case/disk.raw",
+      entryPath: "/Users/alice/report.pdf",
+      containerType: "raw",
+      size: 128,
+    });
+  });
+
+  it("preserves explicit archive source type from the evidence file", () => {
+    const source = buildEvidenceSourceInput(
+      null,
+      makeEntry({
+        containerPath: "/case/logs.tar.gz",
+        entryPath: "logs/system.log",
+        name: "system.log",
+        isArchiveEntry: true,
+        containerType: "tar.gz",
+      }),
+    );
+
+    expect(source).toEqual({
+      containerPath: "/case/logs.tar.gz",
+      entryPath: "logs/system.log",
+      containerType: "tar.gz",
+      size: 128,
+    });
+  });
+
+  it("infers compound archive source types when no explicit type is present", () => {
+    for (const extension of ["tar.gz", "tar.xz", "tar.bz2", "tar.zst", "tar.lz4"]) {
+      const source = buildEvidenceSourceInput(
+        null,
+        makeEntry({
+          containerPath: `/case/logs.${extension}`,
+          entryPath: "logs/system.log",
+          name: "system.log",
+          isArchiveEntry: true,
+        }),
+      );
+
+      expect(source).toEqual({
+        containerPath: `/case/logs.${extension}`,
+        entryPath: "logs/system.log",
+        containerType: extension,
+        size: 128,
+      });
+    }
+  });
+
   it("splits nested archive compact paths into nested source fields", () => {
     const source = buildEvidenceSourceInput(
       null,

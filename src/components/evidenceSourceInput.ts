@@ -65,6 +65,10 @@ function inferEntryContainerType(entry: SelectedEntry): string {
 
 function extensionOrDefault(path: string, fallback: string): string {
   const name = path.split(/[\\/]/).pop() ?? path;
+  const lowerName = name.toLowerCase();
+  for (const compoundExtension of ["tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz4"]) {
+    if (lowerName.endsWith(`.${compoundExtension}`)) return compoundExtension;
+  }
   const dot = name.lastIndexOf(".");
   if (dot < 0 || dot === name.length - 1) return fallback;
   const extension = name.slice(dot + 1).toLowerCase();

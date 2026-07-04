@@ -488,7 +488,33 @@ fn is_raw_type(kind: &str) -> bool {
 fn is_archive_type(kind: &str) -> bool {
     matches!(
         kind,
-        "archive" | "zip" | "zip64" | "7z" | "rar" | "rar4" | "rar5" | "tar" | "tar.gz"
+        "archive"
+            | "zip"
+            | "zip64"
+            | "7z"
+            | "7-zip"
+            | "rar"
+            | "rar4"
+            | "rar5"
+            | "tar"
+            | "gz"
+            | "gzip"
+            | "bz2"
+            | "bzip2"
+            | "xz"
+            | "zst"
+            | "zstd"
+            | "lz4"
+            | "tar.gz"
+            | "tgz"
+            | "tar.xz"
+            | "txz"
+            | "tar.bz2"
+            | "tbz2"
+            | "tar.zst"
+            | "tar.lz4"
+            | "dmg"
+            | "iso"
     )
 }
 
@@ -563,6 +589,17 @@ mod tests {
         match open_container_entry_source("/cases/item.bin", "/entry", "unknown-format", None) {
             Ok(_) => panic!("unsupported source type should fail"),
             Err(err) => assert!(matches!(err, EvidenceSourceError::Container { .. })),
+        }
+    }
+
+    #[test]
+    fn archive_type_gate_matches_browsable_archive_types() {
+        for kind in [
+            "archive", "zip", "zip64", "7z", "7-zip", "rar", "rar4", "rar5", "tar", "gz", "gzip",
+            "bz2", "bzip2", "xz", "zst", "zstd", "lz4", "tar.gz", "tgz", "tar.xz", "txz",
+            "tar.bz2", "tbz2", "tar.zst", "tar.lz4", "dmg", "iso",
+        ] {
+            assert!(is_archive_type(kind), "{kind} should route to ArchiveVfs");
         }
     }
 

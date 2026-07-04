@@ -374,6 +374,7 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       size: entry.size,
       isDir: entry.is_dir,
       isVfsEntry: false,
+      containerType: "ad1",
       dataAddr: entry.data_addr,
       itemAddr: entry.item_addr,
       compressedSize: entry.compressed_size,
