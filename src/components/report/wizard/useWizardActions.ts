@@ -38,8 +38,11 @@ import { persistCocItemsToDb, loadCocItemsFromDb } from "./cocDbSync";
 import { generateId, nowISO } from "../../../types/project";
 import type { ProjectReportRecord } from "../../../types/project";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 
 const log = logger.scope("ReportWizard");
+const BROWSER_REPORT_EXPORT_MESSAGE =
+  "Report export is available in the desktop app.";
 
 // =============================================================================
 // ACTIONS INTERFACE
@@ -127,6 +130,11 @@ export function useWizardActions(
     state.setExportError(null);
 
     try {
+      if (!isTauri) {
+        state.setExportError(BROWSER_REPORT_EXPORT_MESSAGE);
+        return;
+      }
+
       const report = buildReport();
       const format = state.outputFormats().find((f) => f.format === state.selectedFormat());
 
@@ -196,6 +204,11 @@ export function useWizardActions(
     state.setExportError(null);
 
     try {
+      if (!isTauri) {
+        state.setExportError(BROWSER_REPORT_EXPORT_MESSAGE);
+        return;
+      }
+
       const report = buildReport();
       const path = await save({
         title: "Save Standard Report Package",
