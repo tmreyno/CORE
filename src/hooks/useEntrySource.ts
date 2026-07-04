@@ -21,6 +21,7 @@ import type { DiscoveredFile } from "../types";
 import type { SelectedEntry } from "../components/EvidenceTree/types";
 import { commands } from "../api/commands";
 import { buildEvidenceSourceInput } from "../components/evidenceSourceInput";
+import { isTauri } from "../utils/platform";
 
 /**
  * Result of reading bytes from a source
@@ -47,6 +48,10 @@ export async function readBytesFromSource(
   offset: number,
   size: number
 ): Promise<ByteReadResult> {
+  if (!isTauri) {
+    throw new Error("Evidence content viewing is available in the desktop app.");
+  }
+
   const source = buildEvidenceSourceInput(file, entry);
   if (!source) throw new Error("No file or entry provided");
 
