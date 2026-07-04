@@ -13,11 +13,15 @@ import { createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getErrorMessage } from "../../utils/errorUtils";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("ExportCommon");
 import { remountReadOnly, restoreMount, checkPathWritable } from "../../api/drives";
 import type { NativeExportTab } from "../../components/export/NativeExportMode";
 import type { ExportMode, ExportToast } from "./types";
+
+const BROWSER_EXPORT_SELECTION_MESSAGE =
+  "Export source and destination browsing is available in the desktop app.";
 
 export interface UseExportCommonOptions {
   initialSources?: string[];
@@ -62,6 +66,11 @@ export function useExportCommon(options: UseExportCommonOptions) {
   };
 
   const handleAddSources = async () => {
+    if (!isTauri) {
+      toast.error("Selection Unavailable", BROWSER_EXPORT_SELECTION_MESSAGE);
+      return;
+    }
+
     const selected = await open({
       multiple: true,
       directory: false,
@@ -75,6 +84,11 @@ export function useExportCommon(options: UseExportCommonOptions) {
   };
 
   const handleAddFolder = async () => {
+    if (!isTauri) {
+      toast.error("Selection Unavailable", BROWSER_EXPORT_SELECTION_MESSAGE);
+      return;
+    }
+
     const selected = await open({
       multiple: false,
       directory: true,
@@ -109,6 +123,11 @@ export function useExportCommon(options: UseExportCommonOptions) {
   };
 
   const handleSelectDestination = async () => {
+    if (!isTauri) {
+      toast.error("Selection Unavailable", BROWSER_EXPORT_SELECTION_MESSAGE);
+      return;
+    }
+
     log.debug("Selecting destination folder");
     const selected = await open({
       multiple: false,

@@ -45,6 +45,7 @@ import { createContextMenu, ContextMenu, type ContextMenuItem } from "../Context
 import type { DriveInfo } from "../../api/drives";
 import { listDrives, formatDriveSize } from "../../api/drives";
 import { formatBytes } from "../../utils";
+import { isTauri } from "../../utils/platform";
 
 // =============================================================================
 // Types
@@ -83,6 +84,9 @@ const driveIcon = (drive: DriveInfo) => {
   return HiOutlineServer;
 };
 
+const BROWSER_SOURCE_SELECTION_MESSAGE =
+  "Drive source file and folder selection is available in the desktop app.";
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -99,6 +103,7 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
 
   // Selected sources
   const [selectedPaths, setSelectedPaths] = createSignal<Set<string>>(new Set());
+  const [sourceSelectionMessage, setSourceSelectionMessage] = createSignal("");
 
   const contextMenu = createContextMenu();
 
@@ -115,12 +120,19 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
   // ── Drive loading ─────────────────────────────────────────────────────────
 
   const loadDrives = async () => {
+    if (!isTauri) {
+      setDrives([]);
+      setDrivesLoading(false);
+      return;
+    }
+
     setDrivesLoading(true);
     try {
       const list = await listDrives();
-      setDrives(list);
+      setDrives(Array.isArray(list) ? list : []);
     } catch {
       // Silently handle
+      setDrives([]);
     } finally {
       setDrivesLoading(false);
     }
@@ -188,6 +200,12 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
   // ── File/Folder Dialogs ───────────────────────────────────────────────────
 
   const handleAddFiles = async () => {
+    if (!isTauri) {
+      setSourceSelectionMessage(BROWSER_SOURCE_SELECTION_MESSAGE);
+      return;
+    }
+
+    setSourceSelectionMessage("");
     const selected = await open({
       multiple: true,
       directory: false,
@@ -207,6 +225,12 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
   };
 
   const handleAddFolder = async () => {
+    if (!isTauri) {
+      setSourceSelectionMessage(BROWSER_SOURCE_SELECTION_MESSAGE);
+      return;
+    }
+
+    setSourceSelectionMessage("");
     const selected = await open({
       multiple: false,
       directory: true,
@@ -405,6 +429,12 @@ const DriveSourcePanel: Component<DriveSourcePanelProps> = (props) => {
           </button>
         </div>
       </div>
+
+      <Show when={sourceSelectionMessage()}>
+        <div class="px-3 py-2 border-b border-border/40 bg-warning/10 text-xs text-warning">
+          {sourceSelectionMessage()}
+        </div>
+      </Show>
 
       {/* Selection bar — shown when items are selected */}
       <Show when={selectedCount() > 0}>
