@@ -197,6 +197,15 @@ pub fn extract_normalized_artifact(
         }
         metadata.extend(system_info);
     }
+    let activity = activity_metadata(&source_id, &header);
+    if !activity.is_empty() {
+        category = "activity".to_string();
+        type_description = activity_type_description(&activity);
+        if confidence == "low" {
+            confidence = "medium".to_string();
+        }
+        metadata.extend(activity);
+    }
     metadata.extend(source_indicator_metadata(&header));
     if let Some(preview) = &content_preview {
         let preview_bytes_read = preview_bytes_read.unwrap_or(preview.len());
@@ -2087,6 +2096,177 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
         (Some("windows"), Some("wifi-profile")) => "Windows Wi-Fi Profile",
         _ => "System Information Artifact",
+    }
+    .to_string()
+}
+
+#[derive(Default)]
+struct CommandHistorySummary {
+    command_count: usize,
+    command_names: Vec<String>,
+    network_command_count: usize,
+    privileged_command_count: usize,
+    file_transfer_command_count: usize,
+}
+
+fn activity_metadata(source_id: &str, header: &[u8]) -> BTreeMap<String, String> {
+    let normalized_path = normalize_artifact_path(source_id);
+    if !is_command_history_path(&normalized_path) {
+        return BTreeMap::new();
+    }
+    command_history_metadata(&normalized_path, header)
+}
+
+fn is_command_history_path(path: &str) -> bool {
+    path.ends_with("/.bash_history")
+        || path.ends_with("/.zsh_history")
+        || path.ends_with("/consolehost_history.txt")
+}
+
+fn command_history_metadata(path: &str, header: &[u8]) -> BTreeMap<String, String> {
+    let history_type = if path.ends_with("/consolehost_history.txt") {
+        "powershell"
+    } else if path.ends_with("/.zsh_history") {
+        "zsh"
+    } else {
+        "bash"
+    };
+    let text = String::from_utf8_lossy(header);
+    let mut summary = CommandHistorySummary::default();
+
+    for line in text.lines().take(2048) {
+        let Some(command) = normalized_history_command(line, history_type) else {
+            continue;
+        };
+        summary.command_count = summary.command_count.saturating_add(1);
+        collect_command_history_summary(command, &mut summary);
+    }
+
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "activity.commandHistoryType".to_string(),
+        history_type.to_string(),
+    );
+    if summary.command_count > 0 {
+        metadata.insert(
+            "activity.commandCount".to_string(),
+            summary.command_count.to_string(),
+        );
+    }
+    if summary.network_command_count > 0 {
+        metadata.insert(
+            "activity.networkCommandCount".to_string(),
+            summary.network_command_count.to_string(),
+        );
+    }
+    if summary.privileged_command_count > 0 {
+        metadata.insert(
+            "activity.privilegedCommandCount".to_string(),
+            summary.privileged_command_count.to_string(),
+        );
+    }
+    if summary.file_transfer_command_count > 0 {
+        metadata.insert(
+            "activity.fileTransferCommandCount".to_string(),
+            summary.file_transfer_command_count.to_string(),
+        );
+    }
+    insert_limited_system_values(
+        &mut metadata,
+        "activity.commandNames",
+        &summary.command_names,
+    );
+    metadata
+}
+
+fn normalized_history_command<'a>(line: &'a str, history_type: &str) -> Option<&'a str> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    if history_type == "zsh" && line.starts_with(": ") {
+        return line.split_once(';').map(|(_, command)| command.trim());
+    }
+    Some(line)
+}
+
+fn collect_command_history_summary(command: &str, summary: &mut CommandHistorySummary) {
+    let Some(command_name) = command_history_command_name(command) else {
+        return;
+    };
+    let command_name_lower = command_name.to_ascii_lowercase();
+    push_limited_system_value(&mut summary.command_names, &command_name);
+
+    if matches!(command_name_lower.as_str(), "sudo" | "su" | "runas") {
+        summary.privileged_command_count = summary.privileged_command_count.saturating_add(1);
+    }
+    if is_network_command(&command_name_lower) {
+        summary.network_command_count = summary.network_command_count.saturating_add(1);
+    }
+    if is_file_transfer_command(&command_name_lower) {
+        summary.file_transfer_command_count = summary.file_transfer_command_count.saturating_add(1);
+    }
+}
+
+fn command_history_command_name(command: &str) -> Option<String> {
+    let mut first = command
+        .split_whitespace()
+        .next()?
+        .trim_matches(|ch| matches!(ch, '"' | '\'' | '&' | ';' | '(' | ')'));
+    if first.is_empty() {
+        return None;
+    }
+    if let Some(last) = first.rsplit(['/', '\\']).next() {
+        first = last;
+    }
+    (!first.is_empty()).then(|| first.to_string())
+}
+
+fn is_network_command(command_name: &str) -> bool {
+    matches!(
+        command_name,
+        "ssh"
+            | "scp"
+            | "sftp"
+            | "curl"
+            | "wget"
+            | "nc"
+            | "ncat"
+            | "netcat"
+            | "ftp"
+            | "rsync"
+            | "invoke-webrequest"
+            | "iwr"
+            | "invoke-restmethod"
+            | "irm"
+    )
+}
+
+fn is_file_transfer_command(command_name: &str) -> bool {
+    matches!(
+        command_name,
+        "scp"
+            | "sftp"
+            | "curl"
+            | "wget"
+            | "ftp"
+            | "rsync"
+            | "invoke-webrequest"
+            | "iwr"
+            | "invoke-restmethod"
+            | "irm"
+    )
+}
+
+fn activity_type_description(metadata: &BTreeMap<String, String>) -> String {
+    match metadata
+        .get("activity.commandHistoryType")
+        .map(String::as_str)
+    {
+        Some("powershell") => "PowerShell Command History",
+        Some("zsh") => "Zsh Command History",
+        Some("bash") => "Bash Command History",
+        _ => "Activity Artifact",
     }
     .to_string()
 }
@@ -4441,6 +4621,160 @@ dns-search=corp.example.com;
                 .get("system.networkConnectionModes")
                 .map(String::as_str),
             Some("auto")
+        );
+    }
+
+    #[test]
+    fn extracts_bash_command_history_metadata() {
+        let bytes = br#"ls -la
+sudo cat /etc/shadow
+ssh admin@example.com
+curl -O https://example.com/tool
+"#;
+        let source = ChunkedByteSource::new("/image/home/alice/.bash_history", bytes, 256);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "activity");
+        assert_eq!(artifact.type_description, "Bash Command History");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandHistoryType")
+                .map(String::as_str),
+            Some("bash")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandCount")
+                .map(String::as_str),
+            Some("4")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.networkCommandCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.privilegedCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.fileTransferCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandNames")
+                .map(String::as_str),
+            Some("ls; sudo; ssh; curl")
+        );
+    }
+
+    #[test]
+    fn extracts_zsh_extended_history_metadata() {
+        let bytes = br#": 1717260000:0;git status
+: 1717260001:0;rsync -av /a /b
+"#;
+        let source = ChunkedByteSource::new("/image/Users/alice/.zsh_history", bytes, 128);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "activity");
+        assert_eq!(artifact.type_description, "Zsh Command History");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandHistoryType")
+                .map(String::as_str),
+            Some("zsh")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.fileTransferCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandNames")
+                .map(String::as_str),
+            Some("git; rsync")
+        );
+    }
+
+    #[test]
+    fn extracts_powershell_command_history_metadata() {
+        let bytes = br#"Get-ChildItem C:\
+Invoke-WebRequest https://example.com/payload -OutFile payload.bin
+runas /user:Administrator cmd
+"#;
+        let source = ChunkedByteSource::new(
+            "/Users/Alice/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadLine/ConsoleHost_history.txt",
+            bytes,
+            256,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "activity");
+        assert_eq!(artifact.type_description, "PowerShell Command History");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandHistoryType")
+                .map(String::as_str),
+            Some("powershell")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandCount")
+                .map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.networkCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.privilegedCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("activity.commandNames")
+                .map(String::as_str),
+            Some("Get-ChildItem; Invoke-WebRequest; runas")
         );
     }
 
