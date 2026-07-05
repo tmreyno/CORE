@@ -196,6 +196,31 @@ function makeEvidence(): ProjectDbReportEvidence {
       },
       {
         id: "artifact-8",
+        sourceId: "e01:/case/linux.E01:/lib/modules/6.8.0/kernel/drivers/net/coretap.ko",
+        name: "coretap.ko",
+        category: "system",
+        typeDescription: "Linux Kernel Module",
+        size: 98304,
+        sizeDisplay: "96 KB",
+        confidence: "high",
+        isText: false,
+        metadata: {
+          "binary.analysisStatus": "parsed",
+          "binary.format": "ELF64",
+          "binary.architecture": "x86_64",
+          "linux.moduleDetected": "true",
+          "linux.moduleNames": "coretap",
+          "linux.moduleVersions": "1.2.3",
+          "linux.moduleVermagic": "6.8.0 SMP mod_unload",
+          "linux.moduleLicenses": "GPL",
+          "linux.moduleDependencies": "cfg80211; rfkill",
+          "linux.moduleDescriptions": "CORE packet capture tap",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:55Z",
+      },
+      {
+        id: "artifact-9",
         sourceId: "ad1:/case/logical.ad1:/mobile/history.sqlite",
         name: "history.sqlite",
         category: "database",
@@ -332,6 +357,9 @@ describe("buildProjectDbEvidenceAppendices", () => {
     expect(appendices[1].content).toContain("format: PE64");
     expect(appendices[1].content).toContain("imports: fltmgr.sys; ntoskrnl.exe");
     expect(appendices[1].content).toContain("driver: true");
+    expect(appendices[1].content).toContain("module: true");
+    expect(appendices[1].content).toContain("module names: coretap");
+    expect(appendices[1].content).toContain("vermagic: 6.8.0 SMP mod_unload");
     expect(appendices[1].content).toContain("tables: 2");
     expect(appendices[2].content).toContain("PDF Document");
     expect(appendices[2].content).toContain("admin@example.com");
