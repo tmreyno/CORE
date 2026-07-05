@@ -66,6 +66,9 @@ const mockFileManager = (files: DiscoveredFile[] = []) => {
     discoveredFiles: () => files,
     activeFile,
     setActiveFile,
+    selectAndViewFile: vi.fn(async (file: DiscoveredFile) => {
+      setActiveFile(file);
+    }),
     scanDir: () => "/evidence",
     selectedFiles,
     toggleFileSelection: vi.fn(),
@@ -393,7 +396,7 @@ describe("createContextMenuBuilders", () => {
       expect(items.find((i) => i.id === "copy-name")).toBeDefined();
     });
 
-    it("open action sets active file", () => {
+    it("open action uses the normal select-and-view path", () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
       const hm = mockHashManager();
@@ -410,6 +413,7 @@ describe("createContextMenuBuilders", () => {
 
       const items = getFileContextMenuItems(() => file);
       items.find((i) => i.id === "open")!.onSelect!();
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
     });
 

@@ -221,7 +221,7 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
     if (!f) return [];
     
     return [
-      { id: "open", label: "Open", icon: "📂", onSelect: () => fileManager.setActiveFile(f) },
+      { id: "open", label: "Open", icon: "📂", onSelect: () => void fileManager.selectAndViewFile(f) },
       { id: "sep1", label: "", separator: true },
       { id: "hash", label: "Compute Hash", icon: "🔐", shortcut: "cmd+h", onSelect: () => hashManager.hashSingleFile(f) },
       { id: "sep2", label: "", separator: true },
