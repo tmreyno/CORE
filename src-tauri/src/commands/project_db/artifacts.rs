@@ -470,6 +470,7 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "machine-info"
                 | "hostname"
                 | "timezone"
+                | "localtime"
                 | "locale"
                 | "fstab"
                 | "mtab"
@@ -1175,6 +1176,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "timezone" => {
             insert_trimmed_metadata(&mut metadata, "system.timeZone", &text);
         }
+        "localtime" => {
+            metadata.extend(parse_localtime_metadata(data, &text));
+        }
         "locale" => {
             metadata.extend(parse_linux_locale_metadata(&text));
         }
@@ -1363,6 +1367,156 @@ fn parse_linux_locale_metadata(text: &str) -> BTreeMap<String, String> {
     }
 
     metadata
+}
+
+fn parse_localtime_metadata(data: &[u8], text: &str) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let trimmed = text.trim();
+    if !data.starts_with(b"TZif") {
+        if let Some(zone) = trimmed
+            .split("/zoneinfo/")
+            .nth(1)
+            .or_else(|| trimmed.strip_prefix("zoneinfo/"))
+            .filter(|value| !value.is_empty())
+        {
+            metadata.insert(
+                "system.timeZone".to_string(),
+                truncate_metadata_value(zone.trim_matches('/'), 180),
+            );
+        }
+        return metadata;
+    }
+
+    metadata.insert("system.timeZoneFormat".to_string(), "TZif".to_string());
+    if let Some(version) = data.get(4).copied().filter(|byte| *byte != 0) {
+        metadata.insert(
+            "system.timeZoneFileVersion".to_string(),
+            (version as char).to_string(),
+        );
+    }
+    if let Some(posix_rule) = tzif_posix_rule(data) {
+        metadata.insert("system.timeZoneRule".to_string(), posix_rule);
+    }
+    let abbreviations = tzif_abbreviations(data);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.timeZoneAbbreviations",
+        &abbreviations,
+    );
+
+    metadata
+}
+
+fn tzif_posix_rule(data: &[u8]) -> Option<String> {
+    data.get(4)
+        .copied()
+        .filter(|byte| *byte == b'2' || *byte == b'3' || *byte == b'4')?;
+    let last_newline = data.iter().rposition(|byte| *byte == b'\n')?;
+    let previous_newline = data[..last_newline]
+        .iter()
+        .rposition(|byte| *byte == b'\n')?;
+    let value = std::str::from_utf8(&data[previous_newline + 1..last_newline])
+        .ok()?
+        .trim();
+    (!value.is_empty() && value.chars().all(|ch| ch.is_ascii_graphic()))
+        .then(|| truncate_metadata_value(value, MAX_ARTIFACT_METADATA_VALUE_CHARS))
+}
+
+#[derive(Clone, Copy)]
+struct TzifCounts {
+    ttisgmt_count: usize,
+    ttisstd_count: usize,
+    leap_count: usize,
+    time_count: usize,
+    type_count: usize,
+    char_count: usize,
+}
+
+fn tzif_abbreviations(data: &[u8]) -> Vec<String> {
+    let Some(counts) = tzif_counts(data, 20) else {
+        return Vec::new();
+    };
+    let mut offset = 44usize;
+    let first_block = tzif_block_len(counts, 4);
+    let mut char_offset = tzif_char_offset(offset, counts, 4);
+    let mut char_len = counts.char_count;
+
+    if matches!(data.get(4), Some(b'2' | b'3' | b'4')) {
+        offset = offset.saturating_add(first_block);
+        if offset + 44 <= data.len() && data.get(offset..offset + 4) == Some(b"TZif") {
+            if let Some(counts) = tzif_counts(data, offset + 20) {
+                char_offset = tzif_char_offset(offset + 44, counts, 8);
+                char_len = counts.char_count;
+            }
+        }
+    }
+
+    let Some(char_offset) = char_offset else {
+        return Vec::new();
+    };
+    let Some(end) = char_offset.checked_add(char_len) else {
+        return Vec::new();
+    };
+    let Some(bytes) = data.get(char_offset..end) else {
+        return Vec::new();
+    };
+
+    let mut abbreviations = Vec::new();
+    for part in bytes.split(|byte| *byte == 0) {
+        let Ok(value) = std::str::from_utf8(part) else {
+            continue;
+        };
+        let value = value.trim();
+        if value.len() >= 2
+            && value.len() <= 12
+            && value
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-'))
+        {
+            push_unique_limited(&mut abbreviations, value.to_string());
+        }
+    }
+    abbreviations
+}
+
+fn tzif_counts(data: &[u8], offset: usize) -> Option<TzifCounts> {
+    Some(TzifCounts {
+        ttisgmt_count: read_be_u32_usize(data, offset)?,
+        ttisstd_count: read_be_u32_usize(data, offset + 4)?,
+        leap_count: read_be_u32_usize(data, offset + 8)?,
+        time_count: read_be_u32_usize(data, offset + 12)?,
+        type_count: read_be_u32_usize(data, offset + 16)?,
+        char_count: read_be_u32_usize(data, offset + 20)?,
+    })
+}
+
+fn read_be_u32_usize(data: &[u8], offset: usize) -> Option<usize> {
+    let bytes: [u8; 4] = data.get(offset..offset + 4)?.try_into().ok()?;
+    usize::try_from(u32::from_be_bytes(bytes)).ok()
+}
+
+fn tzif_transition_block_len(time_count: usize, time_size: usize) -> usize {
+    time_count.saturating_mul(time_size)
+}
+
+fn tzif_char_offset(offset: usize, counts: TzifCounts, time_size: usize) -> Option<usize> {
+    offset
+        .checked_add(tzif_transition_block_len(counts.time_count, time_size))
+        .and_then(|value| value.checked_add(counts.time_count))
+        .and_then(|value| value.checked_add(counts.type_count.checked_mul(6)?))
+}
+
+fn tzif_block_len(counts: TzifCounts, time_size: usize) -> usize {
+    tzif_char_offset(0, counts, time_size)
+        .unwrap_or(usize::MAX)
+        .saturating_add(counts.char_count)
+        .saturating_add(
+            counts
+                .leap_count
+                .saturating_mul(time_size.saturating_add(4)),
+        )
+        .saturating_add(counts.ttisstd_count)
+        .saturating_add(counts.ttisgmt_count)
 }
 
 fn parse_mount_table_metadata(text: &str) -> BTreeMap<String, String> {
@@ -5014,6 +5168,95 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
     }
 
     #[test]
+    fn system_identity_metadata_extracts_zoneinfo_localtime_target() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/localtime",
+            b"/usr/share/zoneinfo/America/Anchorage\n",
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.timeZone").map(String::as_str),
+            Some("America/Anchorage")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_tzif_localtime() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/localtime",
+            &minimal_tzif_v2(b"AKST\0AKDT\0", b"AKST9AKDT,M3.2.0,M11.1.0"),
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.timeZoneFormat").map(String::as_str),
+            Some("TZif")
+        );
+        assert_eq!(
+            metadata
+                .get("system.timeZoneFileVersion")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.timeZoneRule").map(String::as_str),
+            Some("AKST9AKDT,M3.2.0,M11.1.0")
+        );
+        assert_eq!(
+            metadata
+                .get("system.timeZoneAbbreviations")
+                .map(String::as_str),
+            Some("AKST; AKDT")
+        );
+    }
+
+    fn minimal_tzif_v2(abbreviations: &[u8], posix_rule: &[u8]) -> Vec<u8> {
+        let mut data = Vec::new();
+        append_tzif_header(&mut data, b'2', 0, 0, 0, 0, 1, abbreviations.len() as u32);
+        data.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        data.extend_from_slice(abbreviations);
+        append_tzif_header(&mut data, b'2', 0, 0, 0, 0, 1, abbreviations.len() as u32);
+        data.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        data.extend_from_slice(abbreviations);
+        data.push(b'\n');
+        data.extend_from_slice(posix_rule);
+        data.push(b'\n');
+        data
+    }
+
+    fn append_tzif_header(
+        data: &mut Vec<u8>,
+        version: u8,
+        ttisgmt_count: u32,
+        ttisstd_count: u32,
+        leap_count: u32,
+        time_count: u32,
+        type_count: u32,
+        char_count: u32,
+    ) {
+        data.extend_from_slice(b"TZif");
+        data.push(version);
+        data.extend_from_slice(&[0; 15]);
+        for value in [
+            ttisgmt_count,
+            ttisstd_count,
+            leap_count,
+            time_count,
+            type_count,
+            char_count,
+        ] {
+            data.extend_from_slice(&value.to_be_bytes());
+        }
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_linux_machine_info() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/machine-info",
@@ -6362,6 +6605,9 @@ COMMIT
         assert!(is_system_identity_source("/etc/machine-info"));
         assert!(is_system_identity_source("/etc/default/locale"));
         assert!(is_system_identity_source("/etc/timezone"));
+        assert!(is_system_identity_source("/etc/localtime"));
+        assert!(is_system_identity_source("/private/etc/localtime"));
+        assert!(is_system_identity_source("/var/db/timezone/localtime"));
         assert!(is_system_identity_source("/etc/fstab"));
         assert!(is_system_identity_source("/etc/mtab"));
         assert!(is_system_identity_source("/etc/network/interfaces"));
