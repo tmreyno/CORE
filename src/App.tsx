@@ -896,7 +896,7 @@ function App() {
     try {
       const canProceed = await closeCurrentProject("switch-project");
       if (!canProceed) return;
-      if (!isTauri && !path) {
+      if (!path) {
         await _handleLoadProject();
         return;
       }
