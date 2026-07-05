@@ -116,16 +116,7 @@ pub fn open_container_entry_source_with_options(
     }
 
     if is_raw_type(&kind) {
-        let vfs = raw::vfs::RawVfs::open_filesystem(&container_path)
-            .or_else(|_| raw::vfs::RawVfs::open(&container_path))
-            .map_err(|e| {
-                source_error(
-                    &container_path,
-                    &entry_path,
-                    &container_type,
-                    format!("Raw VFS open failed: {e:?}"),
-                )
-            })?;
+        let vfs = open_raw_vfs_for_entry(&container_path, &entry_path, &container_type)?;
         return Ok(Box::new(VfsEntryByteSource::new(
             Arc::new(vfs),
             container_path,
@@ -140,6 +131,24 @@ pub fn open_container_entry_source_with_options(
         &container_type,
         format!("Unsupported container entry source type: {container_type}"),
     ))
+}
+
+fn open_raw_vfs_for_entry(
+    container_path: &str,
+    entry_path: &str,
+    container_type: &str,
+) -> EvidenceSourceResult<raw::vfs::RawVfs> {
+    match raw::vfs::RawVfs::open_filesystem(container_path) {
+        Ok(vfs) if vfs.partition_count() > 0 => Ok(vfs),
+        Ok(_) | Err(_) => raw::vfs::RawVfs::open(container_path).map_err(|e| {
+            source_error(
+                container_path,
+                entry_path,
+                container_type,
+                format!("Raw VFS open failed: {e:?}"),
+            )
+        }),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -687,6 +696,32 @@ mod tests {
                 "{kind} should route to RawVfs"
             );
         }
+    }
+
+    #[test]
+    fn raw_entry_source_reads_physical_fallback_virtual_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let container_path = temp_dir.path().join("disk.img");
+        std::fs::write(&container_path, b"abcdef").unwrap();
+
+        let source = open_container_entry_source(
+            container_path.to_string_lossy().to_string(),
+            "/disk.raw",
+            "raw",
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(source.len().unwrap(), 6);
+        assert_eq!(source.read_range(2, 3).unwrap(), b"cde");
+        assert_eq!(
+            source.source_ref(),
+            EvidenceSourceRef::VfsEntry {
+                container_path: container_path.to_string_lossy().to_string(),
+                entry_path: "/disk.raw".to_string(),
+                container_type: Some("raw".to_string()),
+            }
+        );
     }
 
     #[test]
