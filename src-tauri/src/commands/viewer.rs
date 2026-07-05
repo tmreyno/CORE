@@ -120,18 +120,26 @@ fn binary_chunk_source_error_to_string(
 
 /// Read a chunk of a file for hex viewing
 #[tauri::command]
-pub fn viewer_read_chunk(
+pub async fn viewer_read_chunk(
     path: String,
     offset: u64,
     size: Option<usize>,
 ) -> Result<viewer::FileChunk, String> {
-    viewer::read_file_chunk(&path, offset, size).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        viewer::read_file_chunk(&path, offset, size).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Failed to join file chunk read task: {e}"))?
 }
 
 /// Detect file type from magic bytes and extension
 #[tauri::command]
-pub fn viewer_detect_type(path: String) -> Result<viewer::FileTypeInfo, String> {
-    viewer::detect_file_type(&path).map_err(|e| e.to_string())
+pub async fn viewer_detect_type(path: String) -> Result<viewer::FileTypeInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        viewer::detect_file_type(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Failed to join file type detection task: {e}"))?
 }
 
 /// Detect source type from magic bytes and source extension.
@@ -164,8 +172,12 @@ fn detect_type_for_source(
 
 /// Parse file header and extract metadata with regions for hex highlighting
 #[tauri::command]
-pub fn viewer_parse_header(path: String) -> Result<viewer::ParsedMetadata, String> {
-    viewer::parse_file_header(&path).map_err(|e| e.to_string())
+pub async fn viewer_parse_header(path: String) -> Result<viewer::ParsedMetadata, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        viewer::parse_file_header(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Failed to join file header parse task: {e}"))?
 }
 
 /// Parse source header and extract metadata with regions for hex highlighting.
@@ -233,15 +245,27 @@ pub async fn viewer_analyze_source(
 
 /// Read file as text for text viewer
 #[tauri::command]
-pub fn viewer_read_text(path: String, offset: u64, max_chars: usize) -> Result<String, String> {
-    viewer::read_file_text(&path, offset, max_chars).map_err(|e| e.to_string())
+pub async fn viewer_read_text(
+    path: String,
+    offset: u64,
+    max_chars: usize,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        viewer::read_file_text(&path, offset, max_chars).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Failed to join text read task: {e}"))?
 }
 
 /// Get binary viewer metadata before choosing full or ranged reads.
 #[tauri::command]
-pub fn viewer_get_binary_info(path: String) -> Result<ViewerBinaryInfo, String> {
-    let source = LocalFileByteSource::new(&path);
-    binary_info_for_source(path, &source)
+pub async fn viewer_get_binary_info(path: String) -> Result<ViewerBinaryInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = LocalFileByteSource::new(&path);
+        binary_info_for_source(path, &source)
+    })
+    .await
+    .map_err(|e| format!("Failed to join binary info task: {e}"))?
 }
 
 /// Get binary viewer metadata for a local file or supported container entry.
@@ -261,11 +285,15 @@ pub async fn viewer_get_binary_info_source(
 /// Read entire file as base64 for PDF/binary viewing
 /// Returns the file content as a base64-encoded string
 #[tauri::command]
-pub fn viewer_read_binary_base64(path: String) -> Result<String, String> {
-    let source = LocalFileByteSource::new(&path);
-    let data = read_all_with_limit(&source, MAX_INLINE_BINARY_BASE64_BYTES)
-        .map_err(source_error_to_string)?;
-    Ok(STANDARD.encode(&data))
+pub async fn viewer_read_binary_base64(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = LocalFileByteSource::new(&path);
+        let data = read_all_with_limit(&source, MAX_INLINE_BINARY_BASE64_BYTES)
+            .map_err(source_error_to_string)?;
+        Ok(STANDARD.encode(&data))
+    })
+    .await
+    .map_err(|e| format!("Failed to join binary read task: {e}"))?
 }
 
 /// Read a local file or supported container entry as base64 for image/PDF/binary viewing.
@@ -283,13 +311,17 @@ pub async fn viewer_read_binary_source_base64(source: HashSourceInput) -> Result
 
 /// Read a file range as base64 for large binary/PDF viewers.
 #[tauri::command]
-pub fn viewer_read_binary_base64_chunk(
+pub async fn viewer_read_binary_base64_chunk(
     path: String,
     offset: u64,
     size: usize,
 ) -> Result<ViewerBinaryBase64Chunk, String> {
-    let source = LocalFileByteSource::new(&path);
-    read_binary_base64_chunk_for_source(path, &source, offset, size)
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = LocalFileByteSource::new(&path);
+        read_binary_base64_chunk_for_source(path, &source, offset, size)
+    })
+    .await
+    .map_err(|e| format!("Failed to join binary chunk read task: {e}"))?
 }
 
 /// Read a source range as base64 for large binary/PDF viewers.
