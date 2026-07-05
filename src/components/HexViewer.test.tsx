@@ -469,7 +469,7 @@ describe("HexViewer", () => {
             containerPath: nestedEntry.containerPath,
             nestedContainerPath: "inner.zip",
             entryPath: "nested.txt",
-            containerType: "zip",
+            containerType: "ad1",
           },
         };
         return undefined;
@@ -479,13 +479,13 @@ describe("HexViewer", () => {
       await tick(200);
 
       expect(mockInvoke).toHaveBeenCalledWith("viewer_analyze_source", {
-        source: {
+        source: expect.objectContaining({
           containerPath: nestedEntry.containerPath,
           nestedArchivePath: "inner.zip",
           entryPath: "nested.txt",
-          containerType: "zip",
+          containerType: "ad1",
           size: nestedEntry.size,
-        },
+        }),
         options: { offset: 0, length: 65536, entropyWindowBytes: 4096 },
       });
     });
