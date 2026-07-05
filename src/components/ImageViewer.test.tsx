@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
+import { createSignal } from "solid-js";
 import { ImageViewer } from "./ImageViewer";
 import { mockInvoke } from "../__tests__/setup";
 
@@ -135,6 +136,33 @@ describe("ImageViewer", () => {
 
       const img = container.querySelector("img");
       expect(img!.src).toContain("data:image/gif;base64,");
+    });
+
+    it("ignores stale image loads when the selected path changes", async () => {
+      let resolveFirst: (value: string) => void = () => {};
+      const firstLoad = new Promise<string>((resolve) => {
+        resolveFirst = resolve;
+      });
+      const SECOND_BASE64 = "c2Vjb25k";
+      const [path, setPath] = createSignal("/evidence/first.jpg");
+      mockInvoke
+        .mockReturnValueOnce(firstLoad)
+        .mockResolvedValueOnce(SECOND_BASE64);
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path={path()} />
+      ));
+
+      setPath("/evidence/second.png");
+      await tick();
+      resolveFirst(MOCK_BASE64);
+      await tick();
+
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img!.src).toContain("data:image/png;base64,");
+      expect(img!.src).toContain(SECOND_BASE64);
+      expect(img!.src).not.toContain(MOCK_BASE64);
     });
   });
 

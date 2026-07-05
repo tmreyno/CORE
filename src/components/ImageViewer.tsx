@@ -88,11 +88,11 @@ export function ImageViewer(props: ImageViewerProps) {
   const [naturalSize, setNaturalSize] = createSignal<{ width: number; height: number } | null>(null);
 
   let containerRef: HTMLDivElement | undefined;
+  let loadGeneration = 0;
 
   // Memoized values to avoid recalculation
   const filename = createMemo(() => getBasename(props.path) || props.path);
   const extension = createMemo(() => props.path.split('.').pop()?.toLowerCase() || '');
-  const mimeType = createMemo(() => getMimeType(props.path));
   const hasLimitedSupport = createMemo(() => LIMITED_SUPPORT_EXTENSIONS.has(extension()));
   const zoomPercent = createMemo(() => Math.round(scale() * 100));
   const dimensionText = createMemo(() => {
@@ -106,6 +106,11 @@ export function ImageViewer(props: ImageViewerProps) {
 
   // Load image as base64
   const loadImage = async () => {
+    const generation = ++loadGeneration;
+    const requestedPath = props.path;
+    const requestedSource = props.source;
+    const requestedMimeType = getMimeType(requestedPath);
+
     setLoading(true);
     setError(null);
     setScale(1.0);
@@ -116,14 +121,18 @@ export function ImageViewer(props: ImageViewerProps) {
         throw new Error("Image evidence viewing is available in the desktop app.");
       }
 
-      const base64Data = props.source
-        ? await commands.viewer.readBinarySourceBase64(props.source)
-        : await commands.viewer.readBinaryBase64(props.path);
-      setImageSrc(`data:${mimeType()};base64,${base64Data}`);
+      const base64Data = requestedSource
+        ? await commands.viewer.readBinarySourceBase64(requestedSource)
+        : await commands.viewer.readBinaryBase64(requestedPath);
+
+      if (generation !== loadGeneration) return;
+      setImageSrc(`data:${requestedMimeType};base64,${base64Data}`);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to load image:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      if (generation !== loadGeneration) return;
       setLoading(false);
     }
   };
