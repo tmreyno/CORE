@@ -501,6 +501,10 @@ fn is_unix_account_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/private/etc/passwd")
         || source_id.ends_with("/etc/group")
         || source_id.ends_with("/private/etc/group")
+        || source_id.ends_with("/etc/shadow")
+        || source_id.ends_with("/private/etc/shadow")
+        || source_id.ends_with("/etc/gshadow")
+        || source_id.ends_with("/private/etc/gshadow")
 }
 
 fn is_windows_wifi_profile_source(source_id: &str) -> bool {
@@ -1627,9 +1631,19 @@ struct UnixAccountMetadata {
     regular_user_count: usize,
     login_user_count: usize,
     group_count: usize,
+    shadow_entry_count: usize,
+    password_hash_user_count: usize,
+    password_locked_user_count: usize,
+    password_disabled_user_count: usize,
+    password_empty_user_count: usize,
     users: Vec<String>,
     regular_users: Vec<String>,
     login_users: Vec<String>,
+    password_hash_users: Vec<String>,
+    password_locked_users: Vec<String>,
+    password_disabled_users: Vec<String>,
+    password_empty_users: Vec<String>,
+    password_hash_algorithms: Vec<String>,
     home_directories: Vec<String>,
     login_shells: Vec<String>,
     groups: Vec<String>,
@@ -1642,14 +1656,21 @@ struct UnixAccountMetadata {
 
 fn parse_unix_account_metadata(source_id: &str, text: &str) -> BTreeMap<String, String> {
     let mut values = UnixAccountMetadata::default();
-    let config_type =
-        if source_id.ends_with("/etc/group") || source_id.ends_with("/private/etc/group") {
-            parse_unix_group_metadata(text, &mut values);
-            "unix-group"
-        } else {
-            parse_unix_passwd_metadata(text, &mut values);
-            "unix-passwd"
-        };
+    let config_type = if source_id.ends_with("/etc/group")
+        || source_id.ends_with("/private/etc/group")
+    {
+        parse_unix_group_metadata(text, &mut values);
+        "unix-group"
+    } else if source_id.ends_with("/etc/shadow") || source_id.ends_with("/private/etc/shadow") {
+        parse_unix_shadow_metadata(text, &mut values);
+        "unix-shadow"
+    } else if source_id.ends_with("/etc/gshadow") || source_id.ends_with("/private/etc/gshadow") {
+        parse_unix_gshadow_metadata(text, &mut values);
+        "unix-gshadow"
+    } else {
+        parse_unix_passwd_metadata(text, &mut values);
+        "unix-passwd"
+    };
 
     unix_account_metadata_to_map(values, config_type)
 }
@@ -1756,6 +1777,134 @@ fn parse_unix_group_metadata(text: &str, values: &mut UnixAccountMetadata) {
     }
 }
 
+fn parse_unix_shadow_metadata(text: &str, values: &mut UnixAccountMetadata) {
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 2 {
+            continue;
+        }
+        let name = fields[0].trim();
+        let credential = fields[1].trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        values.shadow_entry_count = values.shadow_entry_count.saturating_add(1);
+        match unix_shadow_password_status(credential) {
+            UnixShadowPasswordStatus::HasHash(algorithm) => {
+                values.password_hash_user_count = values.password_hash_user_count.saturating_add(1);
+                push_unique_limited(
+                    &mut values.password_hash_users,
+                    truncate_metadata_value(name, 120),
+                );
+                push_unique_limited(&mut values.password_hash_algorithms, algorithm.to_string());
+            }
+            UnixShadowPasswordStatus::Locked => {
+                values.password_locked_user_count =
+                    values.password_locked_user_count.saturating_add(1);
+                push_unique_limited(
+                    &mut values.password_locked_users,
+                    truncate_metadata_value(name, 120),
+                );
+            }
+            UnixShadowPasswordStatus::Disabled => {
+                values.password_disabled_user_count =
+                    values.password_disabled_user_count.saturating_add(1);
+                push_unique_limited(
+                    &mut values.password_disabled_users,
+                    truncate_metadata_value(name, 120),
+                );
+            }
+            UnixShadowPasswordStatus::Empty => {
+                values.password_empty_user_count =
+                    values.password_empty_user_count.saturating_add(1);
+                push_unique_limited(
+                    &mut values.password_empty_users,
+                    truncate_metadata_value(name, 120),
+                );
+            }
+        }
+    }
+}
+
+fn parse_unix_gshadow_metadata(text: &str, values: &mut UnixAccountMetadata) {
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 4 {
+            continue;
+        }
+        let name = fields[0].trim();
+        let admins = fields[2].trim();
+        let members = fields[3].trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        values.group_count = values.group_count.saturating_add(1);
+        push_unique_limited(&mut values.groups, truncate_metadata_value(name, 120));
+        if !admins.is_empty() {
+            push_unique_limited(
+                &mut values.admin_groups,
+                truncate_metadata_value(&format!("{name}:admins={admins}"), 160),
+            );
+        }
+        if !members.is_empty() {
+            push_unique_limited(
+                &mut values.group_members,
+                truncate_metadata_value(&format!("{name}={members}"), 160),
+            );
+        }
+    }
+}
+
+enum UnixShadowPasswordStatus {
+    HasHash(&'static str),
+    Locked,
+    Disabled,
+    Empty,
+}
+
+fn unix_shadow_password_status(credential: &str) -> UnixShadowPasswordStatus {
+    let credential = credential.trim();
+    if credential.is_empty() {
+        return UnixShadowPasswordStatus::Empty;
+    }
+    if credential.starts_with('!') {
+        return UnixShadowPasswordStatus::Locked;
+    }
+    if credential.starts_with('*') {
+        return UnixShadowPasswordStatus::Disabled;
+    }
+    UnixShadowPasswordStatus::HasHash(unix_shadow_hash_algorithm(credential))
+}
+
+fn unix_shadow_hash_algorithm(credential: &str) -> &'static str {
+    if credential.starts_with("$y$") {
+        "yescrypt"
+    } else if credential.starts_with("$6$") {
+        "sha512-crypt"
+    } else if credential.starts_with("$5$") {
+        "sha256-crypt"
+    } else if credential.starts_with("$2a$")
+        || credential.starts_with("$2b$")
+        || credential.starts_with("$2y$")
+    {
+        "bcrypt"
+    } else if credential.starts_with("$1$") {
+        "md5-crypt"
+    } else {
+        "traditional-crypt"
+    }
+}
+
 fn is_unix_regular_user(uid: Option<u32>) -> bool {
     uid.is_some_and(|uid| (UNIX_REGULAR_USER_MIN_UID..UNIX_REGULAR_USER_MAX_UID).contains(&uid))
 }
@@ -1806,6 +1955,36 @@ fn unix_account_metadata_to_map(
             values.group_count.to_string(),
         );
     }
+    if values.shadow_entry_count > 0 {
+        metadata.insert(
+            "system.shadowEntryCount".to_string(),
+            values.shadow_entry_count.to_string(),
+        );
+    }
+    if values.password_hash_user_count > 0 {
+        metadata.insert(
+            "system.passwordHashUserCount".to_string(),
+            values.password_hash_user_count.to_string(),
+        );
+    }
+    if values.password_locked_user_count > 0 {
+        metadata.insert(
+            "system.passwordLockedUserCount".to_string(),
+            values.password_locked_user_count.to_string(),
+        );
+    }
+    if values.password_disabled_user_count > 0 {
+        metadata.insert(
+            "system.passwordDisabledUserCount".to_string(),
+            values.password_disabled_user_count.to_string(),
+        );
+    }
+    if values.password_empty_user_count > 0 {
+        metadata.insert(
+            "system.passwordEmptyUserCount".to_string(),
+            values.password_empty_user_count.to_string(),
+        );
+    }
     if values.root_present {
         metadata.insert("system.rootAccountPresent".to_string(), "true".to_string());
     }
@@ -1818,6 +1997,31 @@ fn unix_account_metadata_to_map(
     insert_joined_metadata(&mut metadata, "system.localUsers", &values.users);
     insert_joined_metadata(&mut metadata, "system.regularUsers", &values.regular_users);
     insert_joined_metadata(&mut metadata, "system.loginUsers", &values.login_users);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.passwordHashUsers",
+        &values.password_hash_users,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.passwordLockedUsers",
+        &values.password_locked_users,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.passwordDisabledUsers",
+        &values.password_disabled_users,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.passwordEmptyUsers",
+        &values.password_empty_users,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.passwordHashAlgorithms",
+        &values.password_hash_algorithms,
+    );
     insert_joined_metadata(
         &mut metadata,
         "system.homeDirectories",
@@ -4317,6 +4521,101 @@ nameserver 1.1.1.1
     }
 
     #[test]
+    fn system_identity_metadata_extracts_unix_shadow_safely() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/shadow",
+            b"root:$6$salt$abcdef:19500:0:99999:7:::\n\
+              alice:$y$j9T$salt$hash:19501:0:99999:7:::\n\
+              bob:!:19502:0:99999:7:::\n\
+              daemon:*:19503:0:99999:7:::\n\
+              test::19504:0:99999:7:::\n",
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.accountConfigType").map(String::as_str),
+            Some("unix-shadow")
+        );
+        assert_eq!(
+            metadata.get("system.shadowEntryCount").map(String::as_str),
+            Some("5")
+        );
+        assert_eq!(
+            metadata
+                .get("system.passwordHashUserCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata
+                .get("system.passwordLockedUserCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("system.passwordDisabledUserCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("system.passwordEmptyUserCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata.get("system.passwordHashUsers").map(String::as_str),
+            Some("root; alice")
+        );
+        assert_eq!(
+            metadata
+                .get("system.passwordHashAlgorithms")
+                .map(String::as_str),
+            Some("sha512-crypt; yescrypt")
+        );
+        assert!(!metadata
+            .values()
+            .any(|value| value.contains("$6$salt") || value.contains("$y$j9T")));
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_unix_gshadow_accounts() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/gshadow",
+            b"root:*::\nwheel:!:root:alice\nsudo:!:alice:bob,carol\nusers:!::alice,bob\n",
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.accountConfigType").map(String::as_str),
+            Some("unix-gshadow")
+        );
+        assert_eq!(
+            metadata.get("system.localGroupCount").map(String::as_str),
+            Some("4")
+        );
+        assert_eq!(
+            metadata.get("system.localGroups").map(String::as_str),
+            Some("root; wheel; sudo; users")
+        );
+        assert_eq!(
+            metadata.get("system.adminGroups").map(String::as_str),
+            Some("wheel:admins=root; sudo:admins=alice")
+        );
+        assert_eq!(
+            metadata.get("system.groupMembers").map(String::as_str),
+            Some("wheel=alice; sudo=bob,carol; users=alice,bob")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_network_manager_profile() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/NetworkManager/system-connections/Corp WiFi.nmconnection",
@@ -4990,6 +5289,8 @@ COMMIT
         assert!(is_system_identity_source("/etc/hosts"));
         assert!(is_system_identity_source("/etc/passwd"));
         assert!(is_system_identity_source("/etc/group"));
+        assert!(is_system_identity_source("/etc/shadow"));
+        assert!(is_system_identity_source("/etc/gshadow"));
         assert!(is_system_identity_source(
             "/etc/NetworkManager/system-connections/Corp WiFi.nmconnection"
         ));
