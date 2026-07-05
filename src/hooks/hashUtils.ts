@@ -104,7 +104,7 @@ export async function extractAd1StoredHashes(
         algorithm: string;
         hash: string;
       };
-    }>("logical_info", { path });
+    }>("logical_info", { inputPath: path, includeTree: false });
 
     const hashes: StoredHashEntry[] = [];
 

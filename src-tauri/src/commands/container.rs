@@ -27,27 +27,33 @@ const CONTAINER_METADATA_BATCH_MAX_ITEMS: usize = 10_000;
 // =============================================================================
 
 #[tauri::command]
-pub fn logical_info(
+pub async fn logical_info(
     #[allow(non_snake_case)] inputPath: String,
     #[allow(non_snake_case)] includeTree: bool,
 ) -> Result<containers::ContainerInfo, String> {
-    containers::info(&inputPath, includeTree)
+    tauri::async_runtime::spawn_blocking(move || containers::info(&inputPath, includeTree))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 /// Fast info - only reads headers, doesn't parse full item trees
 #[tauri::command]
-pub fn logical_info_fast(
+pub async fn logical_info_fast(
     #[allow(non_snake_case)] inputPath: String,
 ) -> Result<containers::ContainerInfo, String> {
-    containers::info_fast(&inputPath)
+    tauri::async_runtime::spawn_blocking(move || containers::info_fast(&inputPath))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 /// Get only stored hashes - minimal parsing, fastest option
 #[tauri::command]
-pub fn get_stored_hashes_only(
+pub async fn get_stored_hashes_only(
     #[allow(non_snake_case)] inputPath: String,
 ) -> Result<Vec<containers::StoredHash>, String> {
-    containers::get_stored_hashes_only(&inputPath)
+    tauri::async_runtime::spawn_blocking(move || containers::get_stored_hashes_only(&inputPath))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 fn checked_l01_read_offset(data_offset: u64, offset: u64) -> Option<u64> {
