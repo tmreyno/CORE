@@ -888,6 +888,11 @@ function App() {
   
   // Loading-wrapped versions of slow project operations
   const handleLoadProject = async (path?: string) => {
+    if (!isTauri && !path && !projectManager.hasProject()) {
+      await _handleLoadProject();
+      return;
+    }
+
     const canProceed = await closeCurrentProject("switch-project");
     if (!canProceed) return;
     if (!isTauri && !path) {
@@ -926,6 +931,29 @@ function App() {
     const canProceed = await closeCurrentProject("new-project");
     if (!canProceed) return;
     await globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+  };
+  const handleNewProject = () => {
+    if (isAcquireEdition()) {
+      setShowAcquireSessionDialog(true);
+      return;
+    }
+
+    if (!isTauri) {
+      void handleProjectSetupComplete({
+        projectName: "Browser Preview Project",
+        projectRoot: "browser-preview-project",
+        evidencePath: "browser-preview-project/Evidence",
+        processedDbPath: "browser-preview-project/Processed",
+        caseDocumentsPath: "browser-preview-project/Case.Documents",
+        exportsPath: "browser-preview-project/Exports",
+        discoveredEvidence: [],
+        discoveredDatabases: [],
+        loadStoredHashes: false,
+      });
+      return;
+    }
+
+    setShowProjectWizard(true);
   };
   const handleScanEvidence = () =>
     globalLoading.run("Scanning for evidence…", () => fileManager.scanForFiles());
@@ -1107,7 +1135,7 @@ function App() {
     onToggleRightPanel: () => setRightCollapsed((prev) => !prev),
     onKeyboardShortcuts: () => setShowShortcutsModal(true),
     onCommandPalette: () => setShowCommandPalette(true),
-    onNewProject: () => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true),
+    onNewProject: handleNewProject,
     onExport: () => { if (projectManager.hasProject()) openExportWithDrives(); },
     onGenerateReport: () => { if (projectManager.hasProject()) setShowReportWizard(true); },
     onScanEvidence: () => handleScanEvidence(),
@@ -1322,7 +1350,7 @@ function App() {
         saveContextMenu={saveContextMenu}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
-        onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
+        onNewProject={handleNewProject}
         onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
         recentProjects={welcomeModalRecentProjects}
         onSelectRecentProject={handleOpenRecentProject}
@@ -1550,7 +1578,7 @@ function App() {
               onCommandPalette={() => setShowCommandPalette(true)}
               onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
               onOpenRecentProject={handleOpenRecentProject}
-              onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
+              onNewProject={handleNewProject}
               projectName={() => (isAcquireEdition() ? sessionManager?.projectName() : projectManager.projectName()) || undefined}
               hasProject={acquireHasProject}
               evidenceCount={() => fileManager.discoveredFiles().length}
@@ -1728,7 +1756,7 @@ function App() {
               onSourceAdd={handleSourceAdd}
               onSourceRemove={handleSourceRemove}
               onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
-              onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
+              onNewProject={handleNewProject}
             />
           </aside>
         </Show>
@@ -1765,7 +1793,7 @@ function App() {
             viewMode={centerPaneTabs.viewMode}
             onViewModeChange={centerPaneTabs.setViewMode}
             onOpenProject={isAcquireEdition() ? handleLoadSession : handleLoadProject}
-            onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
+            onNewProject={handleNewProject}
             projectName={projectManager.projectName}
             projectRoot={projectManager.rootPath}
             evidenceCount={() => fileManager.discoveredFiles().length}
