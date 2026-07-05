@@ -146,19 +146,23 @@ pub struct HashSourceProgress {
 
 /// Check if a container type string represents an EWF-based format (E01, Ex01, L01)
 fn is_ewf_type(container_type: &str) -> bool {
+    let container_type = container_type.trim().to_lowercase();
     container_type.contains("e01")
         || container_type.contains("encase")
+        || container_type.contains("ewf")
         || container_type.contains("ex01")
         || container_type.contains("l01")
 }
 
 /// Check if a container type string represents an AD1 format
 fn is_ad1_type(container_type: &str) -> bool {
+    let container_type = container_type.trim().to_lowercase();
     container_type.contains("ad1")
 }
 
 /// Check if a container type string represents an AFF4 format
 fn is_aff4_type(container_type: &str) -> bool {
+    let container_type = container_type.trim().to_lowercase();
     container_type.contains("aff4") || container_type.contains("aff")
 }
 
@@ -1796,8 +1800,21 @@ mod tests {
     }
 
     #[test]
+    fn is_ewf_type_matches_extension_and_mime_identifiers() {
+        assert!(is_ewf_type("e01"));
+        assert!(is_ewf_type("EWF"));
+        assert!(is_ewf_type("application/x-ewf"));
+        assert!(is_ewf_type("EWF-E01"));
+        assert!(is_ewf_type("EnCase (E01)"));
+        assert!(!is_ewf_type("ad1"));
+        assert!(!is_ewf_type("raw"));
+    }
+
+    #[test]
     fn batch_hash_cache_scope_separates_container_semantics() {
         assert_eq!(batch_hash_cache_scope("E01"), "decoded-ewf");
+        assert_eq!(batch_hash_cache_scope("ewf"), "decoded-ewf");
+        assert_eq!(batch_hash_cache_scope("application/x-ewf"), "decoded-ewf");
         assert_eq!(batch_hash_cache_scope("ad1"), "ad1-segments");
         assert_eq!(batch_hash_cache_scope("AFF4"), "decoded-aff4");
         assert_eq!(batch_hash_cache_scope("raw"), "raw-file:raw");
