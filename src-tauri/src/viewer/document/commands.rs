@@ -959,8 +959,8 @@ fn cached_registry_source_path(
     source_id: &str,
     size: u64,
 ) -> Result<PathBuf, String> {
-    let cache_key = registry_source_cache_key(source_ref, size);
-    if let Some(path) = registry_source_cache_get(&cache_key) {
+    let cache_key = materialized_source_cache_key(source_ref, size);
+    if let Some(path) = materialized_source_cache_get(&REGISTRY_SOURCE_CACHE, &cache_key) {
         return Ok(path);
     }
 
@@ -970,7 +970,12 @@ fn cached_registry_source_path(
     let cache_path = cache_dir.join(format!("{cache_key}.hive"));
 
     if cache_path.exists() {
-        registry_source_cache_insert(cache_key, cache_path.clone());
+        materialized_source_cache_insert(
+            &REGISTRY_SOURCE_CACHE,
+            REGISTRY_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
         return Ok(cache_path);
     }
 
@@ -988,7 +993,12 @@ fn cached_registry_source_path(
     temp.persist(&cache_path)
         .map_err(|e| format!("Failed to persist registry source cache copy: {}", e.error))?;
 
-    registry_source_cache_insert(cache_key, cache_path.clone());
+    materialized_source_cache_insert(
+        &REGISTRY_SOURCE_CACHE,
+        REGISTRY_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
     tracing::debug!(
         source_id,
         path = %cache_path.display(),
@@ -997,8 +1007,11 @@ fn cached_registry_source_path(
     Ok(cache_path)
 }
 
-fn registry_source_cache_get(cache_key: &str) -> Option<PathBuf> {
-    let mut cache = REGISTRY_SOURCE_CACHE.lock().ok()?;
+fn materialized_source_cache_get(
+    cache: &LazyLock<Mutex<HashMap<String, PathBuf>>>,
+    cache_key: &str,
+) -> Option<PathBuf> {
+    let mut cache = cache.lock().ok()?;
     let path = cache.get(cache_key).cloned()?;
     if path.exists() {
         return Some(path);
@@ -1007,12 +1020,17 @@ fn registry_source_cache_get(cache_key: &str) -> Option<PathBuf> {
     None
 }
 
-fn registry_source_cache_insert(cache_key: String, cache_path: PathBuf) {
-    let Ok(mut cache) = REGISTRY_SOURCE_CACHE.lock() else {
+fn materialized_source_cache_insert(
+    cache: &LazyLock<Mutex<HashMap<String, PathBuf>>>,
+    max_entries: usize,
+    cache_key: String,
+    cache_path: PathBuf,
+) {
+    let Ok(mut cache) = cache.lock() else {
         return;
     };
-    if cache.len() >= REGISTRY_SOURCE_CACHE_MAX_ENTRIES && !cache.contains_key(&cache_key) {
-        let remove_count = cache.len() - REGISTRY_SOURCE_CACHE_MAX_ENTRIES + 1;
+    if cache.len() >= max_entries && !cache.contains_key(&cache_key) {
+        let remove_count = cache.len() - max_entries + 1;
         let keys: Vec<String> = cache.keys().take(remove_count).cloned().collect();
         for key in keys {
             if let Some(path) = cache.remove(&key) {
@@ -1023,7 +1041,7 @@ fn registry_source_cache_insert(cache_key: String, cache_path: PathBuf) {
     cache.insert(cache_key, cache_path);
 }
 
-fn registry_source_cache_key(source_ref: &EvidenceSourceRef, size: u64) -> String {
+fn materialized_source_cache_key(source_ref: &EvidenceSourceRef, size: u64) -> String {
     let mut hasher = DefaultHasher::new();
     source_ref.display_id().hash(&mut hasher);
     size.hash(&mut hasher);
@@ -1117,13 +1135,18 @@ use super::database_viewer::{
 };
 
 const DATABASE_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const DATABASE_SOURCE_CACHE_MAX_ENTRIES: usize = 8;
+
+static DATABASE_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn with_database_source<T>(
     source: HashSourceInput,
     operation: impl FnOnce(&Path, String) -> Result<T, String>,
 ) -> Result<T, String> {
     let byte_source = open_hash_source(&source)?;
-    let source_id = byte_source.source_ref().display_id();
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
     if size > DATABASE_SOURCE_MAX_BYTES {
         return Err(format!(
@@ -1132,19 +1155,67 @@ fn with_database_source<T>(
         ));
     }
 
+    if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+        return operation(Path::new(path), source_id);
+    }
+
+    let cached_path =
+        cached_database_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+    operation(&cached_path, source_id)
+}
+
+fn cached_database_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = materialized_source_cache_key(source_ref, size);
+    if let Some(path) = materialized_source_cache_get(&DATABASE_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-database-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create database source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.sqlite"));
+
+    if cache_path.exists() {
+        materialized_source_cache_insert(
+            &DATABASE_SOURCE_CACHE,
+            DATABASE_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-db-")
         .suffix(".sqlite")
-        .tempfile()
-        .map_err(|e| format!("Failed to create temporary database copy: {}", e))?;
-    copy_evidence_source_to_writer(byte_source.as_ref(), size, "database", &mut temp)?;
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary database copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "database", &mut temp)?;
     temp.flush()
-        .map_err(|e| format!("Failed to flush temporary database copy: {}", e))?;
+        .map_err(|e| format!("Failed to flush temporary database copy: {e}"))?;
     temp.as_file()
         .sync_all()
-        .map_err(|e| format!("Failed to sync temporary database copy: {}", e))?;
+        .map_err(|e| format!("Failed to sync temporary database copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist database source cache copy: {}", e.error))?;
 
-    operation(temp.path(), source_id)
+    materialized_source_cache_insert(
+        &DATABASE_SOURCE_CACHE,
+        DATABASE_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached database evidence source for viewer navigation"
+    );
+    Ok(cache_path)
 }
 
 /// Get overview information about a SQLite database
@@ -1447,7 +1518,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_source_cache_key_changes_with_size() {
+    fn materialized_source_cache_key_changes_with_size() {
         let source_ref = EvidenceSourceRef::VfsEntry {
             container_path: "/cases/windows.E01".to_string(),
             entry_path: "/Windows/System32/config/SYSTEM".to_string(),
@@ -1455,12 +1526,12 @@ mod tests {
         };
 
         assert_eq!(
-            registry_source_cache_key(&source_ref, 4096),
-            registry_source_cache_key(&source_ref, 4096)
+            materialized_source_cache_key(&source_ref, 4096),
+            materialized_source_cache_key(&source_ref, 4096)
         );
         assert_ne!(
-            registry_source_cache_key(&source_ref, 4096),
-            registry_source_cache_key(&source_ref, 8192)
+            materialized_source_cache_key(&source_ref, 4096),
+            materialized_source_cache_key(&source_ref, 8192)
         );
     }
 
@@ -1482,6 +1553,19 @@ mod tests {
         };
 
         with_registry_source(source, |path, source_id| {
+            assert_eq!(path, Path::new(&local_path));
+            assert_eq!(source_id, local_path);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn database_source_uses_local_file_without_materializing_copy() {
+        let (tmp, source) = create_sqlite_source();
+        let local_path = tmp.path().to_string_lossy().to_string();
+
+        with_database_source(source, |path, source_id| {
             assert_eq!(path, Path::new(&local_path));
             assert_eq!(source_id, local_path);
             Ok(())
