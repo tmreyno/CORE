@@ -89,9 +89,15 @@ where
 /// The database is associated with the calling window's label so each window
 /// can have its own project open independently.
 #[tauri::command]
-pub fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<String, String> {
-    let t0 = std::time::Instant::now();
+pub async fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<String, String> {
     let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || project_db_open_blocking(label, cffx_path))
+        .await
+        .map_err(|e| format!("Project DB open task failed: {}", e))?
+}
+
+fn project_db_open_blocking(label: String, cffx_path: String) -> Result<String, String> {
+    let t0 = std::time::Instant::now();
     let cffx = PathBuf::from(&cffx_path);
     let db_path = ProjectDatabase::db_path_for_project(&cffx);
 
@@ -122,8 +128,11 @@ pub fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<Strin
     }
 
     // Store keyed by the calling window's label
-    let mut guard = PROJECT_DBS.lock();
-    if let Some(old_db) = guard.insert(label.clone(), db) {
+    let old_db = {
+        let mut guard = PROJECT_DBS.lock();
+        guard.insert(label.clone(), db)
+    };
+    if let Some(old_db) = old_db {
         match old_db.wal_checkpoint() {
             Ok((log_size, frames)) => {
                 info!(
@@ -150,10 +159,19 @@ pub fn project_db_open(window: tauri::Window, cffx_path: String) -> Result<Strin
 /// Performs a WAL checkpoint before closing to ensure all data is flushed
 /// to the main database file (prevents data-only-in-WAL on external volumes).
 #[tauri::command]
-pub fn project_db_close(window: tauri::Window) -> Result<(), String> {
-    let label = window.label();
-    let mut guard = PROJECT_DBS.lock();
-    if let Some(db) = guard.get(label) {
+pub async fn project_db_close(window: tauri::Window) -> Result<(), String> {
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || project_db_close_blocking(label))
+        .await
+        .map_err(|e| format!("Project DB close task failed: {}", e))?
+}
+
+fn project_db_close_blocking(label: String) -> Result<(), String> {
+    let db = {
+        let mut guard = PROJECT_DBS.lock();
+        guard.remove(&label)
+    };
+    if let Some(db) = db {
         // Checkpoint WAL before closing — best-effort, don't fail the close
         match db.wal_checkpoint() {
             Ok((log_size, frames)) => {
@@ -166,8 +184,6 @@ pub fn project_db_close(window: tauri::Window) -> Result<(), String> {
                 warn!("WAL checkpoint on close failed (non-fatal): {}", e);
             }
         }
-    }
-    if guard.remove(label).is_some() {
         info!(window = %label, "Project DB closed");
         // Stop project-scoped audit logging
         crate::logging::clear_project_log();
@@ -192,10 +208,13 @@ pub fn project_db_path(window: tauri::Window) -> Result<String, String> {
 
 /// Get project database statistics for the calling window.
 #[tauri::command]
-pub fn project_db_get_stats(
+pub async fn project_db_get_stats(
     window: tauri::Window,
 ) -> Result<crate::project_db::ProjectDbStats, String> {
-    with_project_db(window.label(), |db| db.get_stats())
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || with_project_db(&label, |db| db.get_stats()))
+        .await
+        .map_err(|e| format!("Project DB stats task failed: {}", e))?
 }
 
 // =============================================================================
@@ -209,8 +228,11 @@ pub fn project_db_get_stats(
 /// before the window closes, but if the window is force-closed or crashes,
 /// this ensures the database connection is dropped and WAL is checkpointed.
 pub fn cleanup_window_project_db(label: &str) {
-    let mut guard = PROJECT_DBS.lock();
-    if let Some(db) = guard.get(label) {
+    let db = {
+        let mut guard = PROJECT_DBS.lock();
+        guard.remove(label)
+    };
+    if let Some(db) = db {
         match db.wal_checkpoint() {
             Ok((log_size, frames)) => {
                 info!(
@@ -222,8 +244,6 @@ pub fn cleanup_window_project_db(label: &str) {
                 warn!("WAL checkpoint on window destroy failed (non-fatal): {}", e);
             }
         }
-    }
-    if guard.remove(label).is_some() {
         info!(window = %label, "Project DB cleaned up on window destroy");
         // Stop project-scoped audit logging (safety net)
         crate::logging::clear_project_log();
