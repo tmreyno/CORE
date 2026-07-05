@@ -370,6 +370,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/system/library/coreservices/systemversion.plist")
         || source_id.ends_with("/library/preferences/systemconfiguration/com.apple.boot.plist")
         || source_id.ends_with("/library/preferences/systemconfiguration/networkinterfaces.plist")
+        || source_id.ends_with(
+            "/library/preferences/systemconfiguration/com.apple.airport.preferences.plist",
+        )
+        || source_id.ends_with("/library/preferences/com.apple.wifi.known-networks.plist")
         || source_id.ends_with("/library/preferences/.globalpreferences.plist")
         || source_id.ends_with("/library/receipts/installhistory.plist")
         || source_id.ends_with("/windows/system32/config/system")
@@ -737,6 +741,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         }
         "networkinterfaces.plist" => {
             metadata.extend(parse_macos_network_interfaces_metadata(data));
+        }
+        "com.apple.airport.preferences.plist" | "com.apple.wifi.known-networks.plist" => {
+            metadata.extend(parse_macos_wifi_metadata(data));
         }
         ".globalpreferences.plist" => {
             metadata.extend(parse_macos_global_preferences_metadata(data));
@@ -1410,6 +1417,133 @@ fn parse_macos_network_interfaces_metadata(data: &[u8]) -> BTreeMap<String, Stri
     }
 
     metadata
+}
+
+#[derive(Default)]
+struct MacosWifiMetadata {
+    ssids: Vec<String>,
+    security_types: Vec<String>,
+    auto_join_ssids: Vec<String>,
+    last_connected: Vec<String>,
+}
+
+fn parse_macos_wifi_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+    let mut values = MacosWifiMetadata::default();
+
+    collect_macos_wifi_metadata(&value, &mut values);
+
+    if !values.ssids.is_empty() {
+        metadata.insert(
+            "system.wifiKnownNetworkCount".to_string(),
+            values.ssids.len().to_string(),
+        );
+    }
+    insert_joined_metadata(&mut metadata, "system.wifiSsids", &values.ssids);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.wifiSecurityTypes",
+        &values.security_types,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.wifiAutoJoinSsids",
+        &values.auto_join_ssids,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.wifiLastConnected",
+        &values.last_connected,
+    );
+    metadata
+}
+
+fn collect_macos_wifi_metadata(value: &plist::Value, values: &mut MacosWifiMetadata) {
+    match value {
+        plist::Value::Dictionary(dict) => {
+            collect_macos_wifi_network_dict(dict, values);
+            for child in dict.values() {
+                collect_macos_wifi_metadata(child, values);
+            }
+        }
+        plist::Value::Array(items) => {
+            for child in items {
+                collect_macos_wifi_metadata(child, values);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_macos_wifi_network_dict(dict: &plist::Dictionary, values: &mut MacosWifiMetadata) {
+    let Some(ssid) = macos_wifi_ssid(dict) else {
+        return;
+    };
+    push_unique_limited(&mut values.ssids, ssid.clone());
+
+    for key in [
+        "SecurityType",
+        "Security",
+        "AuthType",
+        "EncryptionType",
+        "SupportedSecurityTypes",
+    ] {
+        if let Some(value) = plist_dict_string(dict, key) {
+            push_unique_limited(&mut values.security_types, value.to_string());
+        } else if let Some(list) = plist_dict_string_array(dict, key) {
+            for value in list {
+                push_unique_limited(&mut values.security_types, value);
+            }
+        }
+    }
+
+    if plist_dict_bool(dict, "AutoJoin").or_else(|| plist_dict_bool(dict, "AutoLogin"))
+        == Some(true)
+    {
+        push_unique_limited(&mut values.auto_join_ssids, ssid.clone());
+    }
+
+    for key in ["LastConnected", "LastAutoJoined", "LastJoined"] {
+        if let Some(date) = plist_dict_date(dict, key) {
+            push_unique_limited(&mut values.last_connected, format!("{ssid}={date}"));
+            break;
+        }
+    }
+}
+
+fn macos_wifi_ssid(dict: &plist::Dictionary) -> Option<String> {
+    for key in ["SSIDString", "SSID_STR", "SSID", "name"] {
+        if let Some(value) = plist_dict_string(dict, key) {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(truncate_metadata_value(value, 120));
+            }
+        }
+    }
+    for key in ["SSID", "SSIDData"] {
+        if let Some(value) = dict.get(key).and_then(plist_data_utf8_string) {
+            return Some(truncate_metadata_value(&value, 120));
+        }
+    }
+    None
+}
+
+fn plist_dict_bool(dict: &plist::Dictionary, key: &str) -> Option<bool> {
+    match dict.get(key)? {
+        plist::Value::Boolean(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn plist_data_utf8_string(value: &plist::Value) -> Option<String> {
+    let plist::Value::Data(data) = value else {
+        return None;
+    };
+    let value = std::str::from_utf8(data).ok()?.trim();
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 fn parse_macos_global_preferences_metadata(data: &[u8]) -> BTreeMap<String, String> {
@@ -2567,6 +2701,108 @@ dns-search=corp.example.com;
     }
 
     #[test]
+    fn system_identity_metadata_extracts_macos_wifi_preferences() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>KnownNetworks</key>
+  <dict>
+    <key>wifi.network.ssid.CorpNet</key>
+    <dict>
+      <key>SSIDString</key><string>CorpNet</string>
+      <key>SecurityType</key><string>WPA2 Personal</string>
+      <key>AutoJoin</key><true/>
+      <key>LastConnected</key><date>2026-06-01T12:34:56Z</date>
+    </dict>
+    <key>wifi.network.ssid.Guest</key>
+    <dict>
+      <key>SSIDString</key><string>Guest</string>
+      <key>SecurityType</key><string>Open</string>
+      <key>AutoJoin</key><false/>
+    </dict>
+  </dict>
+</dict>
+</plist>
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata
+                .get("system.wifiKnownNetworkCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.wifiSsids").map(String::as_str),
+            Some("CorpNet; Guest")
+        );
+        assert_eq!(
+            metadata.get("system.wifiSecurityTypes").map(String::as_str),
+            Some("WPA2 Personal; Open")
+        );
+        assert_eq!(
+            metadata.get("system.wifiAutoJoinSsids").map(String::as_str),
+            Some("CorpNet")
+        );
+        assert_eq!(
+            metadata.get("system.wifiLastConnected").map(String::as_str),
+            Some("CorpNet=2026-06-01T12:34:56Z")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_macos_known_networks_plist() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Library/Preferences/com.apple.wifi.known-networks.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>KnownNetworks</key>
+  <array>
+    <dict>
+      <key>SSID</key><data>Q2FzZUxhYg==</data>
+      <key>SupportedSecurityTypes</key>
+      <array>
+        <string>WPA3 Personal</string>
+        <string>WPA2 Personal</string>
+      </array>
+      <key>AutoLogin</key><true/>
+    </dict>
+  </array>
+</dict>
+</plist>
+"#,
+        );
+
+        assert_eq!(
+            metadata
+                .get("system.wifiKnownNetworkCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata.get("system.wifiSsids").map(String::as_str),
+            Some("CaseLab")
+        );
+        assert_eq!(
+            metadata.get("system.wifiSecurityTypes").map(String::as_str),
+            Some("WPA3 Personal; WPA2 Personal")
+        );
+        assert_eq!(
+            metadata.get("system.wifiAutoJoinSsids").map(String::as_str),
+            Some("CaseLab")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_global_preferences() {
         let metadata = system_identity_metadata_from_bytes(
             "/Library/Preferences/.GlobalPreferences.plist",
@@ -2695,6 +2931,12 @@ dns-search=corp.example.com;
         ));
         assert!(is_system_identity_source(
             "/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/Library/Preferences/com.apple.wifi.known-networks.plist"
         ));
         assert!(is_system_identity_source(
             "/Library/Preferences/.GlobalPreferences.plist"
