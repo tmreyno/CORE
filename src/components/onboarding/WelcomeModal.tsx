@@ -131,8 +131,8 @@ export function WelcomeModal(props: WelcomeModalProps) {
                       <button
                         class="flex items-center gap-2.5 p-3 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-lg transition-all duration-200 group"
                         onClick={() => {
-                          props.onClose();
                           props.onNewProject?.();
+                          props.onClose();
                         }}
                       >
                         <div class="p-1.5 bg-accent/20 rounded-md text-accent group-hover:scale-110 transition-transform">
@@ -150,8 +150,8 @@ export function WelcomeModal(props: WelcomeModalProps) {
                       <button
                         class="flex items-center gap-2.5 p-3 bg-bg-secondary/50 hover:bg-bg-hover border border-border/50 rounded-lg transition-all duration-200 group"
                         onClick={() => {
-                          props.onClose();
                           props.onOpenProject?.();
+                          props.onClose();
                         }}
                       >
                         <div class="p-1.5 bg-bg-hover rounded-md text-txt-secondary group-hover:scale-110 transition-transform">
@@ -182,8 +182,8 @@ export function WelcomeModal(props: WelcomeModalProps) {
                         <button
                           class="w-full flex items-center gap-3 p-3 bg-bg-secondary/30 hover:bg-bg-hover border border-border/30 rounded-lg transition-all duration-200 text-left group"
                           onClick={() => {
-                            props.onClose();
                             props.onSelectRecentProject?.(project.path);
+                            props.onClose();
                           }}
                         >
                           <HiOutlineDocumentDuplicate class="w-5 h-5 text-txt-muted group-hover:text-accent transition-colors flex-shrink-0" />
