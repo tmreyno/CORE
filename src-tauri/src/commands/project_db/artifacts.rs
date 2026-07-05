@@ -47,6 +47,7 @@ const MAX_SYSTEM_IDENTITY_LIST_ITEMS: usize = 32;
 const MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS: usize = 160;
 const UNIX_REGULAR_USER_MIN_UID: u32 = 1000;
 const UNIX_REGULAR_USER_MAX_UID: u32 = 60000;
+const MACOS_REGULAR_USER_MIN_UID: u32 = 500;
 const DEFAULT_ARTIFACT_EXTRACTOR: &str = "core-artifact-extractor";
 const MAX_ARTIFACT_EXTRACTOR_CHARS: usize = 128;
 
@@ -430,6 +431,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_macos_local_user_source(&source_id) {
+        return true;
+    }
+
     if is_linux_network_identity_source(&source_id) {
         return true;
     }
@@ -514,6 +519,13 @@ fn is_unix_account_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/private/etc/shadow")
         || source_id.ends_with("/etc/gshadow")
         || source_id.ends_with("/private/etc/gshadow")
+}
+
+fn is_macos_local_user_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    (source_id.contains("/private/var/db/dslocal/nodes/default/users/")
+        || source_id.contains("/var/db/dslocal/nodes/default/users/"))
+        && source_id.ends_with(".plist")
 }
 
 fn is_windows_wifi_profile_source(source_id: &str) -> bool {
@@ -998,6 +1010,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     }
     if is_unix_account_identity_source(&lower) {
         metadata.extend(parse_unix_account_metadata(&lower, &text));
+    }
+    if is_macos_local_user_source(&lower) {
+        metadata.extend(parse_macos_local_user_metadata(data));
     }
     if is_windows_wifi_profile_source(&lower) {
         metadata.extend(parse_windows_wifi_profile_metadata(&text));
@@ -2114,6 +2129,78 @@ fn unix_account_metadata_to_map(
     metadata
 }
 
+fn parse_macos_local_user_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+    let plist::Value::Dictionary(dict) = value else {
+        return metadata;
+    };
+
+    let record_names = plist_dict_string_array(&dict, "name").unwrap_or_default();
+    let Some(account_name) = record_names.first().cloned() else {
+        return metadata;
+    };
+
+    metadata.insert(
+        "system.accountConfigType".to_string(),
+        "macos-dslocal-user".to_string(),
+    );
+    metadata.insert("system.localUserCount".to_string(), "1".to_string());
+    metadata.insert(
+        "system.localUsers".to_string(),
+        truncate_metadata_value(&account_name, 120),
+    );
+
+    if let Some(uid) = plist_dict_first_string(&dict, "uid") {
+        metadata.insert("system.userUidRange".to_string(), uid.clone());
+        if macos_uid_is_regular(&uid) {
+            metadata.insert("system.regularUserCount".to_string(), "1".to_string());
+            metadata.insert(
+                "system.regularUsers".to_string(),
+                describe_macos_local_user(
+                    &account_name,
+                    plist_dict_first_string(&dict, "realname"),
+                ),
+            );
+        }
+    }
+    if let Some(gid) = plist_dict_first_string(&dict, "gid") {
+        metadata.insert("system.primaryGroupId".to_string(), gid);
+    }
+    if let Some(home) = plist_dict_first_string(&dict, "home") {
+        metadata.insert("system.homeDirectories".to_string(), home);
+    }
+    if let Some(shell) = plist_dict_first_string(&dict, "shell") {
+        if !shell.ends_with("/false") && !shell.ends_with("/nologin") {
+            metadata.insert("system.loginUserCount".to_string(), "1".to_string());
+            metadata.insert(
+                "system.loginUsers".to_string(),
+                describe_macos_local_user(
+                    &account_name,
+                    plist_dict_first_string(&dict, "realname"),
+                ),
+            );
+        }
+        metadata.insert("system.loginShells".to_string(), shell);
+    }
+    if let Some(real_name) = plist_dict_first_string(&dict, "realname") {
+        metadata.insert(
+            "system.userDisplayNames".to_string(),
+            truncate_metadata_value(&real_name, 120),
+        );
+    }
+    if let Some(uuid) = plist_dict_first_string(&dict, "generateduid") {
+        metadata.insert("system.userGeneratedUids".to_string(), uuid);
+    }
+    if account_name == "root" {
+        metadata.insert("system.rootAccountPresent".to_string(), "true".to_string());
+    }
+
+    metadata
+}
+
 fn insert_joined_metadata(metadata: &mut BTreeMap<String, String>, key: &str, values: &[String]) {
     if values.is_empty() {
         return;
@@ -2984,6 +3071,31 @@ fn plist_dict_string_array(dict: &plist::Dictionary, key: &str) -> Option<Vec<St
         .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
         .collect();
     (!strings.is_empty()).then_some(strings)
+}
+
+fn plist_dict_first_string(dict: &plist::Dictionary, key: &str) -> Option<String> {
+    plist_dict_string_array(dict, key)
+        .and_then(|values| values.into_iter().next())
+        .or_else(|| plist_dict_string(dict, key).map(ToString::to_string))
+        .map(|value| truncate_metadata_value(&value, 180))
+}
+
+fn macos_uid_is_regular(uid: &str) -> bool {
+    uid.parse::<u32>()
+        .map(|uid| (MACOS_REGULAR_USER_MIN_UID..=UNIX_REGULAR_USER_MAX_UID).contains(&uid))
+        .unwrap_or(false)
+}
+
+fn describe_macos_local_user(account_name: &str, real_name: Option<String>) -> String {
+    let account_name = truncate_metadata_value(account_name, 120);
+    match real_name.filter(|value| value != &account_name) {
+        Some(real_name) => format!(
+            "{} ({})",
+            account_name,
+            truncate_metadata_value(&real_name, 120)
+        ),
+        None => account_name,
+    }
 }
 
 fn plist_dict_date(dict: &plist::Dictionary, key: &str) -> Option<String> {
@@ -4635,6 +4747,64 @@ nameserver 1.1.1.1
     }
 
     #[test]
+    fn system_identity_metadata_extracts_macos_dslocal_user_safely() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/private/var/db/dslocal/nodes/Default/users/alice.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>name</key><array><string>alice</string></array>
+  <key>realname</key><array><string>Alice Analyst</string></array>
+  <key>uid</key><array><string>501</string></array>
+  <key>gid</key><array><string>20</string></array>
+  <key>home</key><array><string>/Users/alice</string></array>
+  <key>shell</key><array><string>/bin/zsh</string></array>
+  <key>generateduid</key><array><string>AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE</string></array>
+  <key>ShadowHashData</key><array><data>c2VjcmV0LWhhc2g=</data></array>
+</dict>
+</plist>"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.accountConfigType").map(String::as_str),
+            Some("macos-dslocal-user")
+        );
+        assert_eq!(
+            metadata.get("system.localUsers").map(String::as_str),
+            Some("alice")
+        );
+        assert_eq!(
+            metadata.get("system.regularUsers").map(String::as_str),
+            Some("alice (Alice Analyst)")
+        );
+        assert_eq!(
+            metadata.get("system.loginUsers").map(String::as_str),
+            Some("alice (Alice Analyst)")
+        );
+        assert_eq!(
+            metadata.get("system.homeDirectories").map(String::as_str),
+            Some("/Users/alice")
+        );
+        assert_eq!(
+            metadata.get("system.loginShells").map(String::as_str),
+            Some("/bin/zsh")
+        );
+        assert_eq!(
+            metadata.get("system.userGeneratedUids").map(String::as_str),
+            Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+        );
+        assert!(!metadata
+            .keys()
+            .any(|key| key.to_ascii_lowercase().contains("hash")));
+        assert!(!metadata.values().any(|value| value.contains("secret-hash")));
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_unix_group_accounts() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/group",
@@ -5441,6 +5611,9 @@ COMMIT
         assert!(is_system_identity_source("/etc/group"));
         assert!(is_system_identity_source("/etc/shadow"));
         assert!(is_system_identity_source("/etc/gshadow"));
+        assert!(is_system_identity_source(
+            "/private/var/db/dslocal/nodes/Default/users/alice.plist"
+        ));
         assert!(is_system_identity_source(
             "/etc/NetworkManager/system-connections/Corp WiFi.nmconnection"
         ));
