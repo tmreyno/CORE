@@ -338,6 +338,7 @@ export interface PartitionNodeProps {
 export function PartitionNode(props: PartitionNodeProps): JSX.Element {
   // Handle missing mountName with fallback
   const partitionRootPath = () => {
+    if (props.partition.rootPath) return props.partition.rootPath;
     const mountName = props.partition.mountName ?? `Partition${props.partition.number ?? props.index + 1}`;
     return `/${mountName}`;
   };

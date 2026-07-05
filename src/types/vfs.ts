@@ -34,6 +34,8 @@ export type VfsPartitionInfo = {
   size: number;
   /** Start offset in the disk image */
   startOffset: number;
+  /** Root path to list for this node. Physical-mode images use "/" */
+  rootPath?: string;
 };
 
 /** Information about a mounted disk image */

@@ -259,6 +259,10 @@ pub struct VfsPartitionInfo {
     pub size: u64,
     /// Start offset in the disk image
     pub start_offset: u64,
+    /// Root path to list for this node. Physical-mode images use "/" so the
+    /// frontend can show the exposed raw virtual file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_path: Option<String>,
 }
 
 /// Information about a mounted disk image
@@ -275,6 +279,17 @@ pub struct VfsMountInfo {
     pub partitions: Vec<VfsPartitionInfo>,
     /// Mount mode (physical or filesystem)
     pub mode: String,
+}
+
+fn physical_vfs_partition(disk_size: u64) -> VfsPartitionInfo {
+    VfsPartitionInfo {
+        number: 1,
+        mount_name: "Physical Image".to_string(),
+        fs_type: "Raw sectors".to_string(),
+        size: disk_size,
+        start_offset: 0,
+        root_path: Some("/".to_string()),
+    }
 }
 
 /// Mount a disk image (E01/Raw) and return partition information.
@@ -332,6 +347,7 @@ pub async fn vfs_mount_image(
                                 fs_type,
                                 size: part_size,
                                 start_offset: 0,
+                                root_path: None,
                             }
                         })
                         .collect();
@@ -339,16 +355,41 @@ pub async fn vfs_mount_image(
                     let mode = if parts.is_empty() { "physical" } else { "filesystem" };
                     debug!("[vfs_mount_image] Mode: {}, Partitions: {}, Disk size: {}", mode, parts.len(), disk_size);
 
-                    // Store in VFS pool for reuse by vfs_list_dir / vfs_read_file
-                    {
-                        let mut pool = VFS_POOL.write();
-                        if pool.len() >= VFS_POOL_MAX_ENTRIES {
-                            evict_lru_vfs(&mut pool);
+                    if parts.is_empty() {
+                        debug!("[vfs_mount_image] No mounted filesystems; reopening E01 in physical mode");
+                        match ewf::vfs::EwfVfs::open_physical(&containerPath) {
+                            Ok(physical_vfs) => {
+                                let physical_disk_size = physical_vfs.disk_size().unwrap_or(disk_size);
+                                {
+                                    let mut pool = VFS_POOL.write();
+                                    if pool.len() >= VFS_POOL_MAX_ENTRIES {
+                                        evict_lru_vfs(&mut pool);
+                                    }
+                                    pool.insert(
+                                        containerPath.clone(),
+                                        Arc::new(PooledVfs::new_ewf(physical_vfs)),
+                                    );
+                                }
+                                (
+                                    vec![physical_vfs_partition(physical_disk_size)],
+                                    "physical".to_string(),
+                                    physical_disk_size,
+                                )
+                            }
+                            Err(e) => return Err(format!("Failed to mount E01: {:?}", e)),
                         }
-                        pool.insert(containerPath.clone(), Arc::new(PooledVfs::new_ewf(vfs)));
-                    }
+                    } else {
+                        // Store in VFS pool for reuse by vfs_list_dir / vfs_read_file
+                        {
+                            let mut pool = VFS_POOL.write();
+                            if pool.len() >= VFS_POOL_MAX_ENTRIES {
+                                evict_lru_vfs(&mut pool);
+                            }
+                            pool.insert(containerPath.clone(), Arc::new(PooledVfs::new_ewf(vfs)));
+                        }
 
-                    (parts, mode.to_string(), disk_size)
+                        (parts, mode.to_string(), disk_size)
+                    }
                 }
                 Err(e) => {
                     debug!("[vfs_mount_image] Filesystem mode failed: {:?}, falling back to physical mode", e);
@@ -369,7 +410,11 @@ pub async fn vfs_mount_image(
                                 pool.insert(containerPath.clone(), Arc::new(PooledVfs::new_ewf(vfs)));
                             }
 
-                            (Vec::new(), "physical".to_string(), disk_size)
+                            (
+                                vec![physical_vfs_partition(disk_size)],
+                                "physical".to_string(),
+                                disk_size,
+                            )
                         }
                         Err(e) => return Err(format!("Failed to mount E01: {:?}", e)),
                     }
@@ -392,29 +437,58 @@ pub async fn vfs_mount_image(
                                 fs_type,
                                 size: 0,
                                 start_offset: 0,
+                                root_path: None,
                             }
                         })
                         .collect();
 
                     let mode = if parts.is_empty() { "physical" } else { "filesystem" };
-                    let disk_size = vfs.getattr("/")
-                        .map(|a| a.size)
-                        .unwrap_or(0);
-
-                    // Store in VFS pool
-                    {
-                        let mut pool = VFS_POOL.write();
-                        if pool.len() >= VFS_POOL_MAX_ENTRIES {
-                            evict_lru_vfs(&mut pool);
+                    if parts.is_empty() {
+                        match raw::vfs::RawVfs::open(&containerPath) {
+                            Ok(physical_vfs) => {
+                                let disk_size = std::fs::metadata(&containerPath)
+                                    .map(|m| m.len())
+                                    .unwrap_or(0);
+                                {
+                                    let mut pool = VFS_POOL.write();
+                                    if pool.len() >= VFS_POOL_MAX_ENTRIES {
+                                        evict_lru_vfs(&mut pool);
+                                    }
+                                    pool.insert(
+                                        containerPath.clone(),
+                                        Arc::new(PooledVfs::new_raw(physical_vfs)),
+                                    );
+                                }
+                                (
+                                    vec![physical_vfs_partition(disk_size)],
+                                    "physical".to_string(),
+                                    disk_size,
+                                )
+                            }
+                            Err(e) => return Err(format!("Failed to mount raw image: {:?}", e)),
                         }
-                        pool.insert(containerPath.clone(), Arc::new(PooledVfs::new_raw(vfs)));
-                    }
+                    } else {
+                        let disk_size = std::fs::metadata(&containerPath)
+                            .map(|m| m.len())
+                            .unwrap_or(0);
+                        // Store in VFS pool
+                        {
+                            let mut pool = VFS_POOL.write();
+                            if pool.len() >= VFS_POOL_MAX_ENTRIES {
+                                evict_lru_vfs(&mut pool);
+                            }
+                            pool.insert(containerPath.clone(), Arc::new(PooledVfs::new_raw(vfs)));
+                        }
 
-                    (parts, mode.to_string(), disk_size)
+                        (parts, mode.to_string(), disk_size)
+                    }
                 }
                 Err(_) => {
                     match raw::vfs::RawVfs::open(&containerPath) {
                         Ok(vfs) => {
+                            let disk_size = std::fs::metadata(&containerPath)
+                                .map(|m| m.len())
+                                .unwrap_or(0);
                             // Store in VFS pool
                             {
                                 let mut pool = VFS_POOL.write();
@@ -423,7 +497,11 @@ pub async fn vfs_mount_image(
                                 }
                                 pool.insert(containerPath.clone(), Arc::new(PooledVfs::new_raw(vfs)));
                             }
-                            (Vec::new(), "physical".to_string(), 0)
+                            (
+                                vec![physical_vfs_partition(disk_size)],
+                                "physical".to_string(),
+                                disk_size,
+                            )
                         }
                         Err(e) => return Err(format!("Failed to mount raw image: {:?}", e)),
                     }
@@ -589,5 +667,29 @@ mod tests {
             checked_vfs_read_size(u64::MAX, 0, VFS_MAX_READ_BYTES).unwrap(),
             VFS_MAX_READ_BYTES
         );
+    }
+
+    #[test]
+    fn physical_vfs_partition_points_frontend_at_root() {
+        let partition = physical_vfs_partition(4096);
+        assert_eq!(partition.mount_name, "Physical Image");
+        assert_eq!(partition.fs_type, "Raw sectors");
+        assert_eq!(partition.size, 4096);
+        assert_eq!(partition.root_path.as_deref(), Some("/"));
+    }
+
+    #[test]
+    fn filesystem_partition_omits_root_path_when_serialized() {
+        let partition = VfsPartitionInfo {
+            number: 1,
+            mount_name: "Partition1_NTFS".to_string(),
+            fs_type: "NTFS".to_string(),
+            size: 4096,
+            start_offset: 0,
+            root_path: None,
+        };
+        let json = serde_json::to_value(&partition).unwrap();
+
+        assert!(json.get("rootPath").is_none());
     }
 }
