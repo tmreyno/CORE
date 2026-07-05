@@ -36,6 +36,7 @@ pub use workflow::*;
 
 use crate::project_db::ProjectDatabase;
 use parking_lot::Mutex;
+use rusqlite::params;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -108,18 +109,22 @@ fn project_db_open_blocking(label: String, cffx_path: String) -> Result<String, 
         ProjectDatabase::open(&db_path).map_err(|e| format!("Failed to open project DB: {}", e))?;
     info!(window = %label, "project_db_open: ProjectDatabase::open took {:?}", t0.elapsed());
 
-    // If this is a brand-new .ffxdb, migrate data from the same resolved
-    // project state used by the UI so evidence IDs and paths stay aligned.
-    if is_new {
-        match load_resolved_project_for_db_migration(&cffx) {
-            Ok(Some(project)) => {
-                if let Err(e) = db.migrate_from_project(&project) {
+    // Use the same resolved project state as the UI so .ffxdb evidence IDs
+    // and paths stay aligned with project_load().
+    match load_project_states_for_db_open(&cffx) {
+        Ok(Some((raw_project, resolved_project))) => {
+            if is_new {
+                if let Err(e) = db.migrate_from_project(&resolved_project) {
                     warn!("Migration from .cffx had errors: {}", e);
                 }
+            } else if let Err(e) =
+                repair_existing_project_db_paths(&db, &raw_project, &resolved_project)
+            {
+                warn!("Existing .ffxdb path repair had errors: {}", e);
             }
-            Ok(None) => {}
-            Err(e) => warn!("Could not prepare .cffx migration data: {}", e),
         }
+        Ok(None) => {}
+        Err(e) => warn!("Could not prepare .cffx migration data: {}", e),
     }
 
     let db_path_str = db_path.to_string_lossy().to_string();
@@ -158,14 +163,19 @@ fn project_db_open_blocking(label: String, cffx_path: String) -> Result<String, 
     Ok(db_path_str)
 }
 
-fn load_resolved_project_for_db_migration(
+fn load_project_states_for_db_open(
     cffx: &Path,
-) -> Result<Option<crate::project::FFXProject>, String> {
+) -> Result<Option<(crate::project::FFXProject, crate::project::FFXProject)>, String> {
+    let content = crate::project::read_project_json_with_limit(cffx, "project file")?;
+    let raw_project = serde_json::from_str::<crate::project::FFXProject>(&content)
+        .map_err(|e| format!("Failed to parse project file: {e}"))?;
     let path = cffx.to_string_lossy();
     let result = crate::project::load_project(path.as_ref());
 
     if result.success {
-        Ok(result.project)
+        Ok(result
+            .project
+            .map(|resolved_project| (raw_project, resolved_project)))
     } else {
         Err(result
             .error
@@ -173,10 +183,126 @@ fn load_resolved_project_for_db_migration(
     }
 }
 
+fn repair_existing_project_db_paths(
+    db: &ProjectDatabase,
+    raw_project: &crate::project::FFXProject,
+    resolved_project: &crate::project::FFXProject,
+) -> rusqlite::Result<usize> {
+    let Some(raw_cache) = raw_project.evidence_cache.as_ref() else {
+        return Ok(0);
+    };
+    let Some(resolved_cache) = resolved_project.evidence_cache.as_ref() else {
+        return Ok(0);
+    };
+
+    let conn = db.conn.lock();
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+
+    let repair_result = (|| -> rusqlite::Result<usize> {
+        let mut repaired = 0usize;
+
+        for (raw_file, resolved_file) in raw_cache
+            .discovered_files
+            .iter()
+            .zip(resolved_cache.discovered_files.iter())
+        {
+            if raw_file.path == resolved_file.path {
+                continue;
+            }
+
+            conn.execute(
+                "INSERT INTO evidence_files (id, path, filename, container_type, total_size, segment_count, discovered_at, created, modified)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(path) DO UPDATE SET
+                filename = excluded.filename,
+                container_type = excluded.container_type,
+                total_size = excluded.total_size,
+                segment_count = excluded.segment_count,
+                created = COALESCE(excluded.created, evidence_files.created),
+                modified = COALESCE(excluded.modified, evidence_files.modified)",
+                params![
+                    resolved_file.path,
+                    resolved_file.path,
+                    resolved_file.filename,
+                    resolved_file.container_type,
+                    resolved_file.size as i64,
+                    resolved_file.segment_count as i64,
+                    resolved_cache.cached_at,
+                    resolved_file.created,
+                    resolved_file.modified,
+                ],
+            )?;
+
+            let old_id = &raw_file.path;
+            let new_id = &resolved_file.path;
+            conn.execute(
+                "UPDATE hashes SET file_id = ?2 WHERE file_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE hashes SET source_id = ?2 WHERE source_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE artifacts SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE artifacts SET source_id = ?2 WHERE source_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE source_analyses SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE source_analyses SET source_id = ?2 WHERE source_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE coc_items SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE collected_items SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE collected_items SET source_id = ?2 WHERE source_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "UPDATE evidence_data_alternatives SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                params![old_id, new_id],
+            )?;
+            conn.execute(
+                "DELETE FROM evidence_files WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM hashes WHERE file_id = ?1)",
+                params![old_id],
+            )?;
+
+            repaired += 1;
+        }
+
+        Ok(repaired)
+    })();
+
+    match repair_result {
+        Ok(repaired) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(repaired)
+        }
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::project::{CachedDiscoveredFile, EvidenceCache, FFXProject};
+    use crate::project_db::{DbEvidenceFile, DbProjectHash};
 
     #[test]
     fn db_migration_project_loader_resolves_relative_evidence_paths() {
@@ -204,7 +330,7 @@ mod tests {
         });
         std::fs::write(&project_path, serde_json::to_string(&project).unwrap()).unwrap();
 
-        let resolved = load_resolved_project_for_db_migration(&project_path)
+        let (_, resolved) = load_project_states_for_db_open(&project_path)
             .unwrap()
             .unwrap();
         let resolved_path = &resolved.evidence_cache.as_ref().unwrap().discovered_files[0].path;
@@ -212,6 +338,90 @@ mod tests {
         let expected_path = evidence_path.canonicalize().unwrap();
         assert_eq!(Path::new(resolved_path), expected_path.as_path());
         assert!(Path::new(resolved_path).is_absolute());
+    }
+
+    #[test]
+    fn existing_db_path_repair_rekeys_evidence_and_hash_records() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("case.ffxdb");
+        let db = ProjectDatabase::open(&db_path).unwrap();
+
+        let relative_path = "./1.Evidence/drive.E01";
+        let absolute_path = temp_dir
+            .path()
+            .join("1.Evidence")
+            .join("drive.E01")
+            .to_string_lossy()
+            .to_string();
+
+        db.upsert_evidence_file(&DbEvidenceFile {
+            id: relative_path.to_string(),
+            path: relative_path.to_string(),
+            filename: "drive.E01".to_string(),
+            container_type: "EnCase (E01)".to_string(),
+            total_size: 3,
+            segment_count: 1,
+            discovered_at: "2026-07-05T00:00:00Z".to_string(),
+            created: None,
+            modified: None,
+        })
+        .unwrap();
+        db.insert_hash(&DbProjectHash {
+            id: "hash-1".to_string(),
+            file_id: relative_path.to_string(),
+            source_id: Some(relative_path.to_string()),
+            source_ref_json: None,
+            algorithm: "MD5".to_string(),
+            hash_value: "d41d8cd98f00b204e9800998ecf8427e".to_string(),
+            computed_at: "2026-07-05T00:00:00Z".to_string(),
+            segment_index: None,
+            segment_name: None,
+            source: "computed".to_string(),
+        })
+        .unwrap();
+
+        let mut raw_project = FFXProject::new(".");
+        raw_project.evidence_cache = Some(EvidenceCache {
+            discovered_files: vec![CachedDiscoveredFile {
+                path: relative_path.to_string(),
+                filename: "drive.E01".to_string(),
+                container_type: "EnCase (E01)".to_string(),
+                size: 3,
+                segment_count: 1,
+                created: None,
+                modified: None,
+            }],
+            cached_at: "2026-07-05T00:00:00Z".to_string(),
+            valid: true,
+            ..EvidenceCache::default()
+        });
+        let mut resolved_project = raw_project.clone();
+        resolved_project
+            .evidence_cache
+            .as_mut()
+            .unwrap()
+            .discovered_files[0]
+            .path = absolute_path.clone();
+
+        assert_eq!(
+            repair_existing_project_db_paths(&db, &raw_project, &resolved_project).unwrap(),
+            1
+        );
+        assert!(db
+            .get_evidence_file_by_path(relative_path)
+            .unwrap()
+            .is_none());
+        assert!(db
+            .get_evidence_file_by_path(&absolute_path)
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            db.lookup_hash_by_path(&absolute_path, "MD5").unwrap(),
+            Some((
+                "d41d8cd98f00b204e9800998ecf8427e".to_string(),
+                "computed".to_string()
+            ))
+        );
     }
 }
 
