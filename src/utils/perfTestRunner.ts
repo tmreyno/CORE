@@ -117,7 +117,10 @@ export async function runPerformanceTests(
     
     for (let i = 0; i < 3; i++) {
       const { timing } = await measureOp('container-info', async () => {
-        return await invoke('logical_info', { path: containerPath });
+        return await invoke('logical_info', {
+          inputPath: containerPath,
+          includeTree: false,
+        });
       });
       results.push(timing);
       console.log(`  Load ${i + 1}: ${timing.durationMs.toFixed(2)}ms ${timing.success ? '✓' : '✗'}`);
