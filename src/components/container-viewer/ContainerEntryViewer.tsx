@@ -43,7 +43,10 @@ import { ViewerHeader } from "./ViewerHeader";
 import { useTextSelectionMenu } from "../../hooks/useTextSelectionMenu";
 import { commands } from "../../api/commands";
 import { buildEvidenceSourceInput } from "../evidenceSourceInput";
-import { buildSystemIdentitySourceInput } from "../systemIdentitySources";
+import {
+  buildSystemIdentitySourceInput,
+  isLikelyBinaryArtifactEntry,
+} from "../systemIdentitySources";
 import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("ContainerEntryViewer");
@@ -203,6 +206,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           await commands.artifact.collectSystemIdentitySources({
             sources: [systemIdentitySource],
             extractor: "container-entry-viewer-system-identity",
+          });
+        } else if (isLikelyBinaryArtifactEntry(props.entry)) {
+          await commands.artifact.collectBinaryArtifactSources({
+            sources: [source],
+            extractor: "container-entry-viewer-binary-artifact",
           });
         } else {
           await commands.artifact.extractSourceAndInsert({

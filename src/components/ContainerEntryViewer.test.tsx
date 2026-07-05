@@ -319,6 +319,52 @@ describe("ContainerEntryViewer", () => {
       dispose();
     });
 
+    it("collects driver binaries through the dedicated binary artifact collector", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "project_db_is_open") return true;
+        if (cmd === "project_db_collect_binary_artifact_sources") {
+          return {
+            scanned: 1,
+            matched: 1,
+            inserted: 1,
+            skipped: 0,
+            records: [{ id: "artifact-driver", sourceId: "ad1:/evidence/container.ad1:/Windows/System32/drivers/contosoflt.sys" }],
+            errors: [],
+          };
+        }
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "contosoflt.sys",
+        entryPath: "/Windows/System32/drivers/contosoflt.sys",
+      });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="hex" />
+      );
+
+      await tick(200);
+
+      expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_binary_artifact_sources", {
+        request: {
+          sources: [
+            {
+              containerPath: "/evidence/container.ad1",
+              entryPath: "/Windows/System32/drivers/contosoflt.sys",
+              containerType: "ad1",
+              size: 1024,
+            },
+          ],
+          extractor: "container-entry-viewer-binary-artifact",
+        },
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "project_db_extract_artifact_source",
+        expect.anything(),
+      );
+      dispose();
+    });
+
     it("keeps rendering when artifact persistence fails", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "project_db_is_open") return true;
