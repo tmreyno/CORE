@@ -425,8 +425,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/library/receipts/installhistory.plist")
         || source_id.ends_with("/windows/system32/config/system")
         || source_id.ends_with("/windows/system32/config/software")
+        || source_id.ends_with("/windows/system32/config/sam")
         || source_id.ends_with("/config/system")
         || source_id.ends_with("/config/software")
+        || source_id.ends_with("/config/sam")
     {
         return true;
     }
@@ -5829,6 +5831,7 @@ COMMIT
         assert!(is_system_identity_source(
             "/Windows/System32/config/SOFTWARE"
         ));
+        assert!(is_system_identity_source("/Windows/System32/config/SAM"));
         assert!(is_system_identity_source("/etc/machine-id"));
         assert!(is_system_identity_source("/var/lib/dbus/machine-id"));
         assert!(is_system_identity_source("/etc/machine-info"));
