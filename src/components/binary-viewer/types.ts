@@ -48,6 +48,18 @@ export interface BinaryInfo {
   pe_timestamp: number | null;
   pe_checksum: number | null;
   pe_subsystem: string | null;
+  pe_linker_version: string | null;
+  pe_os_version: string | null;
+  pe_image_version: string | null;
+  pe_subsystem_version: string | null;
+  pe_image_base: number | null;
+  pe_section_alignment: number | null;
+  pe_file_alignment: number | null;
+  pe_size_of_image: number | null;
+  pe_size_of_headers: number | null;
+  pe_dll_characteristics: string | null;
+  pe_dll_characteristics_detail: string[];
+  pe_certificate_table_size: number | null;
   pe_is_driver: boolean;
   pe_driver_type: string | null;
   pe_driver_indicators: string[];

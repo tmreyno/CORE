@@ -14,9 +14,39 @@ interface BinaryOverviewProps {
   data: BinaryInfo;
 }
 
+function PeInfoRow(props: { label: string; value: string | number | null | undefined; mono?: boolean }) {
+  return (
+    <Show when={props.value !== null && props.value !== undefined && props.value !== ""}>
+      <div class="flex gap-2 text-xs py-0.5">
+        <span class="text-txt-muted w-28 shrink-0">{props.label}</span>
+        <span class={`${props.mono ? "font-mono" : ""} text-txt break-all`}>{props.value}</span>
+      </div>
+    </Show>
+  );
+}
+
+const formatOptionalHex = (value: number | null) => value === null ? null : formatHex(value);
+const formatOptionalBytes = (value: number | null) => value === null ? null : formatBytes(value);
+
 export function BinaryOverview(props: BinaryOverviewProps) {
   const data = () => props.data;
   const versionInfoEntries = () => Object.entries(data().pe_version_info ?? {});
+  const hasPeInformation = () =>
+    data().pe_timestamp !== null ||
+    data().pe_checksum !== null ||
+    data().pe_subsystem ||
+    data().pe_linker_version ||
+    data().pe_os_version ||
+    data().pe_image_version ||
+    data().pe_subsystem_version ||
+    data().pe_image_base !== null ||
+    data().pe_section_alignment !== null ||
+    data().pe_file_alignment !== null ||
+    data().pe_size_of_image !== null ||
+    data().pe_size_of_headers !== null ||
+    data().pe_dll_characteristics ||
+    data().pe_dll_characteristics_detail.length > 0 ||
+    data().pe_certificate_table_size !== null;
 
   return (
     <>
@@ -47,33 +77,37 @@ export function BinaryOverview(props: BinaryOverviewProps) {
       </div>
 
       {/* PE-specific info */}
-      <Show when={data().pe_timestamp || data().pe_subsystem}>
+      <Show when={hasPeInformation()}>
         <div class="card">
           <h3 class="text-xs font-semibold text-txt-secondary uppercase tracking-wider mb-2">
             PE Information
           </h3>
-          <Show when={data().pe_timestamp}>
+          <PeInfoRow label="Compile Time" value={data().pe_timestamp !== null ? formatTimestamp(data().pe_timestamp) : null} mono />
+          <PeInfoRow label="Subsystem" value={data().pe_subsystem} />
+          <PeInfoRow label="Checksum" value={formatOptionalHex(data().pe_checksum)} mono />
+          <PeInfoRow label="Linker Version" value={data().pe_linker_version} />
+          <PeInfoRow label="OS Version" value={data().pe_os_version} />
+          <PeInfoRow label="Image Version" value={data().pe_image_version} />
+          <PeInfoRow label="Subsystem Ver." value={data().pe_subsystem_version} />
+          <PeInfoRow label="Image Base" value={formatOptionalHex(data().pe_image_base)} mono />
+          <PeInfoRow label="Image Size" value={formatOptionalBytes(data().pe_size_of_image)} />
+          <PeInfoRow label="Headers Size" value={formatOptionalBytes(data().pe_size_of_headers)} />
+          <PeInfoRow label="Section Align" value={formatOptionalBytes(data().pe_section_alignment)} />
+          <PeInfoRow label="File Align" value={formatOptionalBytes(data().pe_file_alignment)} />
+          <PeInfoRow label="DLL Flags" value={data().pe_dll_characteristics} mono />
+          <Show when={data().pe_dll_characteristics_detail.length > 0}>
             <div class="flex gap-2 text-xs py-0.5">
-              <span class="text-txt-muted w-24">Compile Time</span>
-              <span class="text-accent font-mono">
-                {formatTimestamp(data().pe_timestamp)}
-              </span>
+              <span class="text-txt-muted w-28 shrink-0">DLL Features</span>
+              <div class="flex flex-wrap gap-1">
+                {data().pe_dll_characteristics_detail.map((flag) => (
+                  <span class="px-1.5 py-0.5 text-2xs bg-bg-hover text-txt-secondary rounded">
+                    {flag}
+                  </span>
+                ))}
+              </div>
             </div>
           </Show>
-          <Show when={data().pe_subsystem}>
-            <div class="flex gap-2 text-xs py-0.5">
-              <span class="text-txt-muted w-24">Subsystem</span>
-              <span class="text-txt">{data().pe_subsystem}</span>
-            </div>
-          </Show>
-          <Show when={data().pe_checksum}>
-            <div class="flex gap-2 text-xs py-0.5">
-              <span class="text-txt-muted w-24">Checksum</span>
-              <span class="text-txt font-mono">
-                {formatHex(data().pe_checksum)}
-              </span>
-            </div>
-          </Show>
+          <PeInfoRow label="Cert Table" value={formatOptionalBytes(data().pe_certificate_table_size)} />
         </div>
       </Show>
 

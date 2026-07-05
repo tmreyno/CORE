@@ -39,6 +39,18 @@ const mockPeData = {
   pe_timestamp: 1705312200,
   pe_checksum: 54321,
   pe_subsystem: "WindowsConsole",
+  pe_linker_version: "14.38",
+  pe_os_version: "10.0",
+  pe_image_version: "10.0",
+  pe_subsystem_version: "10.0",
+  pe_image_base: 5368709120,
+  pe_section_alignment: 4096,
+  pe_file_alignment: 512,
+  pe_size_of_image: 65536,
+  pe_size_of_headers: 1024,
+  pe_dll_characteristics: "0x2160",
+  pe_dll_characteristics_detail: ["dynamic-base", "nx-compatible", "wdm-driver"],
+  pe_certificate_table_size: 8192,
   pe_is_driver: false,
   pe_driver_type: null,
   pe_driver_indicators: [],
@@ -114,6 +126,18 @@ const mockElfData = {
   pe_timestamp: null,
   pe_checksum: null,
   pe_subsystem: null,
+  pe_linker_version: null,
+  pe_os_version: null,
+  pe_image_version: null,
+  pe_subsystem_version: null,
+  pe_image_base: null,
+  pe_section_alignment: null,
+  pe_file_alignment: null,
+  pe_size_of_image: null,
+  pe_size_of_headers: null,
+  pe_dll_characteristics: null,
+  pe_dll_characteristics_detail: [],
+  pe_certificate_table_size: null,
   pe_is_driver: false,
   pe_driver_type: null,
   pe_driver_indicators: [],
@@ -150,6 +174,18 @@ const mockMachoData = {
   pe_timestamp: null,
   pe_checksum: null,
   pe_subsystem: null,
+  pe_linker_version: null,
+  pe_os_version: null,
+  pe_image_version: null,
+  pe_subsystem_version: null,
+  pe_image_base: null,
+  pe_section_alignment: null,
+  pe_file_alignment: null,
+  pe_size_of_image: null,
+  pe_size_of_headers: null,
+  pe_dll_characteristics: null,
+  pe_dll_characteristics_detail: [],
+  pe_certificate_table_size: null,
   pe_is_driver: false,
   pe_driver_type: null,
   pe_driver_indicators: [],
@@ -223,6 +259,37 @@ describe("BinaryViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("WindowsConsole");
+      expect(container.textContent).toContain("Linker Version");
+      expect(container.textContent).toContain("14.38");
+      expect(container.textContent).toContain("Image Base");
+      expect(container.textContent).toContain("0x140000000");
+      expect(container.textContent).toContain("dynamic-base");
+      expect(container.textContent).toContain("wdm-driver");
+    });
+
+    it("shows Windows driver classification details for .sys files", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockPeData,
+        path: "/evidence/image.E01:/Windows/System32/drivers/contosoflt.sys",
+        pe_subsystem: "Native",
+        pe_is_driver: true,
+        pe_driver_type: "File system minifilter driver",
+        pe_driver_indicators: [
+          "driver file extension",
+          "file-system filter driver APIs",
+          "imports ntoskrnl.exe",
+        ],
+      });
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path="/Windows/System32/drivers/contosoflt.sys" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Driver Analysis");
+      expect(container.textContent).toContain("File system minifilter driver");
+      expect(container.textContent).toContain("driver file extension");
+      expect(container.textContent).toContain("imports ntoskrnl.exe");
     });
 
     it("renders sections table", async () => {
