@@ -19,8 +19,10 @@ export function useExifData(props: ExifPanelProps) {
   const [exif, setExif] = createSignal<ExifMetadata | null>(null);
   const [showRawTags, setShowRawTags] = createSignal(false);
   const [rawFilter, setRawFilter] = createSignal("");
+  let loadGeneration = 0;
 
   const loadExif = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
     try {
@@ -31,12 +33,16 @@ export function useExifData(props: ExifPanelProps) {
       const data = props.source
         ? await commands.image.extractExifSource(props.source)
         : await commands.image.extractExif(props.path);
+      if (generation !== loadGeneration) return;
       setExif(data);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to extract EXIF:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
