@@ -514,6 +514,9 @@ fn system_info_metadata(
     if let Some(metadata) = linux_dmi_metadata(&normalized_path, header) {
         return metadata;
     }
+    if is_macos_hardware_identity_path(&normalized_path, &normalized_name, extension) {
+        return macos_hardware_identity_metadata(header);
+    }
     if is_macos_system_version_path(&normalized_path, &normalized_name, extension) {
         return macos_system_version_metadata(header);
     }
@@ -551,6 +554,14 @@ fn is_macos_system_version_path(path: &str, name: &str, extension: Option<&str>)
         && matches!(extension, Some("plist"))
         && (path.ends_with("system/library/coreservices/systemversion.plist")
             || path.ends_with("library/coreservices/systemversion.plist"))
+}
+
+fn is_macos_hardware_identity_path(path: &str, name: &str, extension: Option<&str>) -> bool {
+    matches!(extension, Some("plist"))
+        && (name.eq_ignore_ascii_case("sphardwaredatatype.plist")
+            || name.eq_ignore_ascii_case("ioplatformexpertdevice.plist")
+            || path.ends_with("systemprofiler/sphardwaredatatype.plist")
+            || path.ends_with("ioregistry/ioplatformexpertdevice.plist"))
 }
 
 fn windows_registry_system_info_metadata(
@@ -743,6 +754,65 @@ fn macos_system_version_metadata(header: &[u8]) -> BTreeMap<String, String> {
     metadata
 }
 
+fn macos_hardware_identity_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_plist(header, Some("plist")) {
+        return metadata;
+    }
+    let Ok(value) = PlistValue::from_reader(Cursor::new(header)) else {
+        return metadata;
+    };
+
+    for (source_key, metadata_key) in [
+        ("IOPlatformSerialNumber", "system.serialNumber"),
+        ("SerialNumber", "system.serialNumber"),
+        ("serial_number", "system.serialNumber"),
+        ("IOPlatformUUID", "system.hardwareUuid"),
+        ("HardwareUUID", "system.hardwareUuid"),
+        ("platform_UUID", "system.hardwareUuid"),
+        ("machine_name", "system.model"),
+        ("machine_model", "system.modelIdentifier"),
+        ("boot_rom_version", "system.bootRomVersion"),
+        ("smc_version_system", "system.smcVersion"),
+        ("cpu_type", "system.cpuType"),
+        ("current_processor_speed", "system.processorSpeed"),
+    ] {
+        if metadata.contains_key(metadata_key) {
+            continue;
+        }
+        if let Some(value) = plist_find_scalar_string(&value, source_key) {
+            metadata.insert(metadata_key.to_string(), value);
+        }
+    }
+
+    if metadata.is_empty() {
+        return metadata;
+    }
+    metadata.insert("system.osFamily".to_string(), "macos".to_string());
+    metadata.insert(
+        "system.infoType".to_string(),
+        "hardware-identity".to_string(),
+    );
+    metadata
+}
+
+fn plist_find_scalar_string(value: &PlistValue, wanted_key: &str) -> Option<String> {
+    match value {
+        PlistValue::Dictionary(dictionary) => {
+            if let Some(value) = dictionary.get(wanted_key).and_then(plist_scalar_string) {
+                return Some(value);
+            }
+            dictionary
+                .values()
+                .find_map(|child| plist_find_scalar_string(child, wanted_key))
+        }
+        PlistValue::Array(items) => items
+            .iter()
+            .find_map(|child| plist_find_scalar_string(child, wanted_key)),
+        _ => None,
+    }
+}
+
 fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
     match (
         metadata.get("system.osFamily").map(String::as_str),
@@ -752,6 +822,7 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("linux"), Some("hostname")) => "Linux Hostname",
         (Some("linux"), Some("machine-id")) => "Linux Machine ID",
         (Some("linux"), Some("dmi")) => "Linux DMI System Information",
+        (Some("macos"), Some("hardware-identity")) => "macOS Hardware Identity",
         (Some("macos"), Some("system-version")) => "macOS System Version Info",
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
         _ => "System Information Artifact",
@@ -2722,6 +2793,110 @@ BUILD_ID=20260201
                 .get("os.release.buildId")
                 .map(String::as_str),
             Some("24F74")
+        );
+    }
+
+    #[test]
+    fn extracts_macos_system_profiler_hardware_identity_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>_items</key>
+  <array>
+    <dict>
+      <key>machine_name</key><string>MacBook Pro</string>
+      <key>machine_model</key><string>MacBookPro18,3</string>
+      <key>serial_number</key><string>C02TEST12345</string>
+      <key>platform_UUID</key><string>00000000-1111-2222-3333-444444444444</string>
+      <key>boot_rom_version</key><string>11881.120.56</string>
+      <key>smc_version_system</key><string>1.0f0</string>
+      <key>cpu_type</key><string>Apple M1 Pro</string>
+      <key>current_processor_speed</key><string>3.2 GHz</string>
+    </dict>
+  </array>
+</dict>
+</plist>
+"#;
+        let source =
+            ChunkedByteSource::new("/case/SystemProfiler/SPHardwareDataType.plist", bytes, 128);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS Hardware Identity");
+        assert_eq!(
+            artifact.metadata.get("system.osFamily").map(String::as_str),
+            Some("macos")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.serialNumber")
+                .map(String::as_str),
+            Some("C02TEST12345")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.hardwareUuid")
+                .map(String::as_str),
+            Some("00000000-1111-2222-3333-444444444444")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.model").map(String::as_str),
+            Some("MacBook Pro")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.cpuType").map(String::as_str),
+            Some("Apple M1 Pro")
+        );
+    }
+
+    #[test]
+    fn extracts_macos_ioplatform_hardware_identity_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>IOPlatformSerialNumber</key><string>FVFTEST98765</string>
+  <key>IOPlatformUUID</key><string>aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</string>
+  <key>machine_model</key><string>Macmini9,1</string>
+</dict>
+</plist>
+"#;
+        let source = ChunkedByteSource::new(
+            "/case/IORegistry/IOPlatformExpertDevice.plist",
+            bytes,
+            usize::MAX,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS Hardware Identity");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.serialNumber")
+                .map(String::as_str),
+            Some("FVFTEST98765")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.hardwareUuid")
+                .map(String::as_str),
+            Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.modelIdentifier")
+                .map(String::as_str),
+            Some("Macmini9,1")
         );
     }
 
