@@ -458,8 +458,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "redhat-release"
                 | "debian_version"
                 | "machine-id"
+                | "machine-info"
                 | "hostname"
                 | "timezone"
+                | "locale"
                 | "fstab"
                 | "mtab"
                 | "product_uuid"
@@ -493,6 +495,13 @@ fn is_linux_network_identity_source(source_id: &str) -> bool {
         || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
         || (source_id.contains("/etc/netplan/")
             && (source_id.ends_with(".yaml") || source_id.ends_with(".yml")))
+}
+
+fn is_linux_machine_identity_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/var/lib/dbus/machine-id")
+        || source_id.ends_with("/etc/machine-info")
+        || source_id.ends_with("/etc/default/locale")
 }
 
 fn is_unix_account_identity_source(source_id: &str) -> bool {
@@ -981,6 +990,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     let mut metadata = BTreeMap::new();
 
     metadata.insert("system.identitySource".to_string(), normalized);
+    if is_linux_machine_identity_source(&lower) {
+        metadata.extend(parse_linux_machine_identity_metadata(&lower, &text));
+    }
     if is_linux_network_identity_source(&lower) {
         metadata.extend(parse_linux_network_config_metadata(&lower, &text));
     }
@@ -1013,11 +1025,17 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "machine-id" => {
             insert_trimmed_metadata(&mut metadata, "system.machineId", &text);
         }
+        "machine-info" => {
+            metadata.extend(parse_linux_machine_info_metadata(&text));
+        }
         "hostname" => {
             insert_trimmed_metadata(&mut metadata, "system.hostname", &text);
         }
         "timezone" => {
             insert_trimmed_metadata(&mut metadata, "system.timeZone", &text);
+        }
+        "locale" => {
+            metadata.extend(parse_linux_locale_metadata(&text));
         }
         "fstab" | "mtab" => {
             metadata.extend(parse_mount_table_metadata(&text));
@@ -1127,6 +1145,68 @@ fn parse_linux_release_metadata(text: &str) -> BTreeMap<String, String> {
     }
     if let Some(value) = values.get("PRETTY_NAME") {
         metadata.insert("system.osPrettyName".to_string(), value.clone());
+    }
+
+    metadata
+}
+
+fn parse_linux_machine_identity_metadata(source_id: &str, text: &str) -> BTreeMap<String, String> {
+    if source_id.ends_with("/var/lib/dbus/machine-id") {
+        let mut metadata = BTreeMap::new();
+        insert_trimmed_metadata(&mut metadata, "system.machineId", text);
+        metadata.insert(
+            "system.machineIdSource".to_string(),
+            "dbus-machine-id".to_string(),
+        );
+        return metadata;
+    }
+    if source_id.ends_with("/etc/machine-info") {
+        return parse_linux_machine_info_metadata(text);
+    }
+    if source_id.ends_with("/etc/default/locale") {
+        return parse_linux_locale_metadata(text);
+    }
+    BTreeMap::new()
+}
+
+fn parse_linux_machine_info_metadata(text: &str) -> BTreeMap<String, String> {
+    let values = parse_key_value_lines(text);
+    let mut metadata = BTreeMap::new();
+
+    if let Some(value) = values.get("PRETTY_HOSTNAME") {
+        metadata.insert("system.prettyHostname".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("ICON_NAME") {
+        metadata.insert("system.iconName".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("CHASSIS") {
+        metadata.insert("system.chassis".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("DEPLOYMENT") {
+        metadata.insert("system.deployment".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("LOCATION") {
+        metadata.insert("system.location".to_string(), value.clone());
+    }
+
+    metadata
+}
+
+fn parse_linux_locale_metadata(text: &str) -> BTreeMap<String, String> {
+    let values = parse_key_value_lines(text);
+    let mut metadata = BTreeMap::new();
+
+    if let Some(value) = values.get("LANG") {
+        metadata.insert("system.locale".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("LANGUAGE") {
+        metadata.insert("system.language".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("LC_TIME") {
+        metadata.insert("system.localeTime".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("LC_NUMERIC") {
+        metadata.insert("system.localeNumeric".to_string(), value.clone());
     }
 
     metadata
@@ -4241,6 +4321,73 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
     }
 
     #[test]
+    fn system_identity_metadata_extracts_linux_machine_info() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/machine-info",
+            br#"PRETTY_HOSTNAME="Evidence Workstation"
+ICON_NAME=computer-desktop
+CHASSIS=desktop
+DEPLOYMENT=lab
+LOCATION="Forensic Bench 2"
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.prettyHostname").map(String::as_str),
+            Some("Evidence Workstation")
+        );
+        assert_eq!(
+            metadata.get("system.chassis").map(String::as_str),
+            Some("desktop")
+        );
+        assert_eq!(
+            metadata.get("system.deployment").map(String::as_str),
+            Some("lab")
+        );
+        assert_eq!(
+            metadata.get("system.location").map(String::as_str),
+            Some("Forensic Bench 2")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_dbus_machine_id_and_locale() {
+        let dbus = system_identity_metadata_from_bytes(
+            "/image/var/lib/dbus/machine-id",
+            b"0123456789abcdef0123456789abcdef\n",
+        );
+        let locale = system_identity_metadata_from_bytes(
+            "/image/etc/default/locale",
+            b"LANG=en_US.UTF-8\nLANGUAGE=en_US:en\nLC_TIME=en_GB.UTF-8\n",
+        );
+
+        assert_eq!(
+            dbus.get("system.machineId").map(String::as_str),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(
+            dbus.get("system.machineIdSource").map(String::as_str),
+            Some("dbus-machine-id")
+        );
+        assert_eq!(
+            locale.get("system.locale").map(String::as_str),
+            Some("en_US.UTF-8")
+        );
+        assert_eq!(
+            locale.get("system.language").map(String::as_str),
+            Some("en_US:en")
+        );
+        assert_eq!(
+            locale.get("system.localeTime").map(String::as_str),
+            Some("en_GB.UTF-8")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_mount_table() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/fstab",
@@ -5281,6 +5428,9 @@ COMMIT
             "/Windows/System32/config/SOFTWARE"
         ));
         assert!(is_system_identity_source("/etc/machine-id"));
+        assert!(is_system_identity_source("/var/lib/dbus/machine-id"));
+        assert!(is_system_identity_source("/etc/machine-info"));
+        assert!(is_system_identity_source("/etc/default/locale"));
         assert!(is_system_identity_source("/etc/timezone"));
         assert!(is_system_identity_source("/etc/fstab"));
         assert!(is_system_identity_source("/etc/mtab"));
