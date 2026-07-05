@@ -35,6 +35,7 @@ const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024;
 const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 const SQLITE_METADATA_NAME_LIMIT: usize = 12;
 const MAX_SYSTEM_IDENTITY_LIST_ITEMS: usize = 32;
+const MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS: usize = 160;
 const DEFAULT_ARTIFACT_EXTRACTOR: &str = "core-artifact-extractor";
 const MAX_ARTIFACT_EXTRACTOR_CHARS: usize = 128;
 
@@ -386,6 +387,9 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "debian_version"
                 | "machine-id"
                 | "hostname"
+                | "timezone"
+                | "fstab"
+                | "mtab"
                 | "product_uuid"
                 | "product_serial"
                 | "product_name"
@@ -680,6 +684,12 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "hostname" => {
             insert_trimmed_metadata(&mut metadata, "system.hostname", &text);
         }
+        "timezone" => {
+            insert_trimmed_metadata(&mut metadata, "system.timeZone", &text);
+        }
+        "fstab" | "mtab" => {
+            metadata.extend(parse_mount_table_metadata(&text));
+        }
         "product_uuid" => {
             insert_trimmed_metadata(&mut metadata, "system.hardwareUuid", &text);
         }
@@ -749,6 +759,61 @@ fn parse_linux_release_metadata(text: &str) -> BTreeMap<String, String> {
     }
 
     metadata
+}
+
+fn parse_mount_table_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let mut descriptions = Vec::new();
+    let mut root_device = None;
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 3 {
+            continue;
+        }
+        let device = decode_mount_field(fields[0]);
+        let mount_point = decode_mount_field(fields[1]);
+        let fs_type = fields[2].to_string();
+        if mount_point == "/" && root_device.is_none() {
+            root_device = Some(device.clone());
+        }
+        let options = fields.get(3).copied().unwrap_or("-");
+        push_unique_limited(
+            &mut descriptions,
+            truncate_metadata_value(
+                &format!("{device} on {mount_point} ({fs_type}, {options})"),
+                MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS,
+            ),
+        );
+    }
+
+    if let Some(root_device) = root_device {
+        metadata.insert("system.rootDevice".to_string(), root_device);
+    }
+    if !descriptions.is_empty() {
+        metadata.insert(
+            "system.mountCount".to_string(),
+            descriptions.len().to_string(),
+        );
+        metadata.insert(
+            "system.mounts".to_string(),
+            truncate_metadata_value(&descriptions.join("; "), MAX_ARTIFACT_METADATA_VALUE_CHARS),
+        );
+    }
+
+    metadata
+}
+
+fn decode_mount_field(value: &str) -> String {
+    value
+        .replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
 }
 
 fn parse_key_value_lines(text: &str) -> BTreeMap<String, String> {
@@ -1555,6 +1620,51 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
     }
 
     #[test]
+    fn system_identity_metadata_extracts_timezone_file() {
+        let metadata =
+            system_identity_metadata_from_bytes("/image/etc/timezone", b"America/Anchorage\n");
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.timeZone").map(String::as_str),
+            Some("America/Anchorage")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_mount_table() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/fstab",
+            br#"# /etc/fstab
+UUID=root-uuid / ext4 defaults 0 1
+/dev/disk/by-label/Case\040Data /mnt/case\040data xfs ro,nosuid 0 0
+tmpfs /run tmpfs rw,nosuid,nodev 0 0
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.rootDevice").map(String::as_str),
+            Some("UUID=root-uuid")
+        );
+        assert_eq!(
+            metadata.get("system.mountCount").map(String::as_str),
+            Some("3")
+        );
+        let mounts = metadata
+            .get("system.mounts")
+            .expect("mount descriptions are captured");
+        assert!(mounts.contains("UUID=root-uuid on / (ext4, defaults)"));
+        assert!(mounts.contains("/dev/disk/by-label/Case Data on /mnt/case data (xfs, ro,nosuid)"));
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_system_version_plist() {
         let metadata = system_identity_metadata_from_bytes(
             "/System/Library/CoreServices/SystemVersion.plist",
@@ -1644,6 +1754,9 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             "/Windows/System32/config/SOFTWARE"
         ));
         assert!(is_system_identity_source("/etc/machine-id"));
+        assert!(is_system_identity_source("/etc/timezone"));
+        assert!(is_system_identity_source("/etc/fstab"));
+        assert!(is_system_identity_source("/etc/mtab"));
         assert!(is_system_identity_source("/sys/class/dmi/id/product_uuid"));
         assert!(is_system_identity_source(
             "/System/Library/CoreServices/SystemVersion.plist"
