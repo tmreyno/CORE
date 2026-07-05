@@ -122,12 +122,15 @@ export function ImageViewer(props: ImageViewerProps) {
         throw new Error("Image evidence viewing is available in the desktop app.");
       }
 
-      if (
-        typeof requestedSource?.size === "number" &&
-        requestedSource.size > MAX_INLINE_IMAGE_BYTES
-      ) {
+      const imageSize = typeof requestedSource?.size === "number"
+        ? requestedSource.size
+        : requestedSource
+          ? (await commands.viewer.getBinaryInfoSource(requestedSource)).size
+          : (await commands.viewer.getBinaryInfo(requestedPath)).size;
+
+      if (imageSize > MAX_INLINE_IMAGE_BYTES) {
         throw new Error(
-          `Image is too large for inline preview: ${requestedSource.size} bytes > ${MAX_INLINE_IMAGE_BYTES} bytes. Use hex or export the file for external viewing.`,
+          `Image is too large for inline preview: ${imageSize} bytes > ${MAX_INLINE_IMAGE_BYTES} bytes. Use hex or export the file for external viewing.`,
         );
       }
 

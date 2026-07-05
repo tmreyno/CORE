@@ -335,6 +335,14 @@ export interface SourceAnalysisOptions {
   entropyWindowBytes?: number;
 }
 
+/** Binary source metadata used before choosing inline or ranged reads */
+export interface ViewerBinaryInfo {
+  path: string;
+  size: number;
+  maxInlineBytes: number;
+  supportsRangeReads: boolean;
+}
+
 /** Ranged binary chunk returned as base64 for source-backed viewers */
 export interface ViewerBinaryBase64Chunk {
   path: string;
@@ -868,6 +876,12 @@ export const viewerCommands = {
     options?: SourceAnalysisOptions,
   ): Promise<SourceAnalysis> =>
     invoke<SourceAnalysis>("viewer_analyze_source", { source, options }),
+
+  getBinaryInfo: (path: string): Promise<ViewerBinaryInfo> =>
+    invoke<ViewerBinaryInfo>("viewer_get_binary_info", { path }),
+
+  getBinaryInfoSource: (source: HashSourceInput): Promise<ViewerBinaryInfo> =>
+    invoke<ViewerBinaryInfo>("viewer_get_binary_info_source", { source }),
 
   readBinaryBase64: (path: string): Promise<string> =>
     invoke<string>("viewer_read_binary_base64", { path }),
