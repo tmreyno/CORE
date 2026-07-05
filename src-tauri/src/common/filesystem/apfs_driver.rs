@@ -31,6 +31,8 @@ use crate::common::vfs::{normalize_path, DirEntry, FileAttr, VfsError};
 const APFS_CONTAINER_MAGIC: u32 = 0x4E585342; // 'NXSB' in little-endian
 /// APFS volume superblock magic 'APSB'
 const APFS_VOLUME_MAGIC: u32 = 0x41505342; // 'APSB' in little-endian
+/// Last fixed field read from the APFS container superblock before the volume OID table.
+const APFS_NX_SUPERBLOCK_FIXED_FIELDS_LEN: usize = 168;
 /// APFS object type mask
 const OBJ_TYPE_MASK: u32 = 0x0000FFFF;
 /// APFS object types
@@ -457,6 +459,12 @@ impl ApfsDriver {
         if block_size == 0 || block_size > 65536 {
             return Err(VfsError::IoError(format!(
                 "Invalid APFS block size: {}",
+                block_size
+            )));
+        }
+        if (block_size as usize) < APFS_NX_SUPERBLOCK_FIXED_FIELDS_LEN {
+            return Err(VfsError::IoError(format!(
+                "APFS container block size {} is too small for container superblock fields",
                 block_size
             )));
         }
