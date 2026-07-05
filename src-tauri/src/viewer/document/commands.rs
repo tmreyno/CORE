@@ -855,7 +855,9 @@ const BINARY_ANALYSIS_MAX_BYTES: u64 = 512 * 1024 * 1024;
 /// Analyze a binary executable (PE/ELF/Mach-O)
 #[command]
 pub async fn binary_analyze(path: String) -> Result<BinaryInfo, String> {
-    analyze_binary(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || analyze_binary(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Analyze a binary executable from a local file or supported container entry.
@@ -1237,6 +1239,27 @@ mod tests {
         (tmp, source)
     }
 
+    fn minimal_elf64_header() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x7f, b'E', b'L', b'F']);
+        data.extend_from_slice(&[2, 1, 1, 0]);
+        data.extend_from_slice(&[0; 8]);
+        data.extend_from_slice(&2u16.to_le_bytes());
+        data.extend_from_slice(&0x3eu16.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&0x400000u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&64u16.to_le_bytes());
+        data.extend_from_slice(&56u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&64u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data
+    }
+
     #[test]
     fn copy_evidence_source_to_writer_accepts_chunked_reads() {
         let source = ChunkedByteSource::new("chunked.sqlite", b"0123456789", 3);
@@ -1394,6 +1417,24 @@ mod tests {
         assert_eq!(rows.rows.len(), 2);
         assert_eq!(rows.rows[0][1], "Alice");
         assert_eq!(rows.rows[1][1], "Bob");
+    }
+
+    #[tokio::test]
+    async fn binary_analyze_reads_local_binary_on_blocking_worker() {
+        let mut tmp = tempfile::Builder::new().suffix(".elf").tempfile().unwrap();
+        tmp.write_all(&minimal_elf64_header()).unwrap();
+        tmp.flush().unwrap();
+
+        let info = binary_analyze(tmp.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            info.format,
+            super::super::binary::BinaryFormat::ELF64
+        ));
+        assert_eq!(info.architecture, "x86_64");
+        assert_eq!(info.entry_point, Some(0x400000));
     }
 
     #[tokio::test]
