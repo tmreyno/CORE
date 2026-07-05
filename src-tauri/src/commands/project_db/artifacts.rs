@@ -764,6 +764,7 @@ fn registry_software_identity_metadata(
         "Microsoft\\Windows\\CurrentVersion\\OEMInformation",
         WINDOWS_SOFTWARE_OEM_INFORMATION_REGISTRY_VALUES,
     );
+    metadata.extend(registry_software_profile_list_metadata(&mut parser));
 
     Ok(finalize_registry_identity_metadata(
         metadata,
@@ -847,6 +848,105 @@ fn is_windows_admin_group(name: &str) -> bool {
             | "account operators"
             | "backup operators"
     )
+}
+
+#[derive(Default)]
+struct WindowsProfileListMetadata {
+    sids: Vec<String>,
+    names: Vec<String>,
+    paths: Vec<String>,
+    descriptions: Vec<String>,
+}
+
+fn registry_software_profile_list_metadata(
+    parser: &mut notatin::parser::Parser,
+) -> BTreeMap<String, String> {
+    let profile_list_path = "Microsoft\\Windows NT\\CurrentVersion\\ProfileList";
+    let Some(mut profile_list_key) = parser.get_key(profile_list_path, false).ok().flatten() else {
+        return BTreeMap::new();
+    };
+
+    let mut values = WindowsProfileListMetadata::default();
+    for profile_key in profile_list_key
+        .read_sub_keys(parser)
+        .iter()
+        .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+    {
+        let profile_key_path = format!("{profile_list_path}\\{}", profile_key.key_name);
+        let profile_path = registry_value(parser, &profile_key_path, "ProfileImagePath")
+            .and_then(registry_value_text);
+        collect_windows_profile_list_metadata(&mut values, &profile_key.key_name, profile_path);
+    }
+
+    windows_profile_list_metadata_to_map(values)
+}
+
+fn collect_windows_profile_list_metadata(
+    values: &mut WindowsProfileListMetadata,
+    sid: &str,
+    profile_path: Option<String>,
+) {
+    let sid = truncate_metadata_value(sid.trim(), 120);
+    if sid.is_empty() {
+        return;
+    }
+    push_unique_limited(&mut values.sids, sid.clone());
+
+    let profile_path = profile_path
+        .map(|value| truncate_metadata_value(value.trim(), 240))
+        .filter(|value| !value.is_empty());
+    if let Some(profile_path) = profile_path {
+        push_unique_limited(&mut values.paths, profile_path.clone());
+        if let Some(name) = windows_profile_name_from_path(&profile_path) {
+            push_unique_limited(&mut values.names, name.clone());
+            push_unique_limited(
+                &mut values.descriptions,
+                truncate_metadata_value(
+                    &format!("{name} ({sid}, {profile_path})"),
+                    MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS,
+                ),
+            );
+        } else {
+            push_unique_limited(
+                &mut values.descriptions,
+                truncate_metadata_value(
+                    &format!("{sid} ({profile_path})"),
+                    MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS,
+                ),
+            );
+        }
+    } else {
+        push_unique_limited(&mut values.descriptions, sid);
+    }
+}
+
+fn windows_profile_name_from_path(path: &str) -> Option<String> {
+    let name = path
+        .trim()
+        .trim_end_matches(['\\', '/'])
+        .rsplit(['\\', '/'])
+        .next()?
+        .trim();
+    (!name.is_empty()).then(|| truncate_metadata_value(name, 120))
+}
+
+fn windows_profile_list_metadata_to_map(
+    values: WindowsProfileListMetadata,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if values.sids.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert(
+        "system.profileCount".to_string(),
+        values.sids.len().to_string(),
+    );
+    insert_joined_metadata(&mut metadata, "system.profileSids", &values.sids);
+    insert_joined_metadata(&mut metadata, "system.profileNames", &values.names);
+    insert_joined_metadata(&mut metadata, "system.profilePaths", &values.paths);
+    insert_joined_metadata(&mut metadata, "system.profiles", &values.descriptions);
+    metadata
 }
 
 fn finalize_registry_identity_metadata(
@@ -6767,6 +6867,60 @@ COMMIT
         assert!(!metadata
             .keys()
             .any(|key| key.to_ascii_lowercase().contains("hash")));
+    }
+
+    #[test]
+    fn windows_profile_list_metadata_summarizes_profile_sids_paths_and_names() {
+        let mut values = WindowsProfileListMetadata::default();
+        collect_windows_profile_list_metadata(
+            &mut values,
+            "S-1-5-21-111-222-333-1001",
+            Some(r"C:\Users\Alice".to_string()),
+        );
+        collect_windows_profile_list_metadata(
+            &mut values,
+            "S-1-5-21-111-222-333-1002",
+            Some("C:/Users/Bob".to_string()),
+        );
+        collect_windows_profile_list_metadata(&mut values, "S-1-5-18", None);
+
+        let metadata = windows_profile_list_metadata_to_map(values);
+
+        assert_eq!(
+            metadata.get("system.profileCount").map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            metadata.get("system.profileSids").map(String::as_str),
+            Some("S-1-5-21-111-222-333-1001; S-1-5-21-111-222-333-1002; S-1-5-18")
+        );
+        assert_eq!(
+            metadata.get("system.profileNames").map(String::as_str),
+            Some("Alice; Bob")
+        );
+        assert_eq!(
+            metadata.get("system.profilePaths").map(String::as_str),
+            Some(r"C:\Users\Alice; C:/Users/Bob")
+        );
+        let profiles = metadata
+            .get("system.profiles")
+            .expect("profile descriptions should be captured");
+        assert!(profiles.contains(r"Alice (S-1-5-21-111-222-333-1001, C:\Users\Alice)"));
+        assert!(profiles.contains("Bob (S-1-5-21-111-222-333-1002, C:/Users/Bob)"));
+        assert!(profiles.contains("S-1-5-18"));
+    }
+
+    #[test]
+    fn windows_profile_name_from_path_handles_windows_and_normalized_paths() {
+        assert_eq!(
+            windows_profile_name_from_path(r"C:\Users\Alice").as_deref(),
+            Some("Alice")
+        );
+        assert_eq!(
+            windows_profile_name_from_path("/Users/Bob/").as_deref(),
+            Some("Bob")
+        );
+        assert_eq!(windows_profile_name_from_path("").as_deref(), None);
     }
 
     #[test]
