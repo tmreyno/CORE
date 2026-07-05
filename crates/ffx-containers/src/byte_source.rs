@@ -172,13 +172,13 @@ impl EvidenceByteSource for Ad1EntryByteSource {
     }
 
     fn len(&self) -> EvidenceSourceResult<u64> {
-        if let Some(size) = self.known_size {
-            return Ok(size);
-        }
-
-        ad1::get_entry_info(&self.container_path, &self.entry_path)
-            .map(|entry| entry.size)
-            .map_err(|e| source_error(&self.container_path, &self.entry_path, "ad1", e.to_string()))
+        live_or_known_size(self.known_size, || {
+            ad1::get_entry_info(&self.container_path, &self.entry_path)
+                .map(|entry| entry.size)
+                .map_err(|e| {
+                    source_error(&self.container_path, &self.entry_path, "ad1", e.to_string())
+                })
+        })
     }
 
     fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
@@ -201,9 +201,8 @@ impl EvidenceByteSource for Ad1EntryByteSource {
             });
         }
 
-        ad1::read_entry_chunk(&self.container_path, &self.entry_path, offset, read_size).map_err(
-            |e| source_error(&self.container_path, &self.entry_path, "ad1", e.to_string()),
-        )
+        ad1::read_entry_chunk(&self.container_path, &self.entry_path, offset, read_size)
+            .map_err(|e| source_error(&self.container_path, &self.entry_path, "ad1", e.to_string()))
     }
 }
 
@@ -246,15 +245,13 @@ impl EvidenceByteSource for L01EntryByteSource {
     }
 
     fn len(&self) -> EvidenceSourceResult<u64> {
-        if let Some(size) = self.known_size {
-            return Ok(size);
-        }
-
-        let entry = self.entry()?;
-        Ok(if entry.size > 0 {
-            entry.size
-        } else {
-            entry.data_size
+        live_or_known_size(self.known_size, || {
+            let entry = self.entry()?;
+            Ok(if entry.size > 0 {
+                entry.size
+            } else {
+                entry.data_size
+            })
         })
     }
 
@@ -451,30 +448,38 @@ fn checked_entry_data_offset(
     })
 }
 
+fn live_or_known_size<F>(known_size: Option<u64>, live_size: F) -> EvidenceSourceResult<u64>
+where
+    F: FnOnce() -> EvidenceSourceResult<u64>,
+{
+    match live_size() {
+        Ok(size) => Ok(size),
+        Err(error) => known_size.ok_or(error),
+    }
+}
+
 impl EvidenceByteSource for UfedEntryByteSource {
     fn source_ref(&self) -> EvidenceSourceRef {
         self.source_id()
     }
 
     fn len(&self) -> EvidenceSourceResult<u64> {
-        if let Some(size) = self.known_size {
-            return Ok(size);
-        }
+        live_or_known_size(self.known_size, || {
+            if self.is_zip_backed() {
+                return self.zip_entry_len();
+            }
 
-        if self.is_zip_backed() {
-            return self.zip_entry_len();
-        }
-
-        std::fs::metadata(self.local_entry_path())
-            .map(|metadata| metadata.len())
-            .map_err(|e| {
-                source_error(
-                    &self.container_path,
-                    &self.entry_path,
-                    "ufed",
-                    format!("UFED local entry metadata failed: {e}"),
-                )
-            })
+            std::fs::metadata(self.local_entry_path())
+                .map(|metadata| metadata.len())
+                .map_err(|e| {
+                    source_error(
+                        &self.container_path,
+                        &self.entry_path,
+                        "ufed",
+                        format!("UFED local entry metadata failed: {e}"),
+                    )
+                })
+        })
     }
 
     fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
@@ -618,6 +623,26 @@ mod tests {
     }
 
     #[test]
+    fn live_or_known_size_prefers_live_size_over_stale_known_size() {
+        assert_eq!(live_or_known_size(Some(2), || Ok(7)).unwrap(), 7);
+    }
+
+    #[test]
+    fn live_or_known_size_falls_back_to_known_size_when_live_lookup_fails() {
+        let size = live_or_known_size(Some(9), || {
+            Err(source_error(
+                "/cases/evidence.ad1",
+                "/missing.bin",
+                "ad1",
+                "entry not found".to_string(),
+            ))
+        })
+        .unwrap();
+
+        assert_eq!(size, 9);
+    }
+
+    #[test]
     fn local_container_entry_path_accepts_windows_relative_components() {
         let resolved = local_container_entry_path("/cases/ufed/case.ufd", r"files\media\photo.jpg");
 
@@ -725,6 +750,40 @@ mod tests {
 
         assert_eq!(source.len().unwrap(), 6);
         assert_eq!(source.read_range(0, 64).unwrap(), b"report");
+    }
+
+    #[test]
+    fn ufed_source_len_uses_live_size_over_stale_known_size() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let container_path = temp_dir.path().join("case.ufd");
+        let entry_path = temp_dir.path().join("files/report.txt");
+        std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
+        std::fs::write(&container_path, b"[case]\n").unwrap();
+        std::fs::write(&entry_path, b"correct-size").unwrap();
+
+        let source = UfedEntryByteSource::new(
+            container_path.to_string_lossy().to_string(),
+            "files/report.txt".to_string(),
+            Some(1),
+        );
+
+        assert_eq!(source.len().unwrap(), "correct-size".len() as u64);
+        assert_eq!(source.read_range(0, 64).unwrap(), b"correct-size");
+    }
+
+    #[test]
+    fn ufed_source_len_falls_back_to_known_size_when_live_local_entry_missing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let container_path = temp_dir.path().join("case.ufd");
+        std::fs::write(&container_path, b"[case]\n").unwrap();
+
+        let source = UfedEntryByteSource::new(
+            container_path.to_string_lossy().to_string(),
+            "missing/report.txt".to_string(),
+            Some(123),
+        );
+
+        assert_eq!(source.len().unwrap(), 123);
     }
 
     #[test]
