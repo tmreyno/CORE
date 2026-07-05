@@ -443,6 +443,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_linux_hardware_inventory_source(&source_id) {
+        return true;
+    }
+
     if is_unix_account_identity_source(&source_id) {
         return true;
     }
@@ -517,6 +521,15 @@ fn is_linux_machine_identity_source(source_id: &str) -> bool {
     source_id.ends_with("/var/lib/dbus/machine-id")
         || source_id.ends_with("/etc/machine-info")
         || source_id.ends_with("/etc/default/locale")
+}
+
+fn is_linux_hardware_inventory_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    let file_name = source_id.rsplit('/').next().unwrap_or("");
+    matches!(
+        file_name,
+        "dmidecode" | "dmidecode.txt" | "lshw" | "lshw.txt" | "lshw-short.txt"
+    ) || source_id.ends_with("/var/log/installer/dmidecode")
 }
 
 fn is_unix_account_identity_source(source_id: &str) -> bool {
@@ -1625,6 +1638,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     if is_linux_network_identity_source(&lower) {
         metadata.extend(parse_linux_network_config_metadata(&lower, &text));
     }
+    if is_linux_hardware_inventory_source(&lower) {
+        metadata.extend(parse_linux_hardware_inventory_metadata(&lower, &text));
+    }
     if is_unix_account_identity_source(&lower) {
         metadata.extend(parse_unix_account_metadata(&lower, &text));
     }
@@ -1863,6 +1879,206 @@ fn parse_linux_locale_metadata(text: &str) -> BTreeMap<String, String> {
     }
 
     metadata
+}
+
+fn parse_linux_hardware_inventory_metadata(
+    source_id: &str,
+    text: &str,
+) -> BTreeMap<String, String> {
+    if source_id
+        .rsplit('/')
+        .next()
+        .is_some_and(|name| matches!(name, "lshw" | "lshw.txt" | "lshw-short.txt"))
+    {
+        return parse_lshw_text_metadata(text);
+    }
+
+    parse_dmidecode_metadata(text)
+}
+
+fn parse_dmidecode_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let mut section = "";
+
+    for raw_line in text.lines() {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if !raw_line.starts_with(char::is_whitespace) && trimmed.ends_with("Information") {
+            section = trimmed;
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let value = normalize_linux_hardware_value(value);
+        if value.is_empty() {
+            continue;
+        }
+
+        match (section, key.trim()) {
+            ("System Information", "Manufacturer") => {
+                metadata.insert("system.manufacturer".to_string(), value);
+            }
+            ("System Information", "Product Name") => {
+                metadata.insert("system.model".to_string(), value);
+            }
+            ("System Information", "Version") => {
+                metadata.insert("system.productVersion".to_string(), value);
+            }
+            ("System Information", "Serial Number") => {
+                metadata.insert("system.serialNumber".to_string(), value);
+            }
+            ("System Information", "UUID") => {
+                metadata.insert("system.hardwareUuid".to_string(), value);
+            }
+            ("System Information", "SKU Number") => {
+                metadata.insert("system.sku".to_string(), value);
+            }
+            ("System Information", "Family") => {
+                metadata.insert("system.family".to_string(), value);
+            }
+            ("Base Board Information", "Manufacturer") => {
+                metadata.insert("system.boardVendor".to_string(), value);
+            }
+            ("Base Board Information", "Product Name") => {
+                metadata.insert("system.boardName".to_string(), value);
+            }
+            ("Base Board Information", "Version") => {
+                metadata.insert("system.boardVersion".to_string(), value);
+            }
+            ("Base Board Information", "Serial Number") => {
+                metadata.insert("system.boardSerial".to_string(), value);
+            }
+            ("Base Board Information", "Asset Tag") => {
+                metadata.insert("system.boardAssetTag".to_string(), value);
+            }
+            ("BIOS Information", "Vendor") => {
+                metadata.insert("system.biosVendor".to_string(), value);
+            }
+            ("BIOS Information", "Version") => {
+                metadata.insert("system.biosVersion".to_string(), value);
+            }
+            ("BIOS Information", "Release Date") => {
+                metadata.insert("system.biosDate".to_string(), value);
+            }
+            ("Chassis Information", "Manufacturer") => {
+                metadata.insert("system.chassisVendor".to_string(), value);
+            }
+            ("Chassis Information", "Type") => {
+                metadata.insert("system.chassisType".to_string(), value);
+            }
+            ("Chassis Information", "Serial Number") => {
+                metadata.insert("system.chassisSerial".to_string(), value);
+            }
+            ("Chassis Information", "Asset Tag") => {
+                metadata.insert("system.chassisAssetTag".to_string(), value);
+            }
+            ("Chassis Information", "Version") => {
+                metadata.insert("system.chassisVersion".to_string(), value);
+            }
+            _ => {}
+        }
+    }
+
+    if !metadata.is_empty() {
+        metadata.insert(
+            "system.hardwareInventorySource".to_string(),
+            "dmidecode".to_string(),
+        );
+    }
+    metadata
+}
+
+fn parse_lshw_text_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let mut section = "system";
+
+    for raw_line in text.lines() {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("*-") {
+            section = trimmed
+                .trim_start_matches("*-")
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let value = normalize_linux_hardware_value(value);
+        if value.is_empty() {
+            continue;
+        }
+
+        match (section, key.trim()) {
+            ("system", "vendor") => {
+                metadata.insert("system.manufacturer".to_string(), value);
+            }
+            ("system", "product") => {
+                metadata.insert("system.model".to_string(), value);
+            }
+            ("system", "version") => {
+                metadata.insert("system.productVersion".to_string(), value);
+            }
+            ("system", "serial") => {
+                metadata.insert("system.serialNumber".to_string(), value);
+            }
+            ("core", "vendor") => {
+                metadata.insert("system.boardVendor".to_string(), value);
+            }
+            ("core", "product") => {
+                metadata.insert("system.boardName".to_string(), value);
+            }
+            ("core", "version") => {
+                metadata.insert("system.boardVersion".to_string(), value);
+            }
+            ("core", "serial") => {
+                metadata.insert("system.boardSerial".to_string(), value);
+            }
+            ("firmware", "vendor") => {
+                metadata.insert("system.biosVendor".to_string(), value);
+            }
+            ("firmware", "version") => {
+                metadata.insert("system.biosVersion".to_string(), value);
+            }
+            ("firmware", "date") => {
+                metadata.insert("system.biosDate".to_string(), value);
+            }
+            _ => {}
+        }
+    }
+
+    if !metadata.is_empty() {
+        metadata.insert(
+            "system.hardwareInventorySource".to_string(),
+            "lshw".to_string(),
+        );
+    }
+    metadata
+}
+
+fn normalize_linux_hardware_value(value: &str) -> String {
+    let value = value.trim().trim_matches('"').trim_matches('\'').trim();
+    if value.is_empty()
+        || matches!(
+            value.to_ascii_lowercase().as_str(),
+            "not specified"
+                | "not available"
+                | "to be filled by o.e.m."
+                | "to be filled by oem"
+                | "none"
+                | "unknown"
+        )
+    {
+        return String::new();
+    }
+    truncate_metadata_value(value, 180)
 }
 
 fn parse_localtime_metadata(data: &[u8], text: &str) -> BTreeMap<String, String> {
@@ -5889,6 +6105,155 @@ LOCATION="Forensic Bench 2"
         assert_eq!(
             metadata.get("system.location").map(String::as_str),
             Some("Forensic Bench 2")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_dmidecode_hardware_inventory() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/case/reports/dmidecode.txt",
+            br#"System Information
+        Manufacturer: Dell Inc.
+        Product Name: Precision 7780
+        Version: 01
+        Serial Number: ABC1234
+        UUID: 00112233-4455-6677-8899-aabbccddeeff
+        SKU Number: SKU-7780
+        Family: Precision
+
+Base Board Information
+        Manufacturer: Dell Inc.
+        Product Name: 0TEST1
+        Version: A00
+        Serial Number: BOARD123
+        Asset Tag: BOARD-ASSET
+
+BIOS Information
+        Vendor: Dell Inc.
+        Version: 1.12.0
+        Release Date: 05/01/2026
+
+Chassis Information
+        Manufacturer: Dell Inc.
+        Type: Laptop
+        Serial Number: CHS123
+        Asset Tag: CHASSIS-ASSET
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata
+                .get("system.hardwareInventorySource")
+                .map(String::as_str),
+            Some("dmidecode")
+        );
+        assert_eq!(
+            metadata.get("system.manufacturer").map(String::as_str),
+            Some("Dell Inc.")
+        );
+        assert_eq!(
+            metadata.get("system.model").map(String::as_str),
+            Some("Precision 7780")
+        );
+        assert_eq!(
+            metadata.get("system.serialNumber").map(String::as_str),
+            Some("ABC1234")
+        );
+        assert_eq!(
+            metadata.get("system.hardwareUuid").map(String::as_str),
+            Some("00112233-4455-6677-8899-aabbccddeeff")
+        );
+        assert_eq!(
+            metadata.get("system.sku").map(String::as_str),
+            Some("SKU-7780")
+        );
+        assert_eq!(
+            metadata.get("system.boardName").map(String::as_str),
+            Some("0TEST1")
+        );
+        assert_eq!(
+            metadata.get("system.boardSerial").map(String::as_str),
+            Some("BOARD123")
+        );
+        assert_eq!(
+            metadata.get("system.biosVersion").map(String::as_str),
+            Some("1.12.0")
+        );
+        assert_eq!(
+            metadata.get("system.chassisType").map(String::as_str),
+            Some("Laptop")
+        );
+        assert_eq!(
+            metadata.get("system.chassisSerial").map(String::as_str),
+            Some("CHS123")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_lshw_hardware_inventory() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/case/inventory/lshw.txt",
+            br#"evidence-host
+    description: Notebook
+    product: ThinkPad P1 Gen 6
+    vendor: LENOVO
+    version: ThinkPad P1 Gen 6
+    serial: PF4TEST
+    *-core
+         description: Motherboard
+         product: 21FVCTO1WW
+         vendor: LENOVO
+         version: SDK0T76530 WIN
+         serial: L1HFTEST
+       *-firmware
+            description: BIOS
+            vendor: LENOVO
+            version: N3JET99W
+            date: 04/04/2026
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata
+                .get("system.hardwareInventorySource")
+                .map(String::as_str),
+            Some("lshw")
+        );
+        assert_eq!(
+            metadata.get("system.manufacturer").map(String::as_str),
+            Some("LENOVO")
+        );
+        assert_eq!(
+            metadata.get("system.model").map(String::as_str),
+            Some("ThinkPad P1 Gen 6")
+        );
+        assert_eq!(
+            metadata.get("system.serialNumber").map(String::as_str),
+            Some("PF4TEST")
+        );
+        assert_eq!(
+            metadata.get("system.boardName").map(String::as_str),
+            Some("21FVCTO1WW")
+        );
+        assert_eq!(
+            metadata.get("system.boardSerial").map(String::as_str),
+            Some("L1HFTEST")
+        );
+        assert_eq!(
+            metadata.get("system.biosVendor").map(String::as_str),
+            Some("LENOVO")
+        );
+        assert_eq!(
+            metadata.get("system.biosVersion").map(String::as_str),
+            Some("N3JET99W")
         );
     }
 
