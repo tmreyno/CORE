@@ -10,8 +10,10 @@ use crate::project::merge;
 
 /// Analyze multiple .cffx files and return summaries for the merge wizard.
 #[tauri::command]
-pub fn project_merge_analyze(cffx_paths: Vec<String>) -> Vec<merge::ProjectMergeSummary> {
-    merge::analyze_projects(&cffx_paths)
+pub async fn project_merge_analyze(cffx_paths: Vec<String>) -> Vec<merge::ProjectMergeSummary> {
+    tauri::async_runtime::spawn_blocking(move || merge::analyze_projects(&cffx_paths))
+        .await
+        .unwrap_or_default()
 }
 
 /// Execute a full project merge pipeline.
@@ -24,7 +26,7 @@ pub fn project_merge_analyze(cffx_paths: Vec<String>) -> Vec<merge::ProjectMerge
 /// - `exclusions`: optional exclusion configuration for selective merging
 ///   (skip entire categories, individual evidence files, COC items, collections, or form submissions)
 #[tauri::command]
-pub fn project_merge_execute(
+pub async fn project_merge_execute(
     cffx_paths: Vec<String>,
     output_path: String,
     merged_name: String,
@@ -32,12 +34,23 @@ pub fn project_merge_execute(
     owner_assignments: Option<Vec<merge::MergeSourceAssignment>>,
     exclusions: Option<merge::MergeExclusions>,
 ) -> merge::MergeResult {
-    merge::execute_merge(
-        &cffx_paths,
-        &output_path,
-        &merged_name,
-        new_root.as_deref(),
-        owner_assignments.as_deref(),
-        exclusions.as_ref(),
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        merge::execute_merge(
+            &cffx_paths,
+            &output_path,
+            &merged_name,
+            new_root.as_deref(),
+            owner_assignments.as_deref(),
+            exclusions.as_ref(),
+        )
+    })
+    .await
+    .unwrap_or_else(|e| merge::MergeResult {
+        success: false,
+        cffx_path: None,
+        ffxdb_path: None,
+        error: Some(format!("Task failed: {}", e)),
+        stats: None,
+        sources: None,
+    })
 }
