@@ -467,6 +467,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_windows_setup_log_source(&source_id) {
+        return true;
+    }
+
     matches!(
         source_id.rsplit('/').next(),
         Some(
@@ -594,6 +598,16 @@ fn is_firewall_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/etc/sysconfig/iptables")
         || source_id.contains("/etc/iptables/")
         || source_id.ends_with("/windows/system32/logfiles/firewall/pfirewall.log")
+}
+
+fn is_windows_setup_log_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/windows/panther/setupact.log")
+        || source_id.ends_with("/windows/panther/setuperr.log")
+        || source_id.ends_with("/windows/inf/setupapi.dev.log")
+        || source_id.ends_with("/windows/inf/setupapi.app.log")
+        || source_id.contains("/windows/system32/sysprep/panther/setupact.log")
+        || source_id.contains("/windows/system32/sysprep/panther/setuperr.log")
 }
 
 fn system_identity_metadata_from_source(
@@ -1673,6 +1687,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     }
     if is_firewall_identity_source(&lower) {
         metadata.extend(parse_firewall_metadata(&lower, data, &text));
+    }
+    if is_windows_setup_log_source(&lower) {
+        metadata.extend(parse_windows_setup_log_metadata(&lower, &text));
     }
 
     match file_name {
@@ -3651,6 +3668,249 @@ fn parse_windows_firewall_log_metadata(text: &str) -> BTreeMap<String, String> {
     }
     insert_joined_metadata(&mut metadata, "system.firewallProtocols", &protocols);
     metadata
+}
+
+#[derive(Default)]
+struct WindowsSetupLogMetadata {
+    line_count: usize,
+    device_install_count: usize,
+    computer_names: Vec<String>,
+    host_os_versions: Vec<String>,
+    setup_build_versions: Vec<String>,
+    manufacturers: Vec<String>,
+    models: Vec<String>,
+    bios_versions: Vec<String>,
+    architectures: Vec<String>,
+    device_hardware_ids: Vec<String>,
+    device_descriptions: Vec<String>,
+    driver_providers: Vec<String>,
+    driver_versions: Vec<String>,
+    inf_names: Vec<String>,
+}
+
+fn parse_windows_setup_log_metadata(source_id: &str, text: &str) -> BTreeMap<String, String> {
+    let mut values = WindowsSetupLogMetadata::default();
+    let setup_type = if source_id.ends_with("/setupapi.dev.log") {
+        "setupapi-dev"
+    } else if source_id.ends_with("/setupapi.app.log") {
+        "setupapi-app"
+    } else if source_id.ends_with("/setuperr.log") {
+        "setup-error"
+    } else {
+        "setup-action"
+    };
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        values.line_count = values.line_count.saturating_add(1);
+        collect_windows_setup_log_line(line, &mut values);
+    }
+
+    windows_setup_log_metadata_to_map(values, setup_type)
+}
+
+fn collect_windows_setup_log_line(line: &str, values: &mut WindowsSetupLogMetadata) {
+    collect_marker_value(
+        line,
+        &[
+            "computername",
+            "computer name",
+            "machine name",
+            "target computer name",
+        ],
+        &mut values.computer_names,
+        120,
+    );
+    collect_marker_value(
+        line,
+        &[
+            "host os version",
+            "source os version",
+            "detected os version",
+        ],
+        &mut values.host_os_versions,
+        120,
+    );
+    collect_marker_value(
+        line,
+        &["setup build version", "setup version", "build version"],
+        &mut values.setup_build_versions,
+        120,
+    );
+    collect_marker_value(
+        line,
+        &["system manufacturer", "manufacturer"],
+        &mut values.manufacturers,
+        120,
+    );
+    collect_marker_value(
+        line,
+        &[
+            "system product name",
+            "product name",
+            "system model",
+            "model",
+        ],
+        &mut values.models,
+        120,
+    );
+    collect_marker_value(
+        line,
+        &["bios version", "firmware version"],
+        &mut values.bios_versions,
+        120,
+    );
+    collect_marker_value(
+        line,
+        &["architecture", "processor architecture"],
+        &mut values.architectures,
+        80,
+    );
+
+    if let Some(hardware_id) = extract_setupapi_device_hardware_id(line) {
+        values.device_install_count = values.device_install_count.saturating_add(1);
+        push_unique_limited(&mut values.device_hardware_ids, hardware_id);
+    }
+    collect_setupapi_value(
+        line,
+        "device description",
+        &mut values.device_descriptions,
+        160,
+    );
+    collect_setupapi_value(line, "provider", &mut values.driver_providers, 120);
+    collect_setupapi_value(line, "driver version", &mut values.driver_versions, 120);
+    collect_setupapi_value(line, "original inf name", &mut values.inf_names, 120);
+    collect_setupapi_value(line, "inf name", &mut values.inf_names, 120);
+}
+
+fn windows_setup_log_metadata_to_map(
+    values: WindowsSetupLogMetadata,
+    setup_type: &str,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("system.setupLogType".to_string(), setup_type.to_string());
+    if values.line_count > 0 {
+        metadata.insert(
+            "system.setupLogLineCount".to_string(),
+            values.line_count.to_string(),
+        );
+    }
+    if values.device_install_count > 0 {
+        metadata.insert(
+            "system.setupDeviceInstallCount".to_string(),
+            values.device_install_count.to_string(),
+        );
+    }
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupComputerNames",
+        &values.computer_names,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupHostOsVersions",
+        &values.host_os_versions,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupBuildVersions",
+        &values.setup_build_versions,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupManufacturers",
+        &values.manufacturers,
+    );
+    insert_joined_metadata(&mut metadata, "system.setupModels", &values.models);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupBiosVersions",
+        &values.bios_versions,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupArchitectures",
+        &values.architectures,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupDeviceHardwareIds",
+        &values.device_hardware_ids,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupDeviceDescriptions",
+        &values.device_descriptions,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupDriverProviders",
+        &values.driver_providers,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.setupDriverVersions",
+        &values.driver_versions,
+    );
+    insert_joined_metadata(&mut metadata, "system.setupInfNames", &values.inf_names);
+    metadata
+}
+
+fn collect_marker_value(line: &str, markers: &[&str], values: &mut Vec<String>, max_chars: usize) {
+    for marker in markers {
+        if let Some(value) = setup_log_value_after_marker(line, marker) {
+            push_unique_limited(values, truncate_metadata_value(&value, max_chars));
+            return;
+        }
+    }
+}
+
+fn collect_setupapi_value(line: &str, marker: &str, values: &mut Vec<String>, max_chars: usize) {
+    if let Some(value) = setup_log_value_after_marker(line, marker) {
+        push_unique_limited(values, truncate_metadata_value(&value, max_chars));
+    }
+}
+
+fn setup_log_value_after_marker(line: &str, marker: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let marker_start = lower.find(marker)?;
+    let after_marker = line.get(marker_start + marker.len()..)?;
+    let separator_index = after_marker.find([':', '=', '-'])?;
+    let value = after_marker
+        .get(separator_index + 1..)?
+        .trim()
+        .trim_matches(['"', '\'', '[', ']']);
+    if setup_log_value_is_useful(value) {
+        Some(value.to_string())
+    } else {
+        None
+    }
+}
+
+fn setup_log_value_is_useful(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().any(|ch| ch.is_ascii_alphanumeric())
+        && !matches!(
+            value.to_ascii_lowercase().as_str(),
+            "none" | "unknown" | "n/a"
+        )
+}
+
+fn extract_setupapi_device_hardware_id(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    if !lower.contains("device install") {
+        return None;
+    }
+    let (_, raw) = line.split_once(" - ")?;
+    let candidate = raw.trim().trim_end_matches(']').trim();
+    if candidate.contains('\\') || candidate.contains("VEN_") || candidate.contains("VID_") {
+        Some(truncate_metadata_value(candidate, 180))
+    } else {
+        None
+    }
 }
 
 fn parse_key_value_lines(text: &str) -> BTreeMap<String, String> {
@@ -7654,6 +7914,125 @@ COMMIT
     }
 
     #[test]
+    fn system_identity_metadata_extracts_windows_setup_action_log_summary() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Windows/Panther/setupact.log",
+            br#"2026-06-01 12:00:00, Info                  Setup build version: 10.0.26100.1
+2026-06-01 12:00:01, Info                  Host OS version: 10.0.22631.3593
+2026-06-01 12:00:02, Info                  ComputerName = DESKTOP-CASE01
+2026-06-01 12:00:03, Info                  System Manufacturer: Dell Inc.
+2026-06-01 12:00:04, Info                  System Product Name: Latitude 7420
+2026-06-01 12:00:05, Info                  BIOS Version: 1.32.0
+2026-06-01 12:00:06, Info                  Processor Architecture: amd64
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.setupLogType").map(String::as_str),
+            Some("setup-action")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupComputerNames")
+                .map(String::as_str),
+            Some("DESKTOP-CASE01")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupHostOsVersions")
+                .map(String::as_str),
+            Some("10.0.22631.3593")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupBuildVersions")
+                .map(String::as_str),
+            Some("10.0.26100.1")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupManufacturers")
+                .map(String::as_str),
+            Some("Dell Inc.")
+        );
+        assert_eq!(
+            metadata.get("system.setupModels").map(String::as_str),
+            Some("Latitude 7420")
+        );
+        assert_eq!(
+            metadata.get("system.setupBiosVersions").map(String::as_str),
+            Some("1.32.0")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupArchitectures")
+                .map(String::as_str),
+            Some("amd64")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_windows_setupapi_device_log_summary() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Windows/INF/setupapi.dev.log",
+            br#">>>  [Device Install (Hardware initiated) - PCI\VEN_8086&DEV_15F3&SUBSYS_00008086&REV_03]
+     dvi:      Device Description: Intel(R) Ethernet Connection
+     inf:      Provider: Intel
+     inf:      Driver Version: 04/12/2024,1.2.3.4
+     inf:      Original Inf Name: oem42.inf
+<<<  Section end
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.setupLogType").map(String::as_str),
+            Some("setupapi-dev")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupDeviceInstallCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupDeviceHardwareIds")
+                .map(String::as_str),
+            Some(r"PCI\VEN_8086&DEV_15F3&SUBSYS_00008086&REV_03")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupDeviceDescriptions")
+                .map(String::as_str),
+            Some("Intel(R) Ethernet Connection")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupDriverProviders")
+                .map(String::as_str),
+            Some("Intel")
+        );
+        assert_eq!(
+            metadata
+                .get("system.setupDriverVersions")
+                .map(String::as_str),
+            Some("04/12/2024,1.2.3.4")
+        );
+        assert_eq!(
+            metadata.get("system.setupInfNames").map(String::as_str),
+            Some("oem42.inf")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_system_version_plist() {
         let metadata = system_identity_metadata_from_bytes(
             "/System/Library/CoreServices/SystemVersion.plist",
@@ -8308,6 +8687,9 @@ COMMIT
         assert!(is_system_identity_source(
             "/Windows/System32/LogFiles/Firewall/pfirewall.log"
         ));
+        assert!(is_system_identity_source("/Windows/Panther/setupact.log"));
+        assert!(is_system_identity_source("/Windows/Panther/setuperr.log"));
+        assert!(is_system_identity_source("/Windows/INF/setupapi.dev.log"));
         assert!(is_system_identity_source(
             "/Library/Preferences/.GlobalPreferences.plist"
         ));
