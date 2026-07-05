@@ -766,6 +766,7 @@ fn registry_software_identity_metadata(
         WINDOWS_SOFTWARE_OEM_INFORMATION_REGISTRY_VALUES,
     );
     metadata.extend(registry_software_profile_list_metadata(&mut parser));
+    metadata.extend(registry_software_network_list_metadata(&mut parser));
 
     Ok(finalize_registry_identity_metadata(
         metadata,
@@ -947,6 +948,116 @@ fn windows_profile_list_metadata_to_map(
     insert_joined_metadata(&mut metadata, "system.profileNames", &values.names);
     insert_joined_metadata(&mut metadata, "system.profilePaths", &values.paths);
     insert_joined_metadata(&mut metadata, "system.profiles", &values.descriptions);
+    metadata
+}
+
+#[derive(Default)]
+struct WindowsNetworkListMetadata {
+    names: Vec<String>,
+    categories: Vec<String>,
+    descriptions: Vec<String>,
+}
+
+fn registry_software_network_list_metadata(
+    parser: &mut notatin::parser::Parser,
+) -> BTreeMap<String, String> {
+    let profiles_path = "Microsoft\\Windows NT\\CurrentVersion\\NetworkList\\Profiles";
+    let Some(mut profiles_key) = parser.get_key(profiles_path, false).ok().flatten() else {
+        return BTreeMap::new();
+    };
+
+    let mut values = WindowsNetworkListMetadata::default();
+    for profile_key in profiles_key
+        .read_sub_keys(parser)
+        .iter()
+        .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+    {
+        let profile_path = format!("{profiles_path}\\{}", profile_key.key_name);
+        let name =
+            registry_value(parser, &profile_path, "ProfileName").and_then(registry_value_text);
+        let description =
+            registry_value(parser, &profile_path, "Description").and_then(registry_value_text);
+        let category = registry_value(parser, &profile_path, "Category")
+            .and_then(windows_network_category_name);
+        collect_windows_network_list_metadata(&mut values, name, description, category);
+    }
+
+    windows_network_list_metadata_to_map(values)
+}
+
+fn collect_windows_network_list_metadata(
+    values: &mut WindowsNetworkListMetadata,
+    name: Option<String>,
+    description: Option<String>,
+    category: Option<String>,
+) {
+    let name = name
+        .map(|value| truncate_metadata_value(value.trim(), 120))
+        .filter(|value| !value.is_empty());
+    let description = description
+        .map(|value| truncate_metadata_value(value.trim(), 160))
+        .filter(|value| !value.is_empty());
+    let category = category
+        .map(|value| truncate_metadata_value(value.trim(), 80))
+        .filter(|value| !value.is_empty());
+
+    if let Some(name) = &name {
+        push_unique_limited(&mut values.names, name.clone());
+    }
+    if let Some(category) = &category {
+        push_unique_limited(&mut values.categories, category.clone());
+    }
+
+    let label = name.or(description);
+    if let Some(label) = label {
+        let detail = category
+            .map(|category| format!("{label} ({category})"))
+            .unwrap_or(label);
+        push_unique_limited(
+            &mut values.descriptions,
+            truncate_metadata_value(&detail, MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS),
+        );
+    }
+}
+
+fn windows_network_category_name(value: CellValue) -> Option<String> {
+    match value {
+        CellValue::U32(0) | CellValue::I32(0) => Some("public".to_string()),
+        CellValue::U32(1) | CellValue::I32(1) => Some("private".to_string()),
+        CellValue::U32(2) | CellValue::I32(2) => Some("domain-authenticated".to_string()),
+        CellValue::U32(value) => Some(format!("category-{value}")),
+        CellValue::I32(value) => Some(format!("category-{value}")),
+        CellValue::String(value) => {
+            let value = value.trim();
+            (!value.is_empty()).then(|| value.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn windows_network_list_metadata_to_map(
+    values: WindowsNetworkListMetadata,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if values.descriptions.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert(
+        "system.networkProfileCount".to_string(),
+        values.descriptions.len().to_string(),
+    );
+    insert_joined_metadata(&mut metadata, "system.networkProfileNames", &values.names);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.networkProfileCategories",
+        &values.categories,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.networkProfiles",
+        &values.descriptions,
+    );
     metadata
 }
 
@@ -6996,6 +7107,74 @@ COMMIT
             Some("Bob")
         );
         assert_eq!(windows_profile_name_from_path("").as_deref(), None);
+    }
+
+    #[test]
+    fn windows_network_list_metadata_summarizes_profiles_and_categories() {
+        let mut values = WindowsNetworkListMetadata::default();
+        collect_windows_network_list_metadata(
+            &mut values,
+            Some("Corp WiFi".to_string()),
+            Some("Managed network".to_string()),
+            Some("domain-authenticated".to_string()),
+        );
+        collect_windows_network_list_metadata(
+            &mut values,
+            Some("Guest".to_string()),
+            None,
+            Some("public".to_string()),
+        );
+        collect_windows_network_list_metadata(
+            &mut values,
+            None,
+            Some("Ethernet 2".to_string()),
+            Some("private".to_string()),
+        );
+
+        let metadata = windows_network_list_metadata_to_map(values);
+
+        assert_eq!(
+            metadata
+                .get("system.networkProfileCount")
+                .map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            metadata
+                .get("system.networkProfileNames")
+                .map(String::as_str),
+            Some("Corp WiFi; Guest")
+        );
+        assert_eq!(
+            metadata
+                .get("system.networkProfileCategories")
+                .map(String::as_str),
+            Some("domain-authenticated; public; private")
+        );
+        assert_eq!(
+            metadata.get("system.networkProfiles").map(String::as_str),
+            Some("Corp WiFi (domain-authenticated); Guest (public); Ethernet 2 (private)")
+        );
+    }
+
+    #[test]
+    fn windows_network_category_name_maps_registry_values() {
+        assert_eq!(
+            windows_network_category_name(CellValue::U32(0)).as_deref(),
+            Some("public")
+        );
+        assert_eq!(
+            windows_network_category_name(CellValue::I32(1)).as_deref(),
+            Some("private")
+        );
+        assert_eq!(
+            windows_network_category_name(CellValue::U32(2)).as_deref(),
+            Some("domain-authenticated")
+        );
+        assert_eq!(
+            windows_network_category_name(CellValue::U32(9)).as_deref(),
+            Some("category-9")
+        );
     }
 
     #[test]
