@@ -887,14 +887,23 @@ function App() {
   };
   
   // Loading-wrapped versions of slow project operations
+  let projectLoadInProgress = false;
+  let projectSetupInProgress = false;
+
   const handleLoadProject = async (path?: string) => {
-    const canProceed = await closeCurrentProject("switch-project");
-    if (!canProceed) return;
-    if (!isTauri && !path) {
-      await _handleLoadProject();
-      return;
+    if (projectLoadInProgress) return;
+    projectLoadInProgress = true;
+    try {
+      const canProceed = await closeCurrentProject("switch-project");
+      if (!canProceed) return;
+      if (!isTauri && !path) {
+        await _handleLoadProject();
+        return;
+      }
+      await globalLoading.run("Loading project…", () => _handleLoadProject(path));
+    } finally {
+      projectLoadInProgress = false;
     }
-    await globalLoading.run("Loading project…", () => _handleLoadProject(path));
   };
   const handleOpenRecentProject = async (path: string) => {
     if (isAcquireEdition()) {
@@ -923,9 +932,15 @@ function App() {
   const handleSaveProjectAs = () =>
     globalLoading.run("Saving project…", () => _handleSaveProjectAs());
   const handleProjectSetupComplete = async (locations: import("./components").ProjectLocations) => {
-    const canProceed = await closeCurrentProject("new-project");
-    if (!canProceed) return;
-    await globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+    if (projectSetupInProgress) return;
+    projectSetupInProgress = true;
+    try {
+      const canProceed = await closeCurrentProject("new-project");
+      if (!canProceed) return;
+      await globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+    } finally {
+      projectSetupInProgress = false;
+    }
   };
   const handleNewProject = () => {
     if (isAcquireEdition()) {
