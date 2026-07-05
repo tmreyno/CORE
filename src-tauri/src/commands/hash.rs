@@ -436,7 +436,10 @@ fn hash_source_id(input: &HashSourceInput, source_ref: Option<&EvidenceSourceRef
                 container_path,
                 entry_path,
                 container_type,
-            } => format!("{container_type}:{container_path}:{entry_path}"),
+            } => format!(
+                "{container_type}:{container_path}:{entry_path}{}",
+                hash_source_address_suffix(input, Some(container_type))
+            ),
             EvidenceSourceRef::NestedContainerEntry {
                 container_path,
                 nested_container_path,
@@ -458,9 +461,29 @@ fn hash_source_id(input: &HashSourceInput, source_ref: Option<&EvidenceSourceRef
     } else if let Some(path) = &input.path {
         path.clone()
     } else if let (Some(container), Some(entry)) = (&input.container_path, &input.entry_path) {
-        bounded_hash_source_id(format!("{}:{}", container, entry))
+        bounded_hash_source_id(format!(
+            "{}:{}{}",
+            container,
+            entry,
+            hash_source_address_suffix(input, input.container_type.as_deref())
+        ))
     } else {
         "unknown-source".to_string()
+    }
+}
+
+fn hash_source_address_suffix(input: &HashSourceInput, container_type: Option<&str>) -> String {
+    if !container_type.is_some_and(is_ad1_type) {
+        return String::new();
+    }
+
+    match (input.item_addr, input.data_addr) {
+        (Some(item_addr), Some(data_addr)) => {
+            format!("#item=0x{item_addr:x};data=0x{data_addr:x}")
+        }
+        (Some(item_addr), None) => format!("#item=0x{item_addr:x}"),
+        (None, Some(data_addr)) => format!("#data=0x{data_addr:x}"),
+        (None, None) => String::new(),
     }
 }
 
@@ -2004,6 +2027,84 @@ mod tests {
 
         assert_eq!(truncated.chars().count(), MAX_HASH_SOURCE_ID_CHARS);
         assert!(!truncated.ends_with("tail"));
+    }
+
+    #[test]
+    fn hash_source_id_includes_ad1_item_and_data_addresses() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/evidence.ad1".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: Some(128),
+            data_addr: Some(0x2000),
+            item_addr: Some(0x1000),
+        };
+        let source_ref = EvidenceSourceRef::ContainerEntry {
+            container_path: "/cases/evidence.ad1".to_string(),
+            entry_path: "/Documents/file.txt".to_string(),
+            container_type: "ad1".to_string(),
+        };
+
+        let source_id = hash_source_id(&input, Some(&source_ref));
+
+        assert_eq!(
+            source_id,
+            "ad1:/cases/evidence.ad1:/Documents/file.txt#item=0x1000;data=0x2000"
+        );
+    }
+
+    #[test]
+    fn hash_source_id_omits_address_suffix_for_non_ad1_entries() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/disk.E01".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("e01".to_string()),
+            size: Some(128),
+            data_addr: Some(0x2000),
+            item_addr: Some(0x1000),
+        };
+        let source_ref = EvidenceSourceRef::ContainerEntry {
+            container_path: "/cases/disk.E01".to_string(),
+            entry_path: "/Documents/file.txt".to_string(),
+            container_type: "e01".to_string(),
+        };
+
+        let source_id = hash_source_id(&input, Some(&source_ref));
+
+        assert_eq!(source_id, "e01:/cases/disk.E01:/Documents/file.txt");
+    }
+
+    #[test]
+    fn hash_source_id_distinguishes_ad1_entries_with_same_path() {
+        let first = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/evidence.ad1".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: Some(128),
+            data_addr: Some(0x2000),
+            item_addr: Some(0x1000),
+        };
+        let mut second = first.clone();
+        second.data_addr = Some(0x4000);
+        second.item_addr = Some(0x3000);
+        let source_ref = EvidenceSourceRef::ContainerEntry {
+            container_path: "/cases/evidence.ad1".to_string(),
+            entry_path: "/Documents/file.txt".to_string(),
+            container_type: "ad1".to_string(),
+        };
+
+        let first_id = hash_source_id(&first, Some(&source_ref));
+        let second_id = hash_source_id(&second, Some(&source_ref));
+
+        assert_ne!(first_id, second_id);
+        assert!(first_id.ends_with("#item=0x1000;data=0x2000"));
+        assert!(second_id.ends_with("#item=0x3000;data=0x4000"));
     }
 
     #[test]
