@@ -16,6 +16,8 @@ use std::path::Path;
 
 use chrono::{TimeZone, Utc};
 use plist::Value as PlistValue;
+use quick_xml::events::Event;
+use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -732,6 +734,9 @@ fn system_info_metadata(
     if is_macos_wifi_preferences_path(&normalized_path, &normalized_name, extension) {
         return macos_wifi_preferences_metadata(header);
     }
+    if is_windows_wifi_profile_path(&normalized_path, extension) {
+        return windows_wifi_profile_metadata(header);
+    }
     if let Some(metadata) = windows_registry_system_info_metadata(&normalized_path, header) {
         return metadata;
     }
@@ -821,6 +826,11 @@ fn is_macos_wifi_preferences_path(path: &str, name: &str, extension: Option<&str
             || path.ends_with("library/preferences/com.apple.wifi.known-networks.plist"))
 }
 
+fn is_windows_wifi_profile_path(path: &str, extension: Option<&str>) -> bool {
+    matches!(extension, Some("xml"))
+        && path.contains("programdata/microsoft/wlansvc/profiles/interfaces/")
+}
+
 fn windows_registry_system_info_metadata(
     path: &str,
     header: &[u8],
@@ -843,6 +853,87 @@ fn windows_registry_system_info_metadata(
     metadata.insert("system.infoType".to_string(), "registry-hive".to_string());
     metadata.insert("windows.registryHive".to_string(), hive.to_string());
     Some(metadata)
+}
+
+fn windows_wifi_profile_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let text = String::from_utf8_lossy(header);
+    let mut reader = Reader::from_str(&text);
+    reader.config_mut().trim_text(true);
+
+    let mut metadata = BTreeMap::new();
+    let mut element_stack: Vec<String> = Vec::new();
+    let mut profile_names = Vec::new();
+    let mut ssids = Vec::new();
+    let mut auth_types = Vec::new();
+    let mut encryption_types = Vec::new();
+    let mut connection_modes = Vec::new();
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) => {
+                element_stack
+                    .push(String::from_utf8_lossy(element.local_name().as_ref()).to_string());
+            }
+            Ok(Event::End(_)) => {
+                element_stack.pop();
+            }
+            Ok(Event::Text(text_event)) => {
+                let Ok(text) = text_event.unescape() else {
+                    continue;
+                };
+                let text = text.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                let current = element_stack.last().map(String::as_str).unwrap_or("");
+                match current {
+                    "name" if element_stack.iter().any(|element| element == "SSID") => {
+                        push_limited_system_value(&mut ssids, text);
+                    }
+                    "name" if element_stack.iter().any(|element| element == "WLANProfile") => {
+                        push_limited_system_value(&mut profile_names, text);
+                    }
+                    "authentication" => push_limited_system_value(&mut auth_types, text),
+                    "encryption" => push_limited_system_value(&mut encryption_types, text),
+                    "connectionMode" => push_limited_system_value(&mut connection_modes, text),
+                    _ => {}
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    if profile_names.is_empty()
+        && ssids.is_empty()
+        && auth_types.is_empty()
+        && encryption_types.is_empty()
+        && connection_modes.is_empty()
+    {
+        return metadata;
+    }
+
+    metadata.insert("system.osFamily".to_string(), "windows".to_string());
+    metadata.insert("system.infoType".to_string(), "wifi-profile".to_string());
+    metadata.insert(
+        "system.networkConfigType".to_string(),
+        "windows-wlan-profile".to_string(),
+    );
+    insert_limited_system_values(&mut metadata, "system.connectionIds", &profile_names);
+    insert_limited_system_values(&mut metadata, "system.wifiSsids", &ssids);
+    insert_limited_system_values(&mut metadata, "system.wifiAuthTypes", &auth_types);
+    insert_limited_system_values(
+        &mut metadata,
+        "system.wifiEncryptionTypes",
+        &encryption_types,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.networkConnectionModes",
+        &connection_modes,
+    );
+    metadata
 }
 
 fn linux_os_release_metadata(header: &[u8]) -> BTreeMap<String, String> {
@@ -1994,6 +2085,7 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("macos"), Some("network-interfaces")) => "macOS Network Interfaces",
         (Some("macos"), Some("wifi-preferences")) => "macOS Wi-Fi Preferences",
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
+        (Some("windows"), Some("wifi-profile")) => "Windows Wi-Fi Profile",
         _ => "System Information Artifact",
     }
     .to_string()
@@ -4270,6 +4362,85 @@ dns-search=corp.example.com;
                 .get("system.dnsServers")
                 .map(String::as_str),
             Some("1.1.1.1; 8.8.4.4")
+        );
+    }
+
+    #[test]
+    fn extracts_windows_wifi_profile_metadata() {
+        let bytes = br#"<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+  <name>CorpNet Profile</name>
+  <SSIDConfig>
+    <SSID>
+      <hex>436F72704E6574</hex>
+      <name>CorpNet</name>
+    </SSID>
+  </SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>auto</connectionMode>
+  <MSM>
+    <security>
+      <authEncryption>
+        <authentication>WPA2PSK</authentication>
+        <encryption>AES</encryption>
+        <useOneX>false</useOneX>
+      </authEncryption>
+    </security>
+  </MSM>
+</WLANProfile>
+"#;
+        let source = ChunkedByteSource::new(
+            "/image/ProgramData/Microsoft/Wlansvc/Profiles/Interfaces/{iface}/{profile}.xml",
+            bytes,
+            usize::MAX,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Windows Wi-Fi Profile");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.networkConfigType")
+                .map(String::as_str),
+            Some("windows-wlan-profile")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.connectionIds")
+                .map(String::as_str),
+            Some("CorpNet Profile")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiSsids")
+                .map(String::as_str),
+            Some("CorpNet")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiAuthTypes")
+                .map(String::as_str),
+            Some("WPA2PSK")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiEncryptionTypes")
+                .map(String::as_str),
+            Some("AES")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.networkConnectionModes")
+                .map(String::as_str),
+            Some("auto")
         );
     }
 
