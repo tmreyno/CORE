@@ -24,7 +24,9 @@ use crate::common::{
 use crate::containers::open_container_entry_source;
 use crate::ewf;
 use crate::raw;
-use crate::viewer::document::binary::{analyze_binary_bytes, BinaryFormat, BinaryInfo};
+use crate::viewer::document::binary::{
+    analyze_binary_bytes, BinaryFormat, BinaryInfo, LinuxModuleInfo,
+};
 
 use super::{classify_extension, is_text_eligible, SearchIndex};
 
@@ -779,7 +781,32 @@ fn index_binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<Strin
     if info.pe_is_driver {
         insert_index_pe_driver_string_metadata(&mut metadata, &info.strings);
     }
+    if let Some(module) = info
+        .linux_module_info
+        .as_ref()
+        .filter(|module| module.detected)
+    {
+        insert_index_linux_module_metadata(&mut metadata, module);
+    }
     metadata
+}
+
+fn insert_index_linux_module_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    module: &LinuxModuleInfo,
+) {
+    metadata.insert("linux.moduleDetected".to_string(), "true".to_string());
+    insert_index_joined_metadata(metadata, "linux.moduleNames", &module.names);
+    insert_index_joined_metadata(metadata, "linux.moduleVersions", &module.versions);
+    insert_index_joined_metadata(metadata, "linux.moduleVermagic", &module.vermagic);
+    insert_index_joined_metadata(metadata, "linux.moduleLicenses", &module.licenses);
+    insert_index_joined_metadata(metadata, "linux.moduleAuthors", &module.authors);
+    insert_index_joined_metadata(metadata, "linux.moduleDescriptions", &module.descriptions);
+    insert_index_joined_metadata(metadata, "linux.moduleAliases", &module.aliases);
+    insert_index_joined_metadata(metadata, "linux.moduleDependencies", &module.dependencies);
+    insert_index_joined_metadata(metadata, "linux.moduleFirmware", &module.firmware);
+    insert_index_joined_metadata(metadata, "linux.moduleSigners", &module.signers);
+    insert_index_joined_metadata(metadata, "linux.moduleSignatures", &module.signatures);
 }
 
 fn insert_index_pe_driver_string_metadata(
@@ -1990,6 +2017,93 @@ mod tests {
         ));
         assert!(content.contains("pe.driverUrls:https://drivers.example.test/support"));
         assert!(content.contains("pe.driverGuids:{12345678-9ABC-DEF0-1234-56789ABCDEF0}"));
+    }
+
+    #[test]
+    fn binary_index_metadata_flattens_linux_module_fields_for_search() {
+        let info = BinaryInfo {
+            path: "case.e01:/lib/modules/6.8.0/kernel/drivers/net/coretap.ko".to_string(),
+            format: BinaryFormat::ELF64,
+            architecture: "x86_64".to_string(),
+            is_64bit: true,
+            entry_point: Some(0x400000),
+            imports: vec![],
+            exports: vec![],
+            sections: vec![],
+            strings: vec![],
+            file_size: 8192,
+            pe_timestamp: None,
+            pe_checksum: None,
+            pe_subsystem: None,
+            pe_linker_version: None,
+            pe_os_version: None,
+            pe_image_version: None,
+            pe_subsystem_version: None,
+            pe_image_base: None,
+            pe_section_alignment: None,
+            pe_file_alignment: None,
+            pe_size_of_image: None,
+            pe_size_of_headers: None,
+            pe_dll_characteristics: None,
+            pe_dll_characteristics_detail: vec![],
+            pe_certificate_table_size: None,
+            pe_is_driver: false,
+            pe_driver_type: None,
+            pe_driver_indicators: vec![],
+            pe_version_info: BTreeMap::new(),
+            macho_cpu_type: None,
+            macho_filetype: None,
+            linux_module_info: Some(crate::viewer::document::binary::LinuxModuleInfo {
+                detected: true,
+                names: vec!["coretap".to_string()],
+                versions: vec!["1.2.3".to_string()],
+                vermagic: vec!["6.8.0 SMP mod_unload".to_string()],
+                licenses: vec!["GPL".to_string()],
+                authors: vec!["CORE Lab".to_string()],
+                descriptions: vec!["CORE packet capture tap".to_string()],
+                aliases: vec!["pci:v00008086d*".to_string()],
+                dependencies: vec!["cfg80211".to_string(), "rfkill".to_string()],
+                firmware: vec!["coretap.bin".to_string()],
+                signers: vec!["CORE Lab".to_string()],
+                signatures: vec!["sig_hashalgo=sha256".to_string()],
+            }),
+            has_debug_info: false,
+            is_stripped: true,
+            has_code_signing: false,
+        };
+
+        let artifact = NormalizedArtifact {
+            id: "module".to_string(),
+            source_ref: crate::common::EvidenceSourceRef::LocalFile {
+                path: "/lib/modules/6.8.0/kernel/drivers/net/coretap.ko".to_string(),
+            },
+            source_id: "/lib/modules/6.8.0/kernel/drivers/net/coretap.ko".to_string(),
+            name: "coretap.ko".to_string(),
+            extension: Some("ko".to_string()),
+            size: info.file_size,
+            mime_type: None,
+            type_description: "Linux Kernel Module".to_string(),
+            category: "system".to_string(),
+            confidence: "high".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: index_binary_artifact_metadata_from_info(&info),
+        };
+
+        let content = artifact_search_terms(&artifact).join("\n");
+
+        assert!(content.contains("linux.moduleDetected:true"));
+        assert!(content.contains("linux.moduleNames:coretap"));
+        assert!(content.contains("linux.moduleVersions:1.2.3"));
+        assert!(content.contains("linux.moduleVermagic:6.8.0 SMP mod_unload"));
+        assert!(content.contains("linux.moduleLicenses:GPL"));
+        assert!(content.contains("linux.moduleAuthors:CORE Lab"));
+        assert!(content.contains("linux.moduleDescriptions:CORE packet capture tap"));
+        assert!(content.contains("linux.moduleAliases:pci:v00008086d*"));
+        assert!(content.contains("linux.moduleDependencies:cfg80211; rfkill"));
+        assert!(content.contains("linux.moduleFirmware:coretap.bin"));
+        assert!(content.contains("linux.moduleSigners:CORE Lab"));
+        assert!(content.contains("linux.moduleSignatures:sig_hashalgo=sha256"));
     }
 
     #[test]
