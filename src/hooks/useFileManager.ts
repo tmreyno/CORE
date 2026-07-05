@@ -20,6 +20,12 @@ const log = logger.scope("FileManager");
 const BROWSER_METADATA_MESSAGE =
   "Container metadata loading is available in the desktop app. Browser preview can use cached .cffx metadata only.";
 
+function cachedInfoSatisfiesRequest(info: ContainerInfo, includeTree: boolean): boolean {
+  if (!includeTree) return true;
+  if (!info.ad1) return true;
+  return Array.isArray(info.ad1.tree);
+}
+
 // System stats interface (matches Rust struct with serde rename_all = "camelCase")
 export interface NetworkInterfaceInfo {
   name: string;
@@ -491,7 +497,7 @@ export function useFileManager() {
   // Load file info for a single file
   const loadFileInfo = async (file: DiscoveredFile, includeTree = false): Promise<ContainerInfo> => {
     const cached = fileInfoMap().get(file.path);
-    if (cached) {
+    if (cached && cachedInfoSatisfiesRequest(cached, includeTree)) {
       return cached;
     }
     if (!isTauri) {
