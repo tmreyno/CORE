@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { TextViewer } from "./TextViewer";
 
@@ -141,6 +142,64 @@ describe("TextViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Failed to read file");
+    });
+
+    it("ignores stale text loads after the selected file changes", async () => {
+      let resolveSlow: (value: {
+        text: string;
+        bytesRead: number;
+        totalSize: number;
+      }) => void = () => {};
+      const slowResult = new Promise<{
+        text: string;
+        bytesRead: number;
+        totalSize: number;
+      }>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const slowFile = {
+        ...mockDiskFile,
+        path: "/evidence/slow.txt",
+        filename: "slow.txt",
+      };
+      const currentFile = {
+        ...mockDiskFile,
+        path: "/evidence/current.txt",
+        filename: "current.txt",
+      };
+
+      mockReadTextFromSource.mockImplementation((file) => {
+        if (file?.path === "/evidence/slow.txt") {
+          return slowResult;
+        }
+        if (file?.path === "/evidence/current.txt") {
+          return Promise.resolve({
+            text: "current file content",
+            bytesRead: 20,
+            totalSize: 20,
+          });
+        }
+        return Promise.reject(new Error("Unexpected file"));
+      });
+
+      const [file, setFile] = createSignal(slowFile);
+      const { container } = renderComponent(() => <TextViewer file={file()} />);
+      await tick();
+
+      setFile(currentFile);
+      await tick();
+
+      expect(container.textContent).toContain("current file content");
+
+      resolveSlow({
+        text: "stale file content",
+        bytesRead: 18,
+        totalSize: 18,
+      });
+      await tick();
+
+      expect(container.textContent).toContain("current file content");
+      expect(container.textContent).not.toContain("stale file content");
     });
   });
 

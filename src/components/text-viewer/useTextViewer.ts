@@ -71,27 +71,33 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
   const [searchQuery, setSearchQuery] = createSignal("");
   const [searchResults, setSearchResults] = createSignal<number[]>([]);
   const [currentResult, setCurrentResult] = createSignal(0);
+  let loadGeneration = 0;
 
   const sourceKey = () => getSourceKey(props.file, props.entry);
   const displayFilename = () => getSourceFilename(props.file, props.entry);
 
   // Load initial file content
   const loadContent = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
 
     try {
       const result = await readTextFromSource(props.file ?? null, props.entry, 0, INITIAL_LOAD_SIZE);
+      if (generation !== loadGeneration) return;
       setContent(result.text);
       setLoadedChars(result.text.length);
       setLoadedBytes(result.bytesRead);
       setTotalSize(result.totalSize);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       setError(`Failed to load file: ${e}`);
       setContent("");
       setLoadedBytes(0);
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
@@ -105,6 +111,7 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
 
     if (currentLoaded >= total || currentLoaded >= maxChars) return;
 
+    const generation = loadGeneration;
     setLoadingMore(true);
 
     try {
@@ -115,13 +122,17 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
         Math.min(LOAD_MORE_SIZE, total - currentLoaded, maxChars - currentLoaded)
       );
 
+      if (generation !== loadGeneration) return;
       setContent((prev) => prev + result.text);
       setLoadedChars((prev) => prev + result.text.length);
       setLoadedBytes(currentLoaded + result.bytesRead);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to load more text:", e);
     } finally {
-      setLoadingMore(false);
+      if (generation === loadGeneration) {
+        setLoadingMore(false);
+      }
     }
   };
 
