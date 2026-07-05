@@ -259,6 +259,56 @@ describe("ContainerEntryViewer", () => {
           extractor: "container-entry-viewer",
         },
       });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "project_db_collect_system_identity_sources",
+        expect.anything(),
+      );
+      dispose();
+    });
+
+    it("collects system identity artifacts through the dedicated collector", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "project_db_is_open") return true;
+        if (cmd === "project_db_collect_system_identity_sources") {
+          return {
+            scanned: 1,
+            matched: 1,
+            inserted: 1,
+            skipped: 0,
+            records: [{ id: "artifact-system", sourceId: "ad1:/evidence/container.ad1:/Windows/System32/config/SYSTEM" }],
+            errors: [],
+          };
+        }
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "SYSTEM",
+        entryPath: "/Windows/System32/config/SYSTEM",
+      });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="hex" />
+      );
+
+      await tick(200);
+
+      expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_system_identity_sources", {
+        request: {
+          sources: [
+            {
+              containerPath: "/evidence/container.ad1",
+              entryPath: "/Windows/System32/config/SYSTEM",
+              containerType: "ad1",
+              size: 1024,
+            },
+          ],
+          extractor: "container-entry-viewer-system-identity",
+        },
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "project_db_extract_artifact_source",
+        expect.anything(),
+      );
       dispose();
     });
 
