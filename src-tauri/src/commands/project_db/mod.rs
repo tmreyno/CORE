@@ -37,7 +37,7 @@ pub use workflow::*;
 use crate::project_db::ProjectDatabase;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tracing::{info, warn};
 
@@ -108,14 +108,17 @@ fn project_db_open_blocking(label: String, cffx_path: String) -> Result<String, 
         ProjectDatabase::open(&db_path).map_err(|e| format!("Failed to open project DB: {}", e))?;
     info!(window = %label, "project_db_open: ProjectDatabase::open took {:?}", t0.elapsed());
 
-    // If this is a brand-new .ffxdb, migrate data from the .cffx file
+    // If this is a brand-new .ffxdb, migrate data from the same resolved
+    // project state used by the UI so evidence IDs and paths stay aligned.
     if is_new {
-        if let Ok(content) = crate::project::read_project_json_with_limit(&cffx, "project file") {
-            if let Ok(project) = serde_json::from_str::<crate::project::FFXProject>(&content) {
+        match load_resolved_project_for_db_migration(&cffx) {
+            Ok(Some(project)) => {
                 if let Err(e) = db.migrate_from_project(&project) {
                     warn!("Migration from .cffx had errors: {}", e);
                 }
             }
+            Ok(None) => {}
+            Err(e) => warn!("Could not prepare .cffx migration data: {}", e),
         }
     }
 
@@ -153,6 +156,63 @@ fn project_db_open_blocking(label: String, cffx_path: String) -> Result<String, 
     }
 
     Ok(db_path_str)
+}
+
+fn load_resolved_project_for_db_migration(
+    cffx: &Path,
+) -> Result<Option<crate::project::FFXProject>, String> {
+    let path = cffx.to_string_lossy();
+    let result = crate::project::load_project(path.as_ref());
+
+    if result.success {
+        Ok(result.project)
+    } else {
+        Err(result
+            .error
+            .unwrap_or_else(|| "project_load failed without an error message".to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project::{CachedDiscoveredFile, EvidenceCache, FFXProject};
+
+    #[test]
+    fn db_migration_project_loader_resolves_relative_evidence_paths() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let project_path = temp_dir.path().join("case.cffx");
+        let evidence_path = temp_dir.path().join("1.Evidence").join("drive.E01");
+        std::fs::create_dir_all(evidence_path.parent().unwrap()).unwrap();
+        std::fs::write(&evidence_path, b"ewf").unwrap();
+
+        let mut project = FFXProject::new(".");
+        project.name = "case".to_string();
+        project.evidence_cache = Some(EvidenceCache {
+            discovered_files: vec![CachedDiscoveredFile {
+                path: "./1.Evidence/drive.E01".to_string(),
+                filename: "drive.E01".to_string(),
+                container_type: "EnCase (E01)".to_string(),
+                size: 3,
+                segment_count: 1,
+                created: None,
+                modified: None,
+            }],
+            cached_at: "2026-07-05T00:00:00Z".to_string(),
+            valid: true,
+            ..EvidenceCache::default()
+        });
+        std::fs::write(&project_path, serde_json::to_string(&project).unwrap()).unwrap();
+
+        let resolved = load_resolved_project_for_db_migration(&project_path)
+            .unwrap()
+            .unwrap();
+        let resolved_path = &resolved.evidence_cache.as_ref().unwrap().discovered_files[0].path;
+
+        let expected_path = evidence_path.canonicalize().unwrap();
+        assert_eq!(Path::new(resolved_path), expected_path.as_path());
+        assert!(Path::new(resolved_path).is_absolute());
+    }
 }
 
 /// Close the project database for the calling window.
