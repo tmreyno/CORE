@@ -38,8 +38,8 @@ export const SelectFolderStep: Component<SelectFolderStepProps> = (props) => {
           when={isTauri}
           fallback={
             <p class="text-txt-muted text-sm mb-5 text-center max-w-md">
-              Folder project creation is available in the desktop app. In browser preview,
-              open an existing <span class="font-medium text-txt">.cffx</span> project file.
+              Open an existing <span class="font-medium text-txt">.cffx</span> project file,
+              or create an in-memory preview project without folder scanning.
             </p>
           }
         >
