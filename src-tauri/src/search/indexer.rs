@@ -1888,6 +1888,70 @@ mod tests {
     }
 
     #[test]
+    fn linux_machine_info_artifact_metadata_is_searchable() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc_dir = dir.path().join("etc");
+        std::fs::create_dir(&etc_dir).unwrap();
+        let path = etc_dir.join("machine-info");
+        std::fs::write(
+            &path,
+            br#"PRETTY_HOSTNAME="Case Workstation"
+CHASSIS=desktop
+LOCATION="Lab 3"
+"#,
+        )
+        .unwrap();
+        let entry = disk_entry(&path, "config", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("Linux Machine Information"));
+        assert!(content.contains("system.prettyHostname:Case Workstation"));
+        assert!(content.contains("system.chassis:desktop"));
+        assert!(content.contains("system.location:Lab 3"));
+    }
+
+    #[test]
+    fn macos_preferences_identity_metadata_is_searchable() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefs_dir = dir
+            .path()
+            .join("Library")
+            .join("Preferences")
+            .join("SystemConfiguration");
+        std::fs::create_dir_all(&prefs_dir).unwrap();
+        let path = prefs_dir.join("preferences.plist");
+        std::fs::write(
+            &path,
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>System</key>
+  <dict>
+    <key>System</key>
+    <dict>
+      <key>ComputerName</key><string>Case MacBook</string>
+      <key>HostName</key><string>case-macbook.example.test</string>
+      <key>LocalHostName</key><string>Case-MacBook</string>
+    </dict>
+  </dict>
+</dict>
+</plist>
+"#,
+        )
+        .unwrap();
+        let entry = disk_entry(&path, "config", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("macOS System Identity"));
+        assert!(content.contains("system.computerName:Case MacBook"));
+        assert!(content.contains("system.hostname:case-macbook.example.test"));
+        assert!(content.contains("system.localHostname:Case-MacBook"));
+    }
+
+    #[test]
     fn binary_index_metadata_flattens_driver_fields_for_search() {
         let mut version_info = BTreeMap::new();
         version_info.insert("CompanyName".to_string(), "Contoso Driver Labs".to_string());
