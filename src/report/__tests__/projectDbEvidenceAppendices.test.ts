@@ -121,6 +121,27 @@ function makeEvidence(): ProjectDbReportEvidence {
       },
       {
         id: "artifact-5",
+        sourceId: "e01:/case/disk.E01:/sys/class/dmi/id/product_serial",
+        name: "product_serial",
+        category: "systeminfo",
+        typeDescription: "Linux DMI System Information",
+        size: 8,
+        sizeDisplay: "8 B",
+        confidence: "medium",
+        isText: true,
+        metadata: {
+          "system.osFamily": "linux",
+          "system.manufacturer": "Dell Inc.",
+          "system.model": "Precision 5680",
+          "system.serialNumber": "ABC1234",
+          "system.uuid": "00112233-4455-6677-8899-aabbccddeeff",
+          "os.release.name": "Ubuntu 24.04.2 LTS",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:30Z",
+      },
+      {
+        id: "artifact-6",
         sourceId: "ad1:/case/logical.ad1:/mobile/history.sqlite",
         name: "history.sqlite",
         category: "database",
@@ -250,6 +271,8 @@ describe("buildProjectDbEvidenceAppendices", () => {
     expect(appendices[1].content).toContain("attachments: 1");
     expect(appendices[1].content).toContain("label: com.core.ffx.agent");
     expect(appendices[1].content).toContain("registry: 1.5");
+    expect(appendices[1].content).toContain("manufacturer: Dell Inc.");
+    expect(appendices[1].content).toContain("serial: ABC1234");
     expect(appendices[1].content).toContain("tables: 2");
     expect(appendices[2].content).toContain("PDF Document");
     expect(appendices[2].content).toContain("admin@example.com");

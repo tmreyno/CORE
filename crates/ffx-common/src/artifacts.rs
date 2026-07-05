@@ -169,6 +169,15 @@ pub fn extract_normalized_artifact(
         metadata.insert("mimeType".to_string(), mime.clone());
     }
     metadata.extend(header_metadata(&header, extension.as_deref(), &category));
+    let system_info = system_info_metadata(&source_id, &name, extension.as_deref(), &header);
+    if !system_info.is_empty() {
+        category = "systeminfo".to_string();
+        type_description = system_info_type_description(&system_info);
+        if confidence == "low" {
+            confidence = "medium".to_string();
+        }
+        metadata.extend(system_info);
+    }
     metadata.extend(source_indicator_metadata(&header));
     if let Some(preview) = &content_preview {
         let preview_bytes_read = preview_bytes_read.unwrap_or(preview.len());
@@ -482,6 +491,244 @@ fn is_image_extension(extension: Option<&str>) -> bool {
 
 fn is_structured_metadata_extension(extension: Option<&str>) -> bool {
     matches!(extension, Some("eml" | "mbox" | "plist"))
+}
+
+fn system_info_metadata(
+    source_id: &str,
+    name: &str,
+    extension: Option<&str>,
+    header: &[u8],
+) -> BTreeMap<String, String> {
+    let normalized_path = normalize_artifact_path(source_id);
+    let normalized_name = name.to_ascii_lowercase();
+
+    if is_linux_os_release_path(&normalized_path, &normalized_name) {
+        return linux_os_release_metadata(header);
+    }
+    if is_linux_hostname_path(&normalized_path, &normalized_name) {
+        return single_line_system_metadata(header, "system.hostname", "linux", "hostname");
+    }
+    if is_linux_machine_id_path(&normalized_path, &normalized_name) {
+        return single_line_system_metadata(header, "system.machineId", "linux", "machine-id");
+    }
+    if let Some(metadata) = linux_dmi_metadata(&normalized_path, header) {
+        return metadata;
+    }
+    if is_macos_system_version_path(&normalized_path, &normalized_name, extension) {
+        return macos_system_version_metadata(header);
+    }
+
+    BTreeMap::new()
+}
+
+fn normalize_artifact_path(value: &str) -> String {
+    value
+        .replace('\\', "/")
+        .trim_matches('/')
+        .to_ascii_lowercase()
+}
+
+fn is_linux_os_release_path(path: &str, name: &str) -> bool {
+    name == "os-release"
+        && (path.ends_with("etc/os-release") || path.ends_with("usr/lib/os-release"))
+}
+
+fn is_linux_hostname_path(path: &str, name: &str) -> bool {
+    name == "hostname"
+        && (path.ends_with("etc/hostname") || path.ends_with("proc/sys/kernel/hostname"))
+}
+
+fn is_linux_machine_id_path(path: &str, name: &str) -> bool {
+    name == "machine-id"
+        && (path.ends_with("etc/machine-id") || path.ends_with("var/lib/dbus/machine-id"))
+}
+
+fn is_macos_system_version_path(path: &str, name: &str, extension: Option<&str>) -> bool {
+    name.eq_ignore_ascii_case("systemversion.plist")
+        && matches!(extension, Some("plist"))
+        && (path.ends_with("system/library/coreservices/systemversion.plist")
+            || path.ends_with("library/coreservices/systemversion.plist"))
+}
+
+fn linux_os_release_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let text = String::from_utf8_lossy(header);
+    let values = parse_shell_key_values(&text);
+    if values.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert("system.osFamily".to_string(), "linux".to_string());
+    metadata.insert("system.infoType".to_string(), "os-release".to_string());
+    insert_key_value_alias(&mut metadata, &values, "PRETTY_NAME", "os.release.name");
+    insert_key_value_alias(&mut metadata, &values, "NAME", "os.release.distribution");
+    insert_key_value_alias(&mut metadata, &values, "ID", "os.release.id");
+    insert_key_value_alias(&mut metadata, &values, "VERSION", "os.release.version");
+    insert_key_value_alias(&mut metadata, &values, "VERSION_ID", "os.release.versionId");
+    insert_key_value_alias(&mut metadata, &values, "VARIANT", "os.release.variant");
+    insert_key_value_alias(&mut metadata, &values, "BUILD_ID", "os.release.buildId");
+    insert_key_value_alias(&mut metadata, &values, "HOME_URL", "os.release.homeUrl");
+    metadata
+}
+
+fn parse_shell_key_values(text: &str) -> BTreeMap<String, String> {
+    let mut values = BTreeMap::new();
+    for line in text.lines().take(256) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty()
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+        {
+            continue;
+        }
+        let value = unquote_shell_value(value.trim());
+        if !value.is_empty() {
+            values.insert(key.to_string(), value);
+        }
+    }
+    values
+}
+
+fn unquote_shell_value(value: &str) -> String {
+    let unquoted = if value.len() >= 2
+        && ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+    {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    };
+    unquoted
+        .replace("\\\"", "\"")
+        .replace("\\'", "'")
+        .replace("\\\\", "\\")
+        .trim()
+        .to_string()
+}
+
+fn insert_key_value_alias(
+    metadata: &mut BTreeMap<String, String>,
+    values: &BTreeMap<String, String>,
+    source_key: &str,
+    metadata_key: &str,
+) {
+    if let Some(value) = values
+        .get(source_key)
+        .filter(|value| !value.trim().is_empty())
+    {
+        metadata.insert(metadata_key.to_string(), value.clone());
+    }
+}
+
+fn single_line_system_metadata(
+    header: &[u8],
+    metadata_key: &str,
+    os_family: &str,
+    info_type: &str,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Some(value) = first_text_line(header) else {
+        return metadata;
+    };
+
+    metadata.insert("system.osFamily".to_string(), os_family.to_string());
+    metadata.insert("system.infoType".to_string(), info_type.to_string());
+    metadata.insert(metadata_key.to_string(), value);
+    metadata
+}
+
+fn first_text_line(header: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(header)
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToString::to_string)
+}
+
+fn linux_dmi_metadata(path: &str, header: &[u8]) -> Option<BTreeMap<String, String>> {
+    let field = path
+        .strip_suffix('/')
+        .unwrap_or(path)
+        .rsplit('/')
+        .next()
+        .unwrap_or_default();
+    let metadata_key = match field {
+        "sys_vendor" => "system.manufacturer",
+        "product_name" => "system.model",
+        "product_version" => "system.productVersion",
+        "product_family" => "system.productFamily",
+        "product_serial" => "system.serialNumber",
+        "product_uuid" => "system.uuid",
+        "board_vendor" => "system.boardVendor",
+        "board_name" => "system.boardName",
+        "board_version" => "system.boardVersion",
+        "board_serial" => "system.boardSerialNumber",
+        "bios_vendor" => "system.biosVendor",
+        "bios_version" => "system.biosVersion",
+        "bios_date" => "system.biosDate",
+        "chassis_vendor" => "system.chassisVendor",
+        "chassis_type" => "system.chassisType",
+        "chassis_serial" => "system.chassisSerialNumber",
+        _ => return None,
+    };
+    if !(path.contains("sys/class/dmi/id/") || path.contains("sys/devices/virtual/dmi/id/")) {
+        return None;
+    }
+
+    Some(single_line_system_metadata(
+        header,
+        metadata_key,
+        "linux",
+        "dmi",
+    ))
+}
+
+fn macos_system_version_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_plist(header, Some("plist")) {
+        return metadata;
+    }
+    let Ok(PlistValue::Dictionary(dictionary)) = PlistValue::from_reader(Cursor::new(header))
+    else {
+        return metadata;
+    };
+
+    metadata.insert("system.osFamily".to_string(), "macos".to_string());
+    metadata.insert("system.infoType".to_string(), "system-version".to_string());
+    for (source_key, metadata_key) in [
+        ("ProductName", "os.release.name"),
+        ("ProductVersion", "os.release.version"),
+        ("ProductBuildVersion", "os.release.buildId"),
+        ("ProductUserVisibleVersion", "os.release.userVisibleVersion"),
+    ] {
+        if let Some(value) = dictionary.get(source_key).and_then(plist_scalar_string) {
+            metadata.insert(metadata_key.to_string(), value);
+        }
+    }
+    metadata
+}
+
+fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
+    match (
+        metadata.get("system.osFamily").map(String::as_str),
+        metadata.get("system.infoType").map(String::as_str),
+    ) {
+        (Some("linux"), Some("os-release")) => "Linux OS Release Info",
+        (Some("linux"), Some("hostname")) => "Linux Hostname",
+        (Some("linux"), Some("machine-id")) => "Linux Machine ID",
+        (Some("linux"), Some("dmi")) => "Linux DMI System Information",
+        (Some("macos"), Some("system-version")) => "macOS System Version Info",
+        _ => "System Information Artifact",
+    }
+    .to_string()
 }
 
 fn pdf_version(header: &[u8]) -> Option<String> {
@@ -2295,6 +2542,158 @@ mod tests {
         assert_eq!(
             artifact.metadata.get("indicators.urls").map(String::as_str),
             Some("https://example.test")
+        );
+    }
+
+    #[test]
+    fn extracts_linux_os_release_system_info_metadata() {
+        let bytes = br#"NAME="Ubuntu"
+VERSION_ID="24.04"
+PRETTY_NAME="Ubuntu 24.04.2 LTS"
+ID=ubuntu
+BUILD_ID=20260201
+"#;
+        let source = ChunkedByteSource::new("/mnt/image/etc/os-release", bytes, 17);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Linux OS Release Info");
+        assert_eq!(
+            artifact.metadata.get("system.osFamily").map(String::as_str),
+            Some("linux")
+        );
+        assert_eq!(
+            artifact.metadata.get("os.release.name").map(String::as_str),
+            Some("Ubuntu 24.04.2 LTS")
+        );
+        assert_eq!(
+            artifact.metadata.get("os.release.id").map(String::as_str),
+            Some("ubuntu")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("os.release.versionId")
+                .map(String::as_str),
+            Some("24.04")
+        );
+    }
+
+    #[test]
+    fn extracts_linux_hostname_and_machine_id_metadata() {
+        let hostname_source = ChunkedByteSource::new("/mnt/image/etc/hostname", b"labhost\n", 3);
+        let machine_id_source = ChunkedByteSource::new(
+            "/mnt/image/var/lib/dbus/machine-id",
+            b"0123456789abcdef0123456789abcdef\n",
+            8,
+        );
+
+        let hostname_artifact =
+            extract_normalized_artifact(&hostname_source, ArtifactExtractionOptions::default())
+                .unwrap();
+        let machine_id_artifact =
+            extract_normalized_artifact(&machine_id_source, ArtifactExtractionOptions::default())
+                .unwrap();
+
+        assert_eq!(hostname_artifact.category, "systeminfo");
+        assert_eq!(
+            hostname_artifact
+                .metadata
+                .get("system.hostname")
+                .map(String::as_str),
+            Some("labhost")
+        );
+        assert_eq!(machine_id_artifact.category, "systeminfo");
+        assert_eq!(
+            machine_id_artifact
+                .metadata
+                .get("system.machineId")
+                .map(String::as_str),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+    }
+
+    #[test]
+    fn extracts_linux_dmi_manufacturer_model_and_serial_metadata() {
+        for (path, metadata_key, expected) in [
+            (
+                "/mnt/image/sys/class/dmi/id/sys_vendor",
+                "system.manufacturer",
+                "Dell Inc.",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/product_name",
+                "system.model",
+                "Precision 5680",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/product_serial",
+                "system.serialNumber",
+                "ABC1234",
+            ),
+            (
+                "/mnt/image/sys/devices/virtual/dmi/id/product_uuid",
+                "system.uuid",
+                "00112233-4455-6677-8899-aabbccddeeff",
+            ),
+        ] {
+            let source = ChunkedByteSource::new(path, format!("{expected}\n").as_bytes(), 4);
+
+            let artifact =
+                extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+            assert_eq!(artifact.category, "systeminfo", "{path}");
+            assert_eq!(artifact.type_description, "Linux DMI System Information");
+            assert_eq!(
+                artifact.metadata.get(metadata_key).map(String::as_str),
+                Some(expected),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn extracts_macos_system_version_plist_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>ProductName</key><string>macOS</string>
+  <key>ProductVersion</key><string>15.5</string>
+  <key>ProductBuildVersion</key><string>24F74</string>
+</dict>
+</plist>
+"#;
+        let source = ChunkedByteSource::new(
+            "/Volumes/Macintosh HD/System/Library/CoreServices/SystemVersion.plist",
+            bytes,
+            usize::MAX,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS System Version Info");
+        assert_eq!(
+            artifact.metadata.get("system.osFamily").map(String::as_str),
+            Some("macos")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("os.release.version")
+                .map(String::as_str),
+            Some("15.5")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("os.release.buildId")
+                .map(String::as_str),
+            Some("24F74")
         );
     }
 
