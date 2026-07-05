@@ -547,8 +547,7 @@ pub(crate) fn get_or_create_nested_temp(
             copy_vfs_entry_to_file(&vfs, nested_path, &temp_path)
                 .map_err(|e| format!("Failed to stream file from E01: {}", e))?;
         } else {
-            let vfs = raw::vfs::RawVfs::open_filesystem(parent_path)
-                .or_else(|_| raw::vfs::RawVfs::open(parent_path))
+            let vfs = raw::vfs::RawVfs::open_with_physical_fallback(parent_path)
                 .map_err(|e| format!("Failed to open raw image for nested extraction: {:?}", e))?;
             copy_vfs_entry_to_file(&vfs, nested_path, &temp_path)
                 .map_err(|e| format!("Failed to stream file from raw image: {}", e))?;

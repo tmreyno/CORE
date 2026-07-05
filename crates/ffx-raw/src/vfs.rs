@@ -220,6 +220,15 @@ impl RawVfs {
         })
     }
 
+    /// Open a raw image in filesystem mode when partitions mount, otherwise
+    /// expose the image in physical mode as a single virtual file.
+    pub fn open_with_physical_fallback(path: &str) -> Result<Self, VfsError> {
+        match Self::open_filesystem(path) {
+            Ok(vfs) if vfs.partition_count() > 0 => Ok(vfs),
+            Ok(_) | Err(_) => Self::open(path),
+        }
+    }
+
     /// Get the current mode
     pub fn mode(&self) -> RawVfsMode {
         self.mode
@@ -461,6 +470,7 @@ fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_bounded_physical_read_len_allows_exact_eof() {
@@ -497,5 +507,17 @@ mod tests {
     #[test]
     fn test_checked_seek_position_rejects_overflow() {
         assert!(checked_seek_position(u64::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn open_with_physical_fallback_exposes_unmounted_raw_image() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(b"not a partitioned disk image").unwrap();
+
+        let vfs = RawVfs::open_with_physical_fallback(file.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(vfs.mode(), RawVfsMode::Physical);
+        assert_eq!(vfs.partition_count(), 0);
+        assert_eq!(vfs.readdir("/").unwrap().len(), 1);
     }
 }

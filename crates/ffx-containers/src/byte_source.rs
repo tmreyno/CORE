@@ -138,17 +138,14 @@ fn open_raw_vfs_for_entry(
     entry_path: &str,
     container_type: &str,
 ) -> EvidenceSourceResult<raw::vfs::RawVfs> {
-    match raw::vfs::RawVfs::open_filesystem(container_path) {
-        Ok(vfs) if vfs.partition_count() > 0 => Ok(vfs),
-        Ok(_) | Err(_) => raw::vfs::RawVfs::open(container_path).map_err(|e| {
-            source_error(
-                container_path,
-                entry_path,
-                container_type,
-                format!("Raw VFS open failed: {e:?}"),
-            )
-        }),
-    }
+    raw::vfs::RawVfs::open_with_physical_fallback(container_path).map_err(|e| {
+        source_error(
+            container_path,
+            entry_path,
+            container_type,
+            format!("Raw VFS open failed: {e:?}"),
+        )
+    })
 }
 
 #[derive(Clone, Debug)]

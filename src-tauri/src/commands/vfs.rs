@@ -190,8 +190,7 @@ fn get_or_open_vfs(container_path: &str) -> Result<Arc<PooledVfs>, String> {
             .map_err(|e| format!("Failed to open E01: {:?}", e))?;
         PooledVfs::new_ewf(vfs)
     } else {
-        let vfs = raw::vfs::RawVfs::open_filesystem(container_path)
-            .or_else(|_| raw::vfs::RawVfs::open(container_path))
+        let vfs = raw::vfs::RawVfs::open_with_physical_fallback(container_path)
             .map_err(|e| format!("Failed to open raw: {:?}", e))?;
         PooledVfs::new_raw(vfs)
     };

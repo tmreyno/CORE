@@ -301,8 +301,7 @@ pub async fn container_read_entry_chunk(
             read_bounded_vfs_entry_chunk(&vfs, &entryPath, offset, requested_size, "EWF")
         } else if raw::is_raw(&containerPath).unwrap_or(false) {
             // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
-            let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
-                .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
+            let vfs = raw::vfs::RawVfs::open_with_physical_fallback(&containerPath)
                 .map_err(|e| format!("Failed to open raw: {:?}", e))?;
             read_bounded_vfs_entry_chunk(&vfs, &entryPath, offset, requested_size, "raw")
         } else if ufed::is_ufed(&containerPath) {

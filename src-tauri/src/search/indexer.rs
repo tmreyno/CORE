@@ -272,8 +272,7 @@ fn crawl_vfs_ewf(container_path: &str) -> Result<Vec<CrawledEntry>, String> {
 }
 
 fn crawl_vfs_raw(container_path: &str) -> Result<Vec<CrawledEntry>, String> {
-    let vfs = raw::vfs::RawVfs::open_filesystem(container_path)
-        .or_else(|_| raw::vfs::RawVfs::open(container_path))
+    let vfs = raw::vfs::RawVfs::open_with_physical_fallback(container_path)
         .map_err(|e| format!("Failed to open raw VFS: {:?}", e))?;
 
     let mut entries = Vec::new();
