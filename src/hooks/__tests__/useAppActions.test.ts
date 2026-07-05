@@ -292,7 +292,12 @@ describe("createSearchHandlers", () => {
     it("opens top-level file results through the normal select-and-view path", () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
-      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
+      const onOpenEvidenceFile = vi.fn();
+      const { handleSearchResultSelect } = createSearchHandlers({
+        fileManager: fm as any,
+        projectManager: mockProjectManager() as any,
+        onOpenEvidenceFile,
+      });
 
       handleSearchResultSelect({
         id: file.path,
@@ -305,13 +310,19 @@ describe("createSearchHandlers", () => {
       });
 
       expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
     });
 
     it("opens the parent container for container results through the normal select-and-view path", () => {
       const container = makeFile("/evidence/archive.zip");
       const fm = mockFileManager([container]);
-      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
+      const onOpenEvidenceFile = vi.fn();
+      const { handleSearchResultSelect } = createSearchHandlers({
+        fileManager: fm as any,
+        projectManager: mockProjectManager() as any,
+        onOpenEvidenceFile,
+      });
 
       handleSearchResultSelect({
         id: "/evidence/archive.zip::/inner/file.txt",
@@ -325,6 +336,7 @@ describe("createSearchHandlers", () => {
       });
 
       expect(fm.selectAndViewFile).toHaveBeenCalledWith(container);
+      expect(onOpenEvidenceFile).toHaveBeenCalledWith(container);
       expect(fm.activeFile()).toBe(container);
     });
 
@@ -404,6 +416,7 @@ describe("createContextMenuBuilders", () => {
       const hm = mockHashManager();
       const pm = mockProjectManager();
       const toast = mockToast();
+      const onOpenEvidenceFile = vi.fn();
 
       const { getFileContextMenuItems } = createContextMenuBuilders({
         fileManager: fm as any,
@@ -411,11 +424,13 @@ describe("createContextMenuBuilders", () => {
         projectManager: pm as any,
         toast,
         buildSaveOptions: () => null,
+        onOpenEvidenceFile,
       });
 
       const items = getFileContextMenuItems(() => file);
       items.find((i) => i.id === "open")!.onSelect!();
       expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
     });
 

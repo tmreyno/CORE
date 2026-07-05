@@ -70,8 +70,12 @@ export interface AppActionsDeps {
 // Search Handlers
 // =============================================================================
 
-export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 'projectManager'>) {
-  const { fileManager, projectManager } = deps;
+type EvidenceOpenDeps = {
+  onOpenEvidenceFile?: (file: DiscoveredFile) => void;
+};
+
+export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 'projectManager'> & EvidenceOpenDeps) {
+  const { fileManager, projectManager, onOpenEvidenceFile } = deps;
   
   /**
    * Search handler for SearchPanel — searches Tantivy index + FTS5 cross-entity.
@@ -191,6 +195,7 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
       const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
       if (containerFile) {
         void fileManager.selectAndViewFile(containerFile);
+        onOpenEvidenceFile?.(containerFile);
         announce(`Found ${result.name} in ${getBasename(containerFile.path)}`);
       }
     } else {
@@ -198,6 +203,7 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
       const file = fileManager.discoveredFiles().find(f => f.path === result.path);
       if (file) {
         void fileManager.selectAndViewFile(file);
+        onOpenEvidenceFile?.(file);
         announce(`Selected ${result.name}`);
       }
     }
@@ -210,8 +216,8 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
 // Context Menu Builders
 // =============================================================================
 
-export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManager' | 'hashManager' | 'projectManager' | 'toast' | 'buildSaveOptions'>) {
-  const { fileManager, hashManager, projectManager, toast, buildSaveOptions } = deps;
+export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManager' | 'hashManager' | 'projectManager' | 'toast' | 'buildSaveOptions'> & EvidenceOpenDeps) {
+  const { fileManager, hashManager, projectManager, toast, buildSaveOptions, onOpenEvidenceFile } = deps;
   
   /**
    * Get context menu items for a file.
@@ -221,7 +227,10 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
     if (!f) return [];
     
     return [
-      { id: "open", label: "Open", icon: "📂", onSelect: () => void fileManager.selectAndViewFile(f) },
+      { id: "open", label: "Open", icon: "📂", onSelect: () => {
+        void fileManager.selectAndViewFile(f);
+        onOpenEvidenceFile?.(f);
+      } },
       { id: "sep1", label: "", separator: true },
       { id: "hash", label: "Compute Hash", icon: "🔐", shortcut: "cmd+h", onSelect: () => hashManager.hashSingleFile(f) },
       { id: "sep2", label: "", separator: true },

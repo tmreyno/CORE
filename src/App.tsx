@@ -595,7 +595,11 @@ function App() {
   };
   
   // Search handlers from useAppActions
-  const { handleSearch, handleSearchResultSelect } = createSearchHandlers({ fileManager, projectManager });
+  const { handleSearch, handleSearchResultSelect } = createSearchHandlers({
+    fileManager,
+    projectManager,
+    onOpenEvidenceFile: centerPaneTabs.openEvidenceFile,
+  });
 
   // ── Text selection actions (from viewer right-click) ──────────────────
 
@@ -947,6 +951,7 @@ function App() {
     projectManager,
     toast,
     buildSaveOptions: getSaveOptions,
+    onOpenEvidenceFile: centerPaneTabs.openEvidenceFile,
   });
 
   const activeHashEntry = (): SelectedEntry | null => {
