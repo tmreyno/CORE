@@ -752,6 +752,12 @@ fn system_info_metadata(
     if let Some(metadata) = firewall_metadata(&normalized_path, header) {
         return metadata;
     }
+    if let Some(metadata) = windows_setup_log_metadata(&normalized_path, header) {
+        return metadata;
+    }
+    if is_macos_install_history_path(&normalized_path, &normalized_name, extension) {
+        return macos_install_history_metadata(header);
+    }
     if let Some(metadata) = windows_registry_system_info_metadata(&normalized_path, header) {
         return metadata;
     }
@@ -850,6 +856,12 @@ fn is_macos_firewall_preferences_path(path: &str, name: &str, extension: Option<
 fn is_windows_wifi_profile_path(path: &str, extension: Option<&str>) -> bool {
     matches!(extension, Some("xml"))
         && path.contains("programdata/microsoft/wlansvc/profiles/interfaces/")
+}
+
+fn is_macos_install_history_path(path: &str, name: &str, extension: Option<&str>) -> bool {
+    name.eq_ignore_ascii_case("installhistory.plist")
+        && matches!(extension, Some("plist"))
+        && path.ends_with("library/receipts/installhistory.plist")
 }
 
 fn windows_registry_system_info_metadata(
@@ -1072,6 +1084,247 @@ fn windows_firewall_log_metadata(header: &[u8]) -> BTreeMap<String, String> {
     }
     insert_limited_system_values(&mut metadata, "system.firewallProtocols", &protocols);
     metadata
+}
+
+#[derive(Default)]
+struct WindowsSetupLogSummary {
+    line_count: usize,
+    device_install_count: usize,
+    computer_names: Vec<String>,
+    host_os_versions: Vec<String>,
+    setup_build_versions: Vec<String>,
+    manufacturers: Vec<String>,
+    models: Vec<String>,
+    bios_versions: Vec<String>,
+    architectures: Vec<String>,
+    device_hardware_ids: Vec<String>,
+    device_descriptions: Vec<String>,
+    driver_providers: Vec<String>,
+    driver_versions: Vec<String>,
+    inf_names: Vec<String>,
+}
+
+fn windows_setup_log_metadata(path: &str, header: &[u8]) -> Option<BTreeMap<String, String>> {
+    let setup_type = if path.ends_with("windows/inf/setupapi.dev.log") {
+        "setupapi-dev"
+    } else if path.ends_with("windows/inf/setupapi.app.log") {
+        "setupapi-app"
+    } else if path.ends_with("windows/panther/setuperr.log")
+        || path.contains("windows/system32/sysprep/panther/setuperr.log")
+    {
+        "setup-error"
+    } else if path.ends_with("windows/panther/setupact.log")
+        || path.contains("windows/system32/sysprep/panther/setupact.log")
+    {
+        "setup-action"
+    } else {
+        return None;
+    };
+
+    let text = String::from_utf8_lossy(header);
+    let mut summary = WindowsSetupLogSummary::default();
+
+    for line in text.lines().take(4096) {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        summary.line_count = summary.line_count.saturating_add(1);
+        collect_windows_setup_log_line(line, &mut summary);
+    }
+
+    Some(windows_setup_log_metadata_to_map(summary, setup_type))
+}
+
+fn collect_windows_setup_log_line(line: &str, summary: &mut WindowsSetupLogSummary) {
+    collect_setup_marker_value(
+        line,
+        &[
+            "computername",
+            "computer name",
+            "machine name",
+            "target computer name",
+        ],
+        &mut summary.computer_names,
+    );
+    collect_setup_marker_value(
+        line,
+        &[
+            "host os version",
+            "source os version",
+            "detected os version",
+        ],
+        &mut summary.host_os_versions,
+    );
+    collect_setup_marker_value(
+        line,
+        &["setup build version", "setup version", "build version"],
+        &mut summary.setup_build_versions,
+    );
+    collect_setup_marker_value(
+        line,
+        &["system manufacturer", "manufacturer"],
+        &mut summary.manufacturers,
+    );
+    collect_setup_marker_value(
+        line,
+        &[
+            "system product name",
+            "product name",
+            "system model",
+            "model",
+        ],
+        &mut summary.models,
+    );
+    collect_setup_marker_value(
+        line,
+        &["bios version", "firmware version"],
+        &mut summary.bios_versions,
+    );
+    collect_setup_marker_value(
+        line,
+        &["architecture", "processor architecture"],
+        &mut summary.architectures,
+    );
+
+    if let Some(hardware_id) = extract_setupapi_device_hardware_id(line) {
+        summary.device_install_count = summary.device_install_count.saturating_add(1);
+        push_limited_system_value(&mut summary.device_hardware_ids, &hardware_id);
+    }
+    collect_setupapi_value(line, "device description", &mut summary.device_descriptions);
+    collect_setupapi_value(line, "provider", &mut summary.driver_providers);
+    collect_setupapi_value(line, "driver version", &mut summary.driver_versions);
+    collect_setupapi_value(line, "original inf name", &mut summary.inf_names);
+    collect_setupapi_value(line, "inf name", &mut summary.inf_names);
+}
+
+fn windows_setup_log_metadata_to_map(
+    summary: WindowsSetupLogSummary,
+    setup_type: &str,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("system.osFamily".to_string(), "windows".to_string());
+    metadata.insert("system.infoType".to_string(), "setup-log".to_string());
+    metadata.insert("system.setupLogType".to_string(), setup_type.to_string());
+    if summary.line_count > 0 {
+        metadata.insert(
+            "system.setupLogLineCount".to_string(),
+            summary.line_count.to_string(),
+        );
+    }
+    if summary.device_install_count > 0 {
+        metadata.insert(
+            "system.setupDeviceInstallCount".to_string(),
+            summary.device_install_count.to_string(),
+        );
+    }
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupComputerNames",
+        &summary.computer_names,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupHostOsVersions",
+        &summary.host_os_versions,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupBuildVersions",
+        &summary.setup_build_versions,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupManufacturers",
+        &summary.manufacturers,
+    );
+    insert_limited_system_values(&mut metadata, "system.setupModels", &summary.models);
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupBiosVersions",
+        &summary.bios_versions,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupArchitectures",
+        &summary.architectures,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupDeviceHardwareIds",
+        &summary.device_hardware_ids,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupDeviceDescriptions",
+        &summary.device_descriptions,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupDriverProviders",
+        &summary.driver_providers,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.setupDriverVersions",
+        &summary.driver_versions,
+    );
+    insert_limited_system_values(&mut metadata, "system.setupInfNames", &summary.inf_names);
+    metadata
+}
+
+fn collect_setup_marker_value(line: &str, markers: &[&str], values: &mut Vec<String>) {
+    for marker in markers {
+        if let Some(value) = setup_log_value_after_marker(line, marker) {
+            push_limited_system_value(values, &value);
+            return;
+        }
+    }
+}
+
+fn collect_setupapi_value(line: &str, marker: &str, values: &mut Vec<String>) {
+    if let Some(value) = setup_log_value_after_marker(line, marker) {
+        push_limited_system_value(values, &value);
+    }
+}
+
+fn setup_log_value_after_marker(line: &str, marker: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let marker_start = lower.find(marker)?;
+    let after_marker = line.get(marker_start + marker.len()..)?;
+    let separator_index = after_marker.find([':', '=', '-'])?;
+    let value = after_marker
+        .get(separator_index + 1..)?
+        .trim()
+        .trim_matches(['"', '\'', '[', ']']);
+    if setup_log_value_is_useful(value) {
+        Some(value.to_string())
+    } else {
+        None
+    }
+}
+
+fn setup_log_value_is_useful(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().any(|ch| ch.is_ascii_alphanumeric())
+        && !matches!(
+            value.to_ascii_lowercase().as_str(),
+            "none" | "unknown" | "n/a"
+        )
+}
+
+fn extract_setupapi_device_hardware_id(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    if !lower.contains("device install") {
+        return None;
+    }
+    let (_, raw) = line.split_once(" - ")?;
+    let candidate = raw.trim().trim_end_matches(']').trim();
+    if candidate.contains('\\') || candidate.contains("VEN_") || candidate.contains("VID_") {
+        Some(truncate_chars(candidate, 180))
+    } else {
+        None
+    }
 }
 
 fn linux_os_release_metadata(header: &[u8]) -> BTreeMap<String, String> {
@@ -2092,6 +2345,57 @@ fn macos_firewall_preferences_metadata(header: &[u8]) -> BTreeMap<String, String
     metadata
 }
 
+fn macos_install_history_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_plist(header, Some("plist")) {
+        return metadata;
+    }
+    let Ok(PlistValue::Array(entries)) = PlistValue::from_reader(Cursor::new(header)) else {
+        return metadata;
+    };
+
+    let mut install_count = 0usize;
+    let mut latest_install = None;
+    for entry in entries.iter().take(32) {
+        let PlistValue::Dictionary(dictionary) = entry else {
+            continue;
+        };
+        install_count = install_count.saturating_add(1);
+        latest_install = Some(dictionary);
+    }
+
+    if install_count == 0 {
+        return metadata;
+    }
+
+    metadata.insert("system.osFamily".to_string(), "macos".to_string());
+    metadata.insert("system.infoType".to_string(), "install-history".to_string());
+    metadata.insert(
+        "system.installHistoryCount".to_string(),
+        install_count.to_string(),
+    );
+
+    let Some(latest_install) = latest_install else {
+        return metadata;
+    };
+    if let Some(value) = plist_dict_string(latest_install, "displayName") {
+        metadata.insert("system.latestInstallName".to_string(), value.to_string());
+    }
+    if let Some(value) = plist_dict_string(latest_install, "displayVersion") {
+        metadata.insert("system.latestInstallVersion".to_string(), value.to_string());
+    }
+    if let Some(value) = plist_dict_date(latest_install, "date") {
+        metadata.insert("system.latestInstallDate".to_string(), value);
+    }
+    if let Some(values) = plist_dict_string_array(latest_install, "packageIdentifiers") {
+        metadata.insert(
+            "system.latestInstallPackages".to_string(),
+            values.join(", "),
+        );
+    }
+    metadata
+}
+
 fn macos_hardware_identity_metadata(header: &[u8]) -> BTreeMap<String, String> {
     let mut metadata = BTreeMap::new();
     if !looks_like_plist(header, Some("plist")) {
@@ -2309,9 +2613,11 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("macos"), Some("network-interfaces")) => "macOS Network Interfaces",
         (Some("macos"), Some("wifi-preferences")) => "macOS Wi-Fi Preferences",
         (Some("macos"), Some("firewall")) => "macOS Firewall Preferences",
+        (Some("macos"), Some("install-history")) => "macOS Install History",
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
         (Some("windows"), Some("wifi-profile")) => "Windows Wi-Fi Profile",
         (Some("windows"), Some("firewall")) => "Windows Firewall Log",
+        (Some("windows"), Some("setup-log")) => "Windows Setup Log",
         _ => "System Information Artifact",
     }
     .to_string()
@@ -5161,6 +5467,196 @@ COMMIT
                 .get("system.firewallApplicationRuleCount")
                 .map(String::as_str),
             Some("2")
+        );
+    }
+
+    #[test]
+    fn extracts_windows_setup_action_log_metadata() {
+        let bytes =
+            br#"2026-06-01 12:00:00, Info                  Setup build version: 10.0.26100.1
+2026-06-01 12:00:01, Info                  Host OS version: 10.0.22631.3593
+2026-06-01 12:00:02, Info                  ComputerName = DESKTOP-CASE01
+2026-06-01 12:00:03, Info                  System Manufacturer: Dell Inc.
+2026-06-01 12:00:04, Info                  System Product Name: Latitude 7420
+2026-06-01 12:00:05, Info                  BIOS Version: 1.32.0
+2026-06-01 12:00:06, Info                  Processor Architecture: amd64
+"#;
+        let source = ChunkedByteSource::new("/Windows/Panther/setupact.log", bytes, 1024);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Windows Setup Log");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupLogType")
+                .map(String::as_str),
+            Some("setup-action")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupComputerNames")
+                .map(String::as_str),
+            Some("DESKTOP-CASE01")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupHostOsVersions")
+                .map(String::as_str),
+            Some("10.0.22631.3593")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupBuildVersions")
+                .map(String::as_str),
+            Some("10.0.26100.1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupManufacturers")
+                .map(String::as_str),
+            Some("Dell Inc.")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupModels")
+                .map(String::as_str),
+            Some("Latitude 7420")
+        );
+    }
+
+    #[test]
+    fn extracts_windows_setupapi_device_log_metadata() {
+        let bytes = br#">>>  [Device Install (Hardware initiated) - PCI\VEN_8086&DEV_15F3&SUBSYS_00008086&REV_03]
+     dvi:      Device Description: Intel(R) Ethernet Connection
+     inf:      Provider: Intel
+     inf:      Driver Version: 04/12/2024,1.2.3.4
+     inf:      Original Inf Name: oem42.inf
+<<<  Section end
+"#;
+        let source = ChunkedByteSource::new("/Windows/INF/setupapi.dev.log", bytes, 1024);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Windows Setup Log");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupLogType")
+                .map(String::as_str),
+            Some("setupapi-dev")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupDeviceInstallCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupDeviceHardwareIds")
+                .map(String::as_str),
+            Some(r"PCI\VEN_8086&DEV_15F3&SUBSYS_00008086&REV_03")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupDeviceDescriptions")
+                .map(String::as_str),
+            Some("Intel(R) Ethernet Connection")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupDriverProviders")
+                .map(String::as_str),
+            Some("Intel")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.setupInfNames")
+                .map(String::as_str),
+            Some("oem42.inf")
+        );
+    }
+
+    #[test]
+    fn extracts_macos_install_history_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>date</key><date>2024-01-01T00:00:00Z</date>
+    <key>displayName</key><string>macOS Security Response</string>
+    <key>displayVersion</key><string>1.0</string>
+  </dict>
+  <dict>
+    <key>date</key><date>2026-06-01T12:34:56Z</date>
+    <key>displayName</key><string>macOS Update</string>
+    <key>displayVersion</key><string>15.5</string>
+    <key>packageIdentifiers</key>
+    <array>
+      <string>com.apple.pkg.update.os</string>
+      <string>com.apple.pkg.update.firmware</string>
+    </array>
+  </dict>
+</array>
+</plist>
+"#;
+        let source = ChunkedByteSource::new("/Library/Receipts/InstallHistory.plist", bytes, 2048);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS Install History");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.installHistoryCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.latestInstallName")
+                .map(String::as_str),
+            Some("macOS Update")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.latestInstallVersion")
+                .map(String::as_str),
+            Some("15.5")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.latestInstallDate")
+                .map(String::as_str),
+            Some("2026-06-01T12:34:56Z")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.latestInstallPackages")
+                .map(String::as_str),
+            Some("com.apple.pkg.update.os, com.apple.pkg.update.firmware")
         );
     }
 
