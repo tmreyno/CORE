@@ -143,6 +143,29 @@ function makeEvidence(): ProjectDbReportEvidence {
       },
       {
         id: "artifact-6",
+        sourceId: "e01:/case/disk.E01:/Windows/System32/config/SOFTWARE",
+        name: "SOFTWARE",
+        category: "systeminfo",
+        typeDescription: "Windows Registry Hive",
+        size: 65536,
+        sizeDisplay: "64 KB",
+        confidence: "high",
+        isText: false,
+        metadata: {
+          "system.osName": "Windows 11 Pro",
+          "system.osDisplayVersion": "24H2",
+          "system.osBuild": "26100",
+          "system.productId": "00330-80000-00000-AA000",
+          "system.registeredOwner": "Case Lab",
+          "system.oemManufacturer": "Dell Inc.",
+          "system.oemModel": "Precision 5680",
+          "system.activeComputerName": "DESKTOP-CASE01",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:45Z",
+      },
+      {
+        id: "artifact-7",
         sourceId: "ad1:/case/logical.ad1:/mobile/history.sqlite",
         name: "history.sqlite",
         category: "database",
@@ -274,6 +297,8 @@ describe("buildProjectDbEvidenceAppendices", () => {
     expect(appendices[1].content).toContain("registry: 1.5");
     expect(appendices[1].content).toContain("manufacturer: Dell Inc.");
     expect(appendices[1].content).toContain("serial: ABC1234");
+    expect(appendices[1].content).toContain("OS: Windows 11 Pro");
+    expect(appendices[1].content).toContain("product id: 00330-80000-00000-AA000");
     expect(appendices[1].content).toContain("tables: 2");
     expect(appendices[2].content).toContain("PDF Document");
     expect(appendices[2].content).toContain("admin@example.com");
