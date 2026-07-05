@@ -290,6 +290,7 @@ fn category_from_extension(extension: &str) -> String {
         "zip" | "7z" | "rar" | "tar" | "gz" | "bz2" | "xz" => "archive",
         "db" | "sqlite" | "sqlite3" => "database",
         "e01" | "l01" | "ad1" | "ufdr" | "ufdx" | "dd" | "raw" | "img" => "forensic",
+        "sys" | "drv" => "system",
         _ => "unknown",
     }
     .to_string()
@@ -378,6 +379,16 @@ fn refine_type_from_extension(
         "py" => Some(("text/x-python", "Python Source", "text")),
         "rs" => Some(("text/rust", "Rust Source", "text")),
         "sql" => Some(("application/sql", "SQL Script", "text")),
+        "sys" => Some((
+            "application/vnd.microsoft.portable-executable",
+            "Windows System Driver",
+            "system",
+        )),
+        "drv" => Some((
+            "application/vnd.microsoft.portable-executable",
+            "Windows Driver",
+            "system",
+        )),
         "jpg" | "jpeg" => Some(("image/jpeg", "JPEG Image", "image")),
         "png" => Some(("image/png", "PNG Image", "image")),
         "gif" => Some(("image/gif", "GIF Image", "image")),
@@ -2667,6 +2678,25 @@ mod tests {
             artifact.metadata.get("image.format").map(String::as_str),
             Some("webp")
         );
+    }
+
+    #[test]
+    fn sys_extension_classifies_as_windows_driver_system_artifact() {
+        let mut bytes = vec![0u8; 128];
+        bytes[0..2].copy_from_slice(b"MZ");
+        let file = write_temp_file(".sys", &bytes);
+        let source = LocalFileByteSource::new(file.path());
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "system");
+        assert_eq!(artifact.type_description, "Windows System Driver");
+        assert_eq!(
+            artifact.mime_type.as_deref(),
+            Some("application/vnd.microsoft.portable-executable")
+        );
+        assert_eq!(artifact.metadata.get("extension").map(String::as_str), Some("sys"));
     }
 
     #[test]
