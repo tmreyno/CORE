@@ -56,6 +56,26 @@ describe("buildEvidenceSourceInput", () => {
     });
   });
 
+  it("infers numbered raw VFS entry source type from a segmented parent container", () => {
+    const source = buildEvidenceSourceInput(
+      null,
+      makeEntry({
+        containerPath: "/case/SCHARDT/SCHARDT.001",
+        entryPath: "/Partition_1_Ntfs/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+        isVfsEntry: true,
+        containerType: "vfs",
+      }),
+    );
+
+    expect(source).toEqual({
+      containerPath: "/case/SCHARDT/SCHARDT.001",
+      entryPath: "/Partition_1_Ntfs/Windows/System32/config/SYSTEM",
+      containerType: "raw",
+      size: 128,
+    });
+  });
+
   it("preserves explicit VFS source type from the evidence file", () => {
     const source = buildEvidenceSourceInput(
       null,
@@ -193,6 +213,27 @@ describe("buildEvidenceSourceInput", () => {
       containerPath: "/case/disk.E01",
       nestedArchivePath: "Users/alice/archive.zip",
       entryPath: "docs/report.txt",
+      containerType: "zip",
+      size: 128,
+    });
+  });
+
+  it("normalizes nested archive display labels when splitting compact paths", () => {
+    const source = buildEvidenceSourceInput(
+      null,
+      makeEntry({
+        containerPath: "/case/mobile-data.tar",
+        entryPath: "payload.zip::system/build.prop",
+        name: "build.prop",
+        isArchiveEntry: true,
+        containerType: "TAR (Logical)",
+      }),
+    );
+
+    expect(source).toEqual({
+      containerPath: "/case/mobile-data.tar",
+      nestedArchivePath: "payload.zip",
+      entryPath: "system/build.prop",
       containerType: "zip",
       size: 128,
     });

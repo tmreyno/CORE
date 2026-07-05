@@ -22,7 +22,11 @@ export function buildEvidenceSourceInput(
         containerPath: entry.containerPath,
         nestedArchivePath,
         entryPath: nestedEntryPath,
-        containerType: entry.containerType?.toLowerCase() ?? extensionOrDefault(nestedArchivePath, "archive"),
+        containerType:
+          extensionOrDefault(
+            nestedArchivePath,
+            normalizeEntryContainerType(entry.containerType, nestedArchivePath) ?? "archive",
+          ),
         size: entry.size,
         dataAddr: entry.dataAddr,
         itemAddr: entry.itemAddr,
@@ -63,7 +67,7 @@ function inferEntryContainerType(entry: SelectedEntry): string {
   const explicitType = normalizeEntryContainerType(entry.containerType, entry.containerPath);
   if (explicitType && explicitType !== "vfs" && explicitType !== "lazy") return explicitType;
   if (entry.isArchiveEntry) return extensionOrDefault(entry.containerPath, "archive");
-  if (entry.isVfsEntry) return extensionOrDefault(entry.containerPath, "e01");
+  if (entry.isVfsEntry) return inferVfsContainerType(entry.containerPath);
   return "ad1";
 }
 
@@ -71,13 +75,19 @@ function normalizeEntryContainerType(containerType: string | undefined, containe
   const explicitType = containerType?.trim().toLowerCase();
   if (!explicitType) return undefined;
   if (explicitType === "vfs" || explicitType === "lazy") return explicitType;
-  if (explicitType.includes("encase") || explicitType.includes("ewf") || explicitType.includes("e01")) return "e01";
   if (explicitType.includes("ex01")) return "ex01";
-  if (explicitType.includes("l01")) return "l01";
+  if (explicitType.includes("encase") || explicitType.includes("ewf") || explicitType.includes("e01")) return "e01";
   if (explicitType.includes("lx01")) return "lx01";
+  if (explicitType.includes("l01")) return "l01";
   if (explicitType.includes("raw image") || explicitType.includes("disk image")) return "raw";
   if (explicitType.includes("tar")) return extensionOrDefault(containerPath, "tar");
   return explicitType;
+}
+
+function inferVfsContainerType(containerPath: string): string {
+  const extension = extensionOrDefault(containerPath, "e01");
+  if (extension === "e01" && /\.(\d{3})$/i.test(containerPath)) return "raw";
+  return extension;
 }
 
 function extensionOrDefault(path: string, fallback: string): string {
