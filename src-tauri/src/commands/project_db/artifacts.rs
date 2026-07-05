@@ -128,8 +128,40 @@ const WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES: &[RegistryStringMapping]
         metadata_key: "system.osBuildNumber",
     },
     RegistryStringMapping {
+        value_name: "UBR",
+        metadata_key: "system.osUpdateBuildRevision",
+    },
+    RegistryStringMapping {
+        value_name: "BuildLab",
+        metadata_key: "system.osBuildLab",
+    },
+    RegistryStringMapping {
+        value_name: "BuildLabEx",
+        metadata_key: "system.osBuildLabExtended",
+    },
+    RegistryStringMapping {
         value_name: "EditionID",
         metadata_key: "system.osEdition",
+    },
+    RegistryStringMapping {
+        value_name: "CompositionEditionID",
+        metadata_key: "system.osCompositionEdition",
+    },
+    RegistryStringMapping {
+        value_name: "InstallationType",
+        metadata_key: "system.osInstallationType",
+    },
+    RegistryStringMapping {
+        value_name: "InstallDate",
+        metadata_key: "system.osInstallDateEpoch",
+    },
+    RegistryStringMapping {
+        value_name: "PathName",
+        metadata_key: "system.osPath",
+    },
+    RegistryStringMapping {
+        value_name: "SystemRoot",
+        metadata_key: "system.systemRoot",
     },
     RegistryStringMapping {
         value_name: "ProductId",
@@ -566,6 +598,13 @@ fn registry_system_identity_metadata(hive_path: &Path) -> Result<BTreeMap<String
         &format!("{control_set}\\Control\\ComputerName\\ComputerName"),
         "ComputerName",
         "system.computerName",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Control\\ComputerName\\ActiveComputerName"),
+        "ComputerName",
+        "system.activeComputerName",
     );
     insert_registry_string_value(
         &mut metadata,
@@ -4374,6 +4413,26 @@ COMMIT
     }
 
     #[test]
+    fn windows_registry_identity_mappings_cover_os_provenance_values() {
+        assert!(WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES
+            .iter()
+            .any(|mapping| mapping.value_name == "UBR"
+                && mapping.metadata_key == "system.osUpdateBuildRevision"));
+        assert!(WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES
+            .iter()
+            .any(|mapping| mapping.value_name == "BuildLabEx"
+                && mapping.metadata_key == "system.osBuildLabExtended"));
+        assert!(WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES
+            .iter()
+            .any(|mapping| mapping.value_name == "InstallDate"
+                && mapping.metadata_key == "system.osInstallDateEpoch"));
+        assert!(WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES
+            .iter()
+            .any(|mapping| mapping.value_name == "SystemRoot"
+                && mapping.metadata_key == "system.systemRoot"));
+    }
+
+    #[test]
     fn registry_value_text_converts_scalar_identity_values() {
         assert_eq!(
             registry_value_text(CellValue::String("Windows 11 Pro".to_string())).as_deref(),
@@ -4390,6 +4449,10 @@ COMMIT
         assert_eq!(
             registry_value_text(CellValue::U32(22631)).as_deref(),
             Some("22631")
+        );
+        assert_eq!(
+            registry_value_text(CellValue::U64(1_713_312_000)).as_deref(),
+            Some("1713312000")
         );
         assert_eq!(
             registry_value_texts(CellValue::MultiString(vec![
