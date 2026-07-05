@@ -9,7 +9,9 @@
 use tracing::debug;
 
 use crate::ad1;
+use crate::commands::hash::{open_hash_source, HashSourceInput};
 use crate::common::vfs::VirtualFileSystem;
+use crate::common::EvidenceByteSource;
 use crate::containers;
 use crate::ewf;
 use crate::raw;
@@ -17,6 +19,7 @@ use crate::ufed;
 
 const CONTAINER_CHUNK_MAX_BYTES: usize = 16 * 1024 * 1024;
 const CONTAINER_PREVIEW_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const CONTAINER_PREVIEW_COPY_CHUNK_BYTES: usize = 1024 * 1024;
 const CONTAINER_METADATA_BATCH_MAX_ITEMS: usize = 10_000;
 
 // =============================================================================
@@ -166,26 +169,80 @@ fn checked_container_preview_read_size(size: u64, context: &str) -> Result<usize
     usize::try_from(size).map_err(|_| format!("{context} is too large to preview"))
 }
 
-fn checked_l01_preview_read_size(entry_size: u64, data_size: u64) -> Result<usize, String> {
-    let size = if entry_size > 0 {
-        entry_size
-    } else {
-        data_size
-    };
-    checked_container_preview_read_size(size, "L01 entry")
+fn copy_container_preview_source_to_writer(
+    source: &dyn EvidenceByteSource,
+    writer: &mut impl std::io::Write,
+) -> Result<u64, String> {
+    let source_id = source.source_ref().display_id();
+    let total_size = source.len().map_err(|e| e.to_string())?;
+    checked_container_preview_read_size(total_size, "Container entry")?;
+
+    let mut offset = 0u64;
+    while offset < total_size {
+        let remaining = total_size - offset;
+        let read_size =
+            usize::try_from(remaining.min(CONTAINER_PREVIEW_COPY_CHUNK_BYTES as u64))
+                .map_err(|_| format!("Preview read size does not fit usize for {source_id}"))?;
+        let chunk = source
+            .read_range(offset, read_size)
+            .map_err(|e| e.to_string())?;
+
+        if chunk.is_empty() {
+            return Err(format!(
+                "Short preview extraction read for {source_id}: expected {total_size} bytes, copied {offset} bytes"
+            ));
+        }
+        if chunk.len() > read_size {
+            return Err(format!(
+                "Preview extraction source returned too many bytes for {source_id}: requested {read_size}, received {}",
+                chunk.len()
+            ));
+        }
+        if chunk.len() as u64 > remaining {
+            return Err(format!(
+                "Preview extraction source overran {source_id}: {} bytes returned with {remaining} bytes remaining",
+                chunk.len()
+            ));
+        }
+
+        writer
+            .write_all(&chunk)
+            .map_err(|e| format!("Failed to write preview chunk for {source_id}: {e}"))?;
+        offset = offset
+            .checked_add(chunk.len() as u64)
+            .ok_or_else(|| format!("Preview extraction byte counter overflow for {source_id}"))?;
+    }
+
+    Ok(total_size)
 }
 
-fn checked_ad1_preview_read_size(
-    reported_entry_size: u64,
-    resolved_entry_size: Option<u64>,
-) -> Result<usize, String> {
-    let size = if reported_entry_size > 0 {
-        reported_entry_size
-    } else {
-        resolved_entry_size
-            .ok_or_else(|| "Failed to determine AD1 entry size for preview".to_string())?
-    };
-    checked_container_preview_read_size(size, "AD1 entry")
+fn infer_preview_container_type(
+    container_path: &str,
+    is_vfs_entry: bool,
+    is_archive_entry: bool,
+) -> Result<String, String> {
+    if is_archive_entry {
+        return Ok("archive".to_string());
+    }
+    if ewf::is_l01_file(container_path).unwrap_or(false) {
+        return Ok("l01".to_string());
+    }
+    if ewf::is_ewf(container_path).unwrap_or(false) {
+        return Ok("e01".to_string());
+    }
+    if raw::is_raw(container_path).unwrap_or(false) {
+        return Ok("raw".to_string());
+    }
+    if ufed::is_ufed(container_path) {
+        return Ok("ufed".to_string());
+    }
+    if ad1::is_ad1(container_path).unwrap_or(false) {
+        return Ok("ad1".to_string());
+    }
+    if is_vfs_entry {
+        return Err(format!("Unsupported VFS container: {container_path}"));
+    }
+    Err(format!("Unsupported container type: {container_path}"))
 }
 
 fn checked_container_metadata_batch_size(count: usize) -> Result<usize, String> {
@@ -296,157 +353,28 @@ pub async fn container_extract_entry_to_temp(
 
         let output_path = temp_dir.join(&unique_name);
 
-        // Read content based on container type
-        // Use explicit flags first, then auto-detect by file type as fallback.
-        // This is defensive: VFS entries should have isVfsEntry=true, but if the
-        // flag is missing/false, we still try to read based on the container format.
-        let is_ewf = ewf::is_ewf(&containerPath).unwrap_or(false);
-        let is_l01 = ewf::is_l01_file(&containerPath).unwrap_or(false);
-        let is_raw = raw::is_raw(&containerPath).unwrap_or(false);
-        let is_ad1 = ad1::is_ad1(&containerPath).unwrap_or(false);
-        let is_ufed = ufed::is_ufed(&containerPath);
-
-        let data = if isArchiveEntry {
-            // Archive entry - use libarchive unified backend
-            // Check for nested archive entries: entryPath contains "::" separator
-            // e.g., "/Partition2_NTFS/path/to/ARCHIVE.ZIP::inner/file.mdb"
-            // This means: extract ARCHIVE.ZIP from the parent container first,
-            // then read inner/file.mdb from the extracted archive.
-            if let Some((nested_archive_path, inner_entry_path)) =
-                parse_nested_archive_path(&entryPath)
-            {
-                debug!(
-                    "Nested archive extraction: archive='{}', inner='{}'",
-                    nested_archive_path, inner_entry_path
-                );
-
-                crate::commands::archive::nested::read_nested_container_entry(
-                    &containerPath,
-                    nested_archive_path,
-                    inner_entry_path,
-                )?
-            } else {
-                crate::commands::archive::extraction::read_archive_entry_bytes(
-                    &containerPath,
-                    &entryPath,
-                )?
-            }
-        } else if is_l01 {
-            // L01 logical evidence - read file data using ltree offsets
-            let tree = ewf::parse_l01_file_tree(&containerPath)
-                .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
-
-            let entry = tree
-                .entry_at_path(&entryPath)
-                .ok_or_else(|| format!("Entry not found in L01: {}", entryPath))?;
-
-            if entry.is_directory {
-                return Err("Cannot extract directory entries".to_string());
-            }
-
-            // Read the file data from the EWF data stream at the entry's offset
-            let mut handle = ewf::EwfHandle::open(&containerPath)
-                .map_err(|e| format!("Failed to open L01 handle: {}", e))?;
-
-            let read_size = checked_l01_preview_read_size(entry.size, entry.data_size)?;
-            handle
-                .read_at(entry.data_offset, read_size)
-                .map_err(|e| format!("Failed to read L01 file data: {}", e))?
-        } else if isVfsEntry || is_ewf || is_raw {
-            // VFS entry (E01/Raw) - use VFS read
-            use crate::common::vfs::VirtualFileSystem;
-
-            if is_ewf {
-                let vfs = ewf::vfs::EwfVfs::open(&containerPath)
-                    .map_err(|e| format!("Failed to open E01: {:?}", e))?;
-                // If entrySize is 0, query the actual file size from the VFS.
-                // The frontend may report size=0 when getattr() failed during directory listing.
-                let read_size = if entrySize > 0 {
-                    checked_container_preview_read_size(entrySize, "EWF VFS entry")?
-                } else if let Ok(size) = vfs.file_size(&entryPath) {
-                    checked_container_preview_read_size(size, "EWF VFS entry")?
-                } else {
-                    0
-                };
-                vfs.read(&entryPath, 0, read_size)
-                    .map_err(|e| format!("Failed to read VFS file: {:?}", e))?
-            } else if is_raw {
-                let vfs = raw::vfs::RawVfs::open_filesystem(&containerPath)
-                    .or_else(|_| raw::vfs::RawVfs::open(&containerPath))
-                    .map_err(|e| format!("Failed to open raw: {:?}", e))?;
-                let read_size = if entrySize > 0 {
-                    checked_container_preview_read_size(entrySize, "Raw VFS entry")?
-                } else if let Ok(size) = vfs.file_size(&entryPath) {
-                    checked_container_preview_read_size(size, "Raw VFS entry")?
-                } else {
-                    0
-                };
-                vfs.read(&entryPath, 0, read_size)
-                    .map_err(|e| format!("Failed to read raw file: {:?}", e))?
-            } else {
-                return Err(format!("Unsupported VFS container: {}", containerPath));
-            }
-        } else if is_ufed {
-            use crate::common::vfs::VirtualFileSystem;
-
-            let vfs = ufed::UfedVfs::open(&containerPath)
-                .map_err(|e| format!("Failed to open UFED: {:?}", e))?;
-
-            let read_size = if entrySize > 0 {
-                checked_container_preview_read_size(entrySize, "UFED entry")?
-            } else if let Ok(size) = vfs.file_size(&entryPath) {
-                checked_container_preview_read_size(size, "UFED entry")?
-            } else {
-                let entry_size = ufed::get_tree(&containerPath)
-                    .ok()
-                    .and_then(|entries| {
-                        entries
-                            .into_iter()
-                            .find(|entry| entry.path == entryPath)
-                            .map(|entry| entry.size)
-                    })
-                    .ok_or_else(|| format!("Failed to determine UFED entry size: {}", entryPath))?;
-
-                checked_container_preview_read_size(entry_size, "UFED entry")?
-            };
-
-            vfs.read(&entryPath, 0, read_size)
-                .map_err(|e| format!("Failed to read UFED file: {:?}", e))?
-        } else if is_ad1 {
-            let resolved_size = if entrySize > 0 {
-                Some(entrySize)
-            } else {
-                ad1::get_entry_info(&containerPath, &entryPath)
-                    .map(|entry| entry.size)
-                    .ok()
-            };
-            let read_size = checked_ad1_preview_read_size(entrySize, resolved_size)?;
-            // AD1 entry - prefer address-based read if available
-            let data = if let Some(addr) = dataAddr {
-                ad1::read_entry_data_by_addr(&containerPath, addr, read_size as u64)
-                    .map_err(|e| format!("Failed to read AD1 by address: {}", e))?
-            } else {
-                ad1::read_entry_data(&containerPath, &entryPath)
-                    .map_err(|e| format!("Failed to read AD1 entry: {}", e))?
-            };
-            if data.len() > read_size {
-                return Err(format!(
-                    "AD1 preview read returned too many bytes: allowed {read_size}, received {}",
-                    data.len()
-                ));
-            }
-            data
-        } else {
-            return Err(format!("Unsupported container type: {}", containerPath));
+        let container_type =
+            infer_preview_container_type(&containerPath, isVfsEntry, isArchiveEntry)?;
+        let source = HashSourceInput {
+            path: Some(containerPath.clone()),
+            container_path: Some(containerPath.clone()),
+            entry_path: Some(entryPath.clone()),
+            nested_archive_path: None,
+            container_type: Some(container_type),
+            size: (entrySize > 0).then_some(entrySize),
+            data_addr: dataAddr,
+            item_addr: None,
         };
+        let byte_source = open_hash_source(&source)?;
 
         // Write to temp file
         let mut file = std::fs::File::create(&output_path)
             .map_err(|e| format!("Failed to create temp file: {}", e))?;
-        file.write_all(&data)
-            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+        let copied = copy_container_preview_source_to_writer(byte_source.as_ref(), &mut file)?;
+        file.flush()
+            .map_err(|e| format!("Failed to flush temp file: {}", e))?;
 
-        debug!("Extracted {} bytes to: {:?}", data.len(), output_path);
+        debug!("Extracted {} bytes to: {:?}", copied, output_path);
 
         Ok(output_path.to_string_lossy().to_string())
     })
@@ -601,6 +529,7 @@ pub(crate) fn classify_extraction_route(
 
 /// Parse a nested archive entry path with `::` separator.
 /// Returns `(archive_path, inner_entry_path)`.
+#[cfg(test)]
 pub(crate) fn parse_nested_archive_path(entry_path: &str) -> Option<(&str, &str)> {
     let (archive_path, inner_entry_path) = entry_path.split_once("::")?;
     if archive_path.is_empty() || inner_entry_path.is_empty() {
@@ -682,6 +611,67 @@ pub async fn ad1_hash_segments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::{EvidenceSourceError, EvidenceSourceRef, EvidenceSourceResult};
+    use std::sync::{Arc, Mutex};
+
+    struct ChunkedTestSource {
+        data: Vec<u8>,
+        max_chunk: usize,
+        read_sizes: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl ChunkedTestSource {
+        fn new(data: Vec<u8>, max_chunk: usize) -> Self {
+            Self {
+                data,
+                max_chunk,
+                read_sizes: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    impl EvidenceByteSource for ChunkedTestSource {
+        fn source_ref(&self) -> EvidenceSourceRef {
+            EvidenceSourceRef::LocalFile {
+                path: "chunked-test-source".to_string(),
+            }
+        }
+
+        fn len(&self) -> EvidenceSourceResult<u64> {
+            Ok(self.data.len() as u64)
+        }
+
+        fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
+            self.read_sizes.lock().unwrap().push(size);
+            let start = usize::try_from(offset).unwrap();
+            if start >= self.data.len() {
+                return Ok(Vec::new());
+            }
+            let end = (start + size.min(self.max_chunk)).min(self.data.len());
+            Ok(self.data[start..end].to_vec())
+        }
+    }
+
+    struct OversizedTestSource;
+
+    impl EvidenceByteSource for OversizedTestSource {
+        fn source_ref(&self) -> EvidenceSourceRef {
+            EvidenceSourceRef::LocalFile {
+                path: "oversized-test-source".to_string(),
+            }
+        }
+
+        fn len(&self) -> EvidenceSourceResult<u64> {
+            Ok(CONTAINER_PREVIEW_MAX_BYTES + 1)
+        }
+
+        fn read_range(&self, _offset: u64, _size: usize) -> EvidenceSourceResult<Vec<u8>> {
+            Err(EvidenceSourceError::Io {
+                source_id: "oversized-test-source".to_string(),
+                message: "should not read oversized source".to_string(),
+            })
+        }
+    }
 
     // ==================== parse_nested_archive_path tests ====================
 
@@ -815,40 +805,41 @@ mod tests {
     }
 
     #[test]
-    fn test_checked_l01_preview_read_size_uses_data_size_fallback() {
-        let size = checked_l01_preview_read_size(0, 128).unwrap();
+    fn test_copy_container_preview_source_streams_chunks() {
+        let source = ChunkedTestSource::new(vec![1, 2, 3, 4, 5, 6, 7], 3);
+        let reads = source.read_sizes.clone();
+        let mut output = Vec::new();
 
-        assert_eq!(size, 128);
+        let copied = copy_container_preview_source_to_writer(&source, &mut output).unwrap();
+
+        assert_eq!(copied, 7);
+        assert_eq!(output, vec![1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(reads.lock().unwrap().as_slice(), &[7, 4, 1]);
     }
 
     #[test]
-    fn test_checked_ad1_preview_read_size_uses_reported_size_first() {
-        let size = checked_ad1_preview_read_size(256, Some(CONTAINER_PREVIEW_MAX_BYTES + 1))
-            .expect("reported size should be used before resolved size");
-
-        assert_eq!(size, 256);
-    }
-
-    #[test]
-    fn test_checked_ad1_preview_read_size_uses_resolved_size_fallback() {
-        let size = checked_ad1_preview_read_size(0, Some(128)).unwrap();
-
-        assert_eq!(size, 128);
-    }
-
-    #[test]
-    fn test_checked_ad1_preview_read_size_rejects_unknown_size() {
-        let err = checked_ad1_preview_read_size(0, None).unwrap_err();
-
-        assert!(err.contains("Failed to determine AD1 entry size"));
-    }
-
-    #[test]
-    fn test_checked_ad1_preview_read_size_rejects_oversized_resolved_size() {
+    fn test_copy_container_preview_source_rejects_oversized_source_before_reading() {
+        let mut output = Vec::new();
         let err =
-            checked_ad1_preview_read_size(0, Some(CONTAINER_PREVIEW_MAX_BYTES + 1)).unwrap_err();
+            copy_container_preview_source_to_writer(&OversizedTestSource, &mut output).unwrap_err();
 
-        assert!(err.contains("AD1 entry exceeds preview extraction limit"));
+        assert!(err.contains("Container entry exceeds preview extraction limit"));
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_infer_preview_container_type_prefers_archive_flag() {
+        assert_eq!(
+            infer_preview_container_type("/tmp/evidence.e01", false, true).unwrap(),
+            "archive"
+        );
+    }
+
+    #[test]
+    fn test_infer_preview_container_type_rejects_unknown_vfs() {
+        let err = infer_preview_container_type("/tmp/evidence.unknown", true, false).unwrap_err();
+
+        assert!(err.contains("Unsupported VFS container"));
     }
 
     #[test]
