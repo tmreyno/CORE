@@ -466,6 +466,7 @@ describe("ViewerMetadataPanel", () => {
             sectionCount: 5,
             importCount: 42,
             exportCount: 10,
+            stringCount: 128,
             isStripped: false,
             isDynamic: true,
             subsystem: "Windows GUI",
@@ -480,6 +481,7 @@ describe("ViewerMetadataPanel", () => {
       expect(container.textContent).toContain("x86_64");
       expect(container.textContent).toContain("0x00401000");
       expect(container.textContent).toContain("Windows GUI");
+      expect(container.textContent).toContain("128");
       dispose();
     });
 

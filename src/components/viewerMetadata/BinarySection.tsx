@@ -58,6 +58,9 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
         <Show when={props.data.exportCount != null}>
           <MetadataRow label="Exports" value={String(props.data.exportCount)} />
         </Show>
+        <Show when={props.data.stringCount != null}>
+          <MetadataRow label="Strings" value={String(props.data.stringCount)} />
+        </Show>
         <MetadataRow
           label="Stripped"
           value={props.data.isStripped ? "Yes" : "No"}
