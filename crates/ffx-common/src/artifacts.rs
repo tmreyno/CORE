@@ -3140,16 +3140,21 @@ fn linux_dmi_metadata(path: &str, header: &[u8]) -> Option<BTreeMap<String, Stri
         "product_family" => "system.productFamily",
         "product_serial" => "system.serialNumber",
         "product_uuid" => "system.uuid",
+        "product_sku" => "system.productSku",
         "board_vendor" => "system.boardVendor",
         "board_name" => "system.boardName",
         "board_version" => "system.boardVersion",
         "board_serial" => "system.boardSerialNumber",
+        "board_asset_tag" => "system.boardAssetTag",
         "bios_vendor" => "system.biosVendor",
         "bios_version" => "system.biosVersion",
         "bios_date" => "system.biosDate",
+        "bios_release" => "system.biosRelease",
         "chassis_vendor" => "system.chassisVendor",
         "chassis_type" => "system.chassisType",
         "chassis_serial" => "system.chassisSerialNumber",
+        "chassis_version" => "system.chassisVersion",
+        "chassis_asset_tag" => "system.chassisAssetTag",
         _ => return None,
     };
     if !(path.contains("sys/class/dmi/id/") || path.contains("sys/devices/virtual/dmi/id/")) {
@@ -7709,6 +7714,36 @@ COMMIT
                 "/mnt/image/sys/devices/virtual/dmi/id/product_uuid",
                 "system.uuid",
                 "00112233-4455-6677-8899-aabbccddeeff",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/product_sku",
+                "system.productSku",
+                "21HMCTO1WW",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/board_serial",
+                "system.boardSerialNumber",
+                "BOARD12345",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/board_asset_tag",
+                "system.boardAssetTag",
+                "BOARD-ASSET-77",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/bios_release",
+                "system.biosRelease",
+                "1.32",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/chassis_version",
+                "system.chassisVersion",
+                "ThinkPad",
+            ),
+            (
+                "/mnt/image/sys/class/dmi/id/chassis_asset_tag",
+                "system.chassisAssetTag",
+                "ASSET-2026-001",
             ),
         ] {
             let source = ChunkedByteSource::new(path, format!("{expected}\n").as_bytes(), 4);
