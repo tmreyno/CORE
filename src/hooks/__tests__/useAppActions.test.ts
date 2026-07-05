@@ -30,6 +30,10 @@ vi.mock("../../utils/accessibility", () => ({
   announce: vi.fn(),
 }));
 
+vi.mock("../../utils/platform", () => ({
+  isTauri: true,
+}));
+
 vi.mock("../../api/search", () => ({
   searchQuery: vi.fn(),
 }));

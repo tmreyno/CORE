@@ -21,6 +21,7 @@ import { commands } from "../api/commands";
 import { announce } from "../utils/accessibility";
 import { logger } from "../utils/logger";
 import { getBasename } from "../utils/pathUtils";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("AppActions");
 
 const FTS_SOURCE_LABELS: Record<string, string> = {
@@ -146,7 +147,7 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
     }
 
     // Tier 2: FTS5 cross-entity search (bookmarks, notes, activity log, annotations, artifacts, analysis facts)
-    if (query.length >= 2 && projectManager.project()) {
+    if (isTauri && query.length >= 2 && projectManager.project()) {
       try {
         await commands.projectDb.rebuildFts().catch(() => {});
         const ftsResults = await commands.projectDb.searchFts(query, 30);
