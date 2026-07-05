@@ -13,7 +13,13 @@ const READ_FILE_BYTES_MAX_LENGTH: usize = 16 * 1024 * 1024;
 /// Returns up to `length` bytes starting at `offset`.
 /// Useful for previewing file contents without full extraction.
 #[tauri::command]
-pub fn read_file_bytes(path: String, offset: u64, length: usize) -> Result<Vec<u8>, String> {
+pub async fn read_file_bytes(path: String, offset: u64, length: usize) -> Result<Vec<u8>, String> {
+    tauri::async_runtime::spawn_blocking(move || read_file_bytes_blocking(path, offset, length))
+        .await
+        .map_err(|e| format!("Read file bytes task failed: {}", e))?
+}
+
+fn read_file_bytes_blocking(path: String, offset: u64, length: usize) -> Result<Vec<u8>, String> {
     use std::fs::File;
     use std::io::{Read, Seek, SeekFrom};
 
@@ -83,7 +89,7 @@ mod tests {
         let path = dir.path().join("sample.bin");
         std::fs::write(&path, b"abcdef").unwrap();
 
-        let err = read_file_bytes(
+        let err = read_file_bytes_blocking(
             path.to_string_lossy().to_string(),
             0,
             READ_FILE_BYTES_MAX_LENGTH + 1,
@@ -98,7 +104,7 @@ mod tests {
         let path = dir.path().join("sample.bin");
         std::fs::write(&path, b"abcdef").unwrap();
 
-        let err = read_file_bytes(
+        let err = read_file_bytes_blocking(
             path.to_string_lossy().to_string(),
             99,
             READ_FILE_BYTES_MAX_LENGTH + 1,
@@ -113,7 +119,7 @@ mod tests {
         let path = dir.path().join("sample.bin");
         std::fs::write(&path, b"abcdef").unwrap();
 
-        let bytes = read_file_bytes(path.to_string_lossy().to_string(), 4, 16).unwrap();
+        let bytes = read_file_bytes_blocking(path.to_string_lossy().to_string(), 4, 16).unwrap();
         assert_eq!(bytes, b"ef");
     }
 }
