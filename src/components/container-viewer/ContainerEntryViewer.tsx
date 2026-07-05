@@ -160,6 +160,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
     if (capturedKey !== entryKey()) return null;
 
+    if (!detected?.viewerType) {
+      setAutoMode("hex");
+      return null;
+    }
+
     if (detected.viewerType !== "Hex") {
       setDetectedFormat(detected);
       setAutoMode("preview");

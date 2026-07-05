@@ -492,6 +492,26 @@ describe("ContainerEntryViewer", () => {
       dispose();
     });
 
+    it("falls back to hex when detection returns no viewer type", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
+          return undefined;
+        }
+        return null;
+      });
+
+      const entry = makeEntry({ name: "unknown.dat", isArchiveEntry: true });
+      const { container, dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(200);
+
+      expect(container.innerHTML).toBeTruthy();
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      dispose();
+    });
+
     it("does not run content detection for known previewable extensions", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {
