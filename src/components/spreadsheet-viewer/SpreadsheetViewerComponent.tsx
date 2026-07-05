@@ -58,6 +58,8 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [activeSheet, setActiveSheet] = createSignal(0);
   const [rows, setRows] = createSignal<CellValue[][]>([]);
   const [loadingSheet, setLoadingSheet] = createSignal(false);
+  let loadGeneration = 0;
+  let sheetLoadGeneration = 0;
 
   // Search & sort state
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -98,6 +100,8 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
 
   // Load spreadsheet info
   const loadInfo = async () => {
+    const generation = ++loadGeneration;
+    sheetLoadGeneration++;
     setLoading(true);
     setError(null);
 
@@ -109,22 +113,27 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
       const result = props.source
         ? await commands.spreadsheet.infoSource<SpreadsheetInfo>(props.source)
         : await commands.spreadsheet.info<SpreadsheetInfo>(props.path);
+      if (generation !== loadGeneration) return;
       setInfo(result);
 
       // Load first sheet
       if (result.sheets.length > 0) {
-        await loadSheet(0);
+        await loadSheet(0, generation);
       }
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to load spreadsheet:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
   // Load a specific sheet's data
-  const loadSheet = async (sheetIndex: number) => {
+  const loadSheet = async (sheetIndex: number, infoGeneration = loadGeneration) => {
+    const generation = ++sheetLoadGeneration;
     const sheetInfo = info();
     if (!sheetInfo || sheetIndex >= sheetInfo.sheets.length) return;
 
@@ -152,13 +161,17 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
             0,
             500
           );
+      if (infoGeneration !== loadGeneration || generation !== sheetLoadGeneration) return;
       setRows(data);
       setActiveSheet(sheetIndex);
     } catch (e) {
+      if (infoGeneration !== loadGeneration || generation !== sheetLoadGeneration) return;
       log.error("Failed to load sheet:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoadingSheet(false);
+      if (infoGeneration === loadGeneration && generation === sheetLoadGeneration) {
+        setLoadingSheet(false);
+      }
     }
   };
 
