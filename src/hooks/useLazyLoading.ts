@@ -139,9 +139,12 @@ export function useLazyLoading(
   const [rootOffset, setRootOffset] = createSignal(0);
   const [rootTotalCount, setRootTotalCount] = createSignal(0);
   const [hasMoreRoot, setHasMoreRoot] = createSignal(false);
+  let loadEpoch = 0;
 
   // === Computed ===
   const isLoading = () => isLoadingRoot() || isLoadingChildren().size > 0;
+  const isCurrentLoad = (epoch: number, path: string) =>
+    epoch === loadEpoch && containerPath() === path;
 
   const setBrowserUnavailable = (): void => {
     const unavailable = new Error(BROWSER_LAZY_LOADING_MESSAGE);
@@ -159,6 +162,7 @@ export function useLazyLoading(
   const loadSummary = async (): Promise<ContainerSummary | null> => {
     const path = containerPath();
     if (!path) return null;
+    const epoch = loadEpoch;
     if (!isTauri) {
       setSummary(null);
       setBrowserUnavailable();
@@ -170,9 +174,11 @@ export function useLazyLoading(
       const result = await invoke<ContainerSummary>("lazy_get_container_summary", {
         containerPath: path,
       });
+      if (!isCurrentLoad(epoch, path)) return result;
       setSummary(result);
       return result;
     } catch (err) {
+      if (!isCurrentLoad(epoch, path)) return null;
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
@@ -190,6 +196,7 @@ export function useLazyLoading(
   ): Promise<LazyLoadResult | null> => {
     const path = containerPath();
     if (!path) return null;
+    const epoch = loadEpoch;
     if (!isTauri) {
       setRootChildren([]);
       setRootOffset(0);
@@ -209,6 +216,7 @@ export function useLazyLoading(
         offset: offset ?? 0,
         limit: limit ?? config().batch_size,
       });
+      if (!isCurrentLoad(epoch, path)) return result;
 
       // Update state based on offset
       if (offset === 0 || offset === undefined) {
@@ -227,13 +235,16 @@ export function useLazyLoading(
       options.onLoadComplete?.(result);
       return result;
     } catch (err) {
+      if (!isCurrentLoad(epoch, path)) return null;
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
       log.error("loadRootChildren failed:", err);
       return null;
     } finally {
-      setIsLoadingRoot(false);
+      if (isCurrentLoad(epoch, path)) {
+        setIsLoadingRoot(false);
+      }
     }
   };
 
@@ -255,6 +266,7 @@ export function useLazyLoading(
   ): Promise<LazyLoadResult | null> => {
     const path = containerPath();
     if (!path) return null;
+    const epoch = loadEpoch;
     if (!isTauri) {
       setBrowserUnavailable();
       return null;
@@ -276,6 +288,7 @@ export function useLazyLoading(
         offset: offset ?? 0,
         limit: limit ?? config().batch_size,
       });
+      if (!isCurrentLoad(epoch, path)) return result;
 
       // Update cache
       setChildrenCache(prev => {
@@ -294,17 +307,20 @@ export function useLazyLoading(
       setConfig(result.config);
       return result;
     } catch (err) {
+      if (!isCurrentLoad(epoch, path)) return null;
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
       log.error("loadChildren failed:", err);
       return null;
     } finally {
-      setIsLoadingChildren(prev => {
-        const next = new Set(prev);
-        next.delete(parentPath);
-        return next;
-      });
+      if (isCurrentLoad(epoch, path)) {
+        setIsLoadingChildren(prev => {
+          const next = new Set(prev);
+          next.delete(parentPath);
+          return next;
+        });
+      }
     }
   };
 
@@ -326,12 +342,15 @@ export function useLazyLoading(
    * Clear all caches
    */
   const clearCache = (): void => {
+    loadEpoch += 1;
     setRootChildren([]);
     setChildrenCache(new Map());
     setSummary(null);
     setRootOffset(0);
     setRootTotalCount(0);
     setHasMoreRoot(false);
+    setIsLoadingRoot(false);
+    setIsLoadingChildren(new Set<string>());
   };
 
   /**
