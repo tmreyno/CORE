@@ -45,6 +45,8 @@ const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 const SQLITE_METADATA_NAME_LIMIT: usize = 12;
 const MAX_SYSTEM_IDENTITY_LIST_ITEMS: usize = 32;
 const MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS: usize = 160;
+const UNIX_REGULAR_USER_MIN_UID: u32 = 1000;
+const UNIX_REGULAR_USER_MAX_UID: u32 = 60000;
 const DEFAULT_ARTIFACT_EXTRACTOR: &str = "core-artifact-extractor";
 const MAX_ARTIFACT_EXTRACTOR_CHARS: usize = 128;
 
@@ -432,6 +434,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_unix_account_identity_source(&source_id) {
+        return true;
+    }
+
     if is_windows_wifi_profile_source(&source_id) {
         return true;
     }
@@ -487,6 +493,14 @@ fn is_linux_network_identity_source(source_id: &str) -> bool {
         || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
         || (source_id.contains("/etc/netplan/")
             && (source_id.ends_with(".yaml") || source_id.ends_with(".yml")))
+}
+
+fn is_unix_account_identity_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/etc/passwd")
+        || source_id.ends_with("/private/etc/passwd")
+        || source_id.ends_with("/etc/group")
+        || source_id.ends_with("/private/etc/group")
 }
 
 fn is_windows_wifi_profile_source(source_id: &str) -> bool {
@@ -965,6 +979,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     metadata.insert("system.identitySource".to_string(), normalized);
     if is_linux_network_identity_source(&lower) {
         metadata.extend(parse_linux_network_config_metadata(&lower, &text));
+    }
+    if is_unix_account_identity_source(&lower) {
+        metadata.extend(parse_unix_account_metadata(&lower, &text));
     }
     if is_windows_wifi_profile_source(&lower) {
         metadata.extend(parse_windows_wifi_profile_metadata(&text));
@@ -1602,6 +1619,215 @@ fn split_config_values(value: &str) -> Vec<String> {
             (!part.is_empty()).then(|| truncate_metadata_value(part, 120))
         })
         .collect()
+}
+
+#[derive(Default)]
+struct UnixAccountMetadata {
+    user_count: usize,
+    regular_user_count: usize,
+    login_user_count: usize,
+    group_count: usize,
+    users: Vec<String>,
+    regular_users: Vec<String>,
+    login_users: Vec<String>,
+    home_directories: Vec<String>,
+    login_shells: Vec<String>,
+    groups: Vec<String>,
+    admin_groups: Vec<String>,
+    group_members: Vec<String>,
+    min_uid: Option<u32>,
+    max_uid: Option<u32>,
+    root_present: bool,
+}
+
+fn parse_unix_account_metadata(source_id: &str, text: &str) -> BTreeMap<String, String> {
+    let mut values = UnixAccountMetadata::default();
+    let config_type =
+        if source_id.ends_with("/etc/group") || source_id.ends_with("/private/etc/group") {
+            parse_unix_group_metadata(text, &mut values);
+            "unix-group"
+        } else {
+            parse_unix_passwd_metadata(text, &mut values);
+            "unix-passwd"
+        };
+
+    unix_account_metadata_to_map(values, config_type)
+}
+
+fn parse_unix_passwd_metadata(text: &str, values: &mut UnixAccountMetadata) {
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 7 {
+            continue;
+        }
+        let name = fields[0].trim();
+        let uid = fields[2].trim().parse::<u32>().ok();
+        let gid = fields[3].trim();
+        let gecos = fields[4].trim();
+        let home = fields[5].trim();
+        let shell = fields[6].trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        values.user_count = values.user_count.saturating_add(1);
+        if name == "root" {
+            values.root_present = true;
+        }
+        if let Some(uid) = uid {
+            values.min_uid = Some(values.min_uid.map_or(uid, |current| current.min(uid)));
+            values.max_uid = Some(values.max_uid.map_or(uid, |current| current.max(uid)));
+        }
+        push_unique_limited(
+            &mut values.users,
+            truncate_metadata_value(&format!("{name}:uid={}", uid.unwrap_or(0)), 120),
+        );
+
+        if is_unix_regular_user(uid) {
+            values.regular_user_count = values.regular_user_count.saturating_add(1);
+            let display_name = if gecos.is_empty() {
+                name.to_string()
+            } else {
+                format!("{name} ({gecos})")
+            };
+            push_unique_limited(
+                &mut values.regular_users,
+                truncate_metadata_value(&display_name, 120),
+            );
+        }
+        if is_unix_login_shell(shell) {
+            values.login_user_count = values.login_user_count.saturating_add(1);
+            push_unique_limited(
+                &mut values.login_users,
+                truncate_metadata_value(&format!("{name}:uid={}:gid={gid}", uid.unwrap_or(0)), 120),
+            );
+            push_unique_limited(
+                &mut values.login_shells,
+                truncate_metadata_value(shell, 120),
+            );
+        }
+        if !home.is_empty() && home != "/" && home != "/nonexistent" {
+            push_unique_limited(
+                &mut values.home_directories,
+                truncate_metadata_value(home, 160),
+            );
+        }
+    }
+}
+
+fn parse_unix_group_metadata(text: &str, values: &mut UnixAccountMetadata) {
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 4 {
+            continue;
+        }
+        let name = fields[0].trim();
+        let gid = fields[2].trim();
+        let members = fields[3].trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        values.group_count = values.group_count.saturating_add(1);
+        push_unique_limited(
+            &mut values.groups,
+            truncate_metadata_value(&format!("{name}:gid={gid}"), 120),
+        );
+        if is_unix_admin_group(name) {
+            push_unique_limited(
+                &mut values.admin_groups,
+                truncate_metadata_value(&format!("{name}:members={members}"), 160),
+            );
+        }
+        if !members.is_empty() {
+            push_unique_limited(
+                &mut values.group_members,
+                truncate_metadata_value(&format!("{name}={members}"), 160),
+            );
+        }
+    }
+}
+
+fn is_unix_regular_user(uid: Option<u32>) -> bool {
+    uid.is_some_and(|uid| (UNIX_REGULAR_USER_MIN_UID..UNIX_REGULAR_USER_MAX_UID).contains(&uid))
+}
+
+fn is_unix_login_shell(shell: &str) -> bool {
+    let shell = shell.trim();
+    !shell.is_empty()
+        && !shell.ends_with("/nologin")
+        && !shell.ends_with("/false")
+        && shell != "nologin"
+        && shell != "false"
+}
+
+fn is_unix_admin_group(name: &str) -> bool {
+    matches!(name, "admin" | "sudo" | "wheel" | "staff")
+}
+
+fn unix_account_metadata_to_map(
+    values: UnixAccountMetadata,
+    config_type: &str,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "system.accountConfigType".to_string(),
+        config_type.to_string(),
+    );
+    if values.user_count > 0 {
+        metadata.insert(
+            "system.localUserCount".to_string(),
+            values.user_count.to_string(),
+        );
+    }
+    if values.regular_user_count > 0 {
+        metadata.insert(
+            "system.regularUserCount".to_string(),
+            values.regular_user_count.to_string(),
+        );
+    }
+    if values.login_user_count > 0 {
+        metadata.insert(
+            "system.loginUserCount".to_string(),
+            values.login_user_count.to_string(),
+        );
+    }
+    if values.group_count > 0 {
+        metadata.insert(
+            "system.localGroupCount".to_string(),
+            values.group_count.to_string(),
+        );
+    }
+    if values.root_present {
+        metadata.insert("system.rootAccountPresent".to_string(), "true".to_string());
+    }
+    if let (Some(min_uid), Some(max_uid)) = (values.min_uid, values.max_uid) {
+        metadata.insert(
+            "system.userUidRange".to_string(),
+            format!("{min_uid}-{max_uid}"),
+        );
+    }
+    insert_joined_metadata(&mut metadata, "system.localUsers", &values.users);
+    insert_joined_metadata(&mut metadata, "system.regularUsers", &values.regular_users);
+    insert_joined_metadata(&mut metadata, "system.loginUsers", &values.login_users);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.homeDirectories",
+        &values.home_directories,
+    );
+    insert_joined_metadata(&mut metadata, "system.loginShells", &values.login_shells);
+    insert_joined_metadata(&mut metadata, "system.localGroups", &values.groups);
+    insert_joined_metadata(&mut metadata, "system.adminGroups", &values.admin_groups);
+    insert_joined_metadata(&mut metadata, "system.groupMembers", &values.group_members);
+    metadata
 }
 
 fn insert_joined_metadata(metadata: &mut BTreeMap<String, String>, key: &str, values: &[String]) {
@@ -4004,6 +4230,93 @@ nameserver 1.1.1.1
     }
 
     #[test]
+    fn system_identity_metadata_extracts_unix_passwd_accounts() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/passwd",
+            b"root:x:0:0:root:/root:/bin/bash\n\
+              daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n\
+              alice:x:1000:1000:Alice Analyst:/home/alice:/bin/bash\n\
+              bob:x:1001:1001:Bob User:/home/bob:/bin/zsh\n",
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.accountConfigType").map(String::as_str),
+            Some("unix-passwd")
+        );
+        assert_eq!(
+            metadata.get("system.localUserCount").map(String::as_str),
+            Some("4")
+        );
+        assert_eq!(
+            metadata.get("system.regularUserCount").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.loginUserCount").map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            metadata
+                .get("system.rootAccountPresent")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            metadata.get("system.userUidRange").map(String::as_str),
+            Some("0-1001")
+        );
+        assert_eq!(
+            metadata.get("system.regularUsers").map(String::as_str),
+            Some("alice (Alice Analyst); bob (Bob User)")
+        );
+        assert_eq!(
+            metadata.get("system.homeDirectories").map(String::as_str),
+            Some("/root; /usr/sbin; /home/alice; /home/bob")
+        );
+        assert_eq!(
+            metadata.get("system.loginShells").map(String::as_str),
+            Some("/bin/bash; /bin/zsh")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_unix_group_accounts() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/group",
+            b"root:x:0:\nwheel:x:10:root,alice\nsudo:x:27:alice,bob\nusers:x:100:alice,bob\n",
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.accountConfigType").map(String::as_str),
+            Some("unix-group")
+        );
+        assert_eq!(
+            metadata.get("system.localGroupCount").map(String::as_str),
+            Some("4")
+        );
+        assert_eq!(
+            metadata.get("system.localGroups").map(String::as_str),
+            Some("root:gid=0; wheel:gid=10; sudo:gid=27; users:gid=100")
+        );
+        assert_eq!(
+            metadata.get("system.adminGroups").map(String::as_str),
+            Some("wheel:members=root,alice; sudo:members=alice,bob")
+        );
+        assert_eq!(
+            metadata.get("system.groupMembers").map(String::as_str),
+            Some("wheel=root,alice; sudo=alice,bob; users=alice,bob")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_network_manager_profile() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/NetworkManager/system-connections/Corp WiFi.nmconnection",
@@ -4675,6 +4988,8 @@ COMMIT
         assert!(is_system_identity_source("/etc/network/interfaces"));
         assert!(is_system_identity_source("/etc/resolv.conf"));
         assert!(is_system_identity_source("/etc/hosts"));
+        assert!(is_system_identity_source("/etc/passwd"));
+        assert!(is_system_identity_source("/etc/group"));
         assert!(is_system_identity_source(
             "/etc/NetworkManager/system-connections/Corp WiFi.nmconnection"
         ));
