@@ -721,6 +721,47 @@ fn index_binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<Strin
     if let Some(subsystem) = &info.pe_subsystem {
         metadata.insert("pe.subsystem".to_string(), subsystem.clone());
     }
+    if let Some(version) = &info.pe_linker_version {
+        metadata.insert("pe.linkerVersion".to_string(), version.clone());
+    }
+    if let Some(version) = &info.pe_os_version {
+        metadata.insert("pe.osVersion".to_string(), version.clone());
+    }
+    if let Some(version) = &info.pe_image_version {
+        metadata.insert("pe.imageVersion".to_string(), version.clone());
+    }
+    if let Some(version) = &info.pe_subsystem_version {
+        metadata.insert("pe.subsystemVersion".to_string(), version.clone());
+    }
+    if let Some(image_base) = info.pe_image_base {
+        metadata.insert("pe.imageBase".to_string(), format!("0x{image_base:x}"));
+    }
+    if let Some(section_alignment) = info.pe_section_alignment {
+        metadata.insert(
+            "pe.sectionAlignment".to_string(),
+            section_alignment.to_string(),
+        );
+    }
+    if let Some(file_alignment) = info.pe_file_alignment {
+        metadata.insert("pe.fileAlignment".to_string(), file_alignment.to_string());
+    }
+    if let Some(size_of_image) = info.pe_size_of_image {
+        metadata.insert("pe.sizeOfImage".to_string(), size_of_image.to_string());
+    }
+    if let Some(size_of_headers) = info.pe_size_of_headers {
+        metadata.insert("pe.sizeOfHeaders".to_string(), size_of_headers.to_string());
+    }
+    if let Some(characteristics) = &info.pe_dll_characteristics {
+        metadata.insert("pe.dllCharacteristics".to_string(), characteristics.clone());
+    }
+    insert_index_joined_metadata(
+        &mut metadata,
+        "pe.dllCharacteristicsDetail",
+        &info.pe_dll_characteristics_detail,
+    );
+    if let Some(size) = info.pe_certificate_table_size {
+        metadata.insert("pe.certificateTableSize".to_string(), size.to_string());
+    }
     metadata.insert("pe.isDriver".to_string(), info.pe_is_driver.to_string());
     if let Some(driver_type) = &info.pe_driver_type {
         metadata.insert("pe.driverType".to_string(), driver_type.clone());
@@ -1677,6 +1718,22 @@ mod tests {
             pe_timestamp: Some(1_717_260_000),
             pe_checksum: Some(0x1234abcd),
             pe_subsystem: Some("Native".to_string()),
+            pe_linker_version: Some("14.38".to_string()),
+            pe_os_version: Some("10.0".to_string()),
+            pe_image_version: Some("10.0".to_string()),
+            pe_subsystem_version: Some("10.0".to_string()),
+            pe_image_base: Some(0x140000000),
+            pe_section_alignment: Some(4096),
+            pe_file_alignment: Some(512),
+            pe_size_of_image: Some(32768),
+            pe_size_of_headers: Some(1024),
+            pe_dll_characteristics: Some("0x2140".to_string()),
+            pe_dll_characteristics_detail: vec![
+                "dynamic-base".to_string(),
+                "nx-compatible".to_string(),
+                "wdm-driver".to_string(),
+            ],
+            pe_certificate_table_size: Some(4096),
             pe_is_driver: true,
             pe_driver_type: Some("File system minifilter driver".to_string()),
             pe_driver_indicators: vec![
@@ -1716,6 +1773,13 @@ mod tests {
         assert!(content.contains("binary.importLibraries:fltmgr.sys"));
         assert!(content.contains("binary.exports:DriverEntry"));
         assert!(content.contains("binary.sections:.text"));
+        assert!(content.contains("pe.linkerVersion:14.38"));
+        assert!(content.contains("pe.imageBase:0x140000000"));
+        assert!(content.contains("pe.dllCharacteristics:0x2140"));
+        assert!(
+            content.contains("pe.dllCharacteristicsDetail:dynamic-base; nx-compatible; wdm-driver")
+        );
+        assert!(content.contains("pe.certificateTableSize:4096"));
         assert!(content.contains("pe.isDriver:true"));
         assert!(content.contains("pe.driverType:File system minifilter driver"));
         assert!(content

@@ -146,6 +146,18 @@ pub struct BinaryInfo {
     pub pe_timestamp: Option<u32>,
     pub pe_checksum: Option<u32>,
     pub pe_subsystem: Option<String>,
+    pub pe_linker_version: Option<String>,
+    pub pe_os_version: Option<String>,
+    pub pe_image_version: Option<String>,
+    pub pe_subsystem_version: Option<String>,
+    pub pe_image_base: Option<u64>,
+    pub pe_section_alignment: Option<u32>,
+    pub pe_file_alignment: Option<u32>,
+    pub pe_size_of_image: Option<u32>,
+    pub pe_size_of_headers: Option<u32>,
+    pub pe_dll_characteristics: Option<String>,
+    pub pe_dll_characteristics_detail: Vec<String>,
+    pub pe_certificate_table_size: Option<u32>,
     pub pe_is_driver: bool,
     pub pe_driver_type: Option<String>,
     pub pe_driver_indicators: Vec<String>,
@@ -257,20 +269,79 @@ fn analyze_pe(
         .collect();
 
     // Optional header info
-    let (timestamp, checksum, subsystem) = if let Some(opt) = pe.header.optional_header {
+    let (
+        timestamp,
+        checksum,
+        subsystem,
+        pe_linker_version,
+        pe_os_version,
+        pe_image_version,
+        pe_subsystem_version,
+        pe_image_base,
+        pe_section_alignment,
+        pe_file_alignment,
+        pe_size_of_image,
+        pe_size_of_headers,
+        pe_dll_characteristics,
+        pe_dll_characteristics_detail,
+        pe_certificate_table_size,
+    ) = if let Some(opt) = pe.header.optional_header {
         let sub = match opt.windows_fields.subsystem {
             1 => "Native",
             2 => "GUI",
             3 => "Console",
             _ => "Unknown",
         };
+        let certificate_table = opt.data_directories.get_certificate_table();
         (
             Some(pe.header.coff_header.time_date_stamp),
             Some(opt.windows_fields.check_sum),
             Some(sub.to_string()),
+            Some(format!(
+                "{}.{}",
+                opt.standard_fields.major_linker_version, opt.standard_fields.minor_linker_version
+            )),
+            Some(format!(
+                "{}.{}",
+                opt.windows_fields.major_operating_system_version,
+                opt.windows_fields.minor_operating_system_version
+            )),
+            Some(format!(
+                "{}.{}",
+                opt.windows_fields.major_image_version, opt.windows_fields.minor_image_version
+            )),
+            Some(format!(
+                "{}.{}",
+                opt.windows_fields.major_subsystem_version,
+                opt.windows_fields.minor_subsystem_version
+            )),
+            Some(opt.windows_fields.image_base),
+            Some(opt.windows_fields.section_alignment),
+            Some(opt.windows_fields.file_alignment),
+            Some(opt.windows_fields.size_of_image),
+            Some(opt.windows_fields.size_of_headers),
+            Some(format!("0x{:04x}", opt.windows_fields.dll_characteristics)),
+            decode_pe_dll_characteristics(opt.windows_fields.dll_characteristics),
+            certificate_table.map(|directory| directory.size),
         )
     } else {
-        (Some(pe.header.coff_header.time_date_stamp), None, None)
+        (
+            Some(pe.header.coff_header.time_date_stamp),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+        )
     };
 
     // Security indicators
@@ -302,6 +373,18 @@ fn analyze_pe(
         pe_timestamp: timestamp,
         pe_checksum: checksum,
         pe_subsystem: subsystem,
+        pe_linker_version,
+        pe_os_version,
+        pe_image_version,
+        pe_subsystem_version,
+        pe_image_base,
+        pe_section_alignment,
+        pe_file_alignment,
+        pe_size_of_image,
+        pe_size_of_headers,
+        pe_dll_characteristics,
+        pe_dll_characteristics_detail,
+        pe_certificate_table_size,
         pe_is_driver,
         pe_driver_type,
         pe_driver_indicators,
@@ -409,6 +492,18 @@ fn analyze_elf(
         pe_timestamp: None,
         pe_checksum: None,
         pe_subsystem: None,
+        pe_linker_version: None,
+        pe_os_version: None,
+        pe_image_version: None,
+        pe_subsystem_version: None,
+        pe_image_base: None,
+        pe_section_alignment: None,
+        pe_file_alignment: None,
+        pe_size_of_image: None,
+        pe_size_of_headers: None,
+        pe_dll_characteristics: None,
+        pe_dll_characteristics_detail: Vec::new(),
+        pe_certificate_table_size: None,
         pe_is_driver: false,
         pe_driver_type: None,
         pe_driver_indicators: Vec::new(),
@@ -473,6 +568,18 @@ fn analyze_mach(
                 pe_timestamp: None,
                 pe_checksum: None,
                 pe_subsystem: None,
+                pe_linker_version: None,
+                pe_os_version: None,
+                pe_image_version: None,
+                pe_subsystem_version: None,
+                pe_image_base: None,
+                pe_section_alignment: None,
+                pe_file_alignment: None,
+                pe_size_of_image: None,
+                pe_size_of_headers: None,
+                pe_dll_characteristics: None,
+                pe_dll_characteristics_detail: Vec::new(),
+                pe_certificate_table_size: None,
                 pe_is_driver: false,
                 pe_driver_type: None,
                 pe_driver_indicators: Vec::new(),
@@ -530,6 +637,28 @@ fn decode_pe_section_characteristics(characteristics: u32) -> Vec<String> {
         (0x2000_0000, "executable"),
         (0x4000_0000, "readable"),
         (0x8000_0000, "writable"),
+    ];
+
+    mappings
+        .iter()
+        .filter(|(mask, _)| characteristics & mask != 0)
+        .map(|(_, label)| (*label).to_string())
+        .collect()
+}
+
+fn decode_pe_dll_characteristics(characteristics: u16) -> Vec<String> {
+    let mappings = [
+        (0x0020, "high-entropy-va"),
+        (0x0040, "dynamic-base"),
+        (0x0080, "force-integrity"),
+        (0x0100, "nx-compatible"),
+        (0x0200, "no-isolation"),
+        (0x0400, "no-seh"),
+        (0x0800, "no-bind"),
+        (0x1000, "appcontainer"),
+        (0x2000, "wdm-driver"),
+        (0x4000, "control-flow-guard"),
+        (0x8000, "terminal-server-aware"),
     ];
 
     mappings
@@ -1139,6 +1268,18 @@ fn analyze_single_mach(
         pe_timestamp: None,
         pe_checksum: None,
         pe_subsystem: None,
+        pe_linker_version: None,
+        pe_os_version: None,
+        pe_image_version: None,
+        pe_subsystem_version: None,
+        pe_image_base: None,
+        pe_section_alignment: None,
+        pe_file_alignment: None,
+        pe_size_of_image: None,
+        pe_size_of_headers: None,
+        pe_dll_characteristics: None,
+        pe_dll_characteristics_detail: Vec::new(),
+        pe_certificate_table_size: None,
         pe_is_driver: false,
         pe_driver_type: None,
         pe_driver_indicators: Vec::new(),
@@ -1259,6 +1400,10 @@ mod tests {
         assert_eq!(
             decode_pe_section_characteristics(0xc000_0040),
             vec!["initialized-data", "readable", "writable"]
+        );
+        assert_eq!(
+            decode_pe_dll_characteristics(0x2140),
+            vec!["dynamic-base", "nx-compatible", "wdm-driver"]
         );
         assert_eq!(
             decode_elf_section_flags(0x7),
