@@ -300,7 +300,9 @@ function App() {
   // Stable reactive accessor: true when the current edition has an active project/session.
   // Must be a createMemo (not an inline arrow) so SolidJS tracks the dependency correctly.
   const acquireHasProject = createMemo(() =>
-    isAcquireEdition() ? !!sessionManager?.hasSession() : !!projectManager.hasProject()
+    isAcquireEdition()
+      ? !!sessionManager?.hasSession() || !!projectManager.hasProject()
+      : !!projectManager.hasProject()
   );
 
   log.debug(`Acquire & portable mode state ready (+${(performance.now() - t0).toFixed(1)}ms)`);
@@ -1510,19 +1512,33 @@ function App() {
               onOpenProject={handleLoadProject}
               onOpenRecentProject={handleOpenRecentProject}
               onNewProject={handleNewProject}
-              projectName={() => (isAcquireEdition() ? sessionManager?.projectName() : projectManager.projectName()) || undefined}
+              projectName={() => (
+                isAcquireEdition()
+                  ? sessionManager?.projectName() || projectManager.projectName()
+                  : projectManager.projectName()
+              ) || undefined}
               hasProject={acquireHasProject}
               evidenceCount={() => fileManager.discoveredFiles().length}
               initialSources={() => fileManager.discoveredFiles()
                 .filter(f => fileManager.selectedFiles().has(f.path))
                 .map(f => f.path)
               }
-              initialExaminerName={() => (isAcquireEdition() ? sessionManager?.examiner() : (projectManager.project()?.owner_name || projectManager.project()?.current_user)) || undefined}
+              initialExaminerName={() => (
+                isAcquireEdition()
+                  ? sessionManager?.examiner()
+                      || projectManager.project()?.owner_name
+                      || projectManager.project()?.current_user
+                  : projectManager.project()?.owner_name || projectManager.project()?.current_user
+              ) || undefined}
               onExportComplete={(outputPath) => {
                 toast.success("Export Complete", `Files exported to: ${outputPath}`);
                 registerAcquisitionOutput(outputPath);
               }}
-              initialDestination={isAcquireEdition() ? (sessionManager?.outputFolder() || "") : (projectManager.projectLocations()?.exports_path || "")}
+              initialDestination={
+                isAcquireEdition()
+                  ? sessionManager?.outputFolder() || projectManager.projectLocations()?.exports_path || ""
+                  : projectManager.projectLocations()?.exports_path || ""
+              }
               onActivityCreate={(activity) => {
                 setActivities(list => [...list, activity]);
               }}
@@ -1531,7 +1547,11 @@ function App() {
                   list.map(a => a.id === id ? { ...a, ...updates } : a)
                 );
               }}
-              caseNumber={() => (isAcquireEdition() ? sessionManager?.caseNumber() : projectManager.caseNumber()) || undefined}
+              caseNumber={() => (
+                isAcquireEdition()
+                  ? sessionManager?.caseNumber() || projectManager.caseNumber()
+                  : projectManager.caseNumber()
+              ) || undefined}
               discoveredFiles={fileManager.discoveredFiles}
               fileInfoMap={fileManager.fileInfoMap}
               onVerifyHashes={() => {
@@ -1544,8 +1564,16 @@ function App() {
               isPortable={portableMode.isPortable}
               portableConfig={portableMode.config}
               activeTriageActivity={activeTriageActivity}
-              evidenceBasePath={isAcquireEdition() ? (sessionManager?.evidenceFolder() || "") : (projectManager.projectLocations()?.evidence_path || "")}
-              currentUsername={isAcquireEdition() ? (sessionManager?.examiner() || undefined) : (projectManager.project()?.current_user || undefined)}
+              evidenceBasePath={
+                isAcquireEdition()
+                  ? sessionManager?.evidenceFolder() || projectManager.projectLocations()?.evidence_path || ""
+                  : projectManager.projectLocations()?.evidence_path || ""
+              }
+              currentUsername={
+                isAcquireEdition()
+                  ? sessionManager?.examiner() || projectManager.project()?.current_user || undefined
+                  : projectManager.project()?.current_user || undefined
+              }
               sessionWriter={acquireSessionWriter}
             />
         </main>
