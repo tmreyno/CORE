@@ -18,11 +18,15 @@ use crate::project_db::{
 };
 use crate::viewer::document::binary::{analyze_binary_bytes, BinaryFormat, BinaryInfo};
 use crate::viewer::document::database_viewer::get_database_info;
+use crate::viewer::document::exif::{
+    ensure_exif_size_allowed, extract_exif_from_reader, ExifMetadata,
+};
 use notatin::cell_value::CellValue;
 use notatin::parser_builder::ParserBuilder;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::collections::BTreeMap;
+use std::io::Cursor;
 use std::io::Write;
 use std::path::Path;
 
@@ -34,6 +38,7 @@ struct RegistryStringMapping {
 
 const SQLITE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const BINARY_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const IMAGE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 const SQLITE_ARTIFACT_COPY_CHUNK_BYTES: usize = 1024 * 1024;
 const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -335,6 +340,7 @@ pub async fn project_db_extract_artifact_source(
         .or(evidence_file_id);
     let mut artifact = artifact_extract_source(source, options).await?;
     enrich_sqlite_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
+    enrich_image_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
     enrich_binary_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
     enrich_system_identity_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
     let record = normalized_to_db_artifact(
@@ -1545,12 +1551,10 @@ fn parse_netplan_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
                     push_unique_limited(&mut values.gateways, gateway);
                 }
             }
-            "dhcp4" | "dhcp6" => {
-                if value.eq_ignore_ascii_case("true") {
-                    let interface = current_interface.as_deref().unwrap_or("unknown");
-                    let family = if key == "dhcp6" { "inet6" } else { "inet" };
-                    push_unique_limited(&mut values.methods, format!("{interface}:{family}:dhcp"));
-                }
+            "dhcp4" | "dhcp6" if value.eq_ignore_ascii_case("true") => {
+                let interface = current_interface.as_deref().unwrap_or("unknown");
+                let family = if key == "dhcp6" { "inet6" } else { "inet" };
+                push_unique_limited(&mut values.methods, format!("{interface}:{family}:dhcp"));
             }
             _ => {}
         }
@@ -2513,6 +2517,16 @@ fn insert_trimmed_metadata(metadata: &mut BTreeMap<String, String>, key: &str, v
     metadata.insert(key.to_string(), truncate_metadata_value(value, 180));
 }
 
+fn insert_optional_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    key: &str,
+    value: Option<&str>,
+) {
+    if let Some(value) = value {
+        insert_trimmed_metadata(metadata, key, value);
+    }
+}
+
 async fn enrich_sqlite_artifact_metadata(
     source: &HashSourceInput,
     artifact: &mut NormalizedArtifact,
@@ -2552,6 +2566,229 @@ fn is_sqlite_artifact(artifact: &NormalizedArtifact) -> bool {
             artifact.extension.as_deref(),
             Some("db" | "sqlite" | "sqlite3" | "sqlitedb")
         )
+}
+
+async fn enrich_image_artifact_metadata(
+    source: &HashSourceInput,
+    artifact: &mut NormalizedArtifact,
+) -> Result<(), String> {
+    if !is_image_artifact(artifact) {
+        return Ok(());
+    }
+
+    let source = source.clone();
+    let metadata_result =
+        tauri::async_runtime::spawn_blocking(move || image_artifact_metadata_from_source(&source))
+            .await
+            .map_err(|e| format!("Image artifact metadata task failed: {e}"))?;
+
+    match metadata_result {
+        Ok(metadata) => {
+            artifact.metadata.extend(metadata);
+        }
+        Err(error) => {
+            artifact.metadata.insert(
+                "image.analysisStatus".to_string(),
+                "unavailable".to_string(),
+            );
+            artifact.metadata.insert(
+                "image.analysisError".to_string(),
+                truncate_metadata_value(&error, 180),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn is_image_artifact(artifact: &NormalizedArtifact) -> bool {
+    artifact.category == "image"
+        || artifact
+            .mime_type
+            .as_deref()
+            .is_some_and(|mime| mime.starts_with("image/"))
+        || matches!(
+            artifact.extension.as_deref(),
+            Some(
+                "jpg"
+                    | "jpeg"
+                    | "png"
+                    | "gif"
+                    | "webp"
+                    | "bmp"
+                    | "tif"
+                    | "tiff"
+                    | "ico"
+                    | "heic"
+                    | "heif"
+                    | "avif"
+                    | "raw"
+                    | "cr2"
+                    | "nef"
+                    | "arw"
+                    | "dng"
+                    | "orf"
+                    | "rw2"
+            )
+        )
+}
+
+fn image_artifact_metadata_from_source(
+    source: &HashSourceInput,
+) -> Result<BTreeMap<String, String>, String> {
+    let byte_source = open_hash_source(source)?;
+    let source_id = byte_source.source_ref().display_id();
+    let size = byte_source.len().map_err(|e| e.to_string())?;
+    if size > IMAGE_ARTIFACT_SOURCE_MAX_BYTES {
+        return Err(format!(
+            "Image artifact source is too large for metadata extraction: {size} bytes > {IMAGE_ARTIFACT_SOURCE_MAX_BYTES} bytes"
+        ));
+    }
+
+    let read_len = usize::try_from(size)
+        .map_err(|_| format!("Image artifact source size does not fit this platform: {size}"))?;
+    let data = if read_len > 0 {
+        read_range_fully(byte_source.as_ref(), 0, read_len).map_err(|e| e.to_string())?
+    } else {
+        Vec::new()
+    };
+
+    let mut metadata = BTreeMap::new();
+    match image_dimensions_from_bytes(&data) {
+        Ok((width, height)) => {
+            metadata.insert("image.analysisStatus".to_string(), "parsed".to_string());
+            metadata.insert("image.width".to_string(), width.to_string());
+            metadata.insert("image.height".to_string(), height.to_string());
+            metadata.insert(
+                "image.pixelCount".to_string(),
+                u64::from(width)
+                    .saturating_mul(u64::from(height))
+                    .to_string(),
+            );
+        }
+        Err(error) => {
+            metadata.insert(
+                "image.dimensionStatus".to_string(),
+                "unavailable".to_string(),
+            );
+            metadata.insert(
+                "image.dimensionError".to_string(),
+                truncate_metadata_value(&error, 180),
+            );
+        }
+    }
+
+    if ensure_exif_size_allowed(size).is_ok() {
+        match extract_exif_from_reader(source_id, Cursor::new(data.as_slice())) {
+            Ok(exif) => {
+                metadata.extend(image_artifact_metadata_from_exif(&exif));
+            }
+            Err(error) => {
+                metadata.insert("exif.analysisStatus".to_string(), "unavailable".to_string());
+                metadata.insert(
+                    "exif.analysisError".to_string(),
+                    truncate_metadata_value(&error.to_string(), 180),
+                );
+            }
+        }
+    }
+
+    Ok(metadata)
+}
+
+fn image_dimensions_from_bytes(data: &[u8]) -> Result<(u32, u32), String> {
+    image::ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_dimensions()
+        .map_err(|e| e.to_string())
+}
+
+fn image_artifact_metadata_from_exif(info: &ExifMetadata) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("exif.analysisStatus".to_string(), "parsed".to_string());
+    insert_optional_metadata(&mut metadata, "exif.make", info.make.as_deref());
+    insert_optional_metadata(&mut metadata, "exif.model", info.model.as_deref());
+    insert_optional_metadata(&mut metadata, "exif.software", info.software.as_deref());
+    insert_optional_metadata(&mut metadata, "exif.lensModel", info.lens_model.as_deref());
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.exposureTime",
+        info.exposure_time.as_deref(),
+    );
+    insert_optional_metadata(&mut metadata, "exif.fNumber", info.f_number.as_deref());
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.focalLength",
+        info.focal_length.as_deref(),
+    );
+    insert_optional_metadata(&mut metadata, "exif.flash", info.flash.as_deref());
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.dateTimeOriginal",
+        info.date_time_original.as_deref(),
+    );
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.dateTimeDigitized",
+        info.date_time_digitized.as_deref(),
+    );
+    insert_optional_metadata(&mut metadata, "exif.dateTime", info.date_time.as_deref());
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.gpsTimestamp",
+        info.gps_timestamp.as_deref(),
+    );
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.colorSpace",
+        info.color_space.as_deref(),
+    );
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.imageUniqueId",
+        info.image_unique_id.as_deref(),
+    );
+    insert_optional_metadata(&mut metadata, "exif.ownerName", info.owner_name.as_deref());
+    insert_optional_metadata(
+        &mut metadata,
+        "exif.serialNumber",
+        info.serial_number.as_deref(),
+    );
+    if let Some(iso) = info.iso {
+        metadata.insert("exif.iso".to_string(), iso.to_string());
+    }
+    if let Some(width) = info.width {
+        metadata.insert("exif.width".to_string(), width.to_string());
+    }
+    if let Some(height) = info.height {
+        metadata.insert("exif.height".to_string(), height.to_string());
+    }
+    if let Some(orientation) = info.orientation {
+        metadata.insert("exif.orientation".to_string(), orientation.to_string());
+    }
+    if let Some(gps) = &info.gps {
+        metadata.insert("exif.gpsLatitude".to_string(), gps.latitude.to_string());
+        metadata.insert("exif.gpsLongitude".to_string(), gps.longitude.to_string());
+        if let Some(altitude) = gps.altitude {
+            metadata.insert("exif.gpsAltitude".to_string(), altitude.to_string());
+        }
+    }
+    metadata.insert(
+        "exif.rawTagCount".to_string(),
+        info.raw_tags.len().to_string(),
+    );
+    if !info.raw_tags.is_empty() {
+        let raw_tags: Vec<String> = info
+            .raw_tags
+            .iter()
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect();
+        insert_joined_metadata(&mut metadata, "exif.rawTags", &raw_tags);
+    }
+
+    metadata
 }
 
 async fn enrich_binary_artifact_metadata(
@@ -3297,6 +3534,109 @@ mod tests {
             metadata.get("pe.version.CompanyName").map(String::as_str),
             Some("Contoso Driver Labs")
         );
+    }
+
+    #[test]
+    fn image_artifact_metadata_from_exif_flattens_forensic_fields() {
+        let info = ExifMetadata {
+            path: "case.ad1:/DCIM/IMG_0001.JPG".to_string(),
+            make: Some("Canon".to_string()),
+            model: Some("EOS R5".to_string()),
+            software: Some("Digital Photo Professional".to_string()),
+            lens_model: Some("RF24-70mm F2.8 L IS USM".to_string()),
+            exposure_time: Some("1/125".to_string()),
+            f_number: Some("f/2.8".to_string()),
+            iso: Some(400),
+            focal_length: Some("35 mm".to_string()),
+            flash: Some("No flash".to_string()),
+            date_time_original: Some("2026:07:04 12:34:56".to_string()),
+            date_time_digitized: Some("2026:07:04 12:34:57".to_string()),
+            date_time: Some("2026:07:04 12:35:00".to_string()),
+            gps_timestamp: Some("20:34:56".to_string()),
+            gps: Some(
+                crate::viewer::document::exif::GpsCoordinates::new(61.2176, -149.8997)
+                    .with_altitude(31.5),
+            ),
+            width: Some(8192),
+            height: Some(5464),
+            orientation: Some(1),
+            color_space: Some("sRGB".to_string()),
+            image_unique_id: Some("unique-image-id".to_string()),
+            owner_name: Some("Investigator".to_string()),
+            serial_number: Some("CAM123456".to_string()),
+            raw_tags: vec![
+                ("Make".to_string(), "Canon".to_string()),
+                ("Model".to_string(), "EOS R5".to_string()),
+            ],
+        };
+
+        let metadata = image_artifact_metadata_from_exif(&info);
+
+        assert_eq!(
+            metadata.get("exif.analysisStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(metadata.get("exif.make").map(String::as_str), Some("Canon"));
+        assert_eq!(
+            metadata.get("exif.model").map(String::as_str),
+            Some("EOS R5")
+        );
+        assert_eq!(metadata.get("exif.iso").map(String::as_str), Some("400"));
+        assert_eq!(
+            metadata.get("exif.dateTimeOriginal").map(String::as_str),
+            Some("2026:07:04 12:34:56")
+        );
+        assert_eq!(
+            metadata.get("exif.gpsLatitude").map(String::as_str),
+            Some("61.2176")
+        );
+        assert_eq!(
+            metadata.get("exif.gpsLongitude").map(String::as_str),
+            Some("-149.8997")
+        );
+        assert_eq!(
+            metadata.get("exif.serialNumber").map(String::as_str),
+            Some("CAM123456")
+        );
+        assert_eq!(
+            metadata.get("exif.rawTagCount").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("exif.rawTags").map(String::as_str),
+            Some("Make=Canon; Model=EOS R5")
+        );
+    }
+
+    #[test]
+    fn is_image_artifact_matches_common_image_extensions_and_mime() {
+        let mut artifact = NormalizedArtifact {
+            id: "artifact_image".to_string(),
+            source_ref: EvidenceSourceRef::LocalFile {
+                path: "photo.jpg".to_string(),
+            },
+            source_id: "photo.jpg".to_string(),
+            name: "photo.jpg".to_string(),
+            extension: Some("jpg".to_string()),
+            size: 1024,
+            mime_type: None,
+            type_description: "JPEG Image".to_string(),
+            category: "unknown".to_string(),
+            confidence: "medium".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: BTreeMap::new(),
+        };
+
+        assert!(is_image_artifact(&artifact));
+
+        artifact.extension = None;
+        artifact.mime_type = Some("image/png".to_string());
+        assert!(is_image_artifact(&artifact));
+
+        artifact.mime_type = Some("application/octet-stream".to_string());
+        artifact.category = "image".to_string();
+        assert!(is_image_artifact(&artifact));
     }
 
     #[test]

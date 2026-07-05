@@ -1421,7 +1421,7 @@ mod tests {
     fn append_utf16le_version_pair(data: &mut Vec<u8>, key: &str, value: &str) {
         data.extend_from_slice(&[0u8; 6]);
         append_utf16le_nul_terminated(data, key);
-        while data.len() % 4 != 0 {
+        while !data.len().is_multiple_of(4) {
             data.push(0);
         }
         append_utf16le_nul_terminated(data, value);
