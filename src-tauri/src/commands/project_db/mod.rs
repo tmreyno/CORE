@@ -233,18 +233,38 @@ fn repair_existing_project_db_paths(
                 ],
             )?;
 
+            let legacy_ids =
+                legacy_evidence_ids_for_path(&conn, &raw_file.path, &resolved_file.path)?;
             let old_id = &raw_file.path;
             let new_id = &resolved_file.path;
-            conn.execute(
-                "UPDATE hashes SET file_id = ?2 WHERE file_id = ?1",
-                params![old_id, new_id],
-            )?;
+            for legacy_id in &legacy_ids {
+                conn.execute(
+                    "UPDATE hashes SET file_id = ?2 WHERE file_id = ?1",
+                    params![legacy_id, new_id],
+                )?;
+                conn.execute(
+                    "UPDATE artifacts SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                    params![legacy_id, new_id],
+                )?;
+                conn.execute(
+                    "UPDATE source_analyses SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                    params![legacy_id, new_id],
+                )?;
+                conn.execute(
+                    "UPDATE coc_items SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                    params![legacy_id, new_id],
+                )?;
+                conn.execute(
+                    "UPDATE collected_items SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                    params![legacy_id, new_id],
+                )?;
+                conn.execute(
+                    "UPDATE evidence_data_alternatives SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
+                    params![legacy_id, new_id],
+                )?;
+            }
             conn.execute(
                 "UPDATE hashes SET source_id = ?2 WHERE source_id = ?1",
-                params![old_id, new_id],
-            )?;
-            conn.execute(
-                "UPDATE artifacts SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
                 params![old_id, new_id],
             )?;
             conn.execute(
@@ -252,33 +272,19 @@ fn repair_existing_project_db_paths(
                 params![old_id, new_id],
             )?;
             conn.execute(
-                "UPDATE source_analyses SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
-                params![old_id, new_id],
-            )?;
-            conn.execute(
                 "UPDATE source_analyses SET source_id = ?2 WHERE source_id = ?1",
-                params![old_id, new_id],
-            )?;
-            conn.execute(
-                "UPDATE coc_items SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
-                params![old_id, new_id],
-            )?;
-            conn.execute(
-                "UPDATE collected_items SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
                 params![old_id, new_id],
             )?;
             conn.execute(
                 "UPDATE collected_items SET source_id = ?2 WHERE source_id = ?1",
                 params![old_id, new_id],
             )?;
-            conn.execute(
-                "UPDATE evidence_data_alternatives SET evidence_file_id = ?2 WHERE evidence_file_id = ?1",
-                params![old_id, new_id],
-            )?;
-            conn.execute(
-                "DELETE FROM evidence_files WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM hashes WHERE file_id = ?1)",
-                params![old_id],
-            )?;
+            for legacy_id in legacy_ids {
+                conn.execute(
+                    "DELETE FROM evidence_files WHERE id = ?1 AND id <> ?2",
+                    params![legacy_id, new_id],
+                )?;
+            }
 
             repaired += 1;
         }
@@ -296,6 +302,26 @@ fn repair_existing_project_db_paths(
             Err(err)
         }
     }
+}
+
+fn legacy_evidence_ids_for_path(
+    conn: &rusqlite::Connection,
+    raw_path: &str,
+    resolved_path: &str,
+) -> rusqlite::Result<Vec<String>> {
+    let mut ids = Vec::new();
+    let mut stmt = conn.prepare("SELECT id FROM evidence_files WHERE path = ?1 OR id = ?1")?;
+    let rows = stmt.query_map(params![raw_path], |row| row.get::<_, String>(0))?;
+    for row in rows {
+        let id = row?;
+        if id != resolved_path && !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    if !ids.iter().any(|id| id == raw_path) {
+        ids.push(raw_path.to_string());
+    }
+    Ok(ids)
 }
 
 #[cfg(test)]
@@ -354,8 +380,9 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
+        let legacy_generated_id = "ev_1Evidencedrive";
         db.upsert_evidence_file(&DbEvidenceFile {
-            id: relative_path.to_string(),
+            id: legacy_generated_id.to_string(),
             path: relative_path.to_string(),
             filename: "drive.E01".to_string(),
             container_type: "EnCase (E01)".to_string(),
@@ -368,7 +395,7 @@ mod tests {
         .unwrap();
         db.insert_hash(&DbProjectHash {
             id: "hash-1".to_string(),
-            file_id: relative_path.to_string(),
+            file_id: legacy_generated_id.to_string(),
             source_id: Some(relative_path.to_string()),
             source_ref_json: None,
             algorithm: "MD5".to_string(),
@@ -411,6 +438,16 @@ mod tests {
             .get_evidence_file_by_path(relative_path)
             .unwrap()
             .is_none());
+        let stale_count: i64 = db
+            .conn
+            .lock()
+            .query_row(
+                "SELECT COUNT(*) FROM evidence_files WHERE id = ?1",
+                params![legacy_generated_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stale_count, 0);
         assert!(db
             .get_evidence_file_by_path(&absolute_path)
             .unwrap()
