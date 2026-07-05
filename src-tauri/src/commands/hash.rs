@@ -1931,6 +1931,22 @@ mod tests {
     }
 
     #[test]
+    fn batch_hash_cache_scope_for_l01_includes_companion_segment_metadata() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("logical.L01");
+        let second = temp_dir.path().join("logical.L02");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+
+        let before = batch_hash_cache_scope_for_path("L01", first.to_str().unwrap());
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = batch_hash_cache_scope_for_path("L01", first.to_str().unwrap());
+
+        assert!(before.starts_with("decoded-ewf:segments-"));
+        assert_ne!(before, after);
+    }
+
+    #[test]
     fn open_hash_source_reads_local_path() {
         let file = write_temp_file(b"source hash test");
         let input = disk_hash_source(Some(file.path().to_string_lossy().into_owned()), None);
