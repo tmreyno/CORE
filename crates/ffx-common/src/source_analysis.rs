@@ -336,7 +336,7 @@ static EMBEDDED_SIGNATURES: &[EmbeddedSignature] = &[
         pattern: b"MZ",
         description: "DOS/Windows Executable",
         mime_type: "application/x-msdownload",
-        extensions: &["exe", "dll"],
+        extensions: &["exe", "dll", "sys", "drv"],
         category: "executable",
     },
     EmbeddedSignature {
@@ -859,6 +859,32 @@ mod tests {
         assert!(analysis.indicators.iter().any(|indicator| {
             indicator.indicator_type == "email" && indicator.value == "admin@example.com"
         }));
+    }
+
+    #[test]
+    fn analyze_byte_source_reports_windows_driver_extensions_for_mz_signature() {
+        let fixture = b"MZ\x90\x00\x03\x00\x00\x00";
+        let source = ChunkedByteSource::new("driver.sys", fixture, 2);
+
+        let analysis = analyze_byte_source(
+            &source,
+            SourceAnalysisOptions {
+                length: Some(64),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let signature = analysis
+            .signatures
+            .iter()
+            .find(|signature| {
+                signature.description == "Windows Executable"
+                    || signature.description == "DOS/Windows Executable"
+            })
+            .expect("MZ signature");
+        assert!(signature.extensions.iter().any(|extension| extension == "sys"));
+        assert!(signature.extensions.iter().any(|extension| extension == "drv"));
     }
 
     #[test]
