@@ -242,28 +242,69 @@ struct ArtifactDef {
 fn get_platform_artifacts(target_root: &Path) -> Vec<ArtifactDef> {
     let root = target_root.to_string_lossy();
 
+    match detect_target_platform(target_root) {
+        TargetPlatform::Windows => get_windows_artifacts(&root),
+        TargetPlatform::Macos => get_macos_artifacts(&root),
+        TargetPlatform::Linux => get_linux_artifacts(&root),
+        TargetPlatform::Host => get_host_platform_artifacts(&root),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TargetPlatform {
+    Windows,
+    Macos,
+    Linux,
+    Host,
+}
+
+fn detect_target_platform(target_root: &Path) -> TargetPlatform {
+    if target_root.join("Windows/System32/config/SYSTEM").exists()
+        || target_root
+            .join("Windows/System32/config/SOFTWARE")
+            .exists()
+    {
+        return TargetPlatform::Windows;
+    }
+    if target_root
+        .join("System/Library/CoreServices/SystemVersion.plist")
+        .exists()
+        || target_root
+            .join("Library/Preferences/SystemConfiguration")
+            .exists()
+    {
+        return TargetPlatform::Macos;
+    }
+    if target_root.join("etc/os-release").exists()
+        || target_root.join("etc/lsb-release").exists()
+        || target_root.join("sys/class/dmi/id").exists()
+    {
+        return TargetPlatform::Linux;
+    }
+
+    TargetPlatform::Host
+}
+
+fn get_host_platform_artifacts(root: &str) -> Vec<ArtifactDef> {
     #[cfg(target_os = "windows")]
     {
-        get_windows_artifacts(&root)
+        return get_windows_artifacts(root);
     }
 
     #[cfg(target_os = "macos")]
     {
-        get_macos_artifacts(&root)
+        return get_macos_artifacts(root);
     }
 
     #[cfg(target_os = "linux")]
     {
-        get_linux_artifacts(&root)
+        return get_linux_artifacts(root);
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        vec![]
-    }
+    #[allow(unreachable_code)]
+    Vec::new()
 }
 
-#[cfg(target_os = "windows")]
 fn get_windows_artifacts(root: &str) -> Vec<ArtifactDef> {
     let sys32 = format!("{root}/Windows/System32");
     let config = format!("{sys32}/config");
@@ -493,7 +534,6 @@ fn get_windows_artifacts(root: &str) -> Vec<ArtifactDef> {
     ]
 }
 
-#[cfg(target_os = "macos")]
 fn get_macos_artifacts(root: &str) -> Vec<ArtifactDef> {
     vec![
         // ── Credentials & Keys ──────────────────────────────────────
@@ -740,7 +780,6 @@ fn get_macos_artifacts(root: &str) -> Vec<ArtifactDef> {
     ]
 }
 
-#[cfg(target_os = "linux")]
 fn get_linux_artifacts(root: &str) -> Vec<ArtifactDef> {
     vec![
         // ── System Security ─────────────────────────────────────────
@@ -2236,12 +2275,70 @@ fn redact_match(matched: &str) -> String {
 mod tests {
     use super::{
         checked_triage_copy_advance, checked_triage_copy_read_len, collect_dir_recursive,
-        copy_triage_file_snapshot, into_inner_recover, lock_mutex_recover, push_secret_finding,
-        push_triage_collection_file, write_triage_manifest, SecretFinding, TRIAGE_COPY_CHUNK_SIZE,
+        copy_triage_file_snapshot, detect_target_platform, get_platform_artifacts,
+        into_inner_recover, lock_mutex_recover, push_secret_finding, push_triage_collection_file,
+        write_triage_manifest, SecretFinding, TargetPlatform, TRIAGE_COPY_CHUNK_SIZE,
         TRIAGE_MAX_COLLECTION_FILES, TRIAGE_MAX_SECRET_FINDINGS, TRIAGE_MAX_TRAVERSAL_DEPTH,
     };
     use std::path::Path;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn detects_windows_artifacts_from_target_root_on_any_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("Windows/System32/config");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("SYSTEM"), b"registry").unwrap();
+
+        assert_eq!(detect_target_platform(dir.path()), TargetPlatform::Windows);
+        let artifacts = get_platform_artifacts(dir.path());
+
+        assert!(artifacts.iter().any(|artifact| {
+            artifact.category == "systeminfo" && artifact.name == "Computer name & domain"
+        }));
+        assert!(artifacts.iter().any(|artifact| artifact.name == "SAM hive"));
+    }
+
+    #[test]
+    fn detects_macos_artifacts_from_target_root_on_any_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let system_version = dir
+            .path()
+            .join("System/Library/CoreServices/SystemVersion.plist");
+        std::fs::create_dir_all(system_version.parent().unwrap()).unwrap();
+        std::fs::write(&system_version, b"plist").unwrap();
+
+        assert_eq!(detect_target_platform(dir.path()), TargetPlatform::Macos);
+        let artifacts = get_platform_artifacts(dir.path());
+
+        assert!(
+            artifacts
+                .iter()
+                .any(|artifact| artifact.category == "systeminfo"
+                    && artifact.name == "System version")
+        );
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.name == "Hardware UUID & serial number"));
+    }
+
+    #[test]
+    fn detects_linux_artifacts_from_target_root_on_any_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let os_release = dir.path().join("etc/os-release");
+        std::fs::create_dir_all(os_release.parent().unwrap()).unwrap();
+        std::fs::write(&os_release, b"NAME=Linux").unwrap();
+
+        assert_eq!(detect_target_platform(dir.path()), TargetPlatform::Linux);
+        let artifacts = get_platform_artifacts(dir.path());
+
+        assert!(artifacts.iter().any(
+            |artifact| artifact.category == "systeminfo" && artifact.name == "OS release info"
+        ));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.name == "DMI/SMBIOS data"));
+    }
 
     #[test]
     fn lock_mutex_recover_reads_poisoned_mutex() {
