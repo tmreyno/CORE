@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { PdfViewer } from "./PdfViewer";
 
@@ -231,6 +232,39 @@ describe("PdfViewer", () => {
       // Should now have a canvas
       const canvas = container.querySelector("canvas");
       expect(canvas).not.toBeNull();
+    });
+
+    it("ignores stale PDF loads after the selected path changes", async () => {
+      let resolveSlow: (value: ReturnType<typeof createMockPdfDoc>) => void = () => {};
+      const slowDoc = createMockPdfDoc(2);
+      const currentDoc = createMockPdfDoc(7);
+      const slowLoad = new Promise<ReturnType<typeof createMockPdfDoc>>((resolve) => {
+        resolveSlow = resolve;
+      });
+
+      mockLoadPdfDocument.mockImplementation((path) => {
+        if (path === "/evidence/slow.pdf") return slowLoad;
+        if (path === "/evidence/current.pdf") return Promise.resolve(currentDoc);
+        return Promise.reject(new Error(`Unexpected path: ${path}`));
+      });
+
+      const [path, setPath] = createSignal("/evidence/slow.pdf");
+      const { container } = renderComponent(() => <PdfViewer path={path()} />);
+      await tick();
+
+      setPath("/evidence/current.pdf");
+      await tick();
+
+      expect(container.textContent).toContain("7");
+      expect(container.textContent).toContain("/evidence/current.pdf");
+
+      resolveSlow(slowDoc);
+      await tick();
+
+      expect(slowDoc.destroy).toHaveBeenCalled();
+      expect(container.textContent).toContain("7");
+      expect(container.textContent).toContain("/evidence/current.pdf");
+      expect(container.textContent).not.toContain("/evidence/slow.pdf");
     });
   });
 

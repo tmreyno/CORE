@@ -44,10 +44,14 @@ export function usePdfViewer(
   let containerRef: HTMLDivElement | undefined;
   let renderTaskRef: { cancel: () => void } | null = null;
   let pendingRenderPage: number | null = null;
+  let loadGeneration = 0;
+  let renderGeneration = 0;
 
   // ── Load PDF ──────────────────────────────────────────────────────────
 
   const loadPdf = async () => {
+    const generation = ++loadGeneration;
+    renderGeneration++;
     setLoading(true);
     setError(null);
     setThumbnails([]);
@@ -58,22 +62,34 @@ export function usePdfViewer(
       }
 
       const pdf = await loadPdfDocument(getPath(), getSource?.());
+      if (generation !== loadGeneration) {
+        pdf.destroy();
+        return;
+      }
       setPdfDoc(pdf);
       setNumPages(pdf.numPages);
       setCurrentPage(1);
-      await renderPage(1, pdf);
-      generateThumbnails(pdf);
+      await renderPage(1, pdf, generation);
+      void generateThumbnails(pdf, generation);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to load PDF:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
   // ── Render page ───────────────────────────────────────────────────────
 
-  const renderPage = async (pageNum: number, pdf?: PDFDocumentProxy) => {
+  const renderPage = async (
+    pageNum: number,
+    pdf?: PDFDocumentProxy,
+    generation = loadGeneration,
+  ) => {
+    const renderToken = ++renderGeneration;
     const doc = pdf || pdfDoc();
     if (!doc || !canvasRef) return;
 
@@ -91,6 +107,7 @@ export function usePdfViewer(
 
     try {
       const page = await doc.getPage(pageNum);
+      if (generation !== loadGeneration || renderToken !== renderGeneration) return;
 
       await new Promise<void>((resolve) => {
         if (containerRef && containerRef.clientWidth > 0) {
@@ -99,6 +116,7 @@ export function usePdfViewer(
           requestAnimationFrame(() => resolve());
         }
       });
+      if (generation !== loadGeneration || renderToken !== renderGeneration) return;
 
       const containerWidth = containerRef?.clientWidth || 800;
       await renderPdfPage(page, canvasRef, containerWidth, scale());
@@ -109,8 +127,14 @@ export function usePdfViewer(
         log.error("Failed to render page:", e);
       }
     } finally {
-      setPageRendering(false);
-      if (pendingRenderPage !== null) {
+      if (generation === loadGeneration && renderToken === renderGeneration) {
+        setPageRendering(false);
+      }
+      if (
+        generation === loadGeneration &&
+        renderToken === renderGeneration &&
+        pendingRenderPage !== null
+      ) {
         const nextPage = pendingRenderPage;
         pendingRenderPage = null;
         setTimeout(() => renderPage(nextPage), 0);
@@ -120,9 +144,10 @@ export function usePdfViewer(
 
   // ── Thumbnails ────────────────────────────────────────────────────────
 
-  const generateThumbnails = async (pdf: PDFDocumentProxy) => {
+  const generateThumbnails = async (pdf: PDFDocumentProxy, generation = loadGeneration) => {
     setThumbnails(new Array(pdf.numPages).fill(""));
     await generateThumbnailsBatch(pdf, 3, (startIndex, batchThumbs) => {
+      if (generation !== loadGeneration) return;
       setThumbnails((prev) => {
         const updated = [...prev];
         batchThumbs.forEach((thumb, i) => {
