@@ -35,6 +35,13 @@ function renderComponent(component: () => any) {
 
 // Wait for async updates
 const tick = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms));
+const waitForInvoke = async (command: string, timeoutMs = 1500) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (mockInvoke.mock.calls.some(([cmd]) => cmd === command)) return;
+    await tick(25);
+  }
+};
 
 // Base entry factory
 function makeEntry(overrides: Partial<SelectedEntry> = {}): SelectedEntry {
@@ -1092,7 +1099,7 @@ describe("ContainerEntryViewer", () => {
         <ContainerEntryViewer entry={entry} viewMode="auto" />
       );
 
-      await tick(700);
+      await waitForInvoke("binary_analyze_source");
 
       expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", {
