@@ -728,6 +728,7 @@ fn registry_system_identity_metadata(hive_path: &Path) -> Result<BTreeMap<String
         &mut parser,
         &control_set,
     ));
+    metadata.extend(registry_system_mounted_devices_metadata(&mut parser));
 
     Ok(finalize_registry_identity_metadata(
         metadata,
@@ -946,6 +947,80 @@ fn windows_profile_list_metadata_to_map(
     insert_joined_metadata(&mut metadata, "system.profileNames", &values.names);
     insert_joined_metadata(&mut metadata, "system.profilePaths", &values.paths);
     insert_joined_metadata(&mut metadata, "system.profiles", &values.descriptions);
+    metadata
+}
+
+#[derive(Default)]
+struct WindowsMountedDevicesMetadata {
+    drive_letters: Vec<String>,
+    volume_guids: Vec<String>,
+    device_names: Vec<String>,
+}
+
+fn registry_system_mounted_devices_metadata(
+    parser: &mut notatin::parser::Parser,
+) -> BTreeMap<String, String> {
+    let Some(key) = parser.get_key("MountedDevices", false).ok().flatten() else {
+        return BTreeMap::new();
+    };
+
+    let mut values = WindowsMountedDevicesMetadata::default();
+    for value in key.value_iter().take(MAX_SYSTEM_IDENTITY_LIST_ITEMS) {
+        collect_windows_mounted_device_name(&mut values, &value.detail.value_name());
+    }
+
+    windows_mounted_devices_metadata_to_map(values)
+}
+
+fn collect_windows_mounted_device_name(values: &mut WindowsMountedDevicesMetadata, name: &str) {
+    let normalized = name.replace('/', "\\");
+    let lower = normalized.to_ascii_lowercase();
+    if let Some(drive) = lower
+        .strip_prefix("\\dosdevices\\")
+        .and_then(|_| normalized.rsplit('\\').next())
+        .filter(|value| is_windows_drive_letter(value))
+    {
+        let drive = drive.to_ascii_uppercase();
+        push_unique_limited(&mut values.drive_letters, drive.clone());
+        push_unique_limited(&mut values.device_names, format!("drive {drive}"));
+        return;
+    }
+
+    if let Some(volume) = extract_windows_volume_guid_name(&normalized) {
+        push_unique_limited(&mut values.volume_guids, volume.clone());
+        push_unique_limited(&mut values.device_names, volume);
+    }
+}
+
+fn is_windows_drive_letter(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic()
+}
+
+fn extract_windows_volume_guid_name(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find("volume{")?;
+    let remainder = &value[start..];
+    let end = remainder.find('}')?;
+    let volume = &remainder[..=end];
+    (volume.len() > "Volume{}".len()).then(|| truncate_metadata_value(volume, 120))
+}
+
+fn windows_mounted_devices_metadata_to_map(
+    values: WindowsMountedDevicesMetadata,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if values.drive_letters.is_empty() && values.volume_guids.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert(
+        "system.mountedDeviceCount".to_string(),
+        values.device_names.len().to_string(),
+    );
+    insert_joined_metadata(&mut metadata, "system.driveLetters", &values.drive_letters);
+    insert_joined_metadata(&mut metadata, "system.volumeGuids", &values.volume_guids);
+    insert_joined_metadata(&mut metadata, "system.mountedDevices", &values.device_names);
     metadata
 }
 
@@ -6921,6 +6996,55 @@ COMMIT
             Some("Bob")
         );
         assert_eq!(windows_profile_name_from_path("").as_deref(), None);
+    }
+
+    #[test]
+    fn windows_mounted_devices_metadata_summarizes_drive_letters_and_volume_guids() {
+        let mut values = WindowsMountedDevicesMetadata::default();
+        collect_windows_mounted_device_name(&mut values, r"\DosDevices\c:");
+        collect_windows_mounted_device_name(
+            &mut values,
+            r"\??\Volume{12345678-1234-1234-1234-123456789abc}",
+        );
+        collect_windows_mounted_device_name(&mut values, r"\Device\HarddiskVolumeShadowCopy1");
+
+        let metadata = windows_mounted_devices_metadata_to_map(values);
+
+        assert_eq!(
+            metadata
+                .get("system.mountedDeviceCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.driveLetters").map(String::as_str),
+            Some("C:")
+        );
+        assert_eq!(
+            metadata.get("system.volumeGuids").map(String::as_str),
+            Some("Volume{12345678-1234-1234-1234-123456789abc}")
+        );
+        assert_eq!(
+            metadata.get("system.mountedDevices").map(String::as_str),
+            Some("drive C:; Volume{12345678-1234-1234-1234-123456789abc}")
+        );
+    }
+
+    #[test]
+    fn windows_mounted_device_helpers_validate_drive_and_volume_names() {
+        assert!(is_windows_drive_letter("C:"));
+        assert!(is_windows_drive_letter("z:"));
+        assert!(!is_windows_drive_letter("CD:"));
+        assert!(!is_windows_drive_letter("1:"));
+        assert_eq!(
+            extract_windows_volume_guid_name(r"\??\Volume{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}\")
+                .as_deref(),
+            Some("Volume{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}")
+        );
+        assert_eq!(
+            extract_windows_volume_guid_name(r"\Device\Harddisk0").as_deref(),
+            None
+        );
     }
 
     #[test]
