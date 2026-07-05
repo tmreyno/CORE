@@ -32,6 +32,7 @@ import {
   HiOutlineBookmark,
   HiOutlineCheckBadge,
   HiOutlineXMark,
+  HiOutlinePlusCircle,
 } from "../components/icons";
 import type { Accessor, Setter } from "solid-js";
 import type { CommandAction } from "../components";
@@ -166,6 +167,14 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "File",
       shortcut: "cmd+o",
       onSelect: () => onOpenProject ? onOpenProject() : {},
+    },
+    {
+      id: "new-project",
+      label: "New Project",
+      icon: <HiOutlinePlusCircle class="w-4 h-4" />,
+      category: "File",
+      shortcut: "cmd+shift+n",
+      onSelect: () => onNewProject ? onNewProject() : setShowProjectWizard(true),
     },
     {
       id: "merge-projects",
