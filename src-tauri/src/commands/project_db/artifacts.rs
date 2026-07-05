@@ -395,6 +395,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_command_history_source(&source_id) {
+        return true;
+    }
+
     if is_firewall_identity_source(&source_id) {
         return true;
     }
@@ -439,6 +443,13 @@ fn is_windows_wifi_profile_source(source_id: &str) -> bool {
     let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
     source_id.contains("/programdata/microsoft/wlansvc/profiles/interfaces/")
         && source_id.ends_with(".xml")
+}
+
+fn is_command_history_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/.bash_history")
+        || source_id.ends_with("/.zsh_history")
+        || source_id.ends_with("/consolehost_history.txt")
 }
 
 fn is_firewall_identity_source(source_id: &str) -> bool {
@@ -716,6 +727,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     }
     if is_windows_wifi_profile_source(&lower) {
         metadata.extend(parse_windows_wifi_profile_metadata(&text));
+    }
+    if is_command_history_source(&lower) {
+        metadata.extend(parse_command_history_metadata(&lower, &text));
     }
     if is_firewall_identity_source(&lower) {
         metadata.extend(parse_firewall_metadata(&lower, data, &text));
@@ -1422,6 +1436,152 @@ fn parse_windows_wifi_profile_metadata(text: &str) -> BTreeMap<String, String> {
         &connection_modes,
     );
     metadata
+}
+
+#[derive(Default)]
+struct CommandHistoryMetadata {
+    command_count: usize,
+    command_names: Vec<String>,
+    network_command_count: usize,
+    privileged_command_count: usize,
+    file_transfer_command_count: usize,
+}
+
+fn parse_command_history_metadata(source_id: &str, text: &str) -> BTreeMap<String, String> {
+    let history_type = if source_id.ends_with("/consolehost_history.txt") {
+        "powershell"
+    } else if source_id.ends_with("/.zsh_history") {
+        "zsh"
+    } else {
+        "bash"
+    };
+    let mut values = CommandHistoryMetadata::default();
+
+    for line in text.lines() {
+        let Some(command) = normalized_history_command(line, history_type) else {
+            continue;
+        };
+        values.command_count = values.command_count.saturating_add(1);
+        collect_command_history_summary(command, &mut values);
+    }
+
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "activity.commandHistoryType".to_string(),
+        history_type.to_string(),
+    );
+    if values.command_count > 0 {
+        metadata.insert(
+            "activity.commandCount".to_string(),
+            values.command_count.to_string(),
+        );
+    }
+    if values.network_command_count > 0 {
+        metadata.insert(
+            "activity.networkCommandCount".to_string(),
+            values.network_command_count.to_string(),
+        );
+    }
+    if values.privileged_command_count > 0 {
+        metadata.insert(
+            "activity.privilegedCommandCount".to_string(),
+            values.privileged_command_count.to_string(),
+        );
+    }
+    if values.file_transfer_command_count > 0 {
+        metadata.insert(
+            "activity.fileTransferCommandCount".to_string(),
+            values.file_transfer_command_count.to_string(),
+        );
+    }
+    insert_joined_metadata(
+        &mut metadata,
+        "activity.commandNames",
+        &values.command_names,
+    );
+    metadata
+}
+
+fn normalized_history_command<'a>(line: &'a str, history_type: &str) -> Option<&'a str> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    if history_type == "zsh" && line.starts_with(": ") {
+        return line.split_once(';').map(|(_, command)| command.trim());
+    }
+    Some(line)
+}
+
+fn collect_command_history_summary(command: &str, values: &mut CommandHistoryMetadata) {
+    let Some(command_name) = command_history_command_name(command) else {
+        return;
+    };
+    let command_name_lower = command_name.to_ascii_lowercase();
+    push_unique_limited(
+        &mut values.command_names,
+        truncate_metadata_value(&command_name, 80),
+    );
+
+    if matches!(command_name_lower.as_str(), "sudo" | "su" | "runas") {
+        values.privileged_command_count = values.privileged_command_count.saturating_add(1);
+    }
+    if is_network_command(&command_name_lower) {
+        values.network_command_count = values.network_command_count.saturating_add(1);
+    }
+    if is_file_transfer_command(&command_name_lower) {
+        values.file_transfer_command_count = values.file_transfer_command_count.saturating_add(1);
+    }
+}
+
+fn command_history_command_name(command: &str) -> Option<String> {
+    let mut first = command
+        .split_whitespace()
+        .next()?
+        .trim_matches(|c| matches!(c, '"' | '\'' | '&' | ';' | '(' | ')'));
+    if first.is_empty() {
+        return None;
+    }
+    if let Some(last) = first.rsplit(['/', '\\']).next() {
+        first = last;
+    }
+    (!first.is_empty()).then(|| first.to_string())
+}
+
+fn is_network_command(command_name: &str) -> bool {
+    matches!(
+        command_name,
+        "ssh"
+            | "scp"
+            | "sftp"
+            | "curl"
+            | "wget"
+            | "nc"
+            | "ncat"
+            | "netcat"
+            | "ftp"
+            | "rsync"
+            | "invoke-webrequest"
+            | "iwr"
+            | "invoke-restmethod"
+            | "irm"
+    )
+}
+
+fn is_file_transfer_command(command_name: &str) -> bool {
+    matches!(
+        command_name,
+        "scp"
+            | "sftp"
+            | "curl"
+            | "wget"
+            | "ftp"
+            | "rsync"
+            | "invoke-webrequest"
+            | "iwr"
+            | "invoke-restmethod"
+            | "irm"
+    )
 }
 
 fn parse_firewall_metadata(source_id: &str, _data: &[u8], text: &str) -> BTreeMap<String, String> {
@@ -2997,6 +3157,124 @@ dns-search=corp.example.com;
     }
 
     #[test]
+    fn system_identity_metadata_extracts_shell_history_summary() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/home/alice/.bash_history",
+            br#"ls -la
+sudo cat /etc/shadow
+ssh admin@example.com
+curl -O https://example.com/tool
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata
+                .get("activity.commandHistoryType")
+                .map(String::as_str),
+            Some("bash")
+        );
+        assert_eq!(
+            metadata.get("activity.commandCount").map(String::as_str),
+            Some("4")
+        );
+        assert_eq!(
+            metadata
+                .get("activity.networkCommandCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata
+                .get("activity.privilegedCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("activity.fileTransferCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata.get("activity.commandNames").map(String::as_str),
+            Some("ls; sudo; ssh; curl")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_zsh_extended_history_summary() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/Users/alice/.zsh_history",
+            br#": 1717260000:0;git status
+: 1717260001:0;rsync -av /a /b
+"#,
+        );
+
+        assert_eq!(
+            metadata
+                .get("activity.commandHistoryType")
+                .map(String::as_str),
+            Some("zsh")
+        );
+        assert_eq!(
+            metadata.get("activity.commandCount").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata
+                .get("activity.fileTransferCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata.get("activity.commandNames").map(String::as_str),
+            Some("git; rsync")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_powershell_history_summary() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Users/Alice/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadLine/ConsoleHost_history.txt",
+            br#"Get-ChildItem C:\
+Invoke-WebRequest https://example.com/payload -OutFile payload.bin
+runas /user:Administrator cmd
+"#,
+        );
+
+        assert_eq!(
+            metadata
+                .get("activity.commandHistoryType")
+                .map(String::as_str),
+            Some("powershell")
+        );
+        assert_eq!(
+            metadata.get("activity.commandCount").map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            metadata
+                .get("activity.networkCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("activity.privilegedCommandCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata.get("activity.commandNames").map(String::as_str),
+            Some("Get-ChildItem; Invoke-WebRequest; runas")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_iptables_rules() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/sysconfig/iptables",
@@ -3437,6 +3715,11 @@ COMMIT
         assert!(is_system_identity_source("/etc/netplan/01-netcfg.yaml"));
         assert!(is_system_identity_source(
             "/ProgramData/Microsoft/Wlansvc/Profiles/Interfaces/{iface}/{profile}.xml"
+        ));
+        assert!(is_system_identity_source("/home/alice/.bash_history"));
+        assert!(is_system_identity_source("/Users/alice/.zsh_history"));
+        assert!(is_system_identity_source(
+            "/Users/Alice/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadLine/ConsoleHost_history.txt"
         ));
         assert!(is_system_identity_source("/sys/class/dmi/id/product_uuid"));
         assert!(is_system_identity_source(
