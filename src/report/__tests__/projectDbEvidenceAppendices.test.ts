@@ -166,6 +166,36 @@ function makeEvidence(): ProjectDbReportEvidence {
       },
       {
         id: "artifact-7",
+        sourceId:
+          "e01:/case/disk.E01:/Windows/System32/drivers/contosoflt.sys",
+        name: "contosoflt.sys",
+        category: "system",
+        typeDescription: "Windows File system minifilter driver",
+        size: 131072,
+        sizeDisplay: "128 KB",
+        confidence: "high",
+        isText: false,
+        metadata: {
+          "binary.analysisStatus": "parsed",
+          "binary.format": "PE64",
+          "binary.architecture": "x86_64",
+          "binary.importLibraries": "fltmgr.sys; ntoskrnl.exe",
+          "binary.exports": "DriverEntry",
+          "pe.isDriver": "true",
+          "pe.driverType": "File system minifilter driver",
+          "pe.driverServiceNames": "contosoflt",
+          "pe.driverRegistryPaths":
+            "Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt",
+          "pe.driverPdbPaths":
+            "C:\\agent\\_work\\drivers\\contosoflt\\objfre\\amd64\\contosoflt.pdb",
+          "pe.version.CompanyName": "Contoso Driver Labs",
+          "pe.version.OriginalFilename": "contosoflt.sys",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:50Z",
+      },
+      {
+        id: "artifact-8",
         sourceId: "ad1:/case/logical.ad1:/mobile/history.sqlite",
         name: "history.sqlite",
         category: "database",
@@ -299,6 +329,9 @@ describe("buildProjectDbEvidenceAppendices", () => {
     expect(appendices[1].content).toContain("serial: ABC1234");
     expect(appendices[1].content).toContain("OS: Windows 11 Pro");
     expect(appendices[1].content).toContain("product id: 00330-80000-00000-AA000");
+    expect(appendices[1].content).toContain("format: PE64");
+    expect(appendices[1].content).toContain("imports: fltmgr.sys; ntoskrnl.exe");
+    expect(appendices[1].content).toContain("driver: true");
     expect(appendices[1].content).toContain("tables: 2");
     expect(appendices[2].content).toContain("PDF Document");
     expect(appendices[2].content).toContain("admin@example.com");
