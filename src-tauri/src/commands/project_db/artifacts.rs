@@ -588,8 +588,10 @@ fn is_windows_registry_identity_source(source_id: &str) -> bool {
     let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
     source_id.ends_with("/windows/system32/config/system")
         || source_id.ends_with("/windows/system32/config/software")
+        || source_id.ends_with("/windows/system32/config/sam")
         || source_id.ends_with("/config/system")
         || source_id.ends_with("/config/software")
+        || source_id.ends_with("/config/sam")
 }
 
 fn registry_identity_metadata_from_byte_source(
@@ -603,8 +605,11 @@ fn registry_identity_metadata_from_byte_source(
         ));
     }
 
-    let suffix = if source_id.to_ascii_lowercase().ends_with("software") {
+    let lower = source_id.to_ascii_lowercase();
+    let suffix = if lower.ends_with("software") {
         ".software.hive"
+    } else if lower.ends_with("sam") {
+        ".sam.hive"
     } else {
         ".system.hive"
     };
@@ -630,6 +635,8 @@ fn registry_identity_metadata_from_hive_path(
     let lower = source_id.replace('\\', "/").to_ascii_lowercase();
     if lower.ends_with("software") {
         registry_software_identity_metadata(hive_path)
+    } else if lower.ends_with("sam") {
+        registry_sam_identity_metadata(hive_path)
     } else {
         registry_system_identity_metadata(hive_path)
     }
@@ -746,6 +753,84 @@ fn registry_software_identity_metadata(
     ))
 }
 
+fn registry_sam_identity_metadata(hive_path: &Path) -> Result<BTreeMap<String, String>, String> {
+    let hive_path = hive_path.to_path_buf();
+    let mut parser = ParserBuilder::from_path(hive_path)
+        .build()
+        .map_err(|e| format!("Failed to open SAM registry hive: {e}"))?;
+    let account_names = registry_subkey_names(&mut parser, "SAM\\Domains\\Account\\Users\\Names");
+    let group_names = registry_subkey_names(&mut parser, "SAM\\Domains\\Builtin\\Aliases\\Names");
+
+    Ok(finalize_registry_identity_metadata(
+        registry_sam_account_metadata_from_names(account_names, group_names),
+        "windows.sam",
+    ))
+}
+
+fn registry_sam_account_metadata_from_names(
+    account_names: Vec<String>,
+    group_names: Vec<String>,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+
+    if !account_names.is_empty() {
+        metadata.insert(
+            "system.accountConfigType".to_string(),
+            "windows-sam".to_string(),
+        );
+        metadata.insert(
+            "system.localUserCount".to_string(),
+            account_names.len().to_string(),
+        );
+        insert_joined_metadata(&mut metadata, "system.localUsers", &account_names);
+        if account_names
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case("administrator"))
+        {
+            metadata.insert(
+                "system.administratorAccountPresent".to_string(),
+                "true".to_string(),
+            );
+        }
+        if account_names
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case("guest"))
+        {
+            metadata.insert("system.guestAccountPresent".to_string(), "true".to_string());
+        }
+    }
+
+    if !group_names.is_empty() {
+        metadata
+            .entry("system.accountConfigType".to_string())
+            .or_insert_with(|| "windows-sam".to_string());
+        metadata.insert(
+            "system.localGroupCount".to_string(),
+            group_names.len().to_string(),
+        );
+        insert_joined_metadata(&mut metadata, "system.localGroups", &group_names);
+        let admin_groups: Vec<String> = group_names
+            .iter()
+            .filter(|name| is_windows_admin_group(name))
+            .cloned()
+            .collect();
+        insert_joined_metadata(&mut metadata, "system.adminGroups", &admin_groups);
+    }
+
+    metadata
+}
+
+fn is_windows_admin_group(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "administrators"
+            | "domain admins"
+            | "enterprise admins"
+            | "account operators"
+            | "backup operators"
+    )
+}
+
 fn finalize_registry_identity_metadata(
     mut metadata: BTreeMap<String, String>,
     source: &str,
@@ -807,6 +892,17 @@ fn registry_value(
     key.value_iter().find_map(|value| {
         (value.detail.value_name().eq_ignore_ascii_case(value_name)).then(|| value.get_content().0)
     })
+}
+
+fn registry_subkey_names(parser: &mut notatin::parser::Parser, key_path: &str) -> Vec<String> {
+    let Some(mut key) = parser.get_key(key_path, false).ok().flatten() else {
+        return Vec::new();
+    };
+    key.read_sub_keys(parser)
+        .iter()
+        .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+        .map(|subkey| truncate_metadata_value(&subkey.key_name, 120))
+        .collect()
 }
 
 fn registry_value_text(value: CellValue) -> Option<String> {
@@ -5822,12 +5918,63 @@ COMMIT
         assert!(is_windows_registry_identity_source(
             "e01:/Windows/System32/config/SOFTWARE"
         ));
-        assert!(!is_windows_registry_identity_source(
+        assert!(is_windows_registry_identity_source(
             "ad1:/Windows/System32/config/SAM"
         ));
         assert!(!is_windows_registry_identity_source(
             "ad1:/Users/test/NTUSER.DAT"
         ));
+    }
+
+    #[test]
+    fn windows_sam_account_metadata_summarizes_names_without_hash_values() {
+        let metadata = registry_sam_account_metadata_from_names(
+            vec![
+                "Administrator".to_string(),
+                "Guest".to_string(),
+                "Alice".to_string(),
+            ],
+            vec![
+                "Administrators".to_string(),
+                "Remote Desktop Users".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            metadata.get("system.accountConfigType").map(String::as_str),
+            Some("windows-sam")
+        );
+        assert_eq!(
+            metadata.get("system.localUserCount").map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            metadata.get("system.localUsers").map(String::as_str),
+            Some("Administrator; Guest; Alice")
+        );
+        assert_eq!(
+            metadata
+                .get("system.administratorAccountPresent")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            metadata
+                .get("system.guestAccountPresent")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            metadata.get("system.localGroupCount").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.adminGroups").map(String::as_str),
+            Some("Administrators")
+        );
+        assert!(!metadata
+            .keys()
+            .any(|key| key.to_ascii_lowercase().contains("hash")));
     }
 
     #[test]
