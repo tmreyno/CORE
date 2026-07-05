@@ -883,8 +883,14 @@ mod tests {
                     || signature.description == "DOS/Windows Executable"
             })
             .expect("MZ signature");
-        assert!(signature.extensions.iter().any(|extension| extension == "sys"));
-        assert!(signature.extensions.iter().any(|extension| extension == "drv"));
+        assert!(signature
+            .extensions
+            .iter()
+            .any(|extension| extension == "sys"));
+        assert!(signature
+            .extensions
+            .iter()
+            .any(|extension| extension == "drv"));
     }
 
     #[test]
