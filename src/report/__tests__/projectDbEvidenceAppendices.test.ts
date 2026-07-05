@@ -166,6 +166,29 @@ function makeEvidence(): ProjectDbReportEvidence {
       },
       {
         id: "artifact-7",
+        sourceId: "e01:/case/mac.E01:/SystemProfiler/SPHardwareDataType.plist",
+        name: "SPHardwareDataType.plist",
+        category: "systeminfo",
+        typeDescription: "macOS Hardware Identity",
+        size: 2048,
+        sizeDisplay: "2 KB",
+        confidence: "medium",
+        isText: false,
+        metadata: {
+          "system.osFamily": "macos",
+          "system.model": "MacBook Pro",
+          "system.modelIdentifier": "MacBookPro18,3",
+          "system.serialNumber": "C02TEST12345",
+          "system.hardwareUuid": "00000000-1111-2222-3333-444444444444",
+          "system.bootRomVersion": "11881.120.56",
+          "system.smcVersion": "1.0f0",
+          "system.cpuType": "Apple M1 Pro",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:48Z",
+      },
+      {
+        id: "artifact-8",
         sourceId:
           "e01:/case/disk.E01:/Windows/System32/drivers/contosoflt.sys",
         name: "contosoflt.sys",
@@ -195,7 +218,7 @@ function makeEvidence(): ProjectDbReportEvidence {
         extractedAt: "2026-02-16T10:03:50Z",
       },
       {
-        id: "artifact-8",
+        id: "artifact-9",
         sourceId: "e01:/case/linux.E01:/lib/modules/6.8.0/kernel/drivers/net/coretap.ko",
         name: "coretap.ko",
         category: "system",
@@ -220,7 +243,7 @@ function makeEvidence(): ProjectDbReportEvidence {
         extractedAt: "2026-02-16T10:03:55Z",
       },
       {
-        id: "artifact-9",
+        id: "artifact-10",
         sourceId: "ad1:/case/logical.ad1:/mobile/history.sqlite",
         name: "history.sqlite",
         category: "database",
@@ -354,6 +377,9 @@ describe("buildProjectDbEvidenceAppendices", () => {
     expect(appendices[1].content).toContain("serial: ABC1234");
     expect(appendices[1].content).toContain("OS: Windows 11 Pro");
     expect(appendices[1].content).toContain("product id: 00330-80000-00000-AA000");
+    expect(appendices[1].content).toContain("model: MacBook Pro");
+    expect(appendices[1].content).toContain("model id: MacBookPro18,3");
+    expect(appendices[1].content).toContain("serial: C02TEST12345");
     expect(appendices[1].content).toContain("format: PE64");
     expect(appendices[1].content).toContain("imports: fltmgr.sys; ntoskrnl.exe");
     expect(appendices[1].content).toContain("driver: true");
