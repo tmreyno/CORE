@@ -6,7 +6,7 @@
 
 import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense, batch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, useSearchIndex, useWorkspaceMode, TAB_MODULE_MAP, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useAppHandlers } from "./hooks/useAppHandlers";
@@ -35,7 +35,6 @@ import { getContainerType } from "./constants/ui";
 import { usePortableMode } from "./hooks/usePortableMode";
 import { useAcquisitionSession } from "./hooks/acquire/useAcquisitionSession";
 import type { AcquisitionSessionWriter } from "./hooks/acquire/useAcquisitionRunner";
-import type { AcquisitionSession } from "./types/acquisitionSession";
 import StartSessionDialog from "./components/acquire/StartSessionDialog";
 import { ProjectCloseModal, type ProjectCloseModalStep, type ProjectCloseModalStepStatus } from "./components/project/ProjectCloseModal";
 import "./App.css";
@@ -74,51 +73,6 @@ interface ProjectCloseModalState {
 
 const isCffxProjectPath = (path: string) => path.toLowerCase().endsWith(".cffx");
 const isAcquisitionSessionPath = (path: string) => path.toLowerCase().endsWith(".acquisition.json");
-
-async function pickBrowserAcquisitionSessionFile(): Promise<{
-  path: string;
-  session: AcquisitionSession;
-} | null> {
-  if (typeof document === "undefined") return null;
-
-  return new Promise((resolve, reject) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".acquisition.json,application/json";
-    input.style.display = "none";
-
-    const cleanup = () => {
-      input.remove();
-    };
-
-    input.addEventListener("cancel", () => {
-      cleanup();
-      resolve(null);
-    }, { once: true });
-
-    input.addEventListener("change", async () => {
-      try {
-        const file = input.files?.[0];
-        if (!file) {
-          cleanup();
-          resolve(null);
-          return;
-        }
-
-        const content = await file.text();
-        const parsed = JSON.parse(content) as AcquisitionSession;
-        cleanup();
-        resolve({ path: file.name, session: parsed });
-      } catch (err) {
-        cleanup();
-        reject(err);
-      }
-    }, { once: true });
-
-    document.body.appendChild(input);
-    input.click();
-  });
-}
 
 // AcquireLayout is eagerly imported (not lazy) because it is the primary view
 // in the Acquire edition and is always needed on initial render. Lazy-loading it
@@ -450,41 +404,6 @@ function App() {
     updateAcquisition: (id, updates) => sessionManager.updateAcquisition(id, updates),
     addActivity: (entry) => sessionManager.addActivity(entry),
   } : undefined;
-
-  /** Open a file dialog to pick and load an existing .acquisition.json session */
-  const handleLoadSession = async () => {
-    if (!sessionManager) return;
-    if (!isTauri) {
-      try {
-        toast.info("Open Session", "Choose a .acquisition.json session file in the browser file picker.");
-        const selected = await pickBrowserAcquisitionSessionFile();
-        if (!selected) {
-          toast.info("Open Cancelled", "No acquisition session file was selected.");
-          return;
-        }
-
-        sessionManager.loadParsed(selected.session, selected.path);
-        toast.success("Session Loaded", `Loaded ${getBasename(selected.path)}`);
-      } catch (e) {
-        toast.error("Failed to Load Session", e instanceof Error ? e.message : String(e));
-      }
-      return;
-    }
-
-    const selected = await open({
-      title: "Open Acquisition Session",
-      filters: [{ name: "Acquisition Session", extensions: ["acquisition.json"] }],
-      multiple: false,
-    });
-    if (typeof selected === "string") {
-      try {
-        await sessionManager.load(selected);
-        toast.success("Session Loaded", `Loaded ${getBasename(selected)}`);
-      } catch (e) {
-        toast.error("Failed to Load Session", String(e));
-      }
-    }
-  };
 
   /** Create a new acquisition session from StartSessionDialog opts */
   const handleCreateSession = async (opts: import("./hooks/acquire/useAcquisitionSession").CreateSessionOpts) => {
@@ -1058,7 +977,7 @@ function App() {
     setShowShortcutsModal,
     setShowProjectWizard,
     setShowReportWizard,
-    onLoadProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
+    onLoadProject: handleLoadProject,
     onNewProject: handleNewProject,
     onOpenDirectory: handleOpenDirectory,
     showCommandPalette,
@@ -1088,7 +1007,7 @@ function App() {
     onOpenEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
     onOpenEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
     onOpenDirectory: handleOpenDirectory,
-    onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
+    onOpenProject: handleLoadProject,
     onNewProject: handleNewProject,
     onCloseProject: () => { void handleCloseProject(); },
     onOpenHelp: () => centerPaneTabs.openHelpTab(),
@@ -1138,7 +1057,7 @@ function App() {
   // Native Menu Actions — handles events from macOS/Windows menu bar
   // ===========================================================================
   useMenuActions({
-    onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
+    onOpenProject: handleLoadProject,
     onOpenDirectory: handleOpenDirectory,
     onSaveProject: handleSaveProject,
     onSaveProjectAs: handleSaveProjectAs,
@@ -1363,7 +1282,7 @@ function App() {
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
         onNewProject={handleNewProject}
-        onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
+        onOpenProject={handleLoadProject}
         recentProjects={welcomeModalRecentProjects}
         onSelectRecentProject={handleOpenRecentProject}
         tour={tour}
@@ -1588,7 +1507,7 @@ function App() {
               onSettings={() => setShowSettingsPanel(true)}
               onHelp={() => centerPaneTabs.openHelpTab()}
               onCommandPalette={() => setShowCommandPalette(true)}
-              onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
+              onOpenProject={handleLoadProject}
               onOpenRecentProject={handleOpenRecentProject}
               onNewProject={handleNewProject}
               projectName={() => (isAcquireEdition() ? sessionManager?.projectName() : projectManager.projectName()) || undefined}
@@ -1767,7 +1686,7 @@ function App() {
               onExportSources={handleExportSources}
               onSourceAdd={handleSourceAdd}
               onSourceRemove={handleSourceRemove}
-              onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
+              onOpenProject={handleLoadProject}
               onNewProject={handleNewProject}
             />
           </aside>
@@ -1804,7 +1723,7 @@ function App() {
             onTabsChange={centerPaneTabs.setTabs}
             viewMode={centerPaneTabs.viewMode}
             onViewModeChange={centerPaneTabs.setViewMode}
-            onOpenProject={isAcquireEdition() ? handleLoadSession : handleLoadProject}
+            onOpenProject={handleLoadProject}
             onNewProject={handleNewProject}
             projectName={projectManager.projectName}
             projectRoot={projectManager.rootPath}
