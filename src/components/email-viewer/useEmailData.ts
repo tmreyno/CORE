@@ -40,11 +40,13 @@ export function useEmailData(props: EmailViewerProps): UseEmailDataReturn {
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [showHeaders, setShowHeaders] = createSignal(false);
   const [showHtml, setShowHtml] = createSignal(true);
+  let loadGeneration = 0;
 
   const isSingleEmail = createMemo(() => isEml(props.path) || isMsg(props.path));
   const selectedEmail = createMemo(() => emails()[selectedIndex()] ?? null);
 
   const loadEmail = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
     setEmails([]);
@@ -59,35 +61,43 @@ export function useEmailData(props: EmailViewerProps): UseEmailDataReturn {
         const info = props.source
           ? await commands.email.parseMsgSource<EmailInfo>(props.source)
           : await commands.email.parseMsg<EmailInfo>(props.path);
+        if (generation !== loadGeneration) return;
         setEmails([info]);
       } else if (isEml(props.path)) {
         const info = props.source
           ? await commands.email.parseEmlSource<EmailInfo>(props.source)
           : await commands.email.parseEml<EmailInfo>(props.path);
+        if (generation !== loadGeneration) return;
         setEmails([info]);
       } else if (isMbox(props.path)) {
         const infos = props.source
           ? await commands.email.parseMboxSource<EmailInfo[]>(props.source, 200)
           : await commands.email.parseMbox<EmailInfo[]>(props.path, 200);
+        if (generation !== loadGeneration) return;
         setEmails(infos);
       } else {
         try {
           const info = props.source
             ? await commands.email.parseEmlSource<EmailInfo>(props.source)
             : await commands.email.parseEml<EmailInfo>(props.path);
+          if (generation !== loadGeneration) return;
           setEmails([info]);
         } catch {
           const infos = props.source
             ? await commands.email.parseMboxSource<EmailInfo[]>(props.source, 200)
             : await commands.email.parseMbox<EmailInfo[]>(props.path, 200);
+          if (generation !== loadGeneration) return;
           setEmails(infos);
         }
       }
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to parse email:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
