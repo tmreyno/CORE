@@ -56,8 +56,10 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
   const [showStrings, setShowStrings] = createSignal(true);
   const [importFilter, setImportFilter] = createSignal("");
   const [stringFilter, setStringFilter] = createSignal("");
+  let loadGeneration = 0;
 
   const loadBinary = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
 
@@ -69,11 +71,14 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
       const data = props.source
         ? await commands.binary.analyzeSource<BinaryInfo>(props.source)
         : await commands.binary.analyze<BinaryInfo>(props.path);
+      if (generation !== loadGeneration) return;
       setInfo(data);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to analyze binary:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      if (generation !== loadGeneration) return;
       setLoading(false);
     }
   };

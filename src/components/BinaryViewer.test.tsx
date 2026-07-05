@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
+import { createSignal } from "solid-js";
 import { BinaryViewer } from "./BinaryViewer";
 import { mockInvoke } from "../__tests__/setup";
 
@@ -339,6 +340,45 @@ describe("BinaryViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Code Signed");
+    });
+  });
+
+  describe("stale analysis handling", () => {
+    it("ignores stale binary analysis when the selected path changes", async () => {
+      let resolveFirst: (value: typeof mockPeData) => void = () => {};
+      const firstAnalysis = new Promise<typeof mockPeData>((resolve) => {
+        resolveFirst = resolve;
+      });
+      const [path, setPath] = createSignal("/tmp/slow-driver.sys");
+
+      mockInvoke.mockImplementation((command: string, args: any) => {
+        if (command !== "binary_analyze") {
+          return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+        }
+        if (args.path === "/tmp/slow-driver.sys") {
+          return firstAnalysis;
+        }
+        if (args.path === "/tmp/current-driver.sys") {
+          return Promise.resolve({
+            ...mockPeData,
+            path: "/tmp/current-driver.sys",
+            architecture: "ARM64",
+          });
+        }
+        return Promise.reject(new Error(`Unexpected path: ${args.path}`));
+      });
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path={path()} />
+      ));
+
+      setPath("/tmp/current-driver.sys");
+      await tick();
+      resolveFirst(mockPeData);
+      await tick();
+
+      expect(container.textContent).toContain("ARM64");
+      expect(container.textContent).not.toContain("x86_64");
     });
   });
 
