@@ -40,6 +40,7 @@ const MAX_METADATA_VALUE_CHARS: usize = 4096;
 const MAX_PE_VERSION_INFO_FIELDS: usize = 32;
 const MAX_PE_VERSION_INFO_VALUE_CHARS: usize = 512;
 const MAX_PE_DRIVER_STRING_CHARS: usize = 240;
+const MAX_REGISTRY_IDENTITY_STRINGS: usize = 512;
 const UNIX_REGULAR_USER_MIN_UID: u32 = 1000;
 const UNIX_REGULAR_USER_MAX_UID: u32 = 60000;
 const TRUNCATED_METADATA_SUFFIX: &str = "... [truncated]";
@@ -124,9 +125,13 @@ pub fn extract_normalized_artifact(
     let requested_header_len = options.header_bytes.min(MAX_HEADER_BYTES);
     let requested_preview_len = options.preview_bytes.min(MAX_PREVIEW_BYTES);
 
+    let normalized_source_id = normalize_artifact_path(&source_id);
+    let normalized_name = name.to_ascii_lowercase();
     let initial_header_len = if is_image_extension(extension.as_deref()) {
         requested_header_len.max(DEFAULT_IMAGE_METADATA_BYTES)
-    } else if is_structured_metadata_extension(extension.as_deref()) {
+    } else if is_structured_metadata_extension(extension.as_deref())
+        || is_windows_registry_hive_path(&normalized_source_id, &normalized_name)
+    {
         requested_header_len.max(DEFAULT_STRUCTURED_METADATA_BYTES)
     } else {
         requested_header_len
@@ -1164,6 +1169,13 @@ fn is_macos_install_history_path(path: &str, name: &str, extension: Option<&str>
         && path.ends_with("library/receipts/installhistory.plist")
 }
 
+fn is_windows_registry_hive_path(path: &str, name: &str) -> bool {
+    matches!(name, "system" | "software" | "sam")
+        && (path.ends_with("windows/system32/config/system")
+            || path.ends_with("windows/system32/config/software")
+            || path.ends_with("windows/system32/config/sam"))
+}
+
 fn windows_registry_system_info_metadata(
     path: &str,
     header: &[u8],
@@ -1185,7 +1197,290 @@ fn windows_registry_system_info_metadata(
     metadata.insert("system.osFamily".to_string(), "windows".to_string());
     metadata.insert("system.infoType".to_string(), "registry-hive".to_string());
     metadata.insert("windows.registryHive".to_string(), hive.to_string());
+    metadata.extend(windows_registry_identity_metadata(header, hive));
     Some(metadata)
+}
+
+fn windows_registry_identity_metadata(header: &[u8], hive: &str) -> BTreeMap<String, String> {
+    let strings = registry_candidate_strings(header);
+    let mut metadata = BTreeMap::new();
+    if strings.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert(
+        "windows.registryScannedStrings".to_string(),
+        strings.len().to_string(),
+    );
+
+    match hive {
+        "system" => {
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &[
+                    "ComputerName",
+                    "ActiveComputerName",
+                    "NV Hostname",
+                    "Hostname",
+                ],
+                "system.computerName",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["SystemManufacturer", "BaseBoardManufacturer"],
+                "system.manufacturer",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["SystemProductName", "BaseBoardProduct"],
+                "system.model",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["SystemVersion"],
+                "system.productVersion",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &[
+                    "SystemSerialNumber",
+                    "BaseBoardSerialNumber",
+                    "SerialNumber",
+                ],
+                "system.serialNumber",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["BIOSVendor"],
+                "system.biosVendor",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["BIOSVersion"],
+                "system.biosVersion",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["BIOSReleaseDate"],
+                "system.biosDate",
+            );
+        }
+        "software" => {
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["ProductName"],
+                "os.release.name",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["DisplayVersion", "ReleaseId"],
+                "os.release.version",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["CurrentBuildNumber", "CurrentBuild"],
+                "os.release.buildId",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["EditionID"],
+                "os.release.edition",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["InstallationType"],
+                "os.release.installationType",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["ProductId"],
+                "system.windowsProductId",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["MachineGuid"],
+                "system.machineGuid",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["RegisteredOwner"],
+                "system.registeredOwner",
+            );
+            insert_registry_value_after_labels(
+                &mut metadata,
+                &strings,
+                &["RegisteredOrganization"],
+                "system.registeredOrganization",
+            );
+        }
+        _ => {}
+    }
+
+    metadata
+}
+
+fn insert_registry_value_after_labels(
+    metadata: &mut BTreeMap<String, String>,
+    strings: &[String],
+    labels: &[&str],
+    metadata_key: &str,
+) {
+    if metadata.contains_key(metadata_key) {
+        return;
+    }
+    let Some(value) = registry_value_after_labels(strings, labels) else {
+        return;
+    };
+    metadata.insert(metadata_key.to_string(), value);
+}
+
+fn registry_value_after_labels(strings: &[String], labels: &[&str]) -> Option<String> {
+    for (index, value) in strings.iter().enumerate() {
+        if !labels.iter().any(|label| value.eq_ignore_ascii_case(label)) {
+            continue;
+        }
+        for candidate in strings.iter().skip(index + 1).take(8) {
+            if labels
+                .iter()
+                .any(|label| candidate.eq_ignore_ascii_case(label))
+            {
+                continue;
+            }
+            if let Some(value) = clean_registry_identity_value(candidate) {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+fn clean_registry_identity_value(value: &str) -> Option<String> {
+    let value = value
+        .trim()
+        .trim_matches('\0')
+        .trim_matches(['"', '\'', '[', ']'])
+        .trim();
+    if value.len() < 2 || value.len() > 240 {
+        return None;
+    }
+    let lower = value.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "default" | "none" | "unknown" | "to be filled by o.e.m." | "system" | "software"
+    ) || lower.starts_with("\\registry\\")
+        || lower.starts_with("hkey_")
+    {
+        return None;
+    }
+    if !value.chars().any(|ch| ch.is_ascii_alphanumeric()) || value.chars().any(char::is_control) {
+        return None;
+    }
+    Some(truncate_chars(value, 180))
+}
+
+fn registry_candidate_strings(data: &[u8]) -> Vec<String> {
+    let mut strings = Vec::new();
+    collect_utf16le_registry_strings(data, &mut strings);
+    collect_ascii_registry_strings(data, &mut strings);
+    strings
+}
+
+fn collect_utf16le_registry_strings(data: &[u8], strings: &mut Vec<String>) {
+    for alignment in 0..=1 {
+        let mut units = Vec::new();
+        let mut cursor = alignment;
+        while cursor + 1 < data.len() {
+            let unit = u16::from_le_bytes([data[cursor], data[cursor + 1]]);
+            if registry_utf16_unit_is_printable(unit) {
+                units.push(unit);
+            } else {
+                push_registry_utf16_string(strings, &units);
+                units.clear();
+            }
+            if strings.len() >= MAX_REGISTRY_IDENTITY_STRINGS {
+                return;
+            }
+            cursor += 2;
+        }
+        push_registry_utf16_string(strings, &units);
+        if strings.len() >= MAX_REGISTRY_IDENTITY_STRINGS {
+            return;
+        }
+    }
+}
+
+fn registry_utf16_unit_is_printable(unit: u16) -> bool {
+    matches!(unit, 0x09 | 0x20..=0x7e) || (0xa0..=0xd7ff).contains(&unit)
+}
+
+fn push_registry_utf16_string(strings: &mut Vec<String>, units: &[u16]) {
+    if units.len() < 3 || strings.len() >= MAX_REGISTRY_IDENTITY_STRINGS {
+        return;
+    }
+    let Ok(value) = String::from_utf16(units) else {
+        return;
+    };
+    push_registry_candidate_string(strings, &value);
+}
+
+fn collect_ascii_registry_strings(data: &[u8], strings: &mut Vec<String>) {
+    let mut start = None;
+    for (index, byte) in data.iter().copied().enumerate() {
+        if (0x20..=0x7e).contains(&byte) || byte == b'\t' {
+            start.get_or_insert(index);
+            continue;
+        }
+        if let Some(offset) = start.take() {
+            push_registry_ascii_string(strings, &data[offset..index]);
+            if strings.len() >= MAX_REGISTRY_IDENTITY_STRINGS {
+                return;
+            }
+        }
+    }
+    if let Some(offset) = start {
+        push_registry_ascii_string(strings, &data[offset..]);
+    }
+}
+
+fn push_registry_ascii_string(strings: &mut Vec<String>, bytes: &[u8]) {
+    if bytes.len() < 3 || strings.len() >= MAX_REGISTRY_IDENTITY_STRINGS {
+        return;
+    }
+    let Ok(value) = std::str::from_utf8(bytes) else {
+        return;
+    };
+    push_registry_candidate_string(strings, value);
+}
+
+fn push_registry_candidate_string(strings: &mut Vec<String>, value: &str) {
+    let value = value.trim().trim_matches('\0').trim();
+    if value.len() < 3
+        || value.len() > 240
+        || !value.chars().any(|ch| ch.is_ascii_alphanumeric())
+        || value.chars().any(char::is_control)
+    {
+        return;
+    }
+    let normalized = truncate_chars(value, 180);
+    if !strings.iter().any(|existing| existing == &normalized) {
+        strings.push(normalized);
+    }
 }
 
 fn windows_wifi_profile_metadata(header: &[u8]) -> BTreeMap<String, String> {
@@ -5248,6 +5543,71 @@ alice:x:1000:1000:Alice Analyst:/home/alice:/bin/bash
         );
     }
 
+    #[test]
+    fn extracts_windows_registry_identity_from_forensic_image_vfs_entry() {
+        let registry = windows_registry_hive_with_utf16_strings(&[
+            "ComputerName",
+            "CORE-LAB01",
+            "SystemManufacturer",
+            "Dell Inc.",
+            "SystemProductName",
+            "Latitude 7490",
+            "SystemSerialNumber",
+            "ABC12345",
+        ]);
+        let vfs = Arc::new(InMemoryVfs::new(&[(
+            "/Windows/System32/config/SYSTEM",
+            registry.as_slice(),
+        )]));
+        let source = VfsEntryByteSource::new(
+            vfs,
+            "/cases/windows.E01",
+            "/Windows/System32/config/SYSTEM",
+            Some("ewf".to_string()),
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(
+            artifact.type_description,
+            "Windows Registry System Information"
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("windows.registryHive")
+                .map(String::as_str),
+            Some("system")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.computerName")
+                .map(String::as_str),
+            Some("CORE-LAB01")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.manufacturer")
+                .map(String::as_str),
+            Some("Dell Inc.")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.model").map(String::as_str),
+            Some("Latitude 7490")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.serialNumber")
+                .map(String::as_str),
+            Some("ABC12345")
+        );
+    }
+
     #[derive(Clone, Copy)]
     struct TestTiffEntry {
         tag: u16,
@@ -5262,6 +5622,26 @@ alice:x:1000:1000:Alice Analyst:/home/alice:/bin/bash
 
     fn push_u32_le(bytes: &mut Vec<u8>, value: u32) {
         bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn windows_registry_hive_with_utf16_strings(strings: &[&str]) -> Vec<u8> {
+        let mut bytes = vec![0u8; 8192];
+        bytes[..4].copy_from_slice(b"regf");
+        bytes[0x04..0x08].copy_from_slice(&8u32.to_le_bytes());
+        bytes[0x08..0x0c].copy_from_slice(&8u32.to_le_bytes());
+        bytes[0x14..0x18].copy_from_slice(&1u32.to_le_bytes());
+        bytes[0x18..0x1c].copy_from_slice(&5u32.to_le_bytes());
+        bytes[0x28..0x2c].copy_from_slice(&4096u32.to_le_bytes());
+
+        let mut offset = 6000;
+        for value in strings {
+            for unit in value.encode_utf16() {
+                bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
+                offset += 2;
+            }
+            offset += 4;
+        }
+        bytes
     }
 
     fn append_ascii(bytes: &mut Vec<u8>, value: &str) -> (u32, u32) {
@@ -8347,6 +8727,67 @@ COMMIT
         assert_eq!(
             artifact.metadata.get("registry.path").map(String::as_str),
             Some(path)
+        );
+    }
+
+    #[test]
+    fn extracts_windows_software_registry_identity_metadata_beyond_default_header() {
+        let bytes = windows_registry_hive_with_utf16_strings(&[
+            "ProductName",
+            "Windows 11 Pro",
+            "DisplayVersion",
+            "24H2",
+            "CurrentBuildNumber",
+            "26100",
+            "EditionID",
+            "Professional",
+            "MachineGuid",
+            "00112233-4455-6677-8899-aabbccddeeff",
+        ]);
+        let source = ChunkedByteSource::new("/image/Windows/System32/config/SOFTWARE", &bytes, 257);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("header.bytesRead")
+                .map(String::as_str),
+            Some("8192")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("windows.registryHive")
+                .map(String::as_str),
+            Some("software")
+        );
+        assert_eq!(
+            artifact.metadata.get("os.release.name").map(String::as_str),
+            Some("Windows 11 Pro")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("os.release.version")
+                .map(String::as_str),
+            Some("24H2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("os.release.buildId")
+                .map(String::as_str),
+            Some("26100")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.machineGuid")
+                .map(String::as_str),
+            Some("00112233-4455-6677-8899-aabbccddeeff")
         );
     }
 
