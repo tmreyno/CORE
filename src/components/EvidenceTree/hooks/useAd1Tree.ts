@@ -100,6 +100,8 @@ export function useAd1Tree(): UseAd1TreeReturn {
   const [metadataCache, setMetadataCache] = createSignal<Map<string, ItemMetadata>>(new Map());
   // Cache for container status (segment availability)
   const [containerStatusCache, setContainerStatusCache] = createSignal<Map<string, ContainerStatus>>(new Map());
+  const inFlightChildrenLoads = new Map<string, Promise<TreeEntry[]>>();
+  const inFlightMetadataLoads = new Map<string, Promise<ItemMetadata | null>>();
 
   // Load container status (segment availability)
   const loadContainerStatus = async (containerPath: string): Promise<ContainerStatus | null> => {
@@ -210,8 +212,10 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (!isTauri) {
       return [];
     }
+    const inFlight = inFlightChildrenLoads.get(cacheKey);
+    if (inFlight) return inFlight;
     
-    try {
+    const loadPromise = (async () => {
       log.debug(`loadRootChildren - invoking container_get_root_children_v2...`);
       const invokeStart = performance.now();
       const children = await invoke<TreeEntry[]>("container_get_root_children_v2", {
@@ -235,6 +239,11 @@ export function useAd1Tree(): UseAd1TreeReturn {
       
       log.debug(`loadRootChildren - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
       return children;
+    })();
+
+    inFlightChildrenLoads.set(cacheKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       log.error("loadRootChildren FAILED:", errorMsg);
@@ -256,6 +265,8 @@ export function useAd1Tree(): UseAd1TreeReturn {
       });
       
       return [];
+    } finally {
+      inFlightChildrenLoads.delete(cacheKey);
     }
   };
 
@@ -268,8 +279,10 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (!isTauri) {
       return [];
     }
+    const inFlight = inFlightChildrenLoads.get(cacheKey);
+    if (inFlight) return inFlight;
     
-    try {
+    const loadPromise = (async () => {
       const children = await invoke<TreeEntry[]>("container_get_children_at_addr_v2", {
         containerPath,
         addr,
@@ -283,9 +296,16 @@ export function useAd1Tree(): UseAd1TreeReturn {
       });
       
       return children;
+    })();
+
+    inFlightChildrenLoads.set(cacheKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error("Failed to load children at addr:", err);
       return [];
+    } finally {
+      inFlightChildrenLoads.delete(cacheKey);
     }
   };
 
@@ -441,8 +461,10 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (!isTauri) {
       return null;
     }
+    const inFlight = inFlightMetadataLoads.get(cacheKey);
+    if (inFlight) return inFlight;
 
-    try {
+    const loadPromise = (async () => {
       const metadata = await invoke<ItemMetadata>("container_get_item_metadata_v2", {
         containerPath,
         itemAddr,
@@ -456,9 +478,16 @@ export function useAd1Tree(): UseAd1TreeReturn {
       });
       
       return metadata;
+    })();
+
+    inFlightMetadataLoads.set(cacheKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error(`loadItemMetadata Failed for addr=${itemAddr}:`, err);
       return null;
+    } finally {
+      inFlightMetadataLoads.delete(cacheKey);
     }
   };
 
