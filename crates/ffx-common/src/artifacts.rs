@@ -3451,7 +3451,7 @@ fn plist_dict_string<'a>(dictionary: &'a plist::Dictionary, key: &str) -> Option
 
 fn plist_dict_first_scalar_string(dictionary: &plist::Dictionary, keys: &[&str]) -> Option<String> {
     keys.iter()
-        .find_map(|key| dictionary.get(*key).and_then(plist_scalar_string))
+        .find_map(|key| dictionary.get(key).and_then(plist_scalar_string))
 }
 
 fn plist_dict_string_array(dictionary: &plist::Dictionary, key: &str) -> Option<Vec<String>> {
