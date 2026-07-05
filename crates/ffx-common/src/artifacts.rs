@@ -702,6 +702,9 @@ fn system_info_metadata(
     if is_linux_machine_id_path(&normalized_path, &normalized_name) {
         return single_line_system_metadata(header, "system.machineId", "linux", "machine-id");
     }
+    if is_linux_machine_info_path(&normalized_path, &normalized_name) {
+        return linux_machine_info_metadata(header);
+    }
     if is_linux_cpuinfo_path(&normalized_path, &normalized_name) {
         return linux_cpuinfo_metadata(header);
     }
@@ -716,6 +719,9 @@ fn system_info_metadata(
     }
     if is_macos_system_version_path(&normalized_path, &normalized_name, extension) {
         return macos_system_version_metadata(header);
+    }
+    if is_macos_preferences_identity_path(&normalized_path, &normalized_name, extension) {
+        return macos_preferences_identity_metadata(header);
     }
     if let Some(metadata) = windows_registry_system_info_metadata(&normalized_path, header) {
         return metadata;
@@ -746,6 +752,10 @@ fn is_linux_machine_id_path(path: &str, name: &str) -> bool {
         && (path.ends_with("etc/machine-id") || path.ends_with("var/lib/dbus/machine-id"))
 }
 
+fn is_linux_machine_info_path(path: &str, name: &str) -> bool {
+    name == "machine-info" && path.ends_with("etc/machine-info")
+}
+
 fn is_linux_cpuinfo_path(path: &str, name: &str) -> bool {
     name == "cpuinfo" && path.ends_with("proc/cpuinfo")
 }
@@ -767,6 +777,13 @@ fn is_macos_hardware_identity_path(path: &str, name: &str, extension: Option<&st
             || name.eq_ignore_ascii_case("ioplatformexpertdevice.plist")
             || path.ends_with("systemprofiler/sphardwaredatatype.plist")
             || path.ends_with("ioregistry/ioplatformexpertdevice.plist"))
+}
+
+fn is_macos_preferences_identity_path(path: &str, name: &str, extension: Option<&str>) -> bool {
+    name.eq_ignore_ascii_case("preferences.plist")
+        && matches!(extension, Some("plist"))
+        && (path.ends_with("library/preferences/systemconfiguration/preferences.plist")
+            || path.ends_with("private/var/db/systemconfiguration/preferences.plist"))
 }
 
 fn windows_registry_system_info_metadata(
@@ -811,6 +828,29 @@ fn linux_os_release_metadata(header: &[u8]) -> BTreeMap<String, String> {
     insert_key_value_alias(&mut metadata, &values, "VARIANT", "os.release.variant");
     insert_key_value_alias(&mut metadata, &values, "BUILD_ID", "os.release.buildId");
     insert_key_value_alias(&mut metadata, &values, "HOME_URL", "os.release.homeUrl");
+    metadata
+}
+
+fn linux_machine_info_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let text = String::from_utf8_lossy(header);
+    let values = parse_shell_key_values(&text);
+    let mut metadata = BTreeMap::new();
+
+    insert_key_value_alias(
+        &mut metadata,
+        &values,
+        "PRETTY_HOSTNAME",
+        "system.prettyHostname",
+    );
+    insert_key_value_alias(&mut metadata, &values, "ICON_NAME", "system.iconName");
+    insert_key_value_alias(&mut metadata, &values, "CHASSIS", "system.chassis");
+    insert_key_value_alias(&mut metadata, &values, "DEPLOYMENT", "system.deployment");
+    insert_key_value_alias(&mut metadata, &values, "LOCATION", "system.location");
+
+    if !metadata.is_empty() {
+        metadata.insert("system.osFamily".to_string(), "linux".to_string());
+        metadata.insert("system.infoType".to_string(), "machine-info".to_string());
+    }
     metadata
 }
 
@@ -1091,6 +1131,32 @@ fn macos_system_version_metadata(header: &[u8]) -> BTreeMap<String, String> {
     metadata
 }
 
+fn macos_preferences_identity_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_plist(header, Some("plist")) {
+        return metadata;
+    }
+    let Ok(value) = PlistValue::from_reader(Cursor::new(header)) else {
+        return metadata;
+    };
+
+    for (source_key, metadata_key) in [
+        ("ComputerName", "system.computerName"),
+        ("HostName", "system.hostname"),
+        ("LocalHostName", "system.localHostname"),
+    ] {
+        if let Some(value) = plist_find_scalar_string(&value, source_key) {
+            metadata.insert(metadata_key.to_string(), value);
+        }
+    }
+
+    if !metadata.is_empty() {
+        metadata.insert("system.osFamily".to_string(), "macos".to_string());
+        metadata.insert("system.infoType".to_string(), "system-identity".to_string());
+    }
+    metadata
+}
+
 fn macos_hardware_identity_metadata(header: &[u8]) -> BTreeMap<String, String> {
     let mut metadata = BTreeMap::new();
     if !looks_like_plist(header, Some("plist")) {
@@ -1158,11 +1224,13 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("linux"), Some("os-release")) => "Linux OS Release Info",
         (Some("linux"), Some("hostname")) => "Linux Hostname",
         (Some("linux"), Some("machine-id")) => "Linux Machine ID",
+        (Some("linux"), Some("machine-info")) => "Linux Machine Information",
         (Some("linux"), Some("cpuinfo")) => "Linux CPU Information",
         (Some("linux"), Some("meminfo")) => "Linux Memory Information",
         (Some("linux"), Some("dmi")) => "Linux DMI System Information",
         (Some("macos"), Some("hardware-identity")) => "macOS Hardware Identity",
         (Some("macos"), Some("system-version")) => "macOS System Version Info",
+        (Some("macos"), Some("system-identity")) => "macOS System Identity",
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
         _ => "System Information Artifact",
     }
@@ -3079,6 +3147,38 @@ BUILD_ID=20260201
     }
 
     #[test]
+    fn extracts_linux_machine_info_metadata() {
+        let bytes = br#"PRETTY_HOSTNAME="Case Workstation"
+ICON_NAME=computer-desktop
+CHASSIS=desktop
+DEPLOYMENT=production
+LOCATION="Lab 3"
+"#;
+        let source = ChunkedByteSource::new("/mnt/image/etc/machine-info", bytes, 19);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Linux Machine Information");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.prettyHostname")
+                .map(String::as_str),
+            Some("Case Workstation")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.chassis").map(String::as_str),
+            Some("desktop")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.location").map(String::as_str),
+            Some("Lab 3")
+        );
+    }
+
+    #[test]
     fn extracts_linux_cpuinfo_metadata() {
         let bytes = br#"processor   : 0
 vendor_id   : GenuineIntel
@@ -3247,6 +3347,55 @@ MemFree:         1024000 kB
                 .get("os.release.buildId")
                 .map(String::as_str),
             Some("24F74")
+        );
+    }
+
+    #[test]
+    fn extracts_macos_preferences_identity_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>System</key>
+  <dict>
+    <key>System</key>
+    <dict>
+      <key>ComputerName</key><string>Case MacBook</string>
+      <key>HostName</key><string>case-macbook.example.test</string>
+      <key>LocalHostName</key><string>Case-MacBook</string>
+    </dict>
+  </dict>
+</dict>
+</plist>
+"#;
+        let source = ChunkedByteSource::new(
+            "/Volumes/Macintosh HD/Library/Preferences/SystemConfiguration/preferences.plist",
+            bytes,
+            96,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS System Identity");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.computerName")
+                .map(String::as_str),
+            Some("Case MacBook")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.hostname").map(String::as_str),
+            Some("case-macbook.example.test")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.localHostname")
+                .map(String::as_str),
+            Some("Case-MacBook")
         );
     }
 
