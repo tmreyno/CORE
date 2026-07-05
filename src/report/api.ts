@@ -629,6 +629,7 @@ function artifactMetadataSummary(metadata: Record<string, string>): string {
     ["pe.driverIndicators", "driver indicators"],
     ["pe.driverServiceNames", "services"],
     ["pe.driverDeviceNames", "devices"],
+    ["pe.driverDosDeviceNames", "DOS devices"],
     ["pe.driverRegistryPaths", "registry paths"],
     ["pe.driverPdbPaths", "PDB"],
     ["pe.driverUrls", "URLs"],

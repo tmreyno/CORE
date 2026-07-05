@@ -39,6 +39,7 @@ const MAX_IMAGE_METADATA_PIXELS: u64 = 100_000_000;
 const MAX_METADATA_VALUE_CHARS: usize = 4096;
 const MAX_PE_VERSION_INFO_FIELDS: usize = 32;
 const MAX_PE_VERSION_INFO_VALUE_CHARS: usize = 512;
+const MAX_PE_DRIVER_STRING_CHARS: usize = 240;
 const UNIX_REGULAR_USER_MIN_UID: u32 = 1000;
 const UNIX_REGULAR_USER_MAX_UID: u32 = 60000;
 const TRUNCATED_METADATA_SUFFIX: &str = "... [truncated]";
@@ -543,6 +544,7 @@ fn pe_driver_metadata(header: &[u8], extension: Option<&str>) -> BTreeMap<String
             "pe.driverType".to_string(),
             pe_driver_type_from_indicators(&driver_indicators).to_string(),
         );
+        insert_pe_driver_string_metadata(&mut metadata, header);
     }
 
     for (key, value) in pe_version_info_strings(header) {
@@ -632,6 +634,254 @@ fn pe_driver_type_from_indicators(indicators: &[String]) -> &'static str {
     } else {
         "Windows kernel driver"
     }
+}
+
+fn insert_pe_driver_string_metadata(metadata: &mut BTreeMap<String, String>, header: &[u8]) {
+    let strings = pe_embedded_strings(header);
+    if strings.is_empty() {
+        return;
+    }
+
+    let mut service_names = Vec::new();
+    let mut device_names = Vec::new();
+    let mut dos_device_names = Vec::new();
+    let mut registry_paths = Vec::new();
+    let mut pdb_paths = Vec::new();
+    let mut urls = Vec::new();
+    let mut guids = Vec::new();
+
+    for value in strings {
+        if let Some(service_name) = extract_windows_driver_service_name(&value) {
+            push_limited_system_value(&mut service_names, &service_name);
+        }
+        if let Some(device_name) = extract_windows_object_name(&value, "\\device\\") {
+            push_limited_system_value(&mut device_names, &device_name);
+        }
+        if let Some(dos_device_name) = extract_windows_object_name(&value, "\\dosdevices\\") {
+            push_limited_system_value(&mut dos_device_names, &dos_device_name);
+        }
+        if let Some(registry_path) = extract_windows_driver_registry_path(&value) {
+            push_limited_system_value(&mut registry_paths, &registry_path);
+        }
+        if let Some(pdb_path) = extract_windows_driver_pdb_path(&value) {
+            push_limited_system_value(&mut pdb_paths, &pdb_path);
+        }
+        if let Some(url) = extract_embedded_url(&value) {
+            push_limited_system_value(&mut urls, &url);
+        }
+        if let Some(guid) = extract_braced_guid(&value) {
+            push_limited_system_value(&mut guids, &guid);
+        }
+    }
+
+    insert_limited_system_values(metadata, "pe.driverServiceNames", &service_names);
+    insert_limited_system_values(metadata, "pe.driverDeviceNames", &device_names);
+    insert_limited_system_values(metadata, "pe.driverDosDeviceNames", &dos_device_names);
+    insert_limited_system_values(metadata, "pe.driverRegistryPaths", &registry_paths);
+    insert_limited_system_values(metadata, "pe.driverPdbPaths", &pdb_paths);
+    insert_limited_system_values(metadata, "pe.driverUrls", &urls);
+    insert_limited_system_values(metadata, "pe.driverGuids", &guids);
+}
+
+fn pe_embedded_strings(data: &[u8]) -> Vec<String> {
+    let mut strings = Vec::new();
+    collect_ascii_embedded_strings(data, &mut strings);
+    collect_utf16le_embedded_strings(data, &mut strings);
+    strings
+}
+
+fn collect_ascii_embedded_strings(data: &[u8], strings: &mut Vec<String>) {
+    let mut start = None;
+    for (index, byte) in data.iter().copied().enumerate() {
+        if byte.is_ascii_graphic() || byte == b' ' {
+            start.get_or_insert(index);
+            continue;
+        }
+        if let Some(segment_start) = start.take() {
+            push_embedded_string(strings, &data[segment_start..index]);
+        }
+    }
+    if let Some(segment_start) = start {
+        push_embedded_string(strings, &data[segment_start..]);
+    }
+}
+
+fn push_embedded_string(strings: &mut Vec<String>, bytes: &[u8]) {
+    if bytes.len() < 4 {
+        return;
+    }
+    let value = String::from_utf8_lossy(bytes);
+    let value = value.trim();
+    if !looks_like_embedded_driver_string(value) {
+        return;
+    }
+    push_limited_system_value(strings, &truncate_chars(value, MAX_PE_DRIVER_STRING_CHARS));
+}
+
+fn collect_utf16le_embedded_strings(data: &[u8], strings: &mut Vec<String>) {
+    let mut units = Vec::new();
+    let mut cursor = 0usize;
+    while cursor + 1 < data.len() {
+        let unit = u16::from_le_bytes([data[cursor], data[cursor + 1]]);
+        let ch = char::from_u32(unit as u32);
+        if ch.is_some_and(|ch| ch.is_ascii_graphic() || ch == ' ') {
+            units.push(unit);
+        } else {
+            push_utf16_embedded_string(strings, &mut units);
+        }
+        cursor += 2;
+    }
+    push_utf16_embedded_string(strings, &mut units);
+}
+
+fn push_utf16_embedded_string(strings: &mut Vec<String>, units: &mut Vec<u16>) {
+    if units.len() < 4 {
+        units.clear();
+        return;
+    }
+    if let Ok(value) = String::from_utf16(units) {
+        let value = value.trim();
+        if looks_like_embedded_driver_string(value) {
+            push_limited_system_value(strings, &truncate_chars(value, MAX_PE_DRIVER_STRING_CHARS));
+        }
+    }
+    units.clear();
+}
+
+fn looks_like_embedded_driver_string(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.contains("\\registry\\machine\\")
+        || lower.contains("system\\currentcontrolset\\services\\")
+        || lower.contains("system\\controlset001\\services\\")
+        || lower.contains("\\device\\")
+        || lower.contains("\\dosdevices\\")
+        || lower.contains(".pdb")
+        || lower.contains("http://")
+        || lower.contains("https://")
+        || extract_braced_guid(value).is_some()
+}
+
+fn extract_windows_driver_service_name(value: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    for marker in [
+        "\\currentcontrolset\\services\\",
+        "\\controlset001\\services\\",
+        "\\controlset002\\services\\",
+        "\\controlset003\\services\\",
+    ] {
+        if let Some(name) = extract_after_marker(&normalized, marker) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn extract_windows_object_name(value: &str, marker: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    extract_after_marker(&normalized, marker)
+}
+
+fn extract_windows_driver_registry_path(value: &str) -> Option<String> {
+    extract_segment_starting_with(value, "\\registry\\machine\\")
+        .or_else(|| extract_segment_starting_with(value, "system\\currentcontrolset\\services\\"))
+        .or_else(|| extract_segment_starting_with(value, "system\\controlset001\\services\\"))
+        .map(|value| value.replace('/', "\\"))
+}
+
+fn extract_windows_driver_pdb_path(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let end = lower.find(".pdb")?.checked_add(4)?;
+    let prefix = value.get(..end)?;
+    let start = prefix
+        .rfind(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\''))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let candidate = prefix.get(start..)?.trim_matches(['\0', '"', '\'']);
+    if candidate.len() < 5 || !(candidate.contains('\\') || candidate.contains('/')) {
+        return None;
+    }
+    Some(truncate_chars(candidate, MAX_PE_DRIVER_STRING_CHARS))
+}
+
+fn extract_embedded_url(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find("https://").or_else(|| lower.find("http://"))?;
+    let raw = value.get(start..)?;
+    let end = raw
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | '<' | '>' | ')' | ']'))
+        .unwrap_or(raw.len());
+    let candidate = raw.get(..end)?.trim_end_matches(['.', ',', ';']);
+    Some(truncate_chars(candidate, MAX_PE_DRIVER_STRING_CHARS))
+        .filter(|value| value.contains("://"))
+}
+
+fn extract_braced_guid(value: &str) -> Option<String> {
+    let start = value.find('{')?;
+    let end = value.get(start..)?.find('}')?.checked_add(start + 1)?;
+    let candidate = value.get(start..end)?;
+    if is_braced_guid(candidate) {
+        Some(candidate.to_ascii_uppercase())
+    } else {
+        None
+    }
+}
+
+fn is_braced_guid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 38 || bytes.first() != Some(&b'{') || bytes.last() != Some(&b'}') {
+        return false;
+    }
+    for (index, byte) in bytes.iter().enumerate().skip(1).take(36) {
+        match index {
+            9 | 14 | 19 | 24 => {
+                if *byte != b'-' {
+                    return false;
+                }
+            }
+            _ => {
+                if !byte.is_ascii_hexdigit() {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn extract_segment_starting_with(value: &str, marker: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    let lower = normalized.to_ascii_lowercase();
+    let start = lower.find(marker)?;
+    let raw = normalized.get(start..)?;
+    let end = raw
+        .find(|ch: char| ch == ';' || ch == '"' || ch == '\'' || ch.is_whitespace())
+        .unwrap_or(raw.len());
+    let candidate = raw.get(..end)?.trim_matches([':', '.', '\\']);
+    if candidate.is_empty() {
+        return None;
+    }
+    Some(truncate_chars(candidate, MAX_PE_DRIVER_STRING_CHARS))
+}
+
+fn extract_after_marker(value: &str, marker: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find(marker)?.checked_add(marker.len())?;
+    let raw = value.get(start..)?;
+    let end = raw
+        .find(|ch: char| {
+            ch == '\\' || ch == '/' || ch == ';' || ch == '"' || ch == '\'' || ch.is_whitespace()
+        })
+        .unwrap_or(raw.len());
+    let candidate = raw.get(..end)?.trim_matches([':', '.']);
+    if candidate.is_empty()
+        || !candidate.chars().any(|ch| ch.is_ascii_alphanumeric())
+        || !candidate
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+    {
+        return None;
+    }
+    Some(truncate_chars(candidate, 120))
 }
 
 fn pe_version_info_strings(header: &[u8]) -> BTreeMap<String, String> {
@@ -4591,6 +4841,22 @@ mod tests {
         bytes[0x3c..0x40].copy_from_slice(&(pe_offset as u32).to_le_bytes());
         bytes[pe_offset..pe_offset + 4].copy_from_slice(b"PE\0\0");
         bytes.extend_from_slice(b"ntoskrnl.exe\0FltRegisterFilter\0DriverEntry\0");
+        bytes.extend_from_slice(br"\Registry\Machine\System\CurrentControlSet\Services\contosoflt");
+        bytes.push(0);
+        bytes.extend_from_slice(
+            br"\Registry\Machine\System\ControlSet001\Services\legacyflt\Parameters",
+        );
+        bytes.push(0);
+        bytes.extend_from_slice(br"\Device\ContosoFilter");
+        bytes.push(0);
+        bytes.extend_from_slice(br"\DosDevices\ContosoFilter");
+        bytes.push(0);
+        bytes.extend_from_slice(br"C:\agent\_work\drivers\contosoflt\objfre\amd64\contosoflt.pdb");
+        bytes.push(0);
+        bytes.extend_from_slice(b"https://drivers.example.test/support");
+        bytes.push(0);
+        bytes.extend_from_slice(b"{12345678-9abc-def0-1234-56789abcdef0}");
+        bytes.push(0);
         append_utf16le_version_pair(&mut bytes, "CompanyName", "Contoso Driver Labs");
         append_utf16le_version_pair(&mut bytes, "FileDescription", "Contoso File Filter");
         append_utf16le_version_pair(&mut bytes, "FileVersion", "1.2.3.4");
@@ -7242,6 +7508,51 @@ COMMIT
                 .get("pe.version.OriginalFilename")
                 .map(String::as_str),
             Some("contosoflt.sys")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("pe.driverServiceNames")
+                .map(String::as_str),
+            Some("contosoflt; legacyflt")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("pe.driverDeviceNames")
+                .map(String::as_str),
+            Some("ContosoFilter")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("pe.driverDosDeviceNames")
+                .map(String::as_str),
+            Some("ContosoFilter")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("pe.driverRegistryPaths")
+                .map(String::as_str),
+            Some(
+                r"Registry\Machine\System\CurrentControlSet\Services\contosoflt; Registry\Machine\System\ControlSet001\Services\legacyflt\Parameters"
+            )
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("pe.driverPdbPaths")
+                .map(String::as_str),
+            Some(r"C:\agent\_work\drivers\contosoflt\objfre\amd64\contosoflt.pdb")
+        );
+        assert_eq!(
+            artifact.metadata.get("pe.driverUrls").map(String::as_str),
+            Some("https://drivers.example.test/support")
+        );
+        assert_eq!(
+            artifact.metadata.get("pe.driverGuids").map(String::as_str),
+            Some("{12345678-9ABC-DEF0-1234-56789ABCDEF0}")
         );
     }
 
