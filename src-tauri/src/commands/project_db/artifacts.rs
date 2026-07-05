@@ -23,6 +23,12 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
 
+#[derive(Clone, Copy)]
+struct RegistryStringMapping {
+    value_name: &'static str,
+    metadata_key: &'static str,
+}
+
 const SQLITE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const SQLITE_ARTIFACT_COPY_CHUNK_BYTES: usize = 1024 * 1024;
 const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024;
@@ -30,6 +36,123 @@ const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 const SQLITE_METADATA_NAME_LIMIT: usize = 12;
 const DEFAULT_ARTIFACT_EXTRACTOR: &str = "core-artifact-extractor";
 const MAX_ARTIFACT_EXTRACTOR_CHARS: usize = 128;
+
+const WINDOWS_SYSTEM_INFORMATION_REGISTRY_VALUES: &[RegistryStringMapping] = &[
+    RegistryStringMapping {
+        value_name: "SystemManufacturer",
+        metadata_key: "system.manufacturer",
+    },
+    RegistryStringMapping {
+        value_name: "SystemProductName",
+        metadata_key: "system.model",
+    },
+    RegistryStringMapping {
+        value_name: "SystemProductVersion",
+        metadata_key: "system.productVersion",
+    },
+    RegistryStringMapping {
+        value_name: "SystemSKU",
+        metadata_key: "system.sku",
+    },
+    RegistryStringMapping {
+        value_name: "SystemFamily",
+        metadata_key: "system.family",
+    },
+    RegistryStringMapping {
+        value_name: "SystemSerialNumber",
+        metadata_key: "system.serialNumber",
+    },
+    RegistryStringMapping {
+        value_name: "BaseBoardManufacturer",
+        metadata_key: "system.baseboardManufacturer",
+    },
+    RegistryStringMapping {
+        value_name: "BaseBoardProduct",
+        metadata_key: "system.baseboardProduct",
+    },
+    RegistryStringMapping {
+        value_name: "BaseBoardVersion",
+        metadata_key: "system.baseboardVersion",
+    },
+    RegistryStringMapping {
+        value_name: "BIOSVendor",
+        metadata_key: "system.biosVendor",
+    },
+    RegistryStringMapping {
+        value_name: "BIOSVersion",
+        metadata_key: "system.biosVersion",
+    },
+    RegistryStringMapping {
+        value_name: "BIOSReleaseDate",
+        metadata_key: "system.biosReleaseDate",
+    },
+    RegistryStringMapping {
+        value_name: "SystemBiosVersion",
+        metadata_key: "system.systemBiosVersion",
+    },
+    RegistryStringMapping {
+        value_name: "VideoBiosVersion",
+        metadata_key: "system.videoBiosVersion",
+    },
+    RegistryStringMapping {
+        value_name: "ComputerHardwareId",
+        metadata_key: "system.hardwareId",
+    },
+    RegistryStringMapping {
+        value_name: "ComputerHardwareIds",
+        metadata_key: "system.hardwareIds",
+    },
+];
+
+const WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES: &[RegistryStringMapping] = &[
+    RegistryStringMapping {
+        value_name: "ProductName",
+        metadata_key: "system.osName",
+    },
+    RegistryStringMapping {
+        value_name: "DisplayVersion",
+        metadata_key: "system.osDisplayVersion",
+    },
+    RegistryStringMapping {
+        value_name: "CurrentBuild",
+        metadata_key: "system.osBuild",
+    },
+    RegistryStringMapping {
+        value_name: "CurrentBuildNumber",
+        metadata_key: "system.osBuildNumber",
+    },
+    RegistryStringMapping {
+        value_name: "EditionID",
+        metadata_key: "system.osEdition",
+    },
+    RegistryStringMapping {
+        value_name: "ProductId",
+        metadata_key: "system.productId",
+    },
+    RegistryStringMapping {
+        value_name: "RegisteredOwner",
+        metadata_key: "system.registeredOwner",
+    },
+    RegistryStringMapping {
+        value_name: "RegisteredOrganization",
+        metadata_key: "system.registeredOrganization",
+    },
+];
+
+const WINDOWS_SOFTWARE_OEM_INFORMATION_REGISTRY_VALUES: &[RegistryStringMapping] = &[
+    RegistryStringMapping {
+        value_name: "Manufacturer",
+        metadata_key: "system.oemManufacturer",
+    },
+    RegistryStringMapping {
+        value_name: "Model",
+        metadata_key: "system.oemModel",
+    },
+    RegistryStringMapping {
+        value_name: "SupportURL",
+        metadata_key: "system.oemSupportUrl",
+    },
+];
 const MAX_ARTIFACT_RESPONSE_ROWS: usize = 10_000;
 const MAX_ARTIFACT_FIELD_CHARS: usize = 4096;
 const MAX_ARTIFACT_PREVIEW_CHARS: usize = 16_384;
@@ -403,6 +526,12 @@ fn registry_system_identity_metadata(hive_path: &Path) -> Result<BTreeMap<String
         "StandardName",
         "system.timeZoneStandardName",
     );
+    insert_registry_string_values(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Control\\SystemInformation"),
+        WINDOWS_SYSTEM_INFORMATION_REGISTRY_VALUES,
+    );
 
     Ok(finalize_registry_identity_metadata(
         metadata,
@@ -420,61 +549,24 @@ fn registry_software_identity_metadata(
     let current_version = "Microsoft\\Windows NT\\CurrentVersion";
     let mut metadata = BTreeMap::new();
 
-    insert_registry_string_value(
+    insert_registry_string_values(
         &mut metadata,
         &mut parser,
         current_version,
-        "ProductName",
-        "system.osName",
+        WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES,
     );
     insert_registry_string_value(
         &mut metadata,
         &mut parser,
-        current_version,
-        "DisplayVersion",
-        "system.osDisplayVersion",
+        "Microsoft\\Cryptography",
+        "MachineGuid",
+        "system.machineGuid",
     );
-    insert_registry_string_value(
+    insert_registry_string_values(
         &mut metadata,
         &mut parser,
-        current_version,
-        "CurrentBuild",
-        "system.osBuild",
-    );
-    insert_registry_string_value(
-        &mut metadata,
-        &mut parser,
-        current_version,
-        "CurrentBuildNumber",
-        "system.osBuildNumber",
-    );
-    insert_registry_string_value(
-        &mut metadata,
-        &mut parser,
-        current_version,
-        "EditionID",
-        "system.osEdition",
-    );
-    insert_registry_string_value(
-        &mut metadata,
-        &mut parser,
-        current_version,
-        "ProductId",
-        "system.productId",
-    );
-    insert_registry_string_value(
-        &mut metadata,
-        &mut parser,
-        current_version,
-        "RegisteredOwner",
-        "system.registeredOwner",
-    );
-    insert_registry_string_value(
-        &mut metadata,
-        &mut parser,
-        current_version,
-        "RegisteredOrganization",
-        "system.registeredOrganization",
+        "Microsoft\\Windows\\CurrentVersion\\OEMInformation",
+        WINDOWS_SOFTWARE_OEM_INFORMATION_REGISTRY_VALUES,
     );
 
     Ok(finalize_registry_identity_metadata(
@@ -516,6 +608,23 @@ fn insert_registry_string_value(
         return;
     };
     insert_trimmed_metadata(metadata, metadata_key, &value);
+}
+
+fn insert_registry_string_values(
+    metadata: &mut BTreeMap<String, String>,
+    parser: &mut notatin::parser::Parser,
+    key_path: &str,
+    mappings: &[RegistryStringMapping],
+) {
+    for mapping in mappings {
+        insert_registry_string_value(
+            metadata,
+            parser,
+            key_path,
+            mapping.value_name,
+            mapping.metadata_key,
+        );
+    }
 }
 
 fn registry_value(
@@ -1394,6 +1503,54 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             Some("22631")
         );
         assert!(registry_value_text(CellValue::Binary(vec![1, 2, 3])).is_none());
+    }
+
+    #[test]
+    fn windows_registry_identity_mappings_cover_hardware_and_oem_values() {
+        let system_values: BTreeMap<&str, &str> = WINDOWS_SYSTEM_INFORMATION_REGISTRY_VALUES
+            .iter()
+            .map(|mapping| (mapping.value_name, mapping.metadata_key))
+            .collect();
+        assert_eq!(
+            system_values.get("SystemManufacturer").copied(),
+            Some("system.manufacturer")
+        );
+        assert_eq!(
+            system_values.get("SystemProductName").copied(),
+            Some("system.model")
+        );
+        assert_eq!(
+            system_values.get("SystemSerialNumber").copied(),
+            Some("system.serialNumber")
+        );
+        assert_eq!(
+            system_values.get("ComputerHardwareIds").copied(),
+            Some("system.hardwareIds")
+        );
+
+        let oem_values: BTreeMap<&str, &str> = WINDOWS_SOFTWARE_OEM_INFORMATION_REGISTRY_VALUES
+            .iter()
+            .map(|mapping| (mapping.value_name, mapping.metadata_key))
+            .collect();
+        assert_eq!(
+            oem_values.get("Manufacturer").copied(),
+            Some("system.oemManufacturer")
+        );
+        assert_eq!(oem_values.get("Model").copied(), Some("system.oemModel"));
+
+        let current_version_values: BTreeMap<&str, &str> =
+            WINDOWS_SOFTWARE_CURRENT_VERSION_REGISTRY_VALUES
+                .iter()
+                .map(|mapping| (mapping.value_name, mapping.metadata_key))
+                .collect();
+        assert_eq!(
+            current_version_values.get("ProductName").copied(),
+            Some("system.osName")
+        );
+        assert_eq!(
+            current_version_values.get("CurrentBuildNumber").copied(),
+            Some("system.osBuildNumber")
+        );
     }
 
     #[test]
