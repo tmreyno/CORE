@@ -439,6 +439,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_macos_kernel_extension_source(&source_id) {
+        return true;
+    }
+
     if is_linux_network_identity_source(&source_id) {
         return true;
     }
@@ -564,6 +568,11 @@ fn is_macos_hardware_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/ioregistry.plist")
         || source_id.ends_with("/sphardwaredatatype.plist")
         || source_id.ends_with("/system_profiler.spx")
+}
+
+fn is_macos_kernel_extension_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.contains(".kext/contents/info.plist")
 }
 
 fn is_windows_wifi_profile_source(source_id: &str) -> bool {
@@ -1652,6 +1661,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     }
     if is_macos_hardware_identity_source(&lower) {
         metadata.extend(parse_macos_hardware_identity_metadata(data));
+    }
+    if is_macos_kernel_extension_source(&lower) {
+        metadata.extend(parse_macos_kernel_extension_metadata(data));
     }
     if is_windows_wifi_profile_source(&lower) {
         metadata.extend(parse_windows_wifi_profile_metadata(&text));
@@ -3746,6 +3758,192 @@ fn parse_macos_hardware_identity_metadata(data: &[u8]) -> BTreeMap<String, Strin
         "system.cpuSpeed",
     );
 
+    metadata
+}
+
+#[derive(Default)]
+struct MacosKernelExtensionMetadata {
+    identifiers: Vec<String>,
+    names: Vec<String>,
+    versions: Vec<String>,
+    personality_names: Vec<String>,
+    classes: Vec<String>,
+    provider_classes: Vec<String>,
+    matches: Vec<String>,
+    libraries: Vec<String>,
+}
+
+fn parse_macos_kernel_extension_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return BTreeMap::new();
+    };
+    let plist::Value::Dictionary(dict) = value else {
+        return BTreeMap::new();
+    };
+
+    let mut values = MacosKernelExtensionMetadata::default();
+    collect_macos_kernel_extension_bundle_metadata(&dict, &mut values);
+    if let Some(plist::Value::Dictionary(personalities)) = dict.get("IOKitPersonalities") {
+        collect_macos_kernel_extension_personalities(personalities, &mut values);
+    }
+    if let Some(plist::Value::Dictionary(libraries)) = dict.get("OSBundleLibraries") {
+        collect_macos_kernel_extension_libraries(libraries, &mut values);
+    }
+
+    macos_kernel_extension_metadata_to_map(values)
+}
+
+fn collect_macos_kernel_extension_bundle_metadata(
+    dict: &plist::Dictionary,
+    values: &mut MacosKernelExtensionMetadata,
+) {
+    for key in ["CFBundleIdentifier", "OSBundleIdentifier"] {
+        if let Some(value) = plist_dict_scalar_string(dict, key) {
+            push_unique_limited(
+                &mut values.identifiers,
+                truncate_metadata_value(&value, 180),
+            );
+        }
+    }
+    for key in ["CFBundleName", "CFBundleDisplayName", "IOClass"] {
+        if let Some(value) = plist_dict_scalar_string(dict, key) {
+            push_unique_limited(&mut values.names, truncate_metadata_value(&value, 120));
+        }
+    }
+    for key in ["CFBundleVersion", "CFBundleShortVersionString"] {
+        if let Some(value) = plist_dict_scalar_string(dict, key) {
+            push_unique_limited(&mut values.versions, truncate_metadata_value(&value, 80));
+        }
+    }
+}
+
+fn collect_macos_kernel_extension_personalities(
+    personalities: &plist::Dictionary,
+    values: &mut MacosKernelExtensionMetadata,
+) {
+    for (personality_name, personality) in personalities.iter().take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+    {
+        let plist::Value::Dictionary(personality) = personality else {
+            continue;
+        };
+        let personality_name = truncate_metadata_value(personality_name, 120);
+        push_unique_limited(&mut values.personality_names, personality_name.clone());
+
+        let class = first_plist_dict_scalar_string(personality, &["IOClass", "CFBundleIdentifier"]);
+        let provider = first_plist_dict_scalar_string(personality, &["IOProviderClass"]);
+        let match_value = first_plist_dict_scalar_string(
+            personality,
+            &["IONameMatch", "IOProviderMergeProperties"],
+        );
+        if let Some(class) = &class {
+            push_unique_limited(&mut values.classes, class.clone());
+        }
+        if let Some(provider) = &provider {
+            push_unique_limited(&mut values.provider_classes, provider.clone());
+        }
+        if let Some(match_value) = &match_value {
+            push_unique_limited(&mut values.matches, match_value.clone());
+        }
+
+        let mut parts = Vec::new();
+        if let Some(class) = class {
+            parts.push(format!("class={class}"));
+        }
+        if let Some(provider) = provider {
+            parts.push(format!("provider={provider}"));
+        }
+        if let Some(match_value) = match_value {
+            parts.push(format!("match={match_value}"));
+        }
+        if !parts.is_empty() {
+            push_unique_limited(
+                &mut values.names,
+                truncate_metadata_value(
+                    &format!("{personality_name} ({})", parts.join("; ")),
+                    MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS,
+                ),
+            );
+        }
+    }
+}
+
+fn collect_macos_kernel_extension_libraries(
+    libraries: &plist::Dictionary,
+    values: &mut MacosKernelExtensionMetadata,
+) {
+    for (library, version) in libraries.iter().take(MAX_SYSTEM_IDENTITY_LIST_ITEMS) {
+        let version = match version {
+            plist::Value::String(value) => Some(value.as_str()),
+            _ => None,
+        };
+        let description = version.map_or_else(
+            || library.to_string(),
+            |version| format!("{library}>={version}"),
+        );
+        push_unique_limited(
+            &mut values.libraries,
+            truncate_metadata_value(&description, 180),
+        );
+    }
+}
+
+fn macos_kernel_extension_metadata_to_map(
+    values: MacosKernelExtensionMetadata,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if values.identifiers.is_empty()
+        && values.personality_names.is_empty()
+        && values.libraries.is_empty()
+    {
+        return metadata;
+    }
+
+    metadata.insert(
+        "system.kernelExtensionConfigType".to_string(),
+        "macos-kext".to_string(),
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.kernelExtensionIdentifiers",
+        &values.identifiers,
+    );
+    insert_joined_metadata(&mut metadata, "system.kernelExtensionNames", &values.names);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.kernelExtensionVersions",
+        &values.versions,
+    );
+    if !values.personality_names.is_empty() {
+        metadata.insert(
+            "system.kernelExtensionPersonalityCount".to_string(),
+            values.personality_names.len().to_string(),
+        );
+    }
+    insert_joined_metadata(
+        &mut metadata,
+        "system.kernelExtensionPersonalities",
+        &values.personality_names,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.kernelExtensionClasses",
+        &values.classes,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.kernelExtensionProviderClasses",
+        &values.provider_classes,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.kernelExtensionMatches",
+        &values.matches,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.kernelExtensionLibraries",
+        &values.libraries,
+    );
     metadata
 }
 
@@ -7181,6 +7379,96 @@ COMMIT
         assert_eq!(
             metadata.get("system.cpuSpeed").map(String::as_str),
             Some("3.2 GHz")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_macos_kernel_extension_info_plist() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/System/Library/Extensions/ContosoSensor.kext/Contents/Info.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.contoso.driver.Sensor</string>
+  <key>CFBundleName</key><string>ContosoSensor</string>
+  <key>CFBundleVersion</key><string>1.2.3</string>
+  <key>CFBundleShortVersionString</key><string>1.2</string>
+  <key>IOKitPersonalities</key>
+  <dict>
+    <key>Contoso Sensor Device</key>
+    <dict>
+      <key>IOClass</key><string>ContosoSensorDriver</string>
+      <key>IOProviderClass</key><string>IOUSBHostInterface</string>
+      <key>IONameMatch</key><string>contoso-sensor</string>
+    </dict>
+  </dict>
+  <key>OSBundleLibraries</key>
+  <dict>
+    <key>com.apple.iokit.IOUSBHostFamily</key><string>1.2</string>
+    <key>com.apple.kpi.libkern</key><string>20.0</string>
+  </dict>
+</dict>
+</plist>"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionConfigType")
+                .map(String::as_str),
+            Some("macos-kext")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionIdentifiers")
+                .map(String::as_str),
+            Some("com.contoso.driver.Sensor")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionVersions")
+                .map(String::as_str),
+            Some("1.2.3; 1.2")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionPersonalityCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionPersonalities")
+                .map(String::as_str),
+            Some("Contoso Sensor Device")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionClasses")
+                .map(String::as_str),
+            Some("ContosoSensorDriver")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionProviderClasses")
+                .map(String::as_str),
+            Some("IOUSBHostInterface")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionMatches")
+                .map(String::as_str),
+            Some("contoso-sensor")
+        );
+        assert_eq!(
+            metadata
+                .get("system.kernelExtensionLibraries")
+                .map(String::as_str),
+            Some("com.apple.iokit.IOUSBHostFamily>=1.2; com.apple.kpi.libkern>=20.0")
         );
     }
 
