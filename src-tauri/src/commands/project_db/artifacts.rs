@@ -431,7 +431,7 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
-    if is_macos_local_user_source(&source_id) {
+    if is_macos_local_user_source(&source_id) || is_macos_local_group_source(&source_id) {
         return true;
     }
 
@@ -525,6 +525,13 @@ fn is_macos_local_user_source(source_id: &str) -> bool {
     let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
     (source_id.contains("/private/var/db/dslocal/nodes/default/users/")
         || source_id.contains("/var/db/dslocal/nodes/default/users/"))
+        && source_id.ends_with(".plist")
+}
+
+fn is_macos_local_group_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    (source_id.contains("/private/var/db/dslocal/nodes/default/groups/")
+        || source_id.contains("/var/db/dslocal/nodes/default/groups/"))
         && source_id.ends_with(".plist")
 }
 
@@ -1013,6 +1020,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     }
     if is_macos_local_user_source(&lower) {
         metadata.extend(parse_macos_local_user_metadata(data));
+    }
+    if is_macos_local_group_source(&lower) {
+        metadata.extend(parse_macos_local_group_metadata(data));
     }
     if is_windows_wifi_profile_source(&lower) {
         metadata.extend(parse_windows_wifi_profile_metadata(&text));
@@ -2196,6 +2206,85 @@ fn parse_macos_local_user_metadata(data: &[u8]) -> BTreeMap<String, String> {
     }
     if account_name == "root" {
         metadata.insert("system.rootAccountPresent".to_string(), "true".to_string());
+    }
+
+    metadata
+}
+
+fn parse_macos_local_group_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+    let plist::Value::Dictionary(dict) = value else {
+        return metadata;
+    };
+
+    let names = plist_dict_string_array(&dict, "name").unwrap_or_default();
+    let Some(group_name) = names.first().cloned() else {
+        return metadata;
+    };
+
+    metadata.insert(
+        "system.accountConfigType".to_string(),
+        "macos-dslocal-group".to_string(),
+    );
+    metadata.insert("system.localGroupCount".to_string(), "1".to_string());
+
+    let group_description = if let Some(gid) = plist_dict_first_string(&dict, "gid") {
+        format!(
+            "{}:gid={}",
+            truncate_metadata_value(&group_name, 120),
+            truncate_metadata_value(&gid, 40)
+        )
+    } else {
+        truncate_metadata_value(&group_name, 120)
+    };
+    metadata.insert("system.localGroups".to_string(), group_description);
+
+    let users = plist_dict_string_array(&dict, "users").unwrap_or_default();
+    if !users.is_empty() {
+        let users = users
+            .into_iter()
+            .map(|user| truncate_metadata_value(&user, 120))
+            .collect::<Vec<_>>()
+            .join(",");
+        metadata.insert(
+            "system.groupMembers".to_string(),
+            format!("{}={}", truncate_metadata_value(&group_name, 120), users),
+        );
+        if is_unix_admin_group(&group_name) {
+            metadata.insert(
+                "system.adminGroups".to_string(),
+                format!(
+                    "{}:members={}",
+                    truncate_metadata_value(&group_name, 120),
+                    metadata
+                        .get("system.groupMembers")
+                        .and_then(|value| value.split_once('=').map(|(_, members)| members))
+                        .unwrap_or("")
+                ),
+            );
+        }
+    } else if is_unix_admin_group(&group_name) {
+        metadata.insert(
+            "system.adminGroups".to_string(),
+            truncate_metadata_value(&group_name, 120),
+        );
+    }
+
+    if let Some(generated_uids) = plist_dict_string_array(&dict, "groupmembers") {
+        metadata.insert(
+            "system.groupGeneratedUids".to_string(),
+            truncate_metadata_value(
+                &generated_uids
+                    .into_iter()
+                    .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+                MAX_ARTIFACT_METADATA_VALUE_CHARS,
+            ),
+        );
     }
 
     metadata
@@ -4805,6 +4894,53 @@ nameserver 1.1.1.1
     }
 
     #[test]
+    fn system_identity_metadata_extracts_macos_dslocal_group_membership() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/private/var/db/dslocal/nodes/Default/groups/admin.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>name</key><array><string>admin</string></array>
+  <key>gid</key><array><string>80</string></array>
+  <key>users</key><array><string>root</string><string>alice</string></array>
+  <key>groupmembers</key><array>
+    <string>FFFFFFFF-1111-2222-3333-444444444444</string>
+    <string>AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE</string>
+  </array>
+</dict>
+</plist>"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.accountConfigType").map(String::as_str),
+            Some("macos-dslocal-group")
+        );
+        assert_eq!(
+            metadata.get("system.localGroups").map(String::as_str),
+            Some("admin:gid=80")
+        );
+        assert_eq!(
+            metadata.get("system.groupMembers").map(String::as_str),
+            Some("admin=root,alice")
+        );
+        assert_eq!(
+            metadata.get("system.adminGroups").map(String::as_str),
+            Some("admin:members=root,alice")
+        );
+        assert_eq!(
+            metadata
+                .get("system.groupGeneratedUids")
+                .map(String::as_str),
+            Some("FFFFFFFF-1111-2222-3333-444444444444; AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_unix_group_accounts() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/group",
@@ -5613,6 +5749,9 @@ COMMIT
         assert!(is_system_identity_source("/etc/gshadow"));
         assert!(is_system_identity_source(
             "/private/var/db/dslocal/nodes/Default/users/alice.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/private/var/db/dslocal/nodes/Default/groups/admin.plist"
         ));
         assert!(is_system_identity_source(
             "/etc/NetworkManager/system-connections/Corp WiFi.nmconnection"
