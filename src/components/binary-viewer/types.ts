@@ -29,6 +29,7 @@ export interface SectionInfo {
   virtual_size: number;
   raw_size: number;
   characteristics: string;
+  characteristics_detail: string[];
   entropy: number | null;
 }
 

@@ -55,6 +55,7 @@ const mockPeData = {
       raw_size: 32768,
       entropy: 6.421,
       characteristics: "CNT_CODE | MEM_EXECUTE | MEM_READ",
+      characteristics_detail: ["contains-code", "executable", "readable"],
     },
     {
       name: ".rdata",
@@ -63,6 +64,7 @@ const mockPeData = {
       raw_size: 8192,
       entropy: 5.117,
       characteristics: "CNT_INITIALIZED_DATA | MEM_READ",
+      characteristics_detail: ["initialized-data", "readable"],
     },
     {
       name: ".data",
@@ -71,6 +73,7 @@ const mockPeData = {
       raw_size: 2048,
       entropy: 3.904,
       characteristics: "CNT_INITIALIZED_DATA | MEM_READ | MEM_WRITE",
+      characteristics_detail: ["initialized-data", "readable", "writable"],
     },
   ],
   imports: [
@@ -124,6 +127,7 @@ const mockElfData = {
       raw_size: 16384,
       entropy: 5.733,
       characteristics: "ALLOC | EXECINSTR",
+      characteristics_detail: ["allocated", "executable"],
     },
   ],
   imports: [],
@@ -232,6 +236,7 @@ describe("BinaryViewer", () => {
       expect(container.textContent).toContain(".rdata");
       expect(container.textContent).toContain(".data");
       expect(container.textContent).toContain("6.421");
+      expect(container.textContent).toContain("contains-code, executable, readable");
     });
 
     it("renders imports list", async () => {

@@ -4462,6 +4462,57 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
             .collect();
         insert_joined_metadata(&mut metadata, "binary.sections", &sections);
 
+        let section_characteristics: Vec<String> = info
+            .sections
+            .iter()
+            .filter(|section| !section.characteristics_detail.is_empty())
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .map(|section| {
+                format!(
+                    "{}={}",
+                    section.name,
+                    section.characteristics_detail.join(",")
+                )
+            })
+            .collect();
+        insert_joined_metadata(
+            &mut metadata,
+            "binary.sectionCharacteristics",
+            &section_characteristics,
+        );
+
+        let executable_sections: Vec<String> = info
+            .sections
+            .iter()
+            .filter(|section| {
+                section
+                    .characteristics_detail
+                    .iter()
+                    .any(|value| value == "executable" || value == "contains-code")
+            })
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .map(|section| section.name.clone())
+            .collect();
+        insert_joined_metadata(
+            &mut metadata,
+            "binary.executableSections",
+            &executable_sections,
+        );
+
+        let writable_sections: Vec<String> = info
+            .sections
+            .iter()
+            .filter(|section| {
+                section
+                    .characteristics_detail
+                    .iter()
+                    .any(|value| value == "writable")
+            })
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .map(|section| section.name.clone())
+            .collect();
+        insert_joined_metadata(&mut metadata, "binary.writableSections", &writable_sections);
+
         if let Some(max_entropy) = info
             .sections
             .iter()
@@ -5094,6 +5145,11 @@ mod tests {
                 virtual_size: 0x2000,
                 raw_size: 0x2000,
                 characteristics: "0x60000020".to_string(),
+                characteristics_detail: vec![
+                    "contains-code".to_string(),
+                    "executable".to_string(),
+                    "readable".to_string(),
+                ],
                 entropy: Some(7.812),
             }],
             strings: vec![
@@ -5150,6 +5206,18 @@ mod tests {
         assert_eq!(
             metadata.get("binary.exports").map(String::as_str),
             Some("DriverEntry")
+        );
+        assert_eq!(
+            metadata
+                .get("binary.sectionCharacteristics")
+                .map(String::as_str),
+            Some(".text=contains-code,executable,readable")
+        );
+        assert_eq!(
+            metadata
+                .get("binary.executableSections")
+                .map(String::as_str),
+            Some(".text")
         );
         assert_eq!(
             metadata.get("binary.maxSectionEntropy").map(String::as_str),

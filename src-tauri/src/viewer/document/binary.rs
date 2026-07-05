@@ -125,6 +125,7 @@ pub struct SectionInfo {
     pub virtual_size: u64,
     pub raw_size: u64,
     pub characteristics: String,
+    pub characteristics_detail: Vec<String>,
     pub entropy: Option<f64>,
 }
 
@@ -245,6 +246,7 @@ fn analyze_pe(
                 virtual_size: sec.virtual_size as u64,
                 raw_size: sec.size_of_raw_data as u64,
                 characteristics: format!("0x{:08x}", sec.characteristics),
+                characteristics_detail: decode_pe_section_characteristics(sec.characteristics),
                 entropy: section_entropy(
                     data,
                     sec.pointer_to_raw_data as u64,
@@ -372,6 +374,7 @@ fn analyze_elf(
                 virtual_size: sec.sh_size,
                 raw_size: sec.sh_size,
                 characteristics: format!("0x{:08x}", sec.sh_flags),
+                characteristics_detail: decode_elf_section_flags(sec.sh_flags),
                 entropy: section_entropy(data, sec.sh_offset, sec.sh_size),
             })
         })
@@ -513,6 +516,100 @@ fn section_entropy(data: &[u8], offset: u64, size: u64) -> Option<f64> {
         .sum::<f64>();
 
     Some((entropy * 1000.0).round() / 1000.0)
+}
+
+fn decode_pe_section_characteristics(characteristics: u32) -> Vec<String> {
+    let mappings = [
+        (0x0000_0020, "contains-code"),
+        (0x0000_0040, "initialized-data"),
+        (0x0000_0080, "uninitialized-data"),
+        (0x0200_0000, "discardable"),
+        (0x0400_0000, "not-cacheable"),
+        (0x0800_0000, "not-pageable"),
+        (0x1000_0000, "shared"),
+        (0x2000_0000, "executable"),
+        (0x4000_0000, "readable"),
+        (0x8000_0000, "writable"),
+    ];
+
+    mappings
+        .iter()
+        .filter(|(mask, _)| characteristics & mask != 0)
+        .map(|(_, label)| (*label).to_string())
+        .collect()
+}
+
+fn decode_elf_section_flags(flags: u64) -> Vec<String> {
+    let mappings = [
+        (0x1, "writable"),
+        (0x2, "allocated"),
+        (0x4, "executable"),
+        (0x10, "mergeable"),
+        (0x20, "strings"),
+        (0x40, "info-link"),
+        (0x80, "link-order"),
+        (0x100, "os-nonconforming"),
+        (0x200, "group"),
+        (0x400, "thread-local"),
+        (0x800, "compressed"),
+        (0x1000, "gnu-retain"),
+        (0x2000_0000, "gnu-mbind"),
+    ];
+
+    mappings
+        .iter()
+        .filter(|(mask, _)| flags & mask != 0)
+        .map(|(_, label)| (*label).to_string())
+        .collect()
+}
+
+fn decode_macho_section_flags(flags: u32) -> Vec<String> {
+    let mut values = Vec::new();
+    match flags & 0x0000_00ff {
+        0x0 => values.push("regular".to_string()),
+        0x1 => values.push("zero-fill".to_string()),
+        0x2 => values.push("cstring-literals".to_string()),
+        0x3 => values.push("4-byte-literals".to_string()),
+        0x4 => values.push("8-byte-literals".to_string()),
+        0x5 => values.push("literal-pointers".to_string()),
+        0x6 => values.push("non-lazy-symbol-pointers".to_string()),
+        0x7 => values.push("lazy-symbol-pointers".to_string()),
+        0x8 => values.push("symbol-stubs".to_string()),
+        0x9 => values.push("mod-init-func-pointers".to_string()),
+        0xa => values.push("mod-term-func-pointers".to_string()),
+        0xb => values.push("coalesced".to_string()),
+        0xc => values.push("gb-zero-fill".to_string()),
+        0xd => values.push("interposing".to_string()),
+        0xe => values.push("16-byte-literals".to_string()),
+        0xf => values.push("dtrace-dof".to_string()),
+        0x10 => values.push("lazy-dylib-symbol-pointers".to_string()),
+        0x11 => values.push("thread-local-regular".to_string()),
+        0x12 => values.push("thread-local-zero-fill".to_string()),
+        0x13 => values.push("thread-local-variables".to_string()),
+        0x14 => values.push("thread-local-variable-pointers".to_string()),
+        0x15 => values.push("thread-local-init-function-pointers".to_string()),
+        _ => {}
+    }
+
+    let attributes = [
+        (0x8000_0000, "pure-instructions"),
+        (0x4000_0000, "no-toc"),
+        (0x2000_0000, "strip-static-symbols"),
+        (0x1000_0000, "no-dead-strip"),
+        (0x0800_0000, "live-support"),
+        (0x0400_0000, "self-modifying-code"),
+        (0x0200_0000, "debug"),
+        (0x0000_0400, "some-instructions"),
+        (0x0000_0200, "external-relocations"),
+        (0x0000_0100, "local-relocations"),
+    ];
+    values.extend(
+        attributes
+            .iter()
+            .filter(|(mask, _)| flags & mask != 0)
+            .map(|(_, label)| (*label).to_string()),
+    );
+    values
 }
 
 fn push_limited_import(
@@ -1012,6 +1109,7 @@ fn analyze_single_mach(
             virtual_size: sec.size,
             raw_size: sec.size,
             characteristics: format!("0x{:08x}", sec.flags),
+            characteristics_detail: decode_macho_section_flags(sec.flags),
             entropy: section_entropy(data, sec.offset as u64, sec.size),
         })
         .collect();
@@ -1150,6 +1248,26 @@ mod tests {
         assert_eq!(section_entropy(&data, 16, 256), Some(8.0));
         assert_eq!(section_entropy(&data, 16, 0), None);
         assert_eq!(section_entropy(&data, 10_000, 4), None);
+    }
+
+    #[test]
+    fn section_flag_decoders_label_common_executable_and_writable_traits() {
+        assert_eq!(
+            decode_pe_section_characteristics(0x6000_0020),
+            vec!["contains-code", "executable", "readable"]
+        );
+        assert_eq!(
+            decode_pe_section_characteristics(0xc000_0040),
+            vec!["initialized-data", "readable", "writable"]
+        );
+        assert_eq!(
+            decode_elf_section_flags(0x7),
+            vec!["writable", "allocated", "executable"]
+        );
+        assert_eq!(
+            decode_macho_section_flags(0x8000_0400),
+            vec!["regular", "pure-instructions", "some-instructions"]
+        );
     }
 
     #[test]

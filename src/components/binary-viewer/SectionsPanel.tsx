@@ -49,7 +49,11 @@ export function SectionsPanel(props: SectionsPanelProps) {
                     <td class="p-1.5 font-mono text-txt-secondary">
                       {sec.entropy == null ? "n/a" : sec.entropy.toFixed(3)}
                     </td>
-                    <td class="p-1.5 font-mono text-txt-muted">{sec.characteristics}</td>
+                    <td class="p-1.5 font-mono text-txt-muted">
+                      {sec.characteristics_detail?.length
+                        ? sec.characteristics_detail.join(", ")
+                        : sec.characteristics}
+                    </td>
                   </tr>
                 )}
               </For>
