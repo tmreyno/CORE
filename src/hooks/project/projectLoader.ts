@@ -328,7 +328,15 @@ export function restoreSelectedEntry(
     isDir: savedEntry.isDir ?? false,
     isVfsEntry: savedEntry.isVfsEntry ?? browserMode === "vfs",
     isArchiveEntry: savedEntry.isArchiveEntry ?? browserMode === "archive",
+    isDiskFile: savedEntry.isDiskFile,
     containerType,
+    metadata: savedEntry.metadata,
+    dataAddr: savedEntry.dataAddr,
+    itemAddr: savedEntry.itemAddr,
+    compressedSize: savedEntry.compressedSize,
+    dataEndAddr: savedEntry.dataEndAddr,
+    metadataAddr: savedEntry.metadataAddr,
+    firstChildAddr: savedEntry.firstChildAddr,
   };
 }
 
