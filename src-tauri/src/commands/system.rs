@@ -522,6 +522,12 @@ pub async fn cleanup_preview_cache() -> Result<CleanupResult, String> {
 /// Used for exporting activity logs, reports, and other text-based data.
 #[tauri::command]
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || write_text_file_blocking(path, content))
+        .await
+        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn write_text_file_blocking(path: String, content: String) -> Result<(), String> {
     use std::path::Path;
 
     info!(
@@ -578,7 +584,11 @@ fn read_text_file_with_limit(path: &std::path::Path) -> Result<String, String> {
 /// Used for loading acquisition session files and other text-based data.
 #[tauri::command]
 pub async fn read_text_file(path: String) -> Result<String, String> {
-    read_text_file_with_limit(std::path::Path::new(&path))
+    tauri::async_runtime::spawn_blocking(move || {
+        read_text_file_with_limit(std::path::Path::new(&path))
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }
 
 /// Get the path to the audit log directory.
