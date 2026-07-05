@@ -9,6 +9,7 @@
 //! Crawls container file trees (AD1, L01, Archive, VFS/E01/Raw, UFED) and
 //! indexes filenames, metadata, and optionally extracted text content.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -23,6 +24,7 @@ use crate::common::{
 use crate::containers::open_container_entry_source;
 use crate::ewf;
 use crate::raw;
+use crate::viewer::document::binary::{analyze_binary_bytes, BinaryFormat, BinaryInfo};
 
 use super::{classify_extension, is_text_eligible, SearchIndex};
 
@@ -469,6 +471,7 @@ const MAX_CONTENT_SIZE: usize = 256 * 1024;
 /// Maximum file size to read for expensive content extraction.
 const MAX_CONTENT_SOURCE_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_DOCX_XML_SCAN_BYTES: u64 = MAX_CONTENT_SIZE as u64;
+const MAX_INDEX_BINARY_ANALYSIS_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_SEARCH_CRAWL_DEPTH: usize = 128;
 const MAX_SEARCH_CRAWLED_ENTRIES: usize = 250_000;
 
@@ -493,13 +496,14 @@ fn extract_content_from_container(container_path: &str, entry: &CrawledEntry) ->
         }
     };
 
-    let artifact = match extract_index_artifact(source.as_ref()) {
+    let mut artifact = match extract_index_artifact(source.as_ref()) {
         Ok(artifact) => artifact,
         Err(e) => {
             debug!("Artifact extraction failed for {}: {}", entry.entry_path, e);
             return String::new();
         }
     };
+    enrich_index_binary_artifact_metadata(source.as_ref(), &mut artifact, entry);
 
     let mut content_parts = artifact_search_terms(&artifact);
 
@@ -558,6 +562,201 @@ fn extract_index_artifact(source: &dyn EvidenceByteSource) -> Result<NormalizedA
         },
     )
     .map_err(|e| e.to_string())
+}
+
+fn enrich_index_binary_artifact_metadata(
+    source: &dyn EvidenceByteSource,
+    artifact: &mut NormalizedArtifact,
+    entry: &CrawledEntry,
+) {
+    if !is_index_binary_artifact(artifact, entry) {
+        return;
+    }
+
+    let size = match source.len() {
+        Ok(size) => size,
+        Err(error) => {
+            debug!(
+                "Binary index size lookup failed for {}: {}",
+                entry.entry_path, error
+            );
+            return;
+        }
+    };
+    if size > MAX_INDEX_BINARY_ANALYSIS_BYTES {
+        artifact.metadata.insert(
+            "binary.indexAnalysisStatus".to_string(),
+            "skipped-oversize".to_string(),
+        );
+        return;
+    }
+    let Ok(read_len) = usize::try_from(size) else {
+        artifact.metadata.insert(
+            "binary.indexAnalysisStatus".to_string(),
+            "skipped-platform-size".to_string(),
+        );
+        return;
+    };
+    let data = match read_range_fully(source, 0, read_len) {
+        Ok(data) => data,
+        Err(error) => {
+            debug!(
+                "Binary index read failed for {}: {}",
+                entry.entry_path, error
+            );
+            return;
+        }
+    };
+    let info = match analyze_binary_bytes(source.source_ref().display_id(), &data) {
+        Ok(info) => info,
+        Err(error) => {
+            debug!(
+                "Binary index analysis failed for {}: {}",
+                entry.entry_path, error
+            );
+            return;
+        }
+    };
+
+    artifact
+        .metadata
+        .extend(index_binary_artifact_metadata_from_info(&info));
+    if info.pe_is_driver {
+        artifact.category = "system".to_string();
+        artifact.type_description = info
+            .pe_driver_type
+            .as_ref()
+            .map(|driver_type| format!("Windows {driver_type}"))
+            .unwrap_or_else(|| "Windows Driver Artifact".to_string());
+    }
+}
+
+fn is_index_binary_artifact(artifact: &NormalizedArtifact, entry: &CrawledEntry) -> bool {
+    artifact.category == "executable"
+        || artifact
+            .mime_type
+            .as_deref()
+            .is_some_and(|mime| mime.contains("executable") || mime.contains("mach-binary"))
+        || is_index_binary_extension(artifact.extension.as_deref())
+        || is_index_binary_extension(Some(entry.extension.as_str()))
+}
+
+fn is_index_binary_extension(extension: Option<&str>) -> bool {
+    matches!(
+        extension,
+        Some(
+            "sys" | "drv" | "ko" | "exe" | "dll" | "ocx" | "efi" | "elf" | "so" | "dylib" | "kext"
+        )
+    )
+}
+
+fn index_binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "binary.indexAnalysisStatus".to_string(),
+        "parsed".to_string(),
+    );
+    metadata.insert(
+        "binary.format".to_string(),
+        index_binary_format_name(&info.format).to_string(),
+    );
+    metadata.insert("binary.architecture".to_string(), info.architecture.clone());
+    metadata.insert("binary.is64Bit".to_string(), info.is_64bit.to_string());
+    metadata.insert("binary.fileSize".to_string(), info.file_size.to_string());
+    metadata.insert(
+        "binary.importLibraryCount".to_string(),
+        info.imports.len().to_string(),
+    );
+    metadata.insert(
+        "binary.exportCount".to_string(),
+        info.exports.len().to_string(),
+    );
+    metadata.insert(
+        "binary.sectionCount".to_string(),
+        info.sections.len().to_string(),
+    );
+    metadata.insert(
+        "binary.stringCount".to_string(),
+        info.strings.len().to_string(),
+    );
+    if let Some(entry_point) = info.entry_point {
+        metadata.insert(
+            "binary.entryPoint".to_string(),
+            format!("0x{entry_point:x}"),
+        );
+    }
+    if !info.imports.is_empty() {
+        let libraries = info
+            .imports
+            .iter()
+            .take(32)
+            .map(|import| import.library.clone())
+            .collect::<Vec<_>>();
+        insert_index_joined_metadata(&mut metadata, "binary.importLibraries", &libraries);
+    }
+    if !info.exports.is_empty() {
+        let exports = info
+            .exports
+            .iter()
+            .take(32)
+            .map(|export| export.name.clone())
+            .collect::<Vec<_>>();
+        insert_index_joined_metadata(&mut metadata, "binary.exports", &exports);
+    }
+    if !info.sections.is_empty() {
+        let sections = info
+            .sections
+            .iter()
+            .take(32)
+            .map(|section| section.name.clone())
+            .collect::<Vec<_>>();
+        insert_index_joined_metadata(&mut metadata, "binary.sections", &sections);
+    }
+    if let Some(timestamp) = info.pe_timestamp {
+        metadata.insert("pe.timestamp".to_string(), timestamp.to_string());
+    }
+    if let Some(checksum) = info.pe_checksum {
+        metadata.insert("pe.checksum".to_string(), format!("0x{checksum:08x}"));
+    }
+    if let Some(subsystem) = &info.pe_subsystem {
+        metadata.insert("pe.subsystem".to_string(), subsystem.clone());
+    }
+    metadata.insert("pe.isDriver".to_string(), info.pe_is_driver.to_string());
+    if let Some(driver_type) = &info.pe_driver_type {
+        metadata.insert("pe.driverType".to_string(), driver_type.clone());
+    }
+    insert_index_joined_metadata(
+        &mut metadata,
+        "pe.driverIndicators",
+        &info.pe_driver_indicators,
+    );
+    for (key, value) in &info.pe_version_info {
+        metadata.insert(format!("pe.version.{key}"), value.clone());
+    }
+    metadata
+}
+
+fn index_binary_format_name(format: &BinaryFormat) -> &'static str {
+    match format {
+        BinaryFormat::PE32 => "PE32",
+        BinaryFormat::PE64 => "PE64",
+        BinaryFormat::ELF32 => "ELF32",
+        BinaryFormat::ELF64 => "ELF64",
+        BinaryFormat::MachO32 => "Mach-O 32",
+        BinaryFormat::MachO64 => "Mach-O 64",
+        BinaryFormat::MachOFat => "Universal Binary",
+        BinaryFormat::Unknown => "Unknown",
+    }
+}
+
+fn insert_index_joined_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    key: &str,
+    values: &[String],
+) {
+    if !values.is_empty() {
+        metadata.insert(key.to_string(), values.join("; "));
+    }
 }
 
 fn artifact_search_terms(artifact: &NormalizedArtifact) -> Vec<String> {
@@ -1436,6 +1635,93 @@ mod tests {
         assert!(content.contains("indicators.emails:admin@example.com"));
         assert!(content.contains("indicators.ipv4:192.168.1.10"));
         assert!(content.contains("indicators.urls:https://example.com/login"));
+    }
+
+    #[test]
+    fn binary_index_metadata_flattens_driver_fields_for_search() {
+        let mut version_info = BTreeMap::new();
+        version_info.insert("CompanyName".to_string(), "Contoso Driver Labs".to_string());
+        version_info.insert("OriginalFilename".to_string(), "contosoflt.sys".to_string());
+
+        let info = BinaryInfo {
+            path: "case.ad1:/Windows/System32/drivers/contosoflt.sys".to_string(),
+            format: BinaryFormat::PE64,
+            architecture: "x86_64".to_string(),
+            is_64bit: true,
+            entry_point: Some(0x140001000),
+            imports: vec![crate::viewer::document::binary::ImportInfo {
+                library: "fltmgr.sys".to_string(),
+                functions: vec!["FltRegisterFilter".to_string()],
+                function_count: 1,
+            }],
+            exports: vec![crate::viewer::document::binary::ExportInfo {
+                name: "DriverEntry".to_string(),
+                ordinal: None,
+                address: 0x1000,
+            }],
+            sections: vec![crate::viewer::document::binary::SectionInfo {
+                name: ".text".to_string(),
+                virtual_address: 0x1000,
+                virtual_size: 0x2000,
+                raw_size: 0x2000,
+                characteristics: "0x60000020".to_string(),
+                characteristics_detail: vec![
+                    "contains-code".to_string(),
+                    "executable".to_string(),
+                    "readable".to_string(),
+                ],
+                entropy: Some(6.125),
+            }],
+            strings: vec![],
+            file_size: 4096,
+            pe_timestamp: Some(1_717_260_000),
+            pe_checksum: Some(0x1234abcd),
+            pe_subsystem: Some("Native".to_string()),
+            pe_is_driver: true,
+            pe_driver_type: Some("File system minifilter driver".to_string()),
+            pe_driver_indicators: vec![
+                "driver file extension".to_string(),
+                "file-system filter driver APIs".to_string(),
+            ],
+            pe_version_info: version_info,
+            macho_cpu_type: None,
+            macho_filetype: None,
+            has_debug_info: false,
+            is_stripped: true,
+            has_code_signing: true,
+        };
+
+        let artifact = NormalizedArtifact {
+            id: "driver".to_string(),
+            source_ref: crate::common::EvidenceSourceRef::LocalFile {
+                path: "/Windows/System32/drivers/contosoflt.sys".to_string(),
+            },
+            source_id: "/Windows/System32/drivers/contosoflt.sys".to_string(),
+            name: "contosoflt.sys".to_string(),
+            extension: Some("sys".to_string()),
+            size: info.file_size,
+            mime_type: None,
+            type_description: "Windows Driver Artifact".to_string(),
+            category: "system".to_string(),
+            confidence: "high".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: index_binary_artifact_metadata_from_info(&info),
+        };
+
+        let content = artifact_search_terms(&artifact).join("\n");
+
+        assert!(content.contains("binary.indexAnalysisStatus:parsed"));
+        assert!(content.contains("binary.format:PE64"));
+        assert!(content.contains("binary.importLibraries:fltmgr.sys"));
+        assert!(content.contains("binary.exports:DriverEntry"));
+        assert!(content.contains("binary.sections:.text"));
+        assert!(content.contains("pe.isDriver:true"));
+        assert!(content.contains("pe.driverType:File system minifilter driver"));
+        assert!(content
+            .contains("pe.driverIndicators:driver file extension; file-system filter driver APIs"));
+        assert!(content.contains("pe.version.CompanyName:Contoso Driver Labs"));
+        assert!(content.contains("pe.version.OriginalFilename:contosoflt.sys"));
     }
 
     #[test]

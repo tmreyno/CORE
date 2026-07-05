@@ -6860,10 +6860,15 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
 
     fn minimal_tzif_v2(abbreviations: &[u8], posix_rule: &[u8]) -> Vec<u8> {
         let mut data = Vec::new();
-        append_tzif_header(&mut data, b'2', 0, 0, 0, 0, 1, abbreviations.len() as u32);
+        let counts = TzifHeaderCounts {
+            type_count: 1,
+            char_count: abbreviations.len() as u32,
+            ..TzifHeaderCounts::default()
+        };
+        append_tzif_header(&mut data, b'2', counts);
         data.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
         data.extend_from_slice(abbreviations);
-        append_tzif_header(&mut data, b'2', 0, 0, 0, 0, 1, abbreviations.len() as u32);
+        append_tzif_header(&mut data, b'2', counts);
         data.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
         data.extend_from_slice(abbreviations);
         data.push(b'\n');
@@ -6872,26 +6877,27 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
         data
     }
 
-    fn append_tzif_header(
-        data: &mut Vec<u8>,
-        version: u8,
+    #[derive(Clone, Copy, Default)]
+    struct TzifHeaderCounts {
         ttisgmt_count: u32,
         ttisstd_count: u32,
         leap_count: u32,
         time_count: u32,
         type_count: u32,
         char_count: u32,
-    ) {
+    }
+
+    fn append_tzif_header(data: &mut Vec<u8>, version: u8, counts: TzifHeaderCounts) {
         data.extend_from_slice(b"TZif");
         data.push(version);
         data.extend_from_slice(&[0; 15]);
         for value in [
-            ttisgmt_count,
-            ttisstd_count,
-            leap_count,
-            time_count,
-            type_count,
-            char_count,
+            counts.ttisgmt_count,
+            counts.ttisstd_count,
+            counts.leap_count,
+            counts.time_count,
+            counts.type_count,
+            counts.char_count,
         ] {
             data.extend_from_slice(&value.to_be_bytes());
         }
