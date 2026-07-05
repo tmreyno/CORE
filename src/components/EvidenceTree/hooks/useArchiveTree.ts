@@ -77,6 +77,9 @@ export function useArchiveTree(): UseArchiveTreeReturn {
   const [archiveMetaCache, setArchiveMetaCache] = createSignal<Map<string, ArchiveQuickMetadata>>(new Map());
   // Track expanded archive directories
   const [expandedArchivePaths, setExpandedArchivePaths] = createSignal<Set<string>>(new Set());
+  const inFlightMetadataLoads = new Map<string, Promise<ArchiveQuickMetadata | null>>();
+  const inFlightTreeLoads = new Map<string, Promise<ArchiveTreeEntry[]>>();
+  const inFlightNestedExtractions = new Map<string, Promise<void>>();
 
   // Fetch quick metadata (nearly instant - only reads headers)
   const loadArchiveMetadata = async (containerPath: string): Promise<ArchiveQuickMetadata | null> => {
@@ -89,8 +92,10 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     if (!isTauri) {
       return null;
     }
+    const inFlight = inFlightMetadataLoads.get(containerPath);
+    if (inFlight) return inFlight;
     
-    try {
+    const loadPromise = (async () => {
       log.debug("loadArchiveMetadata - invoking archive_get_metadata");
       const meta = await invoke<ArchiveQuickMetadata>('archive_get_metadata', {
         containerPath,
@@ -105,9 +110,16 @@ export function useArchiveTree(): UseArchiveTreeReturn {
       });
       
       return meta;
+    })();
+
+    inFlightMetadataLoads.set(containerPath, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error("loadArchiveMetadata FAILED:", err);
       return null;
+    } finally {
+      inFlightMetadataLoads.delete(containerPath);
     }
   };
   
@@ -123,8 +135,10 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     if (!isTauri) {
       return [];
     }
+    const inFlight = inFlightTreeLoads.get(containerPath);
+    if (inFlight) return inFlight;
 
-    try {
+    const loadPromise = (async () => {
       log.debug("loadArchiveTree - invoking archive_get_tree...");
       const invokeStart = performance.now();
       const entries = await invoke<ArchiveTreeEntry[]>("archive_get_tree", {
@@ -140,9 +154,16 @@ export function useArchiveTree(): UseArchiveTreeReturn {
       
       log.debug(`loadArchiveTree - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
       return entries;
+    })();
+
+    inFlightTreeLoads.set(containerPath, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error("loadArchiveTree FAILED:", err);
       return [];
+    } finally {
+      inFlightTreeLoads.delete(containerPath);
     }
   };
 
@@ -276,9 +297,11 @@ export function useArchiveTree(): UseArchiveTreeReturn {
     }
     
     const nodeKey = `${containerPath}::nested::${entryPath}`;
+    const inFlight = inFlightNestedExtractions.get(nodeKey);
+    if (inFlight) return inFlight;
     setLoading(prev => new Set([...prev, nodeKey]));
     
-    try {
+    const extractPromise = (async () => {
       // Extract the nested container to a temp file
       const tempPath = await invoke<string>("archive_extract_entry", {
         containerPath,
@@ -290,9 +313,15 @@ export function useArchiveTree(): UseArchiveTreeReturn {
       
       // Call the callback to add this as a new discovered file
       onOpenNestedContainer(tempPath, entryName, containerType, containerPath);
+    })();
+
+    inFlightNestedExtractions.set(nodeKey, extractPromise);
+    try {
+      await extractPromise;
     } catch (err) {
       log.error("Failed to extract:", err);
     } finally {
+      inFlightNestedExtractions.delete(nodeKey);
       setLoading(prev => {
         const next = new Set(prev);
         next.delete(nodeKey);
