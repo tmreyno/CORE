@@ -423,6 +423,7 @@ fn is_system_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/library/preferences/com.apple.alf.plist")
         || source_id.ends_with("/library/preferences/.globalpreferences.plist")
         || source_id.ends_with("/library/receipts/installhistory.plist")
+        || is_macos_hardware_identity_source(&source_id)
         || source_id.ends_with("/windows/system32/config/system")
         || source_id.ends_with("/windows/system32/config/software")
         || source_id.ends_with("/windows/system32/config/sam")
@@ -535,6 +536,14 @@ fn is_macos_local_group_source(source_id: &str) -> bool {
     (source_id.contains("/private/var/db/dslocal/nodes/default/groups/")
         || source_id.contains("/var/db/dslocal/nodes/default/groups/"))
         && source_id.ends_with(".plist")
+}
+
+fn is_macos_hardware_identity_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/ioplatformexpertdevice.plist")
+        || source_id.ends_with("/ioregistry.plist")
+        || source_id.ends_with("/sphardwaredatatype.plist")
+        || source_id.ends_with("/system_profiler.spx")
 }
 
 fn is_windows_wifi_profile_source(source_id: &str) -> bool {
@@ -1121,6 +1130,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     }
     if is_macos_local_group_source(&lower) {
         metadata.extend(parse_macos_local_group_metadata(data));
+    }
+    if is_macos_hardware_identity_source(&lower) {
+        metadata.extend(parse_macos_hardware_identity_metadata(data));
     }
     if is_windows_wifi_profile_source(&lower) {
         metadata.extend(parse_windows_wifi_profile_metadata(&text));
@@ -2795,6 +2807,60 @@ fn parse_macos_plist_identity_metadata(data: &[u8]) -> BTreeMap<String, String> 
         "system.hardwareUuid",
     );
     insert_plist_string(&mut metadata, &value, "SerialNumber", "system.serialNumber");
+
+    metadata
+}
+
+fn parse_macos_hardware_identity_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = parse_macos_plist_identity_metadata(data);
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "IOPlatformSerialNumber",
+        "system.serialNumber",
+    );
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "serial_number",
+        "system.serialNumber",
+    );
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "machine_model",
+        "system.modelIdentifier",
+    );
+    insert_plist_string(&mut metadata, &value, "machine_name", "system.model");
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "platform_UUID",
+        "system.hardwareUuid",
+    );
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "boot_rom_version",
+        "system.bootRomVersion",
+    );
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "smc_version_system",
+        "system.smcVersion",
+    );
+    insert_plist_string(&mut metadata, &value, "cpu_type", "system.cpuType");
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "current_processor_speed",
+        "system.cpuSpeed",
+    );
 
     metadata
 }
@@ -5612,6 +5678,70 @@ COMMIT
     }
 
     #[test]
+    fn system_identity_metadata_extracts_macos_hardware_identity_plist() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/case/SystemProfiler/SPHardwareDataType.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>_items</key>
+  <array>
+    <dict>
+      <key>machine_name</key><string>MacBook Pro</string>
+      <key>machine_model</key><string>MacBookPro18,3</string>
+      <key>serial_number</key><string>C02TEST12345</string>
+      <key>platform_UUID</key><string>00000000-1111-2222-3333-444444444444</string>
+      <key>boot_rom_version</key><string>11881.120.56</string>
+      <key>smc_version_system</key><string>1.0f0</string>
+      <key>cpu_type</key><string>Apple M1 Pro</string>
+      <key>current_processor_speed</key><string>3.2 GHz</string>
+    </dict>
+  </array>
+</dict>
+</plist>
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.model").map(String::as_str),
+            Some("MacBook Pro")
+        );
+        assert_eq!(
+            metadata.get("system.modelIdentifier").map(String::as_str),
+            Some("MacBookPro18,3")
+        );
+        assert_eq!(
+            metadata.get("system.serialNumber").map(String::as_str),
+            Some("C02TEST12345")
+        );
+        assert_eq!(
+            metadata.get("system.hardwareUuid").map(String::as_str),
+            Some("00000000-1111-2222-3333-444444444444")
+        );
+        assert_eq!(
+            metadata.get("system.bootRomVersion").map(String::as_str),
+            Some("11881.120.56")
+        );
+        assert_eq!(
+            metadata.get("system.smcVersion").map(String::as_str),
+            Some("1.0f0")
+        );
+        assert_eq!(
+            metadata.get("system.cpuType").map(String::as_str),
+            Some("Apple M1 Pro")
+        );
+        assert_eq!(
+            metadata.get("system.cpuSpeed").map(String::as_str),
+            Some("3.2 GHz")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_network_interfaces() {
         let metadata = system_identity_metadata_from_bytes(
             "/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist",
@@ -5973,6 +6103,12 @@ COMMIT
         assert!(is_system_identity_source("/sys/class/dmi/id/bios_date"));
         assert!(is_system_identity_source(
             "/System/Library/CoreServices/SystemVersion.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/case/SystemProfiler/SPHardwareDataType.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/case/IORegistry/IOPlatformExpertDevice.plist"
         ));
         assert!(is_system_identity_source(
             "/Library/Preferences/SystemConfiguration/preferences.plist"
