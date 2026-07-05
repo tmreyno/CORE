@@ -599,6 +599,10 @@ fn registry_system_identity_metadata(hive_path: &Path) -> Result<BTreeMap<String
         &format!("{control_set}\\Control\\SystemInformation"),
         WINDOWS_SYSTEM_INFORMATION_REGISTRY_VALUES,
     );
+    metadata.extend(registry_system_tcpip_interface_metadata(
+        &mut parser,
+        &control_set,
+    ));
 
     Ok(finalize_registry_identity_metadata(
         metadata,
@@ -706,15 +710,195 @@ fn registry_value(
 }
 
 fn registry_value_text(value: CellValue) -> Option<String> {
+    let values = registry_value_texts(value);
+    (!values.is_empty()).then(|| values.join("; "))
+}
+
+fn registry_value_texts(value: CellValue) -> Vec<String> {
     match value {
-        CellValue::String(value) => Some(value),
-        CellValue::MultiString(values) => Some(values.join("; ")),
-        CellValue::U32(value) => Some(value.to_string()),
-        CellValue::I32(value) => Some(value.to_string()),
-        CellValue::U64(value) => Some(value.to_string()),
-        CellValue::I64(value) => Some(value.to_string()),
-        _ => None,
+        CellValue::String(value) => vec![value],
+        CellValue::MultiString(values) => values,
+        CellValue::U32(value) => vec![value.to_string()],
+        CellValue::I32(value) => vec![value.to_string()],
+        CellValue::U64(value) => vec![value.to_string()],
+        CellValue::I64(value) => vec![value.to_string()],
+        _ => Vec::new(),
     }
+}
+
+fn registry_value_text_list(
+    parser: &mut notatin::parser::Parser,
+    key_path: &str,
+    value_name: &str,
+) -> Vec<String> {
+    registry_value(parser, key_path, value_name)
+        .map(registry_value_texts)
+        .unwrap_or_default()
+}
+
+#[derive(Default)]
+struct WindowsTcpipInterfaceMetadata {
+    interfaces: Vec<String>,
+    addresses: Vec<String>,
+    gateways: Vec<String>,
+    dns_servers: Vec<String>,
+    domains: Vec<String>,
+    dhcp_servers: Vec<String>,
+    descriptions: Vec<String>,
+}
+
+fn registry_system_tcpip_interface_metadata(
+    parser: &mut notatin::parser::Parser,
+    control_set: &str,
+) -> BTreeMap<String, String> {
+    let interfaces_path = format!("{control_set}\\Services\\Tcpip\\Parameters\\Interfaces");
+    let Some(mut interfaces_key) = parser.get_key(&interfaces_path, false).ok().flatten() else {
+        return BTreeMap::new();
+    };
+
+    let mut values = WindowsTcpipInterfaceMetadata::default();
+    for interface_key in interfaces_key
+        .read_sub_keys(parser)
+        .iter()
+        .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+    {
+        let interface_path = format!("{interfaces_path}\\{}", interface_key.key_name);
+        collect_windows_tcpip_interface_metadata(
+            parser,
+            &interface_path,
+            &interface_key.key_name,
+            &mut values,
+        );
+    }
+
+    windows_tcpip_interface_metadata_to_map(values)
+}
+
+fn collect_windows_tcpip_interface_metadata(
+    parser: &mut notatin::parser::Parser,
+    key_path: &str,
+    interface_id: &str,
+    values: &mut WindowsTcpipInterfaceMetadata,
+) {
+    push_unique_limited(&mut values.interfaces, interface_id.to_string());
+
+    let mut interface_addresses = Vec::new();
+    for value_name in ["IPAddress", "DhcpIPAddress"] {
+        for value in registry_value_text_list(parser, key_path, value_name) {
+            for address in split_windows_registry_network_list(&value) {
+                if is_useful_windows_network_value(&address) {
+                    push_unique_limited(&mut values.addresses, address.clone());
+                    push_unique_limited(&mut interface_addresses, address);
+                }
+            }
+        }
+    }
+
+    let mut interface_gateways = Vec::new();
+    for value_name in ["DefaultGateway", "DhcpDefaultGateway"] {
+        for value in registry_value_text_list(parser, key_path, value_name) {
+            for gateway in split_windows_registry_network_list(&value) {
+                if is_useful_windows_network_value(&gateway) {
+                    push_unique_limited(&mut values.gateways, gateway.clone());
+                    push_unique_limited(&mut interface_gateways, gateway);
+                }
+            }
+        }
+    }
+
+    let mut interface_dns = Vec::new();
+    for value_name in ["NameServer", "DhcpNameServer"] {
+        for value in registry_value_text_list(parser, key_path, value_name) {
+            for server in split_windows_registry_network_list(&value) {
+                if is_useful_windows_network_value(&server) {
+                    push_unique_limited(&mut values.dns_servers, server.clone());
+                    push_unique_limited(&mut interface_dns, server);
+                }
+            }
+        }
+    }
+
+    for value_name in ["Domain", "DhcpDomain", "SearchList"] {
+        for value in registry_value_text_list(parser, key_path, value_name) {
+            for domain in split_windows_registry_network_list(&value) {
+                if is_useful_windows_network_value(&domain) {
+                    push_unique_limited(&mut values.domains, domain);
+                }
+            }
+        }
+    }
+
+    for value in registry_value_text_list(parser, key_path, "DhcpServer") {
+        for server in split_windows_registry_network_list(&value) {
+            if is_useful_windows_network_value(&server) {
+                push_unique_limited(&mut values.dhcp_servers, server);
+            }
+        }
+    }
+
+    if !interface_addresses.is_empty()
+        || !interface_gateways.is_empty()
+        || !interface_dns.is_empty()
+    {
+        let mut parts = Vec::new();
+        if !interface_addresses.is_empty() {
+            parts.push(format!("ip={}", interface_addresses.join(",")));
+        }
+        if !interface_gateways.is_empty() {
+            parts.push(format!("gateway={}", interface_gateways.join(",")));
+        }
+        if !interface_dns.is_empty() {
+            parts.push(format!("dns={}", interface_dns.join(",")));
+        }
+        push_unique_limited(
+            &mut values.descriptions,
+            truncate_metadata_value(
+                &format!("{interface_id} ({})", parts.join("; ")),
+                MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS,
+            ),
+        );
+    }
+}
+
+fn split_windows_registry_network_list(value: &str) -> Vec<String> {
+    value
+        .split([';', ',', ' ', '\t', '\r', '\n'])
+        .filter_map(|part| {
+            let value = part.trim().trim_matches('"').trim_matches('\'');
+            (!value.is_empty()).then(|| truncate_metadata_value(value, 120))
+        })
+        .collect()
+}
+
+fn is_useful_windows_network_value(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value != "0.0.0.0"
+        && value != "::"
+        && value != "255.255.255.255"
+        && !value.eq_ignore_ascii_case("none")
+}
+
+fn windows_tcpip_interface_metadata_to_map(
+    values: WindowsTcpipInterfaceMetadata,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    insert_joined_metadata(
+        &mut metadata,
+        "system.networkInterfaces",
+        &values.interfaces,
+    );
+    insert_joined_metadata(&mut metadata, "system.ipv4Addresses", &values.addresses);
+    insert_joined_metadata(&mut metadata, "system.gateways", &values.gateways);
+    insert_joined_metadata(&mut metadata, "system.dnsServers", &values.dns_servers);
+    insert_joined_metadata(&mut metadata, "system.networkDomains", &values.domains);
+    insert_joined_metadata(&mut metadata, "system.dhcpServers", &values.dhcp_servers);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.networkInterfaceDescriptions",
+        &values.descriptions,
+    );
+    metadata
 }
 
 fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap<String, String> {
@@ -4121,7 +4305,71 @@ COMMIT
             registry_value_text(CellValue::U32(22631)).as_deref(),
             Some("22631")
         );
+        assert_eq!(
+            registry_value_texts(CellValue::MultiString(vec![
+                "192.0.2.10".to_string(),
+                "192.0.2.11".to_string()
+            ])),
+            vec!["192.0.2.10".to_string(), "192.0.2.11".to_string()]
+        );
         assert!(registry_value_text(CellValue::Binary(vec![1, 2, 3])).is_none());
+    }
+
+    #[test]
+    fn windows_tcpip_interface_metadata_flattens_network_values() {
+        let mut values = WindowsTcpipInterfaceMetadata::default();
+        push_unique_limited(
+            &mut values.interfaces,
+            "{12345678-1234-1234-1234-123456789abc}".to_string(),
+        );
+        for value in split_windows_registry_network_list("192.0.2.10 0.0.0.0,192.0.2.11") {
+            if is_useful_windows_network_value(&value) {
+                push_unique_limited(&mut values.addresses, value);
+            }
+        }
+        for value in split_windows_registry_network_list("192.0.2.1; 255.255.255.255") {
+            if is_useful_windows_network_value(&value) {
+                push_unique_limited(&mut values.gateways, value);
+            }
+        }
+        for value in split_windows_registry_network_list("1.1.1.1 8.8.8.8") {
+            if is_useful_windows_network_value(&value) {
+                push_unique_limited(&mut values.dns_servers, value);
+            }
+        }
+        push_unique_limited(&mut values.domains, "corp.example".to_string());
+        push_unique_limited(&mut values.dhcp_servers, "192.0.2.254".to_string());
+        push_unique_limited(
+            &mut values.descriptions,
+            "{12345678-1234-1234-1234-123456789abc} (ip=192.0.2.10,192.0.2.11; gateway=192.0.2.1; dns=1.1.1.1,8.8.8.8)".to_string(),
+        );
+
+        let metadata = windows_tcpip_interface_metadata_to_map(values);
+
+        assert_eq!(
+            metadata.get("system.networkInterfaces").map(String::as_str),
+            Some("{12345678-1234-1234-1234-123456789abc}")
+        );
+        assert_eq!(
+            metadata.get("system.ipv4Addresses").map(String::as_str),
+            Some("192.0.2.10; 192.0.2.11")
+        );
+        assert_eq!(
+            metadata.get("system.gateways").map(String::as_str),
+            Some("192.0.2.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsServers").map(String::as_str),
+            Some("1.1.1.1; 8.8.8.8")
+        );
+        assert_eq!(
+            metadata.get("system.networkDomains").map(String::as_str),
+            Some("corp.example")
+        );
+        assert_eq!(
+            metadata.get("system.dhcpServers").map(String::as_str),
+            Some("192.0.2.254")
+        );
     }
 
     #[test]
