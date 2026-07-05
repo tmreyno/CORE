@@ -517,6 +517,9 @@ fn system_info_metadata(
     if is_macos_system_version_path(&normalized_path, &normalized_name, extension) {
         return macos_system_version_metadata(header);
     }
+    if let Some(metadata) = windows_registry_system_info_metadata(&normalized_path, header) {
+        return metadata;
+    }
 
     BTreeMap::new()
 }
@@ -548,6 +551,30 @@ fn is_macos_system_version_path(path: &str, name: &str, extension: Option<&str>)
         && matches!(extension, Some("plist"))
         && (path.ends_with("system/library/coreservices/systemversion.plist")
             || path.ends_with("library/coreservices/systemversion.plist"))
+}
+
+fn windows_registry_system_info_metadata(
+    path: &str,
+    header: &[u8],
+) -> Option<BTreeMap<String, String>> {
+    if !header.starts_with(b"regf") {
+        return None;
+    }
+    let hive = if path.ends_with("windows/system32/config/system") {
+        "system"
+    } else if path.ends_with("windows/system32/config/software") {
+        "software"
+    } else if path.ends_with("windows/system32/config/sam") {
+        "sam"
+    } else {
+        return None;
+    };
+
+    let mut metadata = BTreeMap::new();
+    metadata.insert("system.osFamily".to_string(), "windows".to_string());
+    metadata.insert("system.infoType".to_string(), "registry-hive".to_string());
+    metadata.insert("windows.registryHive".to_string(), hive.to_string());
+    Some(metadata)
 }
 
 fn linux_os_release_metadata(header: &[u8]) -> BTreeMap<String, String> {
@@ -726,6 +753,7 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("linux"), Some("machine-id")) => "Linux Machine ID",
         (Some("linux"), Some("dmi")) => "Linux DMI System Information",
         (Some("macos"), Some("system-version")) => "macOS System Version Info",
+        (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
         _ => "System Information Artifact",
     }
     .to_string()
@@ -3246,17 +3274,30 @@ BUILD_ID=20260201
             let offset = 0x30 + index * 2;
             bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
         }
-        let file = write_temp_file(".dat", &bytes);
-        let source = LocalFileByteSource::new(file.path());
+        let source = ChunkedByteSource::new("/image/Windows/System32/config/SAM", &bytes, 257);
 
         let artifact =
             extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
 
-        assert_eq!(artifact.category, "system");
-        assert_eq!(artifact.type_description, "Windows Registry Hive");
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(
+            artifact.type_description,
+            "Windows Registry System Information"
+        );
         assert_eq!(
             artifact.mime_type.as_deref(),
             Some("application/x-ms-registry")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.osFamily").map(String::as_str),
+            Some("windows")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("windows.registryHive")
+                .map(String::as_str),
+            Some("sam")
         );
         assert_eq!(
             artifact.metadata.get("registry.dirty").map(String::as_str),
