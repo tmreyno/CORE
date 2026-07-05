@@ -125,8 +125,32 @@ describe("system identity source helpers", () => {
     expect(
       isLikelySystemIdentityEntry(
         entry({
+          name: "com.apple.boot.plist",
+          entryPath: "/Library/Preferences/SystemConfiguration/com.apple.boot.plist",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
           name: "alice.plist",
           entryPath: "/private/var/db/dslocal/nodes/Default/users/alice.plist",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "admin.plist",
+          entryPath: "/var/db/dslocal/nodes/Default/groups/admin.plist",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "Info.plist",
+          entryPath: "/System/Library/Extensions/ContosoSensor.kext/Contents/Info.plist",
         }),
       ),
     ).toBe(true);

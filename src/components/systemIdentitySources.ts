@@ -113,6 +113,7 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
   if (
     path.endsWith("/system/library/coreservices/systemversion.plist") ||
     path.endsWith("/library/preferences/systemconfiguration/preferences.plist") ||
+    path.endsWith("/library/preferences/systemconfiguration/com.apple.boot.plist") ||
     path.endsWith("/library/preferences/systemconfiguration/networkinterfaces.plist") ||
     path.endsWith("/library/preferences/systemconfiguration/com.apple.airport.preferences.plist") ||
     path.endsWith("/library/preferences/com.apple.wifi.known-networks.plist") ||
@@ -124,8 +125,11 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
     path.endsWith("/ioregistry.plist") ||
     path.endsWith("/sphardwaredatatype.plist") ||
     path.endsWith("/system_profiler.spx") ||
+    path.includes(".kext/contents/info.plist") ||
     path.includes("/private/var/db/dslocal/nodes/default/users/") ||
-    path.includes("/private/var/db/dslocal/nodes/default/groups/")
+    path.includes("/var/db/dslocal/nodes/default/users/") ||
+    path.includes("/private/var/db/dslocal/nodes/default/groups/") ||
+    path.includes("/var/db/dslocal/nodes/default/groups/")
   ) {
     return true;
   }
