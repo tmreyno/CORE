@@ -728,6 +728,10 @@ fn registry_system_identity_metadata(hive_path: &Path) -> Result<BTreeMap<String
         &mut parser,
         &control_set,
     ));
+    metadata.extend(registry_system_driver_service_metadata(
+        &mut parser,
+        &control_set,
+    ));
     metadata.extend(registry_system_mounted_devices_metadata(&mut parser));
 
     Ok(finalize_registry_identity_metadata(
@@ -1132,6 +1136,212 @@ fn windows_mounted_devices_metadata_to_map(
     insert_joined_metadata(&mut metadata, "system.driveLetters", &values.drive_letters);
     insert_joined_metadata(&mut metadata, "system.volumeGuids", &values.volume_guids);
     insert_joined_metadata(&mut metadata, "system.mountedDevices", &values.device_names);
+    metadata
+}
+
+#[derive(Default)]
+struct WindowsDriverServiceMetadata {
+    names: Vec<String>,
+    image_paths: Vec<String>,
+    groups: Vec<String>,
+    start_types: Vec<String>,
+    descriptions: Vec<String>,
+}
+
+fn registry_system_driver_service_metadata(
+    parser: &mut notatin::parser::Parser,
+    control_set: &str,
+) -> BTreeMap<String, String> {
+    let services_path = format!("{control_set}\\Services");
+    let Some(mut services_key) = parser.get_key(&services_path, false).ok().flatten() else {
+        return BTreeMap::new();
+    };
+
+    let mut values = WindowsDriverServiceMetadata::default();
+    for service_key in services_key
+        .read_sub_keys(parser)
+        .iter()
+        .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+    {
+        let service_path = format!("{services_path}\\{}", service_key.key_name);
+        let driver_type = registry_value(parser, &service_path, "Type")
+            .and_then(windows_driver_service_type_name);
+        let image_path =
+            registry_value(parser, &service_path, "ImagePath").and_then(registry_value_text);
+        if driver_type.is_none()
+            && !image_path
+                .as_deref()
+                .is_some_and(is_windows_driver_image_path)
+        {
+            continue;
+        }
+
+        let display_name =
+            registry_value(parser, &service_path, "DisplayName").and_then(registry_value_text);
+        let group = registry_value(parser, &service_path, "Group").and_then(registry_value_text);
+        let start_type =
+            registry_value(parser, &service_path, "Start").and_then(windows_service_start_name);
+        collect_windows_driver_service_metadata(
+            &mut values,
+            &service_key.key_name,
+            display_name,
+            image_path,
+            group,
+            start_type,
+            driver_type,
+        );
+    }
+
+    windows_driver_service_metadata_to_map(values)
+}
+
+fn collect_windows_driver_service_metadata(
+    values: &mut WindowsDriverServiceMetadata,
+    service_name: &str,
+    display_name: Option<String>,
+    image_path: Option<String>,
+    group: Option<String>,
+    start_type: Option<String>,
+    driver_type: Option<String>,
+) {
+    let service_name = truncate_metadata_value(service_name.trim(), 120);
+    if service_name.is_empty() {
+        return;
+    }
+    push_unique_limited(&mut values.names, service_name.clone());
+
+    let image_path = image_path
+        .map(|value| normalize_windows_driver_image_path(&value))
+        .filter(|value| !value.is_empty());
+    if let Some(image_path) = &image_path {
+        push_unique_limited(&mut values.image_paths, image_path.clone());
+    }
+
+    let group = group
+        .map(|value| truncate_metadata_value(value.trim(), 120))
+        .filter(|value| !value.is_empty());
+    if let Some(group) = &group {
+        push_unique_limited(&mut values.groups, group.clone());
+    }
+
+    let start_type = start_type
+        .map(|value| truncate_metadata_value(value.trim(), 80))
+        .filter(|value| !value.is_empty());
+    if let Some(start_type) = &start_type {
+        push_unique_limited(&mut values.start_types, start_type.clone());
+    }
+
+    let label = display_name
+        .map(|value| truncate_metadata_value(value.trim(), 120))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| service_name.clone());
+    let mut details = Vec::new();
+    if let Some(driver_type) = driver_type {
+        details.push(driver_type);
+    }
+    if let Some(start_type) = start_type {
+        details.push(format!("start={start_type}"));
+    }
+    if let Some(group) = group {
+        details.push(format!("group={group}"));
+    }
+    if let Some(image_path) = image_path {
+        details.push(format!("image={image_path}"));
+    }
+
+    let description = if details.is_empty() {
+        label
+    } else {
+        format!("{label} ({})", details.join("; "))
+    };
+    push_unique_limited(
+        &mut values.descriptions,
+        truncate_metadata_value(&description, MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS),
+    );
+}
+
+fn windows_driver_service_type_name(value: CellValue) -> Option<String> {
+    let value = registry_value_u32(value)?;
+    match value {
+        0x1 => Some("kernel-driver".to_string()),
+        0x2 => Some("file-system-driver".to_string()),
+        _ => None,
+    }
+}
+
+fn windows_service_start_name(value: CellValue) -> Option<String> {
+    let value = registry_value_u32(value)?;
+    match value {
+        0 => Some("boot".to_string()),
+        1 => Some("system".to_string()),
+        2 => Some("auto".to_string()),
+        3 => Some("demand".to_string()),
+        4 => Some("disabled".to_string()),
+        other => Some(format!("start-{other}")),
+    }
+}
+
+fn registry_value_u32(value: CellValue) -> Option<u32> {
+    match value {
+        CellValue::U32(value) => Some(value),
+        CellValue::I32(value) => u32::try_from(value).ok(),
+        CellValue::U64(value) => u32::try_from(value).ok(),
+        CellValue::I64(value) => u32::try_from(value).ok(),
+        CellValue::String(value) => {
+            let value = value.trim();
+            value
+                .strip_prefix("0x")
+                .or_else(|| value.strip_prefix("0X"))
+                .map_or_else(
+                    || value.parse::<u32>().ok(),
+                    |hex| u32::from_str_radix(hex, 16).ok(),
+                )
+        }
+        _ => None,
+    }
+}
+
+fn normalize_windows_driver_image_path(value: &str) -> String {
+    let normalized = value.trim().replace('/', "\\");
+    truncate_metadata_value(&normalized, 180)
+}
+
+fn is_windows_driver_image_path(value: &str) -> bool {
+    value
+        .rsplit(['\\', '/'])
+        .next()
+        .is_some_and(|name| name.to_ascii_lowercase().ends_with(".sys"))
+}
+
+fn windows_driver_service_metadata_to_map(
+    values: WindowsDriverServiceMetadata,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if values.names.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert(
+        "system.driverServiceCount".to_string(),
+        values.names.len().to_string(),
+    );
+    insert_joined_metadata(&mut metadata, "system.driverServices", &values.names);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.driverImagePaths",
+        &values.image_paths,
+    );
+    insert_joined_metadata(&mut metadata, "system.driverGroups", &values.groups);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.driverStartTypes",
+        &values.start_types,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.driverServiceDetails",
+        &values.descriptions,
+    );
     metadata
 }
 
@@ -7281,6 +7491,92 @@ COMMIT
             windows_network_category_name(CellValue::U32(9)).as_deref(),
             Some("category-9")
         );
+    }
+
+    #[test]
+    fn windows_driver_service_metadata_summarizes_driver_services() {
+        let mut values = WindowsDriverServiceMetadata::default();
+        collect_windows_driver_service_metadata(
+            &mut values,
+            "storflt",
+            Some("Contoso Storage Filter".to_string()),
+            Some(r"\SystemRoot\System32\drivers\storflt.sys".to_string()),
+            Some("FSFilter Activity Monitor".to_string()),
+            Some("boot".to_string()),
+            Some("file-system-driver".to_string()),
+        );
+        collect_windows_driver_service_metadata(
+            &mut values,
+            "ndiswan",
+            None,
+            Some(r"System32\Drivers\ndiswan.sys".to_string()),
+            Some("NDIS".to_string()),
+            Some("system".to_string()),
+            Some("kernel-driver".to_string()),
+        );
+
+        let metadata = windows_driver_service_metadata_to_map(values);
+
+        assert_eq!(
+            metadata
+                .get("system.driverServiceCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.driverServices").map(String::as_str),
+            Some("storflt; ndiswan")
+        );
+        assert_eq!(
+            metadata.get("system.driverImagePaths").map(String::as_str),
+            Some(r"\SystemRoot\System32\drivers\storflt.sys; System32\Drivers\ndiswan.sys")
+        );
+        assert_eq!(
+            metadata.get("system.driverGroups").map(String::as_str),
+            Some("FSFilter Activity Monitor; NDIS")
+        );
+        assert_eq!(
+            metadata.get("system.driverStartTypes").map(String::as_str),
+            Some("boot; system")
+        );
+        assert_eq!(
+            metadata
+                .get("system.driverServiceDetails")
+                .map(String::as_str),
+            Some(
+                r"Contoso Storage Filter (file-system-driver; start=boot; group=FSFilter Activity Monitor; image=\SystemRoot\System32\drivers\storflt.sys); ndiswan (kernel-driver; start=system; group=NDIS; image=System32\Drivers\ndiswan.sys)"
+            )
+        );
+    }
+
+    #[test]
+    fn windows_driver_service_helpers_map_registry_values_and_paths() {
+        assert_eq!(
+            windows_driver_service_type_name(CellValue::U32(1)).as_deref(),
+            Some("kernel-driver")
+        );
+        assert_eq!(
+            windows_driver_service_type_name(CellValue::I32(2)).as_deref(),
+            Some("file-system-driver")
+        );
+        assert_eq!(
+            windows_driver_service_type_name(CellValue::U32(16)).as_deref(),
+            None
+        );
+        assert_eq!(
+            windows_service_start_name(CellValue::String("0x2".to_string())).as_deref(),
+            Some("auto")
+        );
+        assert_eq!(
+            windows_service_start_name(CellValue::U32(4)).as_deref(),
+            Some("disabled")
+        );
+        assert!(is_windows_driver_image_path(
+            r"\SystemRoot\System32\drivers\kbdclass.sys"
+        ));
+        assert!(!is_windows_driver_image_path(
+            r"\SystemRoot\System32\svchost.exe"
+        ));
     }
 
     #[test]
