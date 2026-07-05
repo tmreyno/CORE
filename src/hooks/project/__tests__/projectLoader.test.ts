@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { handleLoadProject, restoreCenterTabs } from "../projectLoader";
-import type { DiscoveredFile } from "../../../types";
+import type { CaseDocument, DiscoveredFile } from "../../../types";
 import type { ProjectTab } from "../../../types/project";
 
 function makeFile(overrides: Partial<DiscoveredFile> = {}): DiscoveredFile {
@@ -18,6 +18,17 @@ function makeFile(overrides: Partial<DiscoveredFile> = {}): DiscoveredFile {
     segment_count: 1,
     ...overrides,
   };
+}
+
+function makeCaseDoc(overrides: Partial<CaseDocument> = {}): CaseDocument {
+  return {
+    path: "/cases/1827-1001/4.Case.Documents/Chain of Custody Form 7-01.pdf",
+    filename: "Chain of Custody Form 7-01.pdf",
+    size: 2048,
+    document_type: "chain_of_custody",
+    format: "pdf",
+    ...overrides,
+  } as CaseDocument;
 }
 
 describe("projectLoader", () => {
@@ -171,5 +182,114 @@ describe("projectLoader", () => {
     );
     expect(toast.success).toHaveBeenCalledWith("Project Loaded", "Opened: Browser Project");
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("restores cached documents and processed databases before rebuilding saved tabs", async () => {
+    const doc = makeCaseDoc();
+    const processedDb = {
+      path: "/cases/1827-1001/2.Processed.Database/AXIOM - Nov 15 2025 164907",
+      name: "AXIOM - Nov 15 2025 164907",
+      type: "axiom",
+    };
+    let restoredDatabases: any[] = [];
+    const setCaseDocuments = vi.fn();
+    const setCenterTabs = vi.fn();
+
+    await handleLoadProject({
+      fileManager: {
+        scanDir: () => "",
+        setScanDir: vi.fn(),
+        scanForFiles: vi.fn(),
+        restoreDiscoveredFiles: vi.fn(),
+        restoreFileInfoMap: vi.fn(),
+        setTypeFilter: vi.fn(),
+        setActiveFile: vi.fn(),
+        discoveredFiles: () => [],
+      },
+      hashManager: {
+        restoreFileHashMap: vi.fn(),
+        restoreHashHistory: vi.fn(),
+      },
+      projectManager: {
+        loadProject: vi.fn().mockResolvedValue({
+          project: {
+            name: "Seed Project",
+            root_path: "/cases/1827-1001/1.Evidence",
+            tabs: [
+              {
+                id: `document:${doc.path}`,
+                type: "document",
+                file_path: doc.path,
+                document_path: doc.path,
+                name: doc.filename,
+                order: 0,
+              },
+              {
+                id: `processed:${processedDb.path}`,
+                type: "processed",
+                file_path: processedDb.path,
+                processed_db_path: processedDb.path,
+                name: processedDb.name,
+                processed_db_type: processedDb.type,
+                order: 1,
+              },
+            ],
+            hash_history: { files: {} },
+            evidence_cache: undefined,
+            processed_databases: {
+              cached_databases: [processedDb],
+              selected_path: processedDb.path,
+            },
+            case_documents_cache: {
+              valid: true,
+              search_path: "/cases/1827-1001/4.Case.Documents",
+              documents: [doc],
+            },
+          },
+          warnings: [],
+        }),
+        updateLocations: vi.fn(),
+      },
+      processedDbManager: {
+        databases: () => restoredDatabases,
+        restoreFullState: vi.fn((dbs: any[]) => {
+          restoredDatabases = dbs;
+        }),
+        restoreFromProject: vi.fn(),
+      },
+      setLeftWidth: vi.fn(),
+      setRightWidth: vi.fn(),
+      setLeftCollapsed: vi.fn(),
+      setRightCollapsed: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setCurrentViewMode: vi.fn(),
+      setEntryContentViewMode: vi.fn(),
+      setCaseDocumentsPath: vi.fn(),
+      setTreeExpansionState: vi.fn(),
+      setSelectedContainerEntry: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setCaseDocuments,
+      setCenterTabs,
+      setActiveTabId: vi.fn(),
+      setCenterViewMode: vi.fn(),
+      toast: {
+        success: vi.fn(),
+        error: vi.fn(),
+        warning: vi.fn(),
+        info: vi.fn(),
+      },
+    } as any);
+
+    expect(setCaseDocuments).toHaveBeenCalledWith([doc]);
+    expect(setCenterTabs).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: "document",
+        documentPath: doc.path,
+      }),
+      expect.objectContaining({
+        type: "processed",
+        processedDb,
+      }),
+    ]);
   });
 });

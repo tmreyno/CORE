@@ -213,11 +213,10 @@ export function restoreCenterTabs(
  * 2. Restore evidence cache (discovered files, container info, computed hashes)
  * 3. Restore UI state (panel sizes, view modes, selected entry, etc.)
  * 4. Restore filter state (type filter for evidence tree)
- * 5. Restore tabs (evidence, documents, entries, processed databases)
- * 6. Restore selected container entry
- * 7. Restore hash history
- * 8. Restore processed databases state
- * 9. Restore case documents cache
+ * 5. Restore processed databases and case documents needed by saved tabs
+ * 6. Restore tabs (evidence, documents, entries, processed databases)
+ * 7. Restore selected container entry
+ * 8. Restore hash history
  *
  * NOTE: project_db_open + DB seeding is handled inside loadProject()
  * (useProjectIO.ts) before startNewSession(), so dbSync calls have an
@@ -441,12 +440,65 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     }
 
     // ===========================================================================
-    // STEP 5: Restore tabs (evidence, documents, entries, processed databases)
+    // STEP 5: Restore supporting project data needed by saved tabs
+    // ===========================================================================
+    if (project.processed_databases) {
+      const pd = project.processed_databases;
+
+      if (pd.cached_databases && pd.cached_databases.length > 0) {
+        processedDbManager.restoreFullState(
+          pd.cached_databases,
+          pd.selected_path,
+          pd.cached_axiom_case_info as
+            | Record<string, AxiomCaseInfo>
+            | undefined,
+          pd.cached_artifact_categories as
+            | Record<string, ArtifactCategorySummary[]>
+            | undefined,
+          pd.detail_view_type,
+        );
+        log.debug(
+          `Restored ${pd.cached_databases.length} processed databases from cache`,
+        );
+        if (pd.detail_view_type) {
+          log.debug(
+            `Restored detail view type: ${pd.detail_view_type}`,
+          );
+        }
+      } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
+        await processedDbManager.restoreFromProject(
+          pd.loaded_paths,
+          pd.selected_path,
+          pd.cached_metadata,
+        );
+      }
+    }
+
+    const docsCache = project.case_documents_cache;
+    let restoredCaseDocuments: CaseDocument[] = [];
+    if (
+      docsCache &&
+      docsCache.valid &&
+      docsCache.documents &&
+      docsCache.documents.length > 0
+    ) {
+      restoredCaseDocuments = docsCache.documents as CaseDocument[];
+      setCaseDocuments(restoredCaseDocuments);
+      // Also restore the search path if we have documents
+      if (docsCache.search_path) {
+        setCaseDocumentsPath(docsCache.search_path);
+      }
+      log.debug(
+        `Restored ${docsCache.documents.length} case documents from cache`,
+      );
+    }
+
+    // ===========================================================================
+    // STEP 6: Restore tabs (evidence, documents, entries, processed databases)
     // ===========================================================================
     if (project.tabs && project.tabs.length > 0) {
       const discoveredFiles = fileManager.discoveredFiles();
       const processedDatabases = processedDbManager.databases();
-      const caseDocsList: CaseDocument[] = [];
 
       // Check if we have new-style tabs (with type field) and setCenterTabs available
       const hasNewStyleTabs = project.tabs.some(
@@ -459,7 +511,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
           project.tabs,
           discoveredFiles,
           processedDatabases,
-          caseDocsList,
+          restoredCaseDocuments,
         );
 
         if (restoredCenterTabs.length > 0) {
@@ -535,7 +587,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     }
 
     // ===========================================================================
-    // STEP 6: Restore selected container entry (file inside container being viewed)
+    // STEP 7: Restore selected container entry (file inside container being viewed)
     // ===========================================================================
     if (project.ui_state?.selected_entry) {
       const savedEntry = project.ui_state.selected_entry;
@@ -550,7 +602,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     }
 
     // ===========================================================================
-    // STEP 7: Restore hash history
+    // STEP 8: Restore hash history
     // ===========================================================================
     if (
       project.hash_history?.files &&
@@ -559,61 +611,6 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       hashManager.restoreHashHistory(project.hash_history.files);
       log.debug(
         `Restored hash history for ${Object.keys(project.hash_history.files).length} files`,
-      );
-    }
-
-    // ===========================================================================
-    // STEP 8: Restore processed databases state (includes detail view type)
-    // ===========================================================================
-    if (project.processed_databases) {
-      const pd = project.processed_databases;
-
-      if (pd.cached_databases && pd.cached_databases.length > 0) {
-        processedDbManager.restoreFullState(
-          pd.cached_databases,
-          pd.selected_path,
-          pd.cached_axiom_case_info as
-            | Record<string, AxiomCaseInfo>
-            | undefined,
-          pd.cached_artifact_categories as
-            | Record<string, ArtifactCategorySummary[]>
-            | undefined,
-          pd.detail_view_type, // Restore the detail view type (e.g., 'artifacts', 'timeline')
-        );
-        log.debug(
-          `Restored ${pd.cached_databases.length} processed databases from cache`,
-        );
-        if (pd.detail_view_type) {
-          log.debug(
-            `Restored detail view type: ${pd.detail_view_type}`,
-          );
-        }
-      } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
-        await processedDbManager.restoreFromProject(
-          pd.loaded_paths,
-          pd.selected_path,
-          pd.cached_metadata,
-        );
-      }
-    }
-
-    // ===========================================================================
-    // STEP 9: Restore case documents cache
-    // ===========================================================================
-    const docsCache = project.case_documents_cache;
-    if (
-      docsCache &&
-      docsCache.valid &&
-      docsCache.documents &&
-      docsCache.documents.length > 0
-    ) {
-      setCaseDocuments(docsCache.documents as CaseDocument[]);
-      // Also restore the search path if we have documents
-      if (docsCache.search_path) {
-        setCaseDocumentsPath(docsCache.search_path);
-      }
-      log.debug(
-        `Restored ${docsCache.documents.length} case documents from cache`,
       );
     }
 
