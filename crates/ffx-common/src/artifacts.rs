@@ -729,6 +729,9 @@ fn system_info_metadata(
     if is_macos_network_interfaces_path(&normalized_path, &normalized_name, extension) {
         return macos_network_interfaces_metadata(header);
     }
+    if is_macos_wifi_preferences_path(&normalized_path, &normalized_name, extension) {
+        return macos_wifi_preferences_metadata(header);
+    }
     if let Some(metadata) = windows_registry_system_info_metadata(&normalized_path, header) {
         return metadata;
     }
@@ -806,6 +809,16 @@ fn is_macos_network_interfaces_path(path: &str, name: &str, extension: Option<&s
         && matches!(extension, Some("plist"))
         && (path.ends_with("library/preferences/systemconfiguration/networkinterfaces.plist")
             || path.ends_with("private/var/db/systemconfiguration/networkinterfaces.plist"))
+}
+
+fn is_macos_wifi_preferences_path(path: &str, name: &str, extension: Option<&str>) -> bool {
+    matches!(extension, Some("plist"))
+        && (name.eq_ignore_ascii_case("com.apple.airport.preferences.plist")
+            || name.eq_ignore_ascii_case("com.apple.wifi.known-networks.plist")
+            || path.ends_with(
+                "library/preferences/systemconfiguration/com.apple.airport.preferences.plist",
+            )
+            || path.ends_with("library/preferences/com.apple.wifi.known-networks.plist"))
 }
 
 fn windows_registry_system_info_metadata(
@@ -1677,6 +1690,130 @@ fn macos_network_interfaces_metadata(header: &[u8]) -> BTreeMap<String, String> 
     metadata
 }
 
+#[derive(Default)]
+struct MacosWifiSummary {
+    ssids: Vec<String>,
+    security_types: Vec<String>,
+    auto_join_ssids: Vec<String>,
+    last_connected: Vec<String>,
+}
+
+fn macos_wifi_preferences_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_plist(header, Some("plist")) {
+        return metadata;
+    }
+    let Ok(value) = PlistValue::from_reader(Cursor::new(header)) else {
+        return metadata;
+    };
+    let mut summary = MacosWifiSummary::default();
+    collect_macos_wifi_metadata(&value, &mut summary);
+
+    if summary.ssids.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert("system.osFamily".to_string(), "macos".to_string());
+    metadata.insert(
+        "system.infoType".to_string(),
+        "wifi-preferences".to_string(),
+    );
+    metadata.insert(
+        "system.wifiKnownNetworkCount".to_string(),
+        summary.ssids.len().to_string(),
+    );
+    insert_limited_system_values(&mut metadata, "system.wifiSsids", &summary.ssids);
+    insert_limited_system_values(
+        &mut metadata,
+        "system.wifiSecurityTypes",
+        &summary.security_types,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.wifiAutoJoinSsids",
+        &summary.auto_join_ssids,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.wifiLastConnected",
+        &summary.last_connected,
+    );
+    metadata
+}
+
+fn collect_macos_wifi_metadata(value: &PlistValue, summary: &mut MacosWifiSummary) {
+    match value {
+        PlistValue::Dictionary(dictionary) => {
+            collect_macos_wifi_network_dictionary(dictionary, summary);
+            for child in dictionary.values() {
+                collect_macos_wifi_metadata(child, summary);
+            }
+        }
+        PlistValue::Array(items) => {
+            for child in items {
+                collect_macos_wifi_metadata(child, summary);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_macos_wifi_network_dictionary(
+    dictionary: &plist::Dictionary,
+    summary: &mut MacosWifiSummary,
+) {
+    let Some(ssid) = macos_wifi_ssid(dictionary) else {
+        return;
+    };
+    push_limited_system_value(&mut summary.ssids, &ssid);
+
+    for key in [
+        "SecurityType",
+        "Security",
+        "AuthType",
+        "EncryptionType",
+        "SupportedSecurityTypes",
+    ] {
+        if let Some(value) = plist_dict_string(dictionary, key) {
+            push_limited_system_value(&mut summary.security_types, value);
+        } else if let Some(values) = plist_dict_string_array(dictionary, key) {
+            for value in values {
+                push_limited_system_value(&mut summary.security_types, &value);
+            }
+        }
+    }
+
+    if plist_dict_bool(dictionary, "AutoJoin").or_else(|| plist_dict_bool(dictionary, "AutoLogin"))
+        == Some(true)
+    {
+        push_limited_system_value(&mut summary.auto_join_ssids, &ssid);
+    }
+
+    for key in ["LastConnected", "LastAutoJoined", "LastJoined"] {
+        if let Some(date) = plist_dict_date(dictionary, key) {
+            push_limited_system_value(&mut summary.last_connected, &format!("{ssid}={date}"));
+            break;
+        }
+    }
+}
+
+fn macos_wifi_ssid(dictionary: &plist::Dictionary) -> Option<String> {
+    for key in ["SSIDString", "SSID_STR", "SSID", "name"] {
+        if let Some(value) = plist_dict_string(dictionary, key) {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(truncate_chars(value, 180));
+            }
+        }
+    }
+    for key in ["SSID", "SSIDData"] {
+        if let Some(value) = dictionary.get(key).and_then(plist_data_utf8_string) {
+            return Some(truncate_chars(&value, 180));
+        }
+    }
+    None
+}
+
 fn macos_hardware_identity_metadata(header: &[u8]) -> BTreeMap<String, String> {
     let mut metadata = BTreeMap::new();
     if !looks_like_plist(header, Some("plist")) {
@@ -1757,6 +1894,43 @@ fn plist_dict_string<'a>(dictionary: &'a plist::Dictionary, key: &str) -> Option
     dictionary.get(key).and_then(PlistValue::as_string)
 }
 
+fn plist_dict_string_array(dictionary: &plist::Dictionary, key: &str) -> Option<Vec<String>> {
+    let PlistValue::Array(values) = dictionary.get(key)? else {
+        return None;
+    };
+    let strings: Vec<String> = values
+        .iter()
+        .filter_map(PlistValue::as_string)
+        .map(ToString::to_string)
+        .take(32)
+        .collect();
+    (!strings.is_empty()).then_some(strings)
+}
+
+fn plist_dict_bool(dictionary: &plist::Dictionary, key: &str) -> Option<bool> {
+    match dictionary.get(key)? {
+        PlistValue::Boolean(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn plist_dict_date(dictionary: &plist::Dictionary, key: &str) -> Option<String> {
+    let PlistValue::Date(value) = dictionary.get(key)? else {
+        return None;
+    };
+    Some(value.to_xml_format())
+}
+
+fn plist_data_utf8_string(value: &PlistValue) -> Option<String> {
+    let PlistValue::Data(data) = value else {
+        return None;
+    };
+    String::from_utf8(data.clone())
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn plist_data_mac_address(value: &PlistValue) -> Option<String> {
     let PlistValue::Data(data) = value else {
         return None;
@@ -1818,6 +1992,7 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("macos"), Some("system-version")) => "macOS System Version Info",
         (Some("macos"), Some("system-identity")) => "macOS System Identity",
         (Some("macos"), Some("network-interfaces")) => "macOS Network Interfaces",
+        (Some("macos"), Some("wifi-preferences")) => "macOS Wi-Fi Preferences",
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
         _ => "System Information Artifact",
     }
@@ -4282,6 +4457,141 @@ dns-search=corp.example.com;
         assert!(interfaces.contains("en0"));
         assert!(interfaces.contains("Wi-Fi"));
         assert!(interfaces.contains("IEEE80211"));
+    }
+
+    #[test]
+    fn extracts_macos_wifi_preferences_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>KnownNetworks</key>
+  <dict>
+    <key>wifi.network.ssid.CorpNet</key>
+    <dict>
+      <key>SSIDString</key><string>CorpNet</string>
+      <key>SecurityType</key><string>WPA2 Personal</string>
+      <key>AutoJoin</key><true/>
+      <key>LastConnected</key><date>2026-06-01T12:34:56Z</date>
+    </dict>
+    <key>wifi.network.ssid.Guest</key>
+    <dict>
+      <key>SSIDString</key><string>Guest</string>
+      <key>SecurityType</key><string>Open</string>
+      <key>AutoJoin</key><false/>
+    </dict>
+  </dict>
+</dict>
+</plist>
+"#;
+        let source = ChunkedByteSource::new(
+            "/Volumes/Macintosh HD/Library/Preferences/SystemConfiguration/com.apple.airport.preferences.plist",
+            bytes,
+            usize::MAX,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS Wi-Fi Preferences");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiKnownNetworkCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiSsids")
+                .map(String::as_str),
+            Some("CorpNet; Guest")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiSecurityTypes")
+                .map(String::as_str),
+            Some("WPA2 Personal; Open")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiAutoJoinSsids")
+                .map(String::as_str),
+            Some("CorpNet")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiLastConnected")
+                .map(String::as_str),
+            Some("CorpNet=2026-06-01T12:34:56Z")
+        );
+    }
+
+    #[test]
+    fn extracts_macos_known_networks_ssid_data_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>KnownNetworks</key>
+  <array>
+    <dict>
+      <key>SSID</key><data>Q2FzZUxhYg==</data>
+      <key>SupportedSecurityTypes</key>
+      <array>
+        <string>WPA3 Personal</string>
+        <string>WPA2 Personal</string>
+      </array>
+      <key>AutoLogin</key><true/>
+    </dict>
+  </array>
+</dict>
+</plist>
+"#;
+        let source = ChunkedByteSource::new(
+            "/Volumes/Macintosh HD/Library/Preferences/com.apple.wifi.known-networks.plist",
+            bytes,
+            usize::MAX,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS Wi-Fi Preferences");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiKnownNetworkCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiSsids")
+                .map(String::as_str),
+            Some("CaseLab")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiSecurityTypes")
+                .map(String::as_str),
+            Some("WPA3 Personal; WPA2 Personal")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.wifiAutoJoinSsids")
+                .map(String::as_str),
+            Some("CaseLab")
+        );
     }
 
     #[test]
