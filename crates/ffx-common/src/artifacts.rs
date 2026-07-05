@@ -1352,13 +1352,16 @@ fn insert_registry_value_after_labels(
 
 fn registry_value_after_labels(strings: &[String], labels: &[&str]) -> Option<String> {
     for (index, value) in strings.iter().enumerate() {
-        if !labels.iter().any(|label| value.eq_ignore_ascii_case(label)) {
+        if !labels
+            .iter()
+            .any(|label| registry_string_matches_label(value, label))
+        {
             continue;
         }
         for candidate in strings.iter().skip(index + 1).take(8) {
             if labels
                 .iter()
-                .any(|label| candidate.eq_ignore_ascii_case(label))
+                .any(|label| registry_string_matches_label(candidate, label))
             {
                 continue;
             }
@@ -1368,6 +1371,14 @@ fn registry_value_after_labels(strings: &[String], labels: &[&str]) -> Option<St
         }
     }
     None
+}
+
+fn registry_string_matches_label(value: &str, label: &str) -> bool {
+    value.eq_ignore_ascii_case(label)
+        || value
+            .rsplit(['\\', '/'])
+            .next()
+            .is_some_and(|leaf| leaf.eq_ignore_ascii_case(label))
 }
 
 fn clean_registry_identity_value(value: &str) -> Option<String> {
@@ -5605,6 +5616,69 @@ alice:x:1000:1000:Alice Analyst:/home/alice:/bin/bash
                 .get("system.serialNumber")
                 .map(String::as_str),
             Some("ABC12345")
+        );
+    }
+
+    #[test]
+    fn extracts_windows_registry_identity_from_path_qualified_hive_strings() {
+        let registry = windows_registry_hive_with_utf16_strings(&[
+            r"ControlSet001\Control\ComputerName\ActiveComputerName\ComputerName",
+            "CORE-CASE02",
+            r"ControlSet001\Control\SystemInformation\SystemManufacturer",
+            "Lenovo",
+            r"ControlSet001\Control\SystemInformation\SystemProductName",
+            "ThinkPad X1 Carbon Gen 11",
+            r"ControlSet001\Control\SystemInformation\SystemSerialNumber",
+            "PF4TEST1",
+            r"ControlSet001\Control\SystemInformation\BIOSVersion",
+            "N3XET55W",
+        ]);
+        let vfs = Arc::new(InMemoryVfs::new(&[(
+            "/Windows/System32/config/SYSTEM",
+            registry.as_slice(),
+        )]));
+        let source = VfsEntryByteSource::new(
+            vfs,
+            "/cases/windows.E01",
+            "/Windows/System32/config/SYSTEM",
+            Some("ewf".to_string()),
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.computerName")
+                .map(String::as_str),
+            Some("CORE-CASE02")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.manufacturer")
+                .map(String::as_str),
+            Some("Lenovo")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.model").map(String::as_str),
+            Some("ThinkPad X1 Carbon Gen 11")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.serialNumber")
+                .map(String::as_str),
+            Some("PF4TEST1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.biosVersion")
+                .map(String::as_str),
+            Some("N3XET55W")
         );
     }
 
