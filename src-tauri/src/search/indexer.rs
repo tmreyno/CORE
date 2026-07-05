@@ -1934,6 +1934,7 @@ mod tests {
             pe_version_info: version_info,
             macho_cpu_type: None,
             macho_filetype: None,
+            linux_module_info: None,
             has_debug_info: false,
             is_stripped: true,
             has_code_signing: true,

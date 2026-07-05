@@ -520,6 +520,44 @@ describe("ViewerMetadataPanel", () => {
       dispose();
     });
 
+    it("shows Linux kernel module metadata", () => {
+      const metadata = makeMetadata({
+        viewerType: "Binary",
+        sections: [
+          {
+            kind: "binary",
+            format: "ELF64",
+            architecture: "x86_64",
+            isStripped: true,
+            isDynamic: false,
+            linuxModule: {
+              detected: true,
+              names: ["coretap"],
+              versions: ["1.2.3"],
+              vermagic: ["6.8.0 SMP mod_unload"],
+              licenses: ["GPL"],
+              authors: ["CORE Lab"],
+              descriptions: ["CORE packet capture tap"],
+              aliases: ["pci:v00008086d*"],
+              dependencies: ["cfg80211", "rfkill"],
+              firmware: ["coretap.bin"],
+              signers: ["CORE Lab"],
+              signatures: ["sig_hashalgo=sha256"],
+            },
+          },
+        ],
+      });
+      const { container, dispose } = renderComponent(() => (
+        <ViewerMetadataPanel metadata={metadata} />
+      ));
+      expect(container.textContent).toContain("Linux Module");
+      expect(container.textContent).toContain("coretap");
+      expect(container.textContent).toContain("6.8.0 SMP mod_unload");
+      expect(container.textContent).toContain("cfg80211; rfkill");
+      expect(container.textContent).toContain("sig_hashalgo=sha256");
+      dispose();
+    });
+
     it("shows email info with headers", () => {
       const metadata = makeMetadata({
         viewerType: "Email",

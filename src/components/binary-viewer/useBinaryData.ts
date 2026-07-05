@@ -144,6 +144,7 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
       driverType: data.pe_driver_type || undefined,
       driverIndicators: data.pe_driver_indicators,
       versionInfo: data.pe_version_info,
+      linuxModule: data.linux_module_info || undefined,
       compiledDate:
         data.pe_timestamp !== null
           ? formatTimestamp(data.pe_timestamp)

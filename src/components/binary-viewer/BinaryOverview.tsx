@@ -25,6 +25,25 @@ function PeInfoRow(props: { label: string; value: string | number | null | undef
   );
 }
 
+function ListInfoRow(props: { label: string; values: string[] | undefined; mono?: boolean }) {
+  return (
+    <Show when={props.values && props.values.length > 0}>
+      <div class="flex gap-2 text-xs py-0.5">
+        <span class="text-txt-muted w-28 shrink-0">{props.label}</span>
+        <div class="flex flex-wrap gap-1 min-w-0">
+          <For each={props.values}>
+            {(value) => (
+              <span class={`${props.mono ? "font-mono" : ""} px-1.5 py-0.5 text-2xs bg-bg-hover text-txt-secondary rounded break-all`}>
+                {value}
+              </span>
+            )}
+          </For>
+        </div>
+      </div>
+    </Show>
+  );
+}
+
 const formatOptionalHex = (value: number | null) => value === null ? null : formatHex(value);
 const formatOptionalBytes = (value: number | null) => value === null ? null : formatBytes(value);
 
@@ -152,6 +171,26 @@ export function BinaryOverview(props: BinaryOverviewProps) {
               </div>
             </div>
           </Show>
+        </div>
+      </Show>
+
+      {/* Linux kernel module-specific info */}
+      <Show when={data().linux_module_info?.detected}>
+        <div class="card">
+          <h3 class="text-xs font-semibold text-txt-secondary uppercase tracking-wider mb-2">
+            Linux Module
+          </h3>
+          <ListInfoRow label="Name" values={data().linux_module_info?.names} />
+          <ListInfoRow label="Version" values={data().linux_module_info?.versions} />
+          <ListInfoRow label="Vermagic" values={data().linux_module_info?.vermagic} mono />
+          <ListInfoRow label="License" values={data().linux_module_info?.licenses} />
+          <ListInfoRow label="Author" values={data().linux_module_info?.authors} />
+          <ListInfoRow label="Description" values={data().linux_module_info?.descriptions} />
+          <ListInfoRow label="Alias" values={data().linux_module_info?.aliases} mono />
+          <ListInfoRow label="Depends" values={data().linux_module_info?.dependencies} />
+          <ListInfoRow label="Firmware" values={data().linux_module_info?.firmware} mono />
+          <ListInfoRow label="Signer" values={data().linux_module_info?.signers} />
+          <ListInfoRow label="Signature" values={data().linux_module_info?.signatures} mono />
         </div>
       </Show>
 

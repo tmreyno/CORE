@@ -155,6 +155,21 @@ export interface BinaryMetadataSection {
   driverType?: string;
   driverIndicators?: string[];
   versionInfo?: Record<string, string>;
+  // Linux kernel module specific
+  linuxModule?: {
+    detected: boolean;
+    names: string[];
+    versions: string[];
+    vermagic: string[];
+    licenses: string[];
+    authors: string[];
+    descriptions: string[];
+    aliases: string[];
+    dependencies: string[];
+    firmware: string[];
+    signers: string[];
+    signatures: string[];
+  };
   // Timestamps
   compiledDate?: string;
 }

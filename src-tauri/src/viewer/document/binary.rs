@@ -129,6 +129,23 @@ pub struct SectionInfo {
     pub entropy: Option<f64>,
 }
 
+/// Linux kernel module information extracted from ELF `.ko` module strings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LinuxModuleInfo {
+    pub detected: bool,
+    pub names: Vec<String>,
+    pub versions: Vec<String>,
+    pub vermagic: Vec<String>,
+    pub licenses: Vec<String>,
+    pub authors: Vec<String>,
+    pub descriptions: Vec<String>,
+    pub aliases: Vec<String>,
+    pub dependencies: Vec<String>,
+    pub firmware: Vec<String>,
+    pub signers: Vec<String>,
+    pub signatures: Vec<String>,
+}
+
 /// Binary analysis result (read-only)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinaryInfo {
@@ -165,6 +182,8 @@ pub struct BinaryInfo {
     // Mach-O specific
     pub macho_cpu_type: Option<String>,
     pub macho_filetype: Option<String>,
+    // Linux kernel module specific
+    pub linux_module_info: Option<LinuxModuleInfo>,
     // Security indicators
     pub has_debug_info: bool,
     pub is_stripped: bool,
@@ -391,6 +410,7 @@ fn analyze_pe(
         pe_version_info,
         macho_cpu_type: None,
         macho_filetype: None,
+        linux_module_info: None,
         has_debug_info: pe.debug_data.is_some(),
         is_stripped,
         has_code_signing,
@@ -477,6 +497,7 @@ fn analyze_elf(
             .map(|n| n == ".note.gnu.build-id" || n == ".note.package")
             .unwrap_or(false)
     });
+    let linux_module_info = linux_kernel_module_info(source_id, &strings);
 
     Ok(BinaryInfo {
         path: source_id.to_string(),
@@ -510,6 +531,7 @@ fn analyze_elf(
         pe_version_info: BTreeMap::new(),
         macho_cpu_type: None,
         macho_filetype: None,
+        linux_module_info,
         has_debug_info,
         is_stripped: elf.syms.is_empty(),
         has_code_signing,
@@ -586,6 +608,7 @@ fn analyze_mach(
                 pe_version_info: BTreeMap::new(),
                 macho_cpu_type: Some(format!("Fat ({} architectures)", narches)),
                 macho_filetype: None,
+                linux_module_info: None,
                 has_debug_info: false,
                 is_stripped: false,
                 has_code_signing: false,
@@ -1162,6 +1185,105 @@ fn push_limited_string(strings: &mut Vec<String>, seen: &mut HashSet<String>, va
     }
 }
 
+fn linux_kernel_module_info(source_id: &str, strings: &[String]) -> Option<LinuxModuleInfo> {
+    if !source_id
+        .replace('\\', "/")
+        .to_ascii_lowercase()
+        .ends_with(".ko")
+    {
+        return None;
+    }
+
+    let mut info = LinuxModuleInfo::default();
+    for value in strings {
+        let Some((key, value)) = split_linux_module_info(value) else {
+            continue;
+        };
+        match key {
+            "name" => push_unique_module_value(&mut info.names, value),
+            "version" => push_unique_module_value(&mut info.versions, value),
+            "vermagic" => push_unique_module_value(&mut info.vermagic, value),
+            "license" => push_unique_module_value(&mut info.licenses, value),
+            "author" => push_unique_module_value(&mut info.authors, value),
+            "description" => push_unique_module_value(&mut info.descriptions, value),
+            "alias" => push_unique_module_value(&mut info.aliases, value),
+            "depends" => {
+                for dependency in value.split(',') {
+                    let dependency = dependency.trim();
+                    if !dependency.is_empty() {
+                        push_unique_module_value(&mut info.dependencies, dependency.to_string());
+                    }
+                }
+            }
+            "firmware" => push_unique_module_value(&mut info.firmware, value),
+            "signer" => push_unique_module_value(&mut info.signers, value),
+            "sig_key" | "sig_hashalgo" => {
+                push_unique_module_value(&mut info.signatures, format!("{key}={value}"))
+            }
+            _ => {}
+        }
+    }
+
+    info.detected = linux_module_info_has_values(&info);
+    info.detected.then_some(info)
+}
+
+fn split_linux_module_info(value: &str) -> Option<(&str, String)> {
+    let (key, value) = value.split_once('=')?;
+    let key = key.trim();
+    if !matches!(
+        key,
+        "name"
+            | "version"
+            | "vermagic"
+            | "license"
+            | "author"
+            | "description"
+            | "alias"
+            | "depends"
+            | "firmware"
+            | "signer"
+            | "sig_key"
+            | "sig_hashalgo"
+    ) {
+        return None;
+    }
+
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    Some((key, truncate_linux_module_value(value)))
+}
+
+fn truncate_linux_module_value(value: &str) -> String {
+    const MAX_LINUX_MODULE_VALUE_CHARS: usize = 180;
+    value.chars().take(MAX_LINUX_MODULE_VALUE_CHARS).collect()
+}
+
+fn push_unique_module_value(values: &mut Vec<String>, value: String) {
+    const MAX_LINUX_MODULE_VALUES: usize = 64;
+    if values.len() >= MAX_LINUX_MODULE_VALUES || values.iter().any(|existing| existing == &value) {
+        return;
+    }
+    values.push(value);
+}
+
+fn linux_module_info_has_values(info: &LinuxModuleInfo) -> bool {
+    !info.names.is_empty()
+        || !info.versions.is_empty()
+        || !info.vermagic.is_empty()
+        || !info.licenses.is_empty()
+        || !info.authors.is_empty()
+        || !info.descriptions.is_empty()
+        || !info.aliases.is_empty()
+        || !info.dependencies.is_empty()
+        || !info.firmware.is_empty()
+        || !info.signers.is_empty()
+        || !info.signatures.is_empty()
+}
+
 fn analyze_single_mach(
     macho: goblin::mach::MachO,
     source_id: &str,
@@ -1286,6 +1408,7 @@ fn analyze_single_mach(
         pe_version_info: BTreeMap::new(),
         macho_cpu_type: Some(cpu_type),
         macho_filetype: Some(filetype.to_string()),
+        linux_module_info: None,
         has_debug_info,
         is_stripped,
         has_code_signing,
@@ -1717,6 +1840,32 @@ mod tests {
         assert_eq!(info.entry_point, Some(0x400000));
         assert_eq!(info.file_size, data.len() as u64);
         assert!(info.strings.is_empty());
+        assert!(info.linux_module_info.is_none());
+    }
+
+    #[test]
+    fn analyze_binary_bytes_extracts_linux_kernel_module_metadata() {
+        let mut data = minimal_elf64_header();
+        append_ascii_nul_terminated(&mut data, "name=coretap");
+        append_ascii_nul_terminated(&mut data, "version=1.2.3");
+        append_ascii_nul_terminated(&mut data, "vermagic=6.8.0 SMP mod_unload");
+        append_ascii_nul_terminated(&mut data, "license=GPL");
+        append_ascii_nul_terminated(&mut data, "depends=cfg80211,rfkill");
+        append_ascii_nul_terminated(&mut data, "signer=CORE Lab");
+        append_ascii_nul_terminated(&mut data, "sig_hashalgo=sha256");
+
+        let info =
+            analyze_binary_bytes("e01:/case/linux.E01:/lib/modules/coretap.ko", &data).unwrap();
+        let module = info.linux_module_info.unwrap();
+
+        assert!(module.detected);
+        assert_eq!(module.names, vec!["coretap"]);
+        assert_eq!(module.versions, vec!["1.2.3"]);
+        assert_eq!(module.vermagic, vec!["6.8.0 SMP mod_unload"]);
+        assert_eq!(module.licenses, vec!["GPL"]);
+        assert_eq!(module.dependencies, vec!["cfg80211", "rfkill"]);
+        assert_eq!(module.signers, vec!["CORE Lab"]);
+        assert_eq!(module.signatures, vec!["sig_hashalgo=sha256"]);
     }
 
     fn minimal_pe_header(optional_magic: u16) -> Vec<u8> {
@@ -1742,6 +1891,11 @@ mod tests {
         for unit in value.encode_utf16().chain(std::iter::once(0)) {
             data.extend_from_slice(&unit.to_le_bytes());
         }
+    }
+
+    fn append_ascii_nul_terminated(data: &mut Vec<u8>, value: &str) {
+        data.extend_from_slice(value.as_bytes());
+        data.push(0);
     }
 
     fn minimal_elf64_header() -> Vec<u8> {

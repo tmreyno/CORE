@@ -33,6 +33,21 @@ export interface SectionInfo {
   entropy: number | null;
 }
 
+export interface LinuxModuleInfo {
+  detected: boolean;
+  names: string[];
+  versions: string[];
+  vermagic: string[];
+  licenses: string[];
+  authors: string[];
+  descriptions: string[];
+  aliases: string[];
+  dependencies: string[];
+  firmware: string[];
+  signers: string[];
+  signatures: string[];
+}
+
 export interface BinaryInfo {
   path: string;
   format: string;
@@ -67,6 +82,8 @@ export interface BinaryInfo {
   // Mach-O specific
   macho_cpu_type: string | null;
   macho_filetype: string | null;
+  // Linux kernel module specific
+  linux_module_info?: LinuxModuleInfo | null;
   // Forensic indicators
   has_debug_info: boolean;
   is_stripped: boolean;

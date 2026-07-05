@@ -144,6 +144,7 @@ const mockElfData = {
   pe_version_info: {},
   macho_cpu_type: null,
   macho_filetype: null,
+  linux_module_info: null,
   sections: [
     {
       name: ".text",
@@ -158,6 +159,31 @@ const mockElfData = {
   imports: [],
   exports: [],
   strings: ["/etc/os-release", "/usr/lib/systemd/system"],
+};
+
+const mockLinuxModuleData = {
+  ...mockElfData,
+  path: "/evidence/linux.E01:/lib/modules/6.8.0/kernel/drivers/net/coretap.ko",
+  strings: [
+    "name=coretap",
+    "version=1.2.3",
+    "vermagic=6.8.0 SMP mod_unload",
+    "depends=cfg80211,rfkill",
+  ],
+  linux_module_info: {
+    detected: true,
+    names: ["coretap"],
+    versions: ["1.2.3"],
+    vermagic: ["6.8.0 SMP mod_unload"],
+    licenses: ["GPL"],
+    authors: ["CORE Lab"],
+    descriptions: ["CORE packet capture tap"],
+    aliases: ["pci:v00008086d*"],
+    dependencies: ["cfg80211", "rfkill"],
+    firmware: ["coretap.bin"],
+    signers: ["CORE Lab"],
+    signatures: ["sig_hashalgo=sha256"],
+  },
 };
 
 // Mock Mach-O data
@@ -382,6 +408,42 @@ describe("BinaryViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Stripped");
+    });
+
+    it("shows Linux kernel module metadata for .ko files", async () => {
+      mockInvoke.mockResolvedValueOnce(mockLinuxModuleData);
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path="/lib/modules/coretap.ko" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Linux Module");
+      expect(container.textContent).toContain("coretap");
+      expect(container.textContent).toContain("6.8.0 SMP mod_unload");
+      expect(container.textContent).toContain("cfg80211");
+      expect(container.textContent).toContain("sig_hashalgo=sha256");
+    });
+
+    it("emits Linux kernel module metadata to the details panel", async () => {
+      mockInvoke.mockResolvedValueOnce(mockLinuxModuleData);
+      const onMetadata = vi.fn();
+
+      renderComponent(() => (
+        <BinaryViewer path="/lib/modules/coretap.ko" onMetadata={onMetadata} />
+      ));
+      await tick();
+
+      expect(onMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "binary",
+          linuxModule: expect.objectContaining({
+            detected: true,
+            names: ["coretap"],
+            vermagic: ["6.8.0 SMP mod_unload"],
+          }),
+        }),
+      );
     });
   });
 

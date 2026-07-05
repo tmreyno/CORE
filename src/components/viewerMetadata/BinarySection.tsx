@@ -119,6 +119,30 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
           </div>
         </CollapsibleGroup>
       </Show>
+
+      <Show when={props.data.linuxModule?.detected}>
+        <CollapsibleGroup title="Linux Module" defaultOpen>
+          <MetadataList label="Name" values={props.data.linuxModule?.names} />
+          <MetadataList label="Version" values={props.data.linuxModule?.versions} />
+          <MetadataList label="Vermagic" values={props.data.linuxModule?.vermagic} />
+          <MetadataList label="License" values={props.data.linuxModule?.licenses} />
+          <MetadataList label="Author" values={props.data.linuxModule?.authors} />
+          <MetadataList label="Description" values={props.data.linuxModule?.descriptions} />
+          <MetadataList label="Alias" values={props.data.linuxModule?.aliases} />
+          <MetadataList label="Depends" values={props.data.linuxModule?.dependencies} />
+          <MetadataList label="Firmware" values={props.data.linuxModule?.firmware} />
+          <MetadataList label="Signer" values={props.data.linuxModule?.signers} />
+          <MetadataList label="Signature" values={props.data.linuxModule?.signatures} />
+        </CollapsibleGroup>
+      </Show>
     </div>
+  );
+}
+
+function MetadataList(props: { label: string; values: string[] | undefined }) {
+  return (
+    <Show when={props.values && props.values.length > 0}>
+      <MetadataRow label={props.label} value={props.values!.join("; ")} mono />
+    </Show>
   );
 }
