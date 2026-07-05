@@ -19,6 +19,8 @@ use crate::project_db::{
 use crate::viewer::document::database_viewer::get_database_info;
 use notatin::cell_value::CellValue;
 use notatin::parser_builder::ParserBuilder;
+use quick_xml::events::Event;
+use quick_xml::Reader;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
@@ -389,6 +391,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_windows_wifi_profile_source(&source_id) {
+        return true;
+    }
+
     if is_firewall_identity_source(&source_id) {
         return true;
     }
@@ -427,6 +433,12 @@ fn is_linux_network_identity_source(source_id: &str) -> bool {
         || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
         || (source_id.contains("/etc/netplan/")
             && (source_id.ends_with(".yaml") || source_id.ends_with(".yml")))
+}
+
+fn is_windows_wifi_profile_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.contains("/programdata/microsoft/wlansvc/profiles/interfaces/")
+        && source_id.ends_with(".xml")
 }
 
 fn is_firewall_identity_source(source_id: &str) -> bool {
@@ -701,6 +713,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     metadata.insert("system.identitySource".to_string(), normalized);
     if is_linux_network_identity_source(&lower) {
         metadata.extend(parse_linux_network_config_metadata(&lower, &text));
+    }
+    if is_windows_wifi_profile_source(&lower) {
+        metadata.extend(parse_windows_wifi_profile_metadata(&text));
     }
     if is_firewall_identity_source(&lower) {
         metadata.extend(parse_firewall_metadata(&lower, data, &text));
@@ -1317,6 +1332,96 @@ fn insert_joined_metadata(metadata: &mut BTreeMap<String, String>, key: &str, va
         key.to_string(),
         truncate_metadata_value(&values.join("; "), MAX_ARTIFACT_METADATA_VALUE_CHARS),
     );
+}
+
+fn parse_windows_wifi_profile_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut reader = Reader::from_str(text);
+    reader.config_mut().trim_text(true);
+
+    let mut metadata = BTreeMap::new();
+    let mut element_stack: Vec<String> = Vec::new();
+    let mut profile_names = Vec::new();
+    let mut ssids = Vec::new();
+    let mut auth_types = Vec::new();
+    let mut encryption_types = Vec::new();
+    let mut connection_modes = Vec::new();
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) => {
+                element_stack
+                    .push(String::from_utf8_lossy(element.local_name().as_ref()).to_string());
+            }
+            Ok(Event::End(_)) => {
+                element_stack.pop();
+            }
+            Ok(Event::Text(text_event)) => {
+                let Ok(text) = text_event.unescape() else {
+                    continue;
+                };
+                let text = text.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                let current = element_stack.last().map(String::as_str).unwrap_or("");
+                match current {
+                    "name" if element_stack.iter().any(|element| element == "SSID") => {
+                        push_unique_limited(&mut ssids, truncate_metadata_value(text, 120));
+                    }
+                    "name" if element_stack.iter().any(|element| element == "WLANProfile") => {
+                        push_unique_limited(&mut profile_names, truncate_metadata_value(text, 120));
+                    }
+                    "authentication" => {
+                        push_unique_limited(&mut auth_types, truncate_metadata_value(text, 120));
+                    }
+                    "encryption" => {
+                        push_unique_limited(
+                            &mut encryption_types,
+                            truncate_metadata_value(text, 120),
+                        );
+                    }
+                    "connectionMode" => {
+                        push_unique_limited(
+                            &mut connection_modes,
+                            truncate_metadata_value(text, 120),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    if profile_names.is_empty()
+        && ssids.is_empty()
+        && auth_types.is_empty()
+        && encryption_types.is_empty()
+        && connection_modes.is_empty()
+    {
+        return metadata;
+    }
+
+    metadata.insert(
+        "system.networkConfigType".to_string(),
+        "windows-wlan-profile".to_string(),
+    );
+    insert_joined_metadata(&mut metadata, "system.connectionIds", &profile_names);
+    insert_joined_metadata(&mut metadata, "system.wifiSsids", &ssids);
+    insert_joined_metadata(&mut metadata, "system.wifiAuthTypes", &auth_types);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.wifiEncryptionTypes",
+        &encryption_types,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.networkConnectionModes",
+        &connection_modes,
+    );
+    metadata
 }
 
 fn parse_firewall_metadata(source_id: &str, _data: &[u8], text: &str) -> BTreeMap<String, String> {
@@ -2830,6 +2935,68 @@ dns-search=corp.example.com;
     }
 
     #[test]
+    fn system_identity_metadata_extracts_windows_wifi_profile() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/ProgramData/Microsoft/Wlansvc/Profiles/Interfaces/{iface}/{profile}.xml",
+            br#"<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+  <name>CorpNet Profile</name>
+  <SSIDConfig>
+    <SSID>
+      <hex>436F72704E6574</hex>
+      <name>CorpNet</name>
+    </SSID>
+  </SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>auto</connectionMode>
+  <MSM>
+    <security>
+      <authEncryption>
+        <authentication>WPA2PSK</authentication>
+        <encryption>AES</encryption>
+        <useOneX>false</useOneX>
+      </authEncryption>
+    </security>
+  </MSM>
+</WLANProfile>
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("windows-wlan-profile")
+        );
+        assert_eq!(
+            metadata.get("system.connectionIds").map(String::as_str),
+            Some("CorpNet Profile")
+        );
+        assert_eq!(
+            metadata.get("system.wifiSsids").map(String::as_str),
+            Some("CorpNet")
+        );
+        assert_eq!(
+            metadata.get("system.wifiAuthTypes").map(String::as_str),
+            Some("WPA2PSK")
+        );
+        assert_eq!(
+            metadata
+                .get("system.wifiEncryptionTypes")
+                .map(String::as_str),
+            Some("AES")
+        );
+        assert_eq!(
+            metadata
+                .get("system.networkConnectionModes")
+                .map(String::as_str),
+            Some("auto")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_iptables_rules() {
         let metadata = system_identity_metadata_from_bytes(
             "/image/etc/sysconfig/iptables",
@@ -3268,6 +3435,9 @@ COMMIT
             "/etc/sysconfig/network-scripts/ifcfg-ens192"
         ));
         assert!(is_system_identity_source("/etc/netplan/01-netcfg.yaml"));
+        assert!(is_system_identity_source(
+            "/ProgramData/Microsoft/Wlansvc/Profiles/Interfaces/{iface}/{profile}.xml"
+        ));
         assert!(is_system_identity_source("/sys/class/dmi/id/product_uuid"));
         assert!(is_system_identity_source(
             "/System/Library/CoreServices/SystemVersion.plist"
