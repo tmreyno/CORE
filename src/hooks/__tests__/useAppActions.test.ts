@@ -289,7 +289,7 @@ describe("createSearchHandlers", () => {
   });
 
   describe("handleSearchResultSelect", () => {
-    it("sets active file for top-level file results", () => {
+    it("opens top-level file results through the normal select-and-view path", () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
       const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
@@ -304,10 +304,11 @@ describe("createSearchHandlers", () => {
         matchType: "name",
       });
 
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
     });
 
-    it("sets active file to container for container results", () => {
+    it("opens the parent container for container results through the normal select-and-view path", () => {
       const container = makeFile("/evidence/archive.zip");
       const fm = mockFileManager([container]);
       const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
@@ -323,6 +324,7 @@ describe("createSearchHandlers", () => {
         containerPath: "/evidence/archive.zip",
       });
 
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(container);
       expect(fm.activeFile()).toBe(container);
     });
 

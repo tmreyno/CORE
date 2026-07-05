@@ -190,14 +190,14 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
       // Result is inside a container - find container and select entry
       const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
       if (containerFile) {
-        fileManager.setActiveFile(containerFile);
+        void fileManager.selectAndViewFile(containerFile);
         announce(`Found ${result.name} in ${getBasename(containerFile.path)}`);
       }
     } else {
       // Result is a top-level file
       const file = fileManager.discoveredFiles().find(f => f.path === result.path);
       if (file) {
-        fileManager.setActiveFile(file);
+        void fileManager.selectAndViewFile(file);
         announce(`Selected ${result.name}`);
       }
     }
