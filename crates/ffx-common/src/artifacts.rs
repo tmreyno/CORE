@@ -5053,8 +5053,12 @@ mod tests {
     use super::*;
     use crate::evidence_source::{
         EvidenceByteSource, EvidenceSourceRef, EvidenceSourceResult, LocalFileByteSource,
+        VfsEntryByteSource,
     };
+    use crate::vfs::{DirEntry, FileAttr, VfsError, VirtualFileSystem};
+    use std::collections::HashMap;
     use std::io::Write;
+    use std::sync::Arc;
 
     struct ChunkedByteSource {
         source_ref: EvidenceSourceRef,
@@ -5091,6 +5095,63 @@ mod tests {
             let requested = size.min(self.max_chunk);
             let end = start.saturating_add(requested).min(self.data.len());
             Ok(self.data[start..end].to_vec())
+        }
+    }
+
+    struct InMemoryVfs {
+        files: HashMap<String, Vec<u8>>,
+    }
+
+    impl InMemoryVfs {
+        fn new(files: &[(&str, &[u8])]) -> Self {
+            Self {
+                files: files
+                    .iter()
+                    .map(|(path, bytes)| ((*path).to_string(), (*bytes).to_vec()))
+                    .collect(),
+            }
+        }
+    }
+
+    impl VirtualFileSystem for InMemoryVfs {
+        fn getattr(&self, path: &str) -> Result<FileAttr, VfsError> {
+            if path == "/" {
+                return Ok(FileAttr::directory());
+            }
+
+            self.files
+                .get(path)
+                .map(|bytes| FileAttr::file(bytes.len() as u64))
+                .ok_or_else(|| VfsError::NotFound(path.to_string()))
+        }
+
+        fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, VfsError> {
+            if path != "/" {
+                return Err(VfsError::NotADirectory(path.to_string()));
+            }
+
+            Ok(self
+                .files
+                .keys()
+                .filter_map(|file_path| file_path.trim_start_matches('/').split('/').next())
+                .map(|name| DirEntry::new(name, false))
+                .collect())
+        }
+
+        fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
+            let bytes = self
+                .files
+                .get(path)
+                .ok_or_else(|| VfsError::NotFound(path.to_string()))?;
+            let start = usize::try_from(offset).map_err(|_| VfsError::OutOfBounds {
+                offset,
+                size: bytes.len(),
+            })?;
+            if start >= bytes.len() {
+                return Ok(Vec::new());
+            }
+            let end = start.saturating_add(size).min(bytes.len());
+            Ok(bytes[start..end].to_vec())
         }
     }
 
@@ -5134,6 +5195,56 @@ mod tests {
         assert_eq!(
             artifact.metadata.get("extension").map(String::as_str),
             Some("txt")
+        );
+    }
+
+    #[test]
+    fn extracts_system_artifact_from_forensic_image_vfs_entry() {
+        let passwd = br#"root:x:0:0:root:/root:/bin/bash
+alice:x:1000:1000:Alice Analyst:/home/alice:/bin/bash
+"#;
+        let vfs = Arc::new(InMemoryVfs::new(&[("/etc/passwd", passwd)]));
+        let source = VfsEntryByteSource::new(
+            vfs,
+            "/cases/workstation.E01",
+            "/etc/passwd",
+            Some("ewf".to_string()),
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Unix Account Configuration");
+        assert_eq!(artifact.name, "passwd");
+        assert_eq!(
+            artifact.source_ref,
+            EvidenceSourceRef::VfsEntry {
+                container_path: "/cases/workstation.E01".to_string(),
+                entry_path: "/etc/passwd".to_string(),
+                container_type: Some("ewf".to_string()),
+            }
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.accountConfigType")
+                .map(String::as_str),
+            Some("unix-passwd")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.regularUserCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.loginUserCount")
+                .map(String::as_str),
+            Some("2")
         );
     }
 
