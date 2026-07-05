@@ -9,7 +9,9 @@
 use super::with_project_db;
 use crate::commands::artifacts::artifact_extract_source;
 use crate::commands::hash::{open_hash_source, HashSourceInput};
-use crate::common::{ArtifactExtractionOptions, EvidenceByteSource, NormalizedArtifact};
+use crate::common::{
+    read_range_fully, ArtifactExtractionOptions, EvidenceByteSource, NormalizedArtifact,
+};
 use crate::project_db::{
     DbArtifactCategorySummary, DbArtifactEvidenceSummary, DbArtifactExtractorSummary,
     DbEvidenceFile, DbNormalizedArtifact,
@@ -21,6 +23,7 @@ use std::path::Path;
 
 const SQLITE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const SQLITE_ARTIFACT_COPY_CHUNK_BYTES: usize = 1024 * 1024;
+const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024;
 const SQLITE_METADATA_NAME_LIMIT: usize = 12;
 const DEFAULT_ARTIFACT_EXTRACTOR: &str = "core-artifact-extractor";
 const MAX_ARTIFACT_EXTRACTOR_CHARS: usize = 128;
@@ -168,6 +171,7 @@ pub async fn project_db_extract_artifact_source(
         .or(evidence_file_id);
     let mut artifact = artifact_extract_source(source, options).await?;
     enrich_sqlite_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
+    enrich_system_identity_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
     let record = normalized_to_db_artifact(
         &artifact,
         resolved_evidence_id,
@@ -183,6 +187,298 @@ pub async fn project_db_extract_artifact_source(
     })?;
 
     Ok(ProjectDbExtractArtifactResult { artifact, record })
+}
+
+async fn enrich_system_identity_artifact_metadata(
+    source: &HashSourceInput,
+    artifact: &mut NormalizedArtifact,
+) -> Result<(), String> {
+    let source_id = source_identity_path(source, artifact);
+    if !is_system_identity_source(&source_id) {
+        return Ok(());
+    }
+
+    let source = source.clone();
+    let metadata_result =
+        tauri::async_runtime::spawn_blocking(move || system_identity_metadata_from_source(&source))
+            .await
+            .map_err(|e| format!("System identity artifact metadata task failed: {e}"))?;
+
+    match metadata_result {
+        Ok(metadata) if !metadata.is_empty() => {
+            artifact.metadata.extend(metadata);
+            artifact.category = "systeminfo".to_string();
+            artifact.type_description = "System Identification Artifact".to_string();
+            artifact.confidence = "high".to_string();
+        }
+        Ok(_) => {}
+        Err(error) => {
+            artifact.metadata.insert(
+                "system.identityStatus".to_string(),
+                "unavailable".to_string(),
+            );
+            artifact.metadata.insert(
+                "system.identityError".to_string(),
+                truncate_metadata_value(&error, 180),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn source_identity_path(source: &HashSourceInput, artifact: &NormalizedArtifact) -> String {
+    source
+        .entry_path
+        .as_deref()
+        .or(source.path.as_deref())
+        .unwrap_or(&artifact.source_id)
+        .replace('\\', "/")
+}
+
+fn is_system_identity_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    if source_id.ends_with("/library/preferences/systemconfiguration/preferences.plist")
+        || source_id.ends_with("/system/library/coreservices/systemversion.plist")
+        || source_id.ends_with("/library/preferences/systemconfiguration/com.apple.boot.plist")
+    {
+        return true;
+    }
+
+    matches!(
+        source_id.rsplit('/').next(),
+        Some(
+            "os-release"
+                | "lsb-release"
+                | "redhat-release"
+                | "debian_version"
+                | "machine-id"
+                | "hostname"
+                | "product_uuid"
+                | "product_serial"
+                | "product_name"
+                | "sys_vendor"
+                | "board_serial"
+                | "board_name"
+                | "bios_version"
+                | "bios_vendor"
+        )
+    )
+}
+
+fn system_identity_metadata_from_source(
+    source: &HashSourceInput,
+) -> Result<BTreeMap<String, String>, String> {
+    let byte_source = open_hash_source(source)?;
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
+    let size = byte_source.len().map_err(|e| e.to_string())?;
+    if size > SYSTEM_IDENTITY_SOURCE_MAX_BYTES {
+        return Err(format!(
+            "System identity source is too large for metadata extraction: {size} bytes > {SYSTEM_IDENTITY_SOURCE_MAX_BYTES} bytes"
+        ));
+    }
+
+    let read_size = usize::try_from(size)
+        .map_err(|_| format!("System identity source size does not fit in memory: {size}"))?;
+    let data = if read_size > 0 {
+        read_range_fully(byte_source.as_ref(), 0, read_size).map_err(|e| e.to_string())?
+    } else {
+        Vec::new()
+    };
+
+    Ok(system_identity_metadata_from_bytes(&source_id, &data))
+}
+
+fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap<String, String> {
+    let normalized = source_id.replace('\\', "/");
+    let lower = normalized.to_ascii_lowercase();
+    let file_name = lower.rsplit('/').next().unwrap_or("");
+    let text = String::from_utf8_lossy(data);
+    let mut metadata = BTreeMap::new();
+
+    metadata.insert("system.identitySource".to_string(), normalized);
+
+    match file_name {
+        "os-release" | "lsb-release" => {
+            metadata.extend(parse_linux_release_metadata(&text));
+        }
+        "redhat-release" | "debian_version" => {
+            let value = text.trim();
+            if !value.is_empty() {
+                metadata.insert(
+                    "system.osVersion".to_string(),
+                    truncate_metadata_value(value, 180),
+                );
+            }
+        }
+        "machine-id" => {
+            insert_trimmed_metadata(&mut metadata, "system.machineId", &text);
+        }
+        "hostname" => {
+            insert_trimmed_metadata(&mut metadata, "system.hostname", &text);
+        }
+        "product_uuid" => {
+            insert_trimmed_metadata(&mut metadata, "system.hardwareUuid", &text);
+        }
+        "product_serial" => {
+            insert_trimmed_metadata(&mut metadata, "system.serialNumber", &text);
+        }
+        "product_name" => {
+            insert_trimmed_metadata(&mut metadata, "system.model", &text);
+        }
+        "sys_vendor" => {
+            insert_trimmed_metadata(&mut metadata, "system.manufacturer", &text);
+        }
+        "board_serial" => {
+            insert_trimmed_metadata(&mut metadata, "system.boardSerial", &text);
+        }
+        "board_name" => {
+            insert_trimmed_metadata(&mut metadata, "system.boardName", &text);
+        }
+        "bios_version" => {
+            insert_trimmed_metadata(&mut metadata, "system.biosVersion", &text);
+        }
+        "bios_vendor" => {
+            insert_trimmed_metadata(&mut metadata, "system.biosVendor", &text);
+        }
+        "systemversion.plist" | "preferences.plist" | "com.apple.boot.plist" => {
+            metadata.extend(parse_macos_plist_identity_metadata(data));
+        }
+        _ => {}
+    }
+
+    if metadata.len() == 1 {
+        metadata.clear();
+    } else {
+        metadata.insert("system.identityStatus".to_string(), "parsed".to_string());
+    }
+
+    metadata
+}
+
+fn parse_linux_release_metadata(text: &str) -> BTreeMap<String, String> {
+    let values = parse_key_value_lines(text);
+    let mut metadata = BTreeMap::new();
+
+    if let Some(value) = values.get("NAME") {
+        metadata.insert("system.osName".to_string(), value.clone());
+    }
+    if let Some(value) = values
+        .get("VERSION_ID")
+        .or_else(|| values.get("DISTRIB_RELEASE"))
+    {
+        metadata.insert("system.osVersion".to_string(), value.clone());
+    }
+    if let Some(value) = values
+        .get("VERSION")
+        .or_else(|| values.get("DISTRIB_DESCRIPTION"))
+    {
+        metadata.insert("system.osVersionDetail".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("ID") {
+        metadata.insert("system.osId".to_string(), value.clone());
+    }
+    if let Some(value) = values.get("PRETTY_NAME") {
+        metadata.insert("system.osPrettyName".to_string(), value.clone());
+    }
+
+    metadata
+}
+
+fn parse_key_value_lines(text: &str) -> BTreeMap<String, String> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let (key, value) = line.split_once('=')?;
+            let value = value.trim().trim_matches('"').trim_matches('\'').trim();
+            if key.trim().is_empty() || value.is_empty() {
+                return None;
+            }
+            Some((
+                key.trim().to_string(),
+                truncate_metadata_value(value, MAX_ARTIFACT_METADATA_VALUE_CHARS),
+            ))
+        })
+        .collect()
+}
+
+fn parse_macos_plist_identity_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+
+    insert_plist_string(&mut metadata, &value, "ProductName", "system.osName");
+    insert_plist_string(&mut metadata, &value, "ProductVersion", "system.osVersion");
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "ProductBuildVersion",
+        "system.osBuild",
+    );
+    insert_plist_string(&mut metadata, &value, "ComputerName", "system.computerName");
+    insert_plist_string(&mut metadata, &value, "HostName", "system.hostname");
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "LocalHostName",
+        "system.localHostname",
+    );
+    insert_plist_string(&mut metadata, &value, "HardwareUUID", "system.hardwareUuid");
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "IOPlatformUUID",
+        "system.hardwareUuid",
+    );
+    insert_plist_string(&mut metadata, &value, "SerialNumber", "system.serialNumber");
+
+    metadata
+}
+
+fn insert_plist_string(
+    metadata: &mut BTreeMap<String, String>,
+    value: &plist::Value,
+    plist_key: &str,
+    metadata_key: &str,
+) {
+    if metadata.contains_key(metadata_key) {
+        return;
+    }
+    if let Some(found) = find_plist_string(value, plist_key) {
+        metadata.insert(
+            metadata_key.to_string(),
+            truncate_metadata_value(found, MAX_ARTIFACT_METADATA_VALUE_CHARS),
+        );
+    }
+}
+
+fn find_plist_string<'a>(value: &'a plist::Value, key: &str) -> Option<&'a str> {
+    match value {
+        plist::Value::Dictionary(dict) => {
+            if let Some(value) = dict.get(key).and_then(plist::Value::as_string) {
+                return Some(value);
+            }
+            dict.values()
+                .find_map(|value| find_plist_string(value, key))
+        }
+        plist::Value::Array(values) => values
+            .iter()
+            .find_map(|value| find_plist_string(value, key)),
+        _ => None,
+    }
+}
+
+fn insert_trimmed_metadata(metadata: &mut BTreeMap<String, String>, key: &str, value: &str) {
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    metadata.insert(key.to_string(), truncate_metadata_value(value, 180));
 }
 
 async fn enrich_sqlite_artifact_metadata(
@@ -687,6 +983,109 @@ mod tests {
         assert_eq!(record.extractor, "test-extractor");
         assert!(record.source_ref_json.contains("localFile"));
         assert!(record.metadata_json.unwrap().contains("\"k\":\"v\""));
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_linux_os_release() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/mnt/image/etc/os-release",
+            br#"NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.2 LTS (Noble Numbat)"
+ID=ubuntu
+PRETTY_NAME="Ubuntu 24.04.2 LTS"
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.osName").map(String::as_str),
+            Some("Ubuntu")
+        );
+        assert_eq!(
+            metadata.get("system.osVersion").map(String::as_str),
+            Some("24.04")
+        );
+        assert_eq!(
+            metadata.get("system.osId").map(String::as_str),
+            Some("ubuntu")
+        );
+        assert_eq!(
+            metadata.get("system.osPrettyName").map(String::as_str),
+            Some("Ubuntu 24.04.2 LTS")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_linux_dmi_values() {
+        let serial = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/product_serial",
+            b"ABC123\n",
+        );
+        let vendor = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/sys_vendor",
+            b"Dell Inc.\n",
+        );
+
+        assert_eq!(
+            serial.get("system.serialNumber").map(String::as_str),
+            Some("ABC123")
+        );
+        assert_eq!(
+            vendor.get("system.manufacturer").map(String::as_str),
+            Some("Dell Inc.")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_macos_system_version_plist() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/System/Library/CoreServices/SystemVersion.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>ProductName</key><string>macOS</string>
+  <key>ProductVersion</key><string>15.5</string>
+  <key>ProductBuildVersion</key><string>24F74</string>
+</dict>
+</plist>
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.osName").map(String::as_str),
+            Some("macOS")
+        );
+        assert_eq!(
+            metadata.get("system.osVersion").map(String::as_str),
+            Some("15.5")
+        );
+        assert_eq!(
+            metadata.get("system.osBuild").map(String::as_str),
+            Some("24F74")
+        );
+    }
+
+    #[test]
+    fn system_identity_source_classifier_matches_known_identity_files() {
+        assert!(is_system_identity_source("/etc/machine-id"));
+        assert!(is_system_identity_source("/sys/class/dmi/id/product_uuid"));
+        assert!(is_system_identity_source(
+            "/System/Library/CoreServices/SystemVersion.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/Library/Preferences/SystemConfiguration/preferences.plist"
+        ));
+        assert!(!is_system_identity_source(
+            "/Users/test/Documents/notes.txt"
+        ));
+        assert!(!is_system_identity_source(
+            "/Users/test/Library/Preferences/preferences.plist"
+        ));
     }
 
     #[test]
