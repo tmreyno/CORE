@@ -220,6 +220,7 @@ const MAX_ARTIFACT_JSON_ITEMS: usize = 256;
 const MAX_ARTIFACT_METADATA_ENTRIES: usize = 96;
 const MAX_ARTIFACT_METADATA_VALUE_CHARS: usize = 384;
 const MAX_SYSTEM_IDENTITY_COLLECTION_SOURCES: usize = 512;
+const MAX_BINARY_ARTIFACT_COLLECTION_SOURCES: usize = 256;
 const ARTIFACT_TRUNCATED_SUFFIX: &str = "... [truncated]";
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -265,6 +266,34 @@ pub struct ProjectDbCollectSystemIdentityResult {
     pub skipped: usize,
     pub records: Vec<DbNormalizedArtifact>,
     pub errors: Vec<ProjectDbSystemIdentityCollectionError>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDbCollectBinaryArtifactsRequest {
+    pub sources: Vec<HashSourceInput>,
+    pub options: Option<ArtifactExtractionOptions>,
+    pub evidence_file_id: Option<String>,
+    pub evidence_file: Option<DbEvidenceFile>,
+    pub extractor: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDbBinaryArtifactCollectionError {
+    pub source_id: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDbCollectBinaryArtifactsResult {
+    pub scanned: usize,
+    pub matched: usize,
+    pub inserted: usize,
+    pub skipped: usize,
+    pub records: Vec<DbNormalizedArtifact>,
+    pub errors: Vec<ProjectDbBinaryArtifactCollectionError>,
 }
 
 /// Insert or replace a normalized artifact record.
@@ -480,6 +509,90 @@ pub async fn project_db_collect_system_identity_sources(
     })?;
 
     Ok(ProjectDbCollectSystemIdentityResult {
+        scanned,
+        matched,
+        inserted,
+        skipped,
+        records,
+        errors,
+    })
+}
+
+/// Extract and persist driver/module binary artifacts from a batch of candidate
+/// evidence sources. This intentionally filters to driver-like paths so loading
+/// a folder does not trigger broad executable analysis across an image.
+#[tauri::command]
+pub async fn project_db_collect_binary_artifact_sources(
+    window: tauri::Window,
+    request: ProjectDbCollectBinaryArtifactsRequest,
+) -> Result<ProjectDbCollectBinaryArtifactsResult, String> {
+    let ProjectDbCollectBinaryArtifactsRequest {
+        sources,
+        options,
+        evidence_file_id,
+        evidence_file,
+        extractor,
+    } = request;
+
+    if sources.len() > MAX_BINARY_ARTIFACT_COLLECTION_SOURCES {
+        return Err(format!(
+            "Binary artifact collection source count exceeds limit: {} > {}",
+            sources.len(),
+            MAX_BINARY_ARTIFACT_COLLECTION_SOURCES
+        ));
+    }
+
+    let scanned = sources.len();
+    let resolved_evidence_id = evidence_file
+        .as_ref()
+        .map(|file| file.id.clone())
+        .or(evidence_file_id);
+    let extractor = extractor
+        .map(|value| normalize_artifact_extractor(Some(value)))
+        .filter(|value| value != "artifact_extract_source")
+        .unwrap_or_else(|| "binary_artifact_collector".to_string());
+
+    let mut matched = 0usize;
+    let mut records = Vec::new();
+    let mut errors = Vec::new();
+
+    for source in sources {
+        let source_id = source_input_identity_path(&source);
+        if !is_binary_driver_artifact_source(&source_id) {
+            continue;
+        }
+        matched += 1;
+
+        match extract_project_db_artifact_record(
+            source,
+            options.clone(),
+            resolved_evidence_id.clone(),
+            extractor.clone(),
+        )
+        .await
+        {
+            Ok((_artifact, record)) => records.push(record),
+            Err(error) => errors.push(ProjectDbBinaryArtifactCollectionError {
+                source_id,
+                error: truncate_metadata_value(&error, 180),
+            }),
+        }
+    }
+
+    let inserted = records.len();
+    let skipped = scanned.saturating_sub(matched);
+
+    with_project_db(window.label(), |db| {
+        if let Some(file) = &evidence_file {
+            db.upsert_evidence_file(file)?;
+        }
+        for record in &records {
+            db.upsert_artifact(record)?;
+        }
+        Ok(())
+    })?;
+
+    Ok(ProjectDbCollectBinaryArtifactsResult {
         scanned,
         matched,
         inserted,
@@ -5584,6 +5697,22 @@ fn is_binary_artifact(artifact: &NormalizedArtifact) -> bool {
         )
 }
 
+fn is_binary_driver_artifact_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    let file_name = source_id.rsplit('/').next().unwrap_or("");
+    if file_name.ends_with(".sys") || file_name.ends_with(".drv") {
+        return source_id.contains("/windows/system32/drivers/")
+            || source_id.contains("/winnt/system32/drivers/")
+            || source_id.contains("/system32/drivers/")
+            || source_id.contains("/drivers/");
+    }
+
+    file_name.ends_with(".ko")
+        && (source_id.contains("/lib/modules/")
+            || source_id.contains("/usr/lib/modules/")
+            || source_id.contains("/kernel/drivers/"))
+}
+
 fn artifact_extension_matches(artifact: &NormalizedArtifact, extensions: &[&str]) -> bool {
     let Some(extension) = artifact.extension.as_deref() else {
         return false;
@@ -7160,6 +7289,30 @@ mod tests {
 
             assert!(is_binary_artifact(&artifact), "{extension}");
         }
+    }
+
+    #[test]
+    fn binary_driver_artifact_source_classifier_matches_driver_module_paths() {
+        assert!(is_binary_driver_artifact_source(
+            "/Windows/System32/drivers/ndis.sys"
+        ));
+        assert!(is_binary_driver_artifact_source(
+            r"C:\Windows\System32\drivers\contosoflt.SYS"
+        ));
+        assert!(is_binary_driver_artifact_source(
+            "/lib/modules/6.8.0/kernel/drivers/net/coretap.ko"
+        ));
+        assert!(is_binary_driver_artifact_source(
+            "/usr/lib/modules/6.8.0/kernel/drivers/usb/sensor.ko"
+        ));
+        assert!(!is_binary_driver_artifact_source("/pagefile.sys"));
+        assert!(!is_binary_driver_artifact_source(
+            "/Users/alice/Documents/notes.sys"
+        ));
+        assert!(!is_binary_driver_artifact_source("/tmp/coretap.ko"));
+        assert!(!is_binary_driver_artifact_source(
+            "/Windows/System32/kernel32.dll"
+        ));
     }
 
     #[test]

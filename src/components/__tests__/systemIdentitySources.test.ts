@@ -3,9 +3,12 @@ import { mockInvoke } from "../../__tests__/setup";
 import type { TreeEntry, VfsEntry } from "../../types";
 import type { SelectedEntry } from "../EvidenceTree/types";
 import {
+  buildTreeBinaryArtifactSourceInput,
   buildTreeSystemIdentitySourceInput,
+  collectBinaryArtifactEntries,
   buildSystemIdentitySourceInput,
   collectSystemIdentityEntries,
+  isLikelyBinaryArtifactEntry,
   isLikelySystemIdentityEntry,
 } from "../systemIdentitySources";
 
@@ -124,6 +127,41 @@ describe("system identity source helpers", () => {
     ).toBe(false);
   });
 
+  it("classifies Windows drivers and Linux kernel modules for binary artifact collection", () => {
+    expect(
+      isLikelyBinaryArtifactEntry(
+        entry({
+          name: "ndis.sys",
+          entryPath: "/Windows/System32/drivers/ndis.sys",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelyBinaryArtifactEntry(
+        entry({
+          name: "contoso.ko",
+          entryPath: "/lib/modules/6.8.0/kernel/drivers/net/contoso.ko",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelyBinaryArtifactEntry(
+        entry({
+          name: "pagefile.sys",
+          entryPath: "/pagefile.sys",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isLikelyBinaryArtifactEntry(
+        entry({
+          name: "notes.sys",
+          entryPath: "/Users/test/Documents/notes.sys",
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("builds source input only for identity entries", () => {
     const systemSource = buildSystemIdentitySourceInput(
       entry({
@@ -219,6 +257,40 @@ describe("system identity source helpers", () => {
     ).toBeNull();
   });
 
+  it("builds binary artifact tree source input for driver files", () => {
+    expect(
+      buildTreeBinaryArtifactSourceInput(
+        "/case/source.AD1",
+        treeEntry({
+          name: "contosoflt.sys",
+          path: "/Windows/System32/drivers/contosoflt.sys",
+          size: 32768,
+          data_addr: 321,
+          item_addr: 654,
+        }),
+        "ad1",
+      ),
+    ).toEqual({
+      containerPath: "/case/source.AD1",
+      entryPath: "/Windows/System32/drivers/contosoflt.sys",
+      containerType: "ad1",
+      size: 32768,
+      dataAddr: 321,
+      itemAddr: 654,
+    });
+
+    expect(
+      buildTreeBinaryArtifactSourceInput(
+        "/case/source.AD1",
+        treeEntry({
+          name: "pagefile.sys",
+          path: "/pagefile.sys",
+        }),
+        "ad1",
+      ),
+    ).toBeNull();
+  });
+
   it("collects matching identity entries when a project database is open", async () => {
     mockInvoke.mockImplementation(async (command: string) => {
       if (command === "project_db_is_open") return true;
@@ -290,5 +362,44 @@ describe("system identity source helpers", () => {
       "project_db_collect_system_identity_sources",
       expect.anything(),
     );
+  });
+
+  it("collects matching binary artifact entries when a project database is open", async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_binary_artifact_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await collectBinaryArtifactEntries(
+      "/case/disk.E01",
+      [
+        vfsEntry({
+          name: "contoso.ko",
+          path: "/Partition1_EXT4/lib/modules/6.8.0/kernel/drivers/net/contoso.ko",
+          size: 65536,
+        }),
+      ],
+      "e01",
+      "test-binary-extractor",
+    );
+
+    expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_binary_artifact_sources", {
+      request: {
+        sources: [
+          {
+            containerPath: "/case/disk.E01",
+            entryPath: "/Partition1_EXT4/lib/modules/6.8.0/kernel/drivers/net/contoso.ko",
+            containerType: "e01",
+            size: 65536,
+            dataAddr: undefined,
+            itemAddr: undefined,
+          },
+        ],
+        extractor: "test-binary-extractor",
+      },
+    });
   });
 });

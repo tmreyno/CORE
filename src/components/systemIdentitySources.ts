@@ -35,6 +35,25 @@ export async function collectSystemIdentityEntries(
   });
 }
 
+export async function collectBinaryArtifactEntries(
+  containerPath: string,
+  entries: Array<TreeEntry | VfsEntry>,
+  containerType: string,
+  extractor = "evidence-tree-binary-artifact",
+): Promise<void> {
+  const sources = entries
+    .map((entry) => buildTreeBinaryArtifactSourceInput(containerPath, entry, containerType))
+    .filter((source): source is HashSourceInput => source !== null);
+
+  if (sources.length === 0) return;
+  if (!(await commands.projectDb.isOpen().catch(() => false))) return;
+
+  await commands.artifact.collectBinaryArtifactSources({
+    sources,
+    extractor,
+  });
+}
+
 export function buildTreeSystemIdentitySourceInput(
   containerPath: string,
   entry: TreeEntry | VfsEntry,
@@ -51,6 +70,24 @@ export function buildTreeSystemIdentitySourceInput(
   return {
     containerPath,
     entryPath: normalizedEntry.entryPath,
+    containerType,
+    size: entry.size,
+    dataAddr: "data_addr" in entry ? entry.data_addr : undefined,
+    itemAddr: "item_addr" in entry ? entry.item_addr : undefined,
+  };
+}
+
+export function buildTreeBinaryArtifactSourceInput(
+  containerPath: string,
+  entry: TreeEntry | VfsEntry,
+  containerType: string,
+): HashSourceInput | null {
+  if (isDirectoryEntry(entry)) return null;
+  if (!isLikelyBinaryArtifactEntry({ name: entry.name, entryPath: entry.path })) return null;
+
+  return {
+    containerPath,
+    entryPath: entry.path,
     containerType,
     size: entry.size,
     dataAddr: "data_addr" in entry ? entry.data_addr : undefined,
@@ -137,6 +174,27 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
   }
 
   return SYSTEM_IDENTITY_FILE_NAMES.has(name);
+}
+
+export function isLikelyBinaryArtifactEntry(entry: Pick<SelectedEntry, "entryPath" | "name">): boolean {
+  const path = entry.entryPath.replace(/\\/g, "/").toLowerCase();
+  const name = entry.name.toLowerCase();
+
+  if (name.endsWith(".sys") || name.endsWith(".drv")) {
+    return (
+      path.includes("/windows/system32/drivers/") ||
+      path.includes("/winnt/system32/drivers/") ||
+      path.includes("/system32/drivers/") ||
+      path.includes("/drivers/")
+    );
+  }
+
+  return (
+    name.endsWith(".ko") &&
+    (path.includes("/lib/modules/") ||
+      path.includes("/usr/lib/modules/") ||
+      path.includes("/kernel/drivers/"))
+  );
 }
 
 const SYSTEM_IDENTITY_FILE_NAMES = new Set([

@@ -353,6 +353,31 @@ export interface ProjectDbCollectSystemIdentityResult {
   errors: ProjectDbSystemIdentityCollectionError[];
 }
 
+/** Request to collect known driver/module binary artifacts from mixed evidence sources */
+export interface ProjectDbCollectBinaryArtifactsRequest {
+  sources: HashSourceInput[];
+  options?: ArtifactExtractionOptions | null;
+  evidenceFileId?: string;
+  evidenceFile?: ProjectDbEvidenceFile;
+  extractor?: string;
+}
+
+/** Per-source extraction failure from driver/module binary collection */
+export interface ProjectDbBinaryArtifactCollectionError {
+  sourceId: string;
+  error: string;
+}
+
+/** Result from collecting known driver/module binary artifacts */
+export interface ProjectDbCollectBinaryArtifactsResult {
+  scanned: number;
+  matched: number;
+  inserted: number;
+  skipped: number;
+  records: DbNormalizedArtifact[];
+  errors: ProjectDbBinaryArtifactCollectionError[];
+}
+
 /** Bounded byte/source analysis options for hex and data review */
 export interface SourceAnalysisOptions {
   offset?: number;
@@ -798,6 +823,20 @@ export const artifactCommands = {
   ): Promise<ProjectDbCollectSystemIdentityResult> =>
     invoke<ProjectDbCollectSystemIdentityResult>(
       "project_db_collect_system_identity_sources",
+      {
+        request,
+      },
+    ),
+
+  /**
+   * Extract and persist known driver/module binary artifacts from a batch of
+   * candidate evidence sources.
+   */
+  collectBinaryArtifactSources: (
+    request: ProjectDbCollectBinaryArtifactsRequest,
+  ): Promise<ProjectDbCollectBinaryArtifactsResult> =>
+    invoke<ProjectDbCollectBinaryArtifactsResult>(
+      "project_db_collect_binary_artifact_sources",
       {
         request,
       },

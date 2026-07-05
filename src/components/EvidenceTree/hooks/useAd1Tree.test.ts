@@ -127,6 +127,44 @@ describe("useAd1Tree", () => {
     dispose();
   });
 
+  it("collects driver binary artifacts from AD1 child loads", async () => {
+    const driverFile = entry("contosoflt.sys", {
+      path: "/Windows/System32/drivers/contosoflt.sys",
+      size: 131072,
+      data_addr: 222,
+      item_addr: 333,
+    });
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "container_get_children_at_addr_v2") return [driverFile];
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_binary_artifact_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const { hook, dispose } = withHook(useAd1Tree);
+
+    await hook.loadChildrenByAddr("/case/source.AD1", 72, "/Windows/System32/drivers");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_binary_artifact_sources", {
+      request: {
+        sources: [
+          {
+            containerPath: "/case/source.AD1",
+            entryPath: "/Windows/System32/drivers/contosoflt.sys",
+            containerType: "ad1",
+            size: 131072,
+            dataAddr: 222,
+            itemAddr: 333,
+          },
+        ],
+        extractor: "evidence-tree-binary-artifact",
+      },
+    });
+    dispose();
+  });
+
   it("shares concurrent AD1 item metadata loads", async () => {
     const pending = deferred<ItemMetadata>();
     mockInvoke.mockImplementation((command: string) => {

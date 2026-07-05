@@ -140,4 +140,43 @@ describe("useVfsTree", () => {
     });
     dispose();
   });
+
+  it("collects driver binary artifacts from VFS directory listings", async () => {
+    const driverFile: VfsEntry = {
+      name: "ndis.sys",
+      path: "/Partition1_NTFS/Windows/System32/drivers/ndis.sys",
+      isDir: false,
+      size: 131072,
+      fileType: "file",
+    };
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "vfs_list_dir") return [driverFile];
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_binary_artifact_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const { hook, dispose } = withHook(useVfsTree);
+
+    await hook.loadVfsChildren("/case/disk.E01", "/Partition1_NTFS/Windows/System32/drivers");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_binary_artifact_sources", {
+      request: {
+        sources: [
+          {
+            containerPath: "/case/disk.E01",
+            entryPath: "/Partition1_NTFS/Windows/System32/drivers/ndis.sys",
+            containerType: "e01",
+            size: 131072,
+            dataAddr: undefined,
+            itemAddr: undefined,
+          },
+        ],
+        extractor: "evidence-tree-binary-artifact",
+      },
+    });
+    dispose();
+  });
 });

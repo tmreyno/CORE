@@ -16,7 +16,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { VfsMountInfo, VfsEntry } from "../../../types";
 import { logger } from "../../../utils/logger";
 import { isTauri } from "../../../utils/platform";
-import { collectSystemIdentityEntries } from "../../systemIdentitySources";
+import {
+  collectBinaryArtifactEntries,
+  collectSystemIdentityEntries,
+} from "../../systemIdentitySources";
 
 const log = logger.scope("VfsTree");
 
@@ -150,6 +153,13 @@ export function useVfsTree(): UseVfsTreeReturn {
           inferVfsContainerType(containerPath),
         ).catch((err) => {
           log.warn(`System identity collection failed for ${vfsPath}:`, err);
+        });
+        void collectBinaryArtifactEntries(
+          containerPath,
+          children,
+          inferVfsContainerType(containerPath),
+        ).catch((err) => {
+          log.warn(`Binary artifact collection failed for ${vfsPath}:`, err);
         });
 
         return children;
