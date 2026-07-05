@@ -62,6 +62,9 @@ export function useNestedContainers(): UseNestedContainersReturn {
   
   // Loading states
   const [loadingNested, setLoadingNested] = createSignal<Set<string>>(new Set());
+  const inFlightTreeLoads = new Map<NestedCacheKey, Promise<NestedContainerEntry[]>>();
+  const inFlightInfoLoads = new Map<NestedCacheKey, Promise<NestedContainerInfo | null>>();
+  let inFlightClear: Promise<void> | null = null;
   
   // Build cache key from parent and nested paths
   const buildNestedKey = (parentPath: string, nestedPath: string): string => {
@@ -142,34 +145,43 @@ export function useNestedContainers(): UseNestedContainersReturn {
     if (!isTauri) {
       return [];
     }
+    const pending = inFlightTreeLoads.get(cacheKey);
+    if (pending) {
+      return pending;
+    }
     
     // Set loading state
     setLoadingNested(prev => new Set([...prev, cacheKey]));
     
-    try {
-      const entries = await invoke<NestedContainerEntry[]>("nested_container_get_tree", {
-        parentContainerPath: parentPath,
-        nestedEntryPath: nestedPath,
-      });
-      
-      // Cache the result
-      setNestedEntriesCache(prev => {
-        const next = new Map(prev);
-        next.set(cacheKey, entries);
-        return next;
-      });
-      
-      return entries;
-    } catch (err) {
-      log.error("Failed to load nested tree:", err);
-      return [];
-    } finally {
-      setLoadingNested(prev => {
-        const next = new Set(prev);
-        next.delete(cacheKey);
-        return next;
-      });
-    }
+    const loadPromise = (async (): Promise<NestedContainerEntry[]> => {
+      try {
+        const entries = await invoke<NestedContainerEntry[]>("nested_container_get_tree", {
+          parentContainerPath: parentPath,
+          nestedEntryPath: nestedPath,
+        });
+
+        // Cache the result
+        setNestedEntriesCache(prev => {
+          const next = new Map(prev);
+          next.set(cacheKey, entries);
+          return next;
+        });
+
+        return entries;
+      } catch (err) {
+        log.error("Failed to load nested tree:", err);
+        return [];
+      } finally {
+        inFlightTreeLoads.delete(cacheKey);
+        setLoadingNested(prev => {
+          const next = new Set(prev);
+          next.delete(cacheKey);
+          return next;
+        });
+      }
+    })();
+    inFlightTreeLoads.set(cacheKey, loadPromise);
+    return loadPromise;
   };
   
   // Load nested container info (quick metadata)
@@ -182,25 +194,35 @@ export function useNestedContainers(): UseNestedContainersReturn {
     if (!isTauri) {
       return null;
     }
-    
-    try {
-      const info = await invoke<NestedContainerInfo>("nested_container_get_info", {
-        parentContainerPath: parentPath,
-        nestedEntryPath: nestedPath,
-      });
-      
-      // Cache the result
-      setNestedInfoCache(prev => {
-        const next = new Map(prev);
-        next.set(cacheKey, info);
-        return next;
-      });
-      
-      return info;
-    } catch (err) {
-      log.error("Failed to load nested info:", err);
-      return null;
+    const pending = inFlightInfoLoads.get(cacheKey);
+    if (pending) {
+      return pending;
     }
+
+    const loadPromise = (async (): Promise<NestedContainerInfo | null> => {
+      try {
+        const info = await invoke<NestedContainerInfo>("nested_container_get_info", {
+          parentContainerPath: parentPath,
+          nestedEntryPath: nestedPath,
+        });
+
+        // Cache the result
+        setNestedInfoCache(prev => {
+          const next = new Map(prev);
+          next.set(cacheKey, info);
+          return next;
+        });
+
+        return info;
+      } catch (err) {
+        log.error("Failed to load nested info:", err);
+        return null;
+      } finally {
+        inFlightInfoLoads.delete(cacheKey);
+      }
+    })();
+    inFlightInfoLoads.set(cacheKey, loadPromise);
+    return loadPromise;
   };
   
   // Toggle nested container expansion
@@ -232,15 +254,23 @@ export function useNestedContainers(): UseNestedContainersReturn {
       setExpandedNestedPaths(new Set<string>());
       return;
     }
-
-    try {
-      await invoke("nested_container_clear_cache");
-      setNestedEntriesCache(new Map());
-      setNestedInfoCache(new Map());
-      setExpandedNestedPaths(new Set<string>());
-    } catch (err) {
-      log.error("Failed to clear cache:", err);
+    if (inFlightClear) {
+      return inFlightClear;
     }
+
+    inFlightClear = (async (): Promise<void> => {
+      try {
+        await invoke("nested_container_clear_cache");
+        setNestedEntriesCache(new Map());
+        setNestedInfoCache(new Map());
+        setExpandedNestedPaths(new Set<string>());
+      } catch (err) {
+        log.error("Failed to clear cache:", err);
+      } finally {
+        inFlightClear = null;
+      }
+    })();
+    return inFlightClear;
   };
   
   // Get cached entries (raw, without synthesis)
