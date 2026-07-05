@@ -142,11 +142,7 @@ describe("buildSaveOptions", () => {
       makeParams({ selectedContainerEntry: () => entry }),
     );
 
-    expect(result!.uiState.selected_entry).toEqual({
-      containerPath: "/evidence/case.e01",
-      entryPath: "/evidence/case.e01/file.txt",
-      name: "file.txt",
-    });
+    expect(result!.uiState.selected_entry).toEqual(entry);
   });
 
   it("sets selected_entry to null when no entry selected", () => {

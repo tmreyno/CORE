@@ -122,6 +122,63 @@ describe("projectLoader", () => {
     });
   });
 
+  it("restores entry tabs with saved size and AD1 address metadata", () => {
+    const tabs = [
+      {
+        id: "entry:/Users/terry/Documents/report.pdf",
+        type: "entry",
+        file_path: "/cases/1827-1001/1.Evidence/export.AD1",
+        entry_container_path: "/cases/1827-1001/1.Evidence/export.AD1",
+        entry_path: "/Users/terry/Documents/report.pdf",
+        entry_name: "report.pdf",
+        name: "report.pdf",
+        order: 0,
+        entry_size: 4096,
+        entry_is_dir: false,
+        entry_is_vfs_entry: false,
+        entry_is_archive_entry: false,
+        entry_container_type: "ad1",
+        entry_data_addr: 8192,
+        entry_item_addr: 4096,
+        entry_compressed_size: 2048,
+        entry_data_end_addr: 10240,
+        entry_metadata_addr: 12288,
+        entry_first_child_addr: null,
+      },
+    ] as unknown as ProjectTab[];
+
+    const restored = restoreCenterTabs(
+      tabs,
+      [
+        makeFile({
+          path: "/cases/1827-1001/1.Evidence/export.AD1",
+          filename: "export.AD1",
+          container_type: "AccessData (AD1)",
+        }),
+      ],
+      [],
+      [],
+    );
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].entry).toMatchObject({
+      containerPath: "/cases/1827-1001/1.Evidence/export.AD1",
+      entryPath: "/Users/terry/Documents/report.pdf",
+      name: "report.pdf",
+      size: 4096,
+      isDir: false,
+      isVfsEntry: false,
+      isArchiveEntry: false,
+      containerType: "ad1",
+      dataAddr: 8192,
+      itemAddr: 4096,
+      compressedSize: 2048,
+      dataEndAddr: 10240,
+      metadataAddr: 12288,
+      firstChildAddr: null,
+    });
+  });
+
   it("restores document tabs with viewer entries", () => {
     const doc = makeCaseDoc();
     const tabs: ProjectTab[] = [

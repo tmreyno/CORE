@@ -309,7 +309,7 @@ export function createProjectIO(
     if (centerTabs.length > 0) {
       // Use new center tabs system
       tabs = centerTabs.map((tab, index) => {
-        const projectTab: ProjectTab = {
+        const projectTab: ProjectTab & Record<string, unknown> = {
           id: tab.id,
           type: tab.type,
           file_path: tab.file?.path || tab.documentPath || tab.entry?.containerPath || tab.processedDb?.path || "",
@@ -328,6 +328,23 @@ export function createProjectIO(
           collection_list_view: tab.collectionListView,
           last_viewed: now,
         };
+
+        if (tab.entry) {
+          projectTab.entry_size = tab.entry.size;
+          projectTab.entry_is_dir = tab.entry.isDir;
+          projectTab.entry_is_vfs_entry = tab.entry.isVfsEntry;
+          projectTab.entry_is_archive_entry = tab.entry.isArchiveEntry;
+          projectTab.entry_is_disk_file = tab.entry.isDiskFile;
+          projectTab.entry_container_type = tab.entry.containerType;
+          projectTab.entry_metadata = tab.entry.metadata;
+          projectTab.entry_data_addr = tab.entry.dataAddr;
+          projectTab.entry_item_addr = tab.entry.itemAddr;
+          projectTab.entry_compressed_size = tab.entry.compressedSize;
+          projectTab.entry_data_end_addr = tab.entry.dataEndAddr;
+          projectTab.entry_metadata_addr = tab.entry.metadataAddr;
+          projectTab.entry_first_child_addr = tab.entry.firstChildAddr;
+        }
+
         return projectTab;
       });
       

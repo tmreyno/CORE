@@ -102,6 +102,12 @@ describe("buildSaveOptions", () => {
       containerPath: "/img.e01",
       entryPath: "Documents/readme.txt",
       name: "readme.txt",
+      size: 512,
+      isDir: false,
+      isVfsEntry: true,
+      containerType: "EnCase (E01)",
+      dataAddr: null,
+      itemAddr: null,
     };
     const result = buildSaveOptions(makeParams({ selectedEntry: entry }));
     expect(result?.uiState.selected_entry).toEqual(entry);

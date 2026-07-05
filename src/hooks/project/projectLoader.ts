@@ -28,6 +28,22 @@ import { createDocumentEntry } from "./projectSetup";
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
 
+type RestorableProjectTab = ProjectTab & {
+  entry_size?: number;
+  entry_is_dir?: boolean;
+  entry_is_vfs_entry?: boolean;
+  entry_is_archive_entry?: boolean;
+  entry_is_disk_file?: boolean;
+  entry_container_type?: string;
+  entry_metadata?: Record<string, unknown>;
+  entry_data_addr?: number | null;
+  entry_item_addr?: number | null;
+  entry_compressed_size?: number | null;
+  entry_data_end_addr?: number | null;
+  entry_metadata_addr?: number | null;
+  entry_first_child_addr?: number | null;
+};
+
 // ─── Params Interface ────────────────────────────────────────────────────────
 
 export interface HandleLoadProjectParams {
@@ -124,24 +140,17 @@ export function restoreCenterTabs(
         const containerPath = savedTab.entry_container_path || savedTab.file_path;
         if (savedTab.entry_path && containerPath) {
           const matchedFile = discoveredFiles.find((f) => f.path === containerPath);
-          const containerType =
-            matchedFile?.container_type || savedTab.container_type || "";
-          const browserMode = getContainerBrowserMode(containerType);
+          const entry = restoreEntryFromProjectTab(
+            savedTab as RestorableProjectTab,
+            containerPath,
+            matchedFile,
+          );
           restoredTabs.push({
             id: savedTab.id || `entry:${savedTab.entry_path}`,
             type: "entry",
             title: savedTab.entry_name || savedTab.name,
             subtitle: matchedFile?.filename || savedTab.subtitle,
-            entry: {
-              containerPath,
-              entryPath: savedTab.entry_path,
-              name: savedTab.entry_name || savedTab.name,
-              size: 0,
-              isDir: false,
-              isVfsEntry: browserMode === "vfs",
-              isArchiveEntry: browserMode === "archive",
-              containerType,
-            },
+            entry,
             closable: true,
           });
         }
@@ -263,6 +272,40 @@ function evidenceFileForCenterTab(
   if (!containerPath) return undefined;
 
   return discoveredFiles.find((file) => file.path === containerPath);
+}
+
+function restoreEntryFromProjectTab(
+  savedTab: RestorableProjectTab,
+  containerPath: string,
+  matchedFile: DiscoveredFile | undefined,
+): SelectedEntry {
+  const containerType =
+    savedTab.entry_container_type ||
+    matchedFile?.container_type ||
+    savedTab.container_type ||
+    "";
+
+  return restoreSelectedEntry(
+    {
+      containerPath,
+      entryPath: savedTab.entry_path || "",
+      name: savedTab.entry_name || savedTab.name,
+      size: savedTab.entry_size ?? 0,
+      isDir: savedTab.entry_is_dir ?? false,
+      isVfsEntry: savedTab.entry_is_vfs_entry,
+      isArchiveEntry: savedTab.entry_is_archive_entry,
+      isDiskFile: savedTab.entry_is_disk_file,
+      containerType,
+      metadata: savedTab.entry_metadata,
+      dataAddr: savedTab.entry_data_addr,
+      itemAddr: savedTab.entry_item_addr,
+      compressedSize: savedTab.entry_compressed_size,
+      dataEndAddr: savedTab.entry_data_end_addr,
+      metadataAddr: savedTab.entry_metadata_addr,
+      firstChildAddr: savedTab.entry_first_child_addr,
+    },
+    matchedFile ? [matchedFile] : [],
+  );
 }
 
 export function restoreSelectedEntry(
