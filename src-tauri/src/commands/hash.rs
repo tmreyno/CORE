@@ -145,7 +145,7 @@ pub struct HashSourceProgress {
 // Helper Functions
 // =============================================================================
 
-/// Check if a container type string represents an EWF-based format (E01, Ex01, L01)
+/// Check if a container type string represents an EWF-based format (E01, Ex01, L01, Lx01)
 fn is_ewf_type(container_type: &str) -> bool {
     let container_type = container_type.trim().to_lowercase();
     container_type.contains("e01")
@@ -153,6 +153,7 @@ fn is_ewf_type(container_type: &str) -> bool {
         || container_type.contains("ewf")
         || container_type.contains("ex01")
         || container_type.contains("l01")
+        || container_type.contains("lx01")
 }
 
 /// Check if a container type string represents an AD1 format
@@ -1883,6 +1884,7 @@ mod tests {
         assert!(is_ewf_type("application/x-ewf"));
         assert!(is_ewf_type("EWF-E01"));
         assert!(is_ewf_type("EnCase (E01)"));
+        assert!(is_ewf_type("Lx01"));
         assert!(!is_ewf_type("ad1"));
         assert!(!is_ewf_type("raw"));
     }
@@ -1941,6 +1943,22 @@ mod tests {
         let before = batch_hash_cache_scope_for_path("L01", first.to_str().unwrap());
         std::fs::write(&second, b"segment two changed").unwrap();
         let after = batch_hash_cache_scope_for_path("L01", first.to_str().unwrap());
+
+        assert!(before.starts_with("decoded-ewf:segments-"));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn batch_hash_cache_scope_for_lx01_includes_companion_segment_metadata() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("logical.Lx01");
+        let second = temp_dir.path().join("logical.Lx02");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+
+        let before = batch_hash_cache_scope_for_path("Lx01", first.to_str().unwrap());
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = batch_hash_cache_scope_for_path("Lx01", first.to_str().unwrap());
 
         assert!(before.starts_with("decoded-ewf:segments-"));
         assert_ne!(before, after);
