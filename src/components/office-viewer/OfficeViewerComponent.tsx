@@ -89,7 +89,9 @@ export function OfficeViewer(props: OfficeViewerProps) {
       log.error("Failed to load office document:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (gen === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 

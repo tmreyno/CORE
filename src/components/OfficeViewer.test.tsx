@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { OfficeViewer } from "./OfficeViewer";
 import { mockInvoke } from "../__tests__/setup";
@@ -186,6 +187,47 @@ describe("OfficeViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Corrupted DOCX file");
+    });
+
+    it("keeps loading the current document when a stale document read finishes", async () => {
+      let resolveSlow: (value: typeof mockDocxData) => void = () => {};
+      const slowResult = new Promise<typeof mockDocxData>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const currentResult = new Promise<typeof mockDocxData>(() => {});
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "office_read_document" && args?.path === "/tmp/slow.docx") {
+          return slowResult;
+        }
+        if (command === "office_read_document" && args?.path === "/tmp/current.docx") {
+          return currentResult;
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
+
+      const [path, setPath] = createSignal("/tmp/slow.docx");
+      const { container } = renderComponent(() => <OfficeViewer path={path()} />);
+      await tick();
+
+      setPath("/tmp/current.docx");
+      await tick();
+      expect(container.textContent).toContain("Loading");
+
+      resolveSlow({
+        ...mockDocxData,
+        path: "/tmp/slow.docx",
+        sections: [
+          {
+            label: "Stale",
+            paragraphs: [{ text: "Stale document content", hint: "normal" }],
+          },
+        ],
+      });
+      await tick();
+
+      expect(container.textContent).toContain("Loading");
+      expect(container.textContent).not.toContain("Stale document content");
     });
   });
 
