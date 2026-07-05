@@ -31,7 +31,7 @@ struct RegistryStringMapping {
 
 const SQLITE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const SQLITE_ARTIFACT_COPY_CHUNK_BYTES: usize = 1024 * 1024;
-const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024;
+const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 const SQLITE_METADATA_NAME_LIMIT: usize = 12;
 const MAX_SYSTEM_IDENTITY_LIST_ITEMS: usize = 32;
@@ -370,6 +370,8 @@ fn is_system_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/system/library/coreservices/systemversion.plist")
         || source_id.ends_with("/library/preferences/systemconfiguration/com.apple.boot.plist")
         || source_id.ends_with("/library/preferences/systemconfiguration/networkinterfaces.plist")
+        || source_id.ends_with("/library/preferences/.globalpreferences.plist")
+        || source_id.ends_with("/library/receipts/installhistory.plist")
         || source_id.ends_with("/windows/system32/config/system")
         || source_id.ends_with("/windows/system32/config/software")
         || source_id.ends_with("/config/system")
@@ -717,6 +719,12 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "networkinterfaces.plist" => {
             metadata.extend(parse_macos_network_interfaces_metadata(data));
         }
+        ".globalpreferences.plist" => {
+            metadata.extend(parse_macos_global_preferences_metadata(data));
+        }
+        "installhistory.plist" => {
+            metadata.extend(parse_macos_install_history_metadata(data));
+        }
         "systemversion.plist" | "preferences.plist" | "com.apple.boot.plist" => {
             metadata.extend(parse_macos_plist_identity_metadata(data));
         }
@@ -935,6 +943,89 @@ fn parse_macos_network_interfaces_metadata(data: &[u8]) -> BTreeMap<String, Stri
     metadata
 }
 
+fn parse_macos_global_preferences_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+
+    insert_plist_string(&mut metadata, &value, "AppleLocale", "system.locale");
+    insert_plist_string(&mut metadata, &value, "AppleCountry", "system.country");
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "AppleMeasurementUnits",
+        "system.measurementUnits",
+    );
+    insert_plist_string(
+        &mut metadata,
+        &value,
+        "AppleTemperatureUnit",
+        "system.temperatureUnit",
+    );
+    if let Some(languages) = find_plist_string_array(&value, "AppleLanguages") {
+        metadata.insert(
+            "system.languages".to_string(),
+            truncate_metadata_value(&languages.join(", "), MAX_ARTIFACT_METADATA_VALUE_CHARS),
+        );
+    }
+
+    metadata
+}
+
+fn parse_macos_install_history_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+    let plist::Value::Array(entries) = value else {
+        return metadata;
+    };
+
+    let mut install_count = 0usize;
+    let mut latest_install = None;
+    for entry in entries.iter().take(MAX_SYSTEM_IDENTITY_LIST_ITEMS) {
+        let plist::Value::Dictionary(dict) = entry else {
+            continue;
+        };
+        install_count = install_count.saturating_add(1);
+        latest_install = Some(dict);
+    }
+
+    if install_count > 0 {
+        metadata.insert(
+            "system.installHistoryCount".to_string(),
+            install_count.to_string(),
+        );
+    }
+    let Some(latest_install) = latest_install else {
+        return metadata;
+    };
+    if let Some(value) = plist_dict_string(latest_install, "displayName") {
+        metadata.insert(
+            "system.latestInstallName".to_string(),
+            truncate_metadata_value(value, MAX_ARTIFACT_METADATA_VALUE_CHARS),
+        );
+    }
+    if let Some(value) = plist_dict_string(latest_install, "displayVersion") {
+        metadata.insert(
+            "system.latestInstallVersion".to_string(),
+            truncate_metadata_value(value, MAX_ARTIFACT_METADATA_VALUE_CHARS),
+        );
+    }
+    if let Some(value) = plist_dict_date(latest_install, "date") {
+        metadata.insert("system.latestInstallDate".to_string(), value);
+    }
+    if let Some(values) = plist_dict_string_array(latest_install, "packageIdentifiers") {
+        metadata.insert(
+            "system.latestInstallPackages".to_string(),
+            truncate_metadata_value(&values.join(", "), MAX_ARTIFACT_METADATA_VALUE_CHARS),
+        );
+    }
+
+    metadata
+}
+
 fn describe_macos_network_interface(
     bsd_name: Option<&str>,
     display_name: Option<&str>,
@@ -993,6 +1084,22 @@ fn find_plist_string<'a>(value: &'a plist::Value, key: &str) -> Option<&'a str> 
     }
 }
 
+fn find_plist_string_array(value: &plist::Value, key: &str) -> Option<Vec<String>> {
+    match value {
+        plist::Value::Dictionary(dict) => {
+            if let Some(values) = plist_dict_string_array(dict, key) {
+                return Some(values);
+            }
+            dict.values()
+                .find_map(|value| find_plist_string_array(value, key))
+        }
+        plist::Value::Array(values) => values
+            .iter()
+            .find_map(|value| find_plist_string_array(value, key)),
+        _ => None,
+    }
+}
+
 fn find_plist_array<'a>(value: &'a plist::Value, key: &str) -> Option<&'a Vec<plist::Value>> {
     match value {
         plist::Value::Dictionary(dict) => {
@@ -1008,6 +1115,26 @@ fn find_plist_array<'a>(value: &'a plist::Value, key: &str) -> Option<&'a Vec<pl
 
 fn plist_dict_string<'a>(dict: &'a plist::Dictionary, key: &str) -> Option<&'a str> {
     dict.get(key).and_then(plist::Value::as_string)
+}
+
+fn plist_dict_string_array(dict: &plist::Dictionary, key: &str) -> Option<Vec<String>> {
+    let plist::Value::Array(values) = dict.get(key)? else {
+        return None;
+    };
+    let strings: Vec<String> = values
+        .iter()
+        .filter_map(plist::Value::as_string)
+        .map(ToString::to_string)
+        .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+        .collect();
+    (!strings.is_empty()).then_some(strings)
+}
+
+fn plist_dict_date(dict: &plist::Dictionary, key: &str) -> Option<String> {
+    let plist::Value::Date(value) = dict.get(key)? else {
+        return None;
+    };
+    Some(value.to_xml_format())
 }
 
 fn plist_data_mac_address(value: &plist::Value) -> Option<String> {
@@ -1748,6 +1875,106 @@ tmpfs /run tmpfs rw,nosuid,nodev 0 0
     }
 
     #[test]
+    fn system_identity_metadata_extracts_macos_global_preferences() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Library/Preferences/.GlobalPreferences.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>AppleLocale</key><string>en_US</string>
+  <key>AppleCountry</key><string>US</string>
+  <key>AppleLanguages</key>
+  <array>
+    <string>en-US</string>
+    <string>es-US</string>
+  </array>
+  <key>AppleMeasurementUnits</key><string>Inches</string>
+  <key>AppleTemperatureUnit</key><string>Fahrenheit</string>
+</dict>
+</plist>
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.locale").map(String::as_str),
+            Some("en_US")
+        );
+        assert_eq!(
+            metadata.get("system.languages").map(String::as_str),
+            Some("en-US, es-US")
+        );
+        assert_eq!(
+            metadata.get("system.temperatureUnit").map(String::as_str),
+            Some("Fahrenheit")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_macos_install_history() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Library/Receipts/InstallHistory.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>date</key><date>2024-01-01T00:00:00Z</date>
+    <key>displayName</key><string>macOS Security Response</string>
+    <key>displayVersion</key><string>1.0</string>
+  </dict>
+  <dict>
+    <key>date</key><date>2026-06-01T12:34:56Z</date>
+    <key>displayName</key><string>macOS Update</string>
+    <key>displayVersion</key><string>15.5</string>
+    <key>packageIdentifiers</key>
+    <array>
+      <string>com.apple.pkg.update.os</string>
+      <string>com.apple.pkg.update.firmware</string>
+    </array>
+  </dict>
+</array>
+</plist>
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata
+                .get("system.installHistoryCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.latestInstallName").map(String::as_str),
+            Some("macOS Update")
+        );
+        assert_eq!(
+            metadata
+                .get("system.latestInstallVersion")
+                .map(String::as_str),
+            Some("15.5")
+        );
+        assert_eq!(
+            metadata
+                .get("system.latestInstallPackages")
+                .map(String::as_str),
+            Some("com.apple.pkg.update.os, com.apple.pkg.update.firmware")
+        );
+        assert_eq!(
+            metadata.get("system.latestInstallDate").map(String::as_str),
+            Some("2026-06-01T12:34:56Z")
+        );
+    }
+
+    #[test]
     fn system_identity_source_classifier_matches_known_identity_files() {
         assert!(is_system_identity_source("/Windows/System32/config/SYSTEM"));
         assert!(is_system_identity_source(
@@ -1766,6 +1993,12 @@ tmpfs /run tmpfs rw,nosuid,nodev 0 0
         ));
         assert!(is_system_identity_source(
             "/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/Library/Preferences/.GlobalPreferences.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/Library/Receipts/InstallHistory.plist"
         ));
         assert!(!is_system_identity_source(
             "/Users/test/Documents/notes.txt"
