@@ -64,6 +64,35 @@ describe("projectLoader", () => {
     });
   });
 
+  it("restores document tabs with viewer entries", () => {
+    const doc = makeCaseDoc();
+    const tabs: ProjectTab[] = [
+      {
+        id: `document:${doc.path}`,
+        type: "document",
+        file_path: doc.path,
+        document_path: doc.path,
+        name: doc.filename,
+        order: 0,
+      },
+    ];
+
+    const restored = restoreCenterTabs(tabs, [], [], [doc]);
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      id: `document:${doc.path}`,
+      type: "document",
+      documentPath: doc.path,
+      documentEntry: {
+        containerPath: doc.path,
+        entryPath: doc.path,
+        name: doc.filename,
+        isDiskFile: true,
+      },
+    });
+  });
+
   it("shows browser file picker and cancel feedback when Open Project has no selection", async () => {
     const setScanDir = vi.fn();
     const toast = {
@@ -285,6 +314,10 @@ describe("projectLoader", () => {
       expect.objectContaining({
         type: "document",
         documentPath: doc.path,
+        documentEntry: expect.objectContaining({
+          containerPath: doc.path,
+          entryPath: doc.path,
+        }),
       }),
       expect.objectContaining({
         type: "processed",

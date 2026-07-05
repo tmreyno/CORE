@@ -18,11 +18,12 @@ import type { CenterTab, CenterPaneViewMode } from "../../components/layout/Cent
 import type { DiscoveredFile, CaseDocument, ContainerInfo, AxiomCaseInfo, ArtifactCategorySummary } from "../../types";
 import type { ProjectTab } from "../../types/project";
 import type { useFileManager, useHashManager, useProject, useProcessedDatabases } from "../../hooks";
-import { getDirname } from "../../utils/pathUtils";
+import { getBasename, getDirname } from "../../utils/pathUtils";
 import { getContainerBrowserMode } from "../../components/EvidenceTree/containerDetection";
 import type { LeftPanelTab } from "../../components";
 import { logger } from "../../utils/logger";
 import { isTauri } from "../../utils/platform";
+import { createDocumentEntry } from "./projectSetup";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
@@ -99,11 +100,21 @@ export function restoreCenterTabs(
         const docPath = savedTab.document_path || savedTab.file_path;
         const matchedDoc = caseDocuments.find((d) => d.path === docPath);
         if (matchedDoc || docPath) {
+          const documentEntry = createDocumentEntry(
+            matchedDoc ?? ({
+              path: docPath,
+              filename: savedTab.name || getBasename(docPath) || "Document",
+              size: 0,
+              document_type: "unknown",
+              format: savedTab.container_type || "file",
+            } as unknown as CaseDocument),
+          );
           restoredTabs.push({
             id: savedTab.id || `document:${docPath}`,
             type: "document",
             title: savedTab.name,
             documentPath: docPath,
+            documentEntry,
             closable: true,
           });
         }
