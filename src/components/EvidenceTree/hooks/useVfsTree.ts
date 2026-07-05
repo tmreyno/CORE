@@ -57,6 +57,8 @@ export function useVfsTree(): UseVfsTreeReturn {
   const [vfsChildrenCache, setVfsChildrenCache] = createSignal<Map<string, VfsEntry[]>>(new Map());
   // Track expanded paths
   const [expandedVfsPaths, setExpandedVfsPaths] = createSignal<Set<string>>(new Set());
+  const inFlightMounts = new Map<string, Promise<VfsMountInfo | null>>();
+  const inFlightChildrenLoads = new Map<string, Promise<VfsEntry[]>>();
 
   // Mount a disk image container and get partition info
   const mountVfsContainer = async (containerPath: string): Promise<VfsMountInfo | null> => {
@@ -70,28 +72,39 @@ export function useVfsTree(): UseVfsTreeReturn {
     if (!isTauri) {
       return null;
     }
-
-    try {
-      log.debug("mountVfsContainer - invoking vfs_mount_image...");
-      const invokeStart = performance.now();
-      const mountInfo = await invoke<VfsMountInfo>("vfs_mount_image", {
-        containerPath,
-      });
-      
-      log.debug(`mountVfsContainer - backend returned in ${(performance.now() - invokeStart).toFixed(1)}ms, ${mountInfo.partitions.length} partitions, diskSize=${mountInfo.diskSize}`);
-      
-      setVfsMountCache(prev => {
-        const next = new Map(prev);
-        next.set(containerPath, mountInfo);
-        return next;
-      });
-      
-      log.debug(`mountVfsContainer - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
-      return mountInfo;
-    } catch (err) {
-      log.error("mountVfsContainer FAILED:", err);
-      return null;
+    const pending = inFlightMounts.get(containerPath);
+    if (pending) {
+      log.debug(`mountVfsContainer - sharing pending mount for ${containerPath}`);
+      return pending;
     }
+
+    const loadPromise = (async (): Promise<VfsMountInfo | null> => {
+      try {
+        log.debug("mountVfsContainer - invoking vfs_mount_image...");
+        const invokeStart = performance.now();
+        const mountInfo = await invoke<VfsMountInfo>("vfs_mount_image", {
+          containerPath,
+        });
+
+        log.debug(`mountVfsContainer - backend returned in ${(performance.now() - invokeStart).toFixed(1)}ms, ${mountInfo.partitions.length} partitions, diskSize=${mountInfo.diskSize}`);
+
+        setVfsMountCache(prev => {
+          const next = new Map(prev);
+          next.set(containerPath, mountInfo);
+          return next;
+        });
+
+        log.debug(`mountVfsContainer - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
+        return mountInfo;
+      } catch (err) {
+        log.error("mountVfsContainer FAILED:", err);
+        return null;
+      } finally {
+        inFlightMounts.delete(containerPath);
+      }
+    })();
+    inFlightMounts.set(containerPath, loadPromise);
+    return loadPromise;
   };
 
   // Load directory contents
@@ -108,27 +121,38 @@ export function useVfsTree(): UseVfsTreeReturn {
     if (!isTauri) {
       return [];
     }
-
-    try {
-      log.debug("loadVfsChildren - invoking vfs_list_dir...");
-      const children = await invoke<VfsEntry[]>("vfs_list_dir", {
-        containerPath,
-        dirPath: vfsPath,
-      });
-      
-      log.debug(`loadVfsChildren - backend returned ${children.length} entries for ${vfsPath}`);
-      
-      setVfsChildrenCache(prev => {
-        const next = new Map(prev);
-        next.set(cacheKey, children);
-        return next;
-      });
-      
-      return children;
-    } catch (err) {
-      log.error(`loadVfsChildren failed for ${vfsPath}:`, err);
-      return [];
+    const pending = inFlightChildrenLoads.get(cacheKey);
+    if (pending) {
+      log.debug(`loadVfsChildren - sharing pending load for ${vfsPath}`);
+      return pending;
     }
+
+    const loadPromise = (async (): Promise<VfsEntry[]> => {
+      try {
+        log.debug("loadVfsChildren - invoking vfs_list_dir...");
+        const children = await invoke<VfsEntry[]>("vfs_list_dir", {
+          containerPath,
+          dirPath: vfsPath,
+        });
+
+        log.debug(`loadVfsChildren - backend returned ${children.length} entries for ${vfsPath}`);
+
+        setVfsChildrenCache(prev => {
+          const next = new Map(prev);
+          next.set(cacheKey, children);
+          return next;
+        });
+
+        return children;
+      } catch (err) {
+        log.error(`loadVfsChildren failed for ${vfsPath}:`, err);
+        return [];
+      } finally {
+        inFlightChildrenLoads.delete(cacheKey);
+      }
+    })();
+    inFlightChildrenLoads.set(cacheKey, loadPromise);
+    return loadPromise;
   };
 
   // Toggle directory expansion
@@ -151,6 +175,9 @@ export function useVfsTree(): UseVfsTreeReturn {
       const needsLoad = !vfsChildrenCache().has(cacheKey);
       
       if (needsLoad) {
+        if (_loading.has(nodeKey)) {
+          return;
+        }
         setLoading(prev => new Set([...prev, nodeKey]));
         try {
           await loadVfsChildren(containerPath, vfsPath);
