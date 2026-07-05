@@ -6,8 +6,8 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render } from "solid-js/web";
-import { PartitionNode } from "./VfsTreeNode";
-import type { VfsPartitionInfo } from "../../../types";
+import { PartitionNode, VfsTreeNode } from "./VfsTreeNode";
+import type { VfsEntry, VfsPartitionInfo } from "../../../types";
 
 function renderComponent(component: () => any) {
   const container = document.createElement("div");
@@ -25,6 +25,35 @@ function makePartition(overrides: Partial<VfsPartitionInfo> = {}): VfsPartitionI
     startOffset: 0,
     ...overrides,
   };
+}
+
+function makeVfsEntry(overrides: Partial<VfsEntry> = {}): VfsEntry {
+  return {
+    name: "file.txt",
+    path: "/Partition1_NTFS/file.txt",
+    isDir: false,
+    size: 12,
+    fileType: "text",
+    ...overrides,
+  };
+}
+
+function makeManyEntries(count: number, parent = "/Partition1_NTFS"): VfsEntry[] {
+  return Array.from({ length: count }, (_, index) =>
+    makeVfsEntry({
+      name: `file-${index.toString().padStart(3, "0")}.txt`,
+      path: `${parent}/file-${index.toString().padStart(3, "0")}.txt`,
+    }),
+  );
+}
+
+function clickLoadMore(container: HTMLElement): void {
+  const loadMore = Array.from(container.querySelectorAll<HTMLElement>(".cursor-pointer")).find((element) =>
+    element.textContent?.includes("Load more"),
+  );
+
+  expect(loadMore).toBeTruthy();
+  loadMore!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
 describe("PartitionNode", () => {
@@ -59,6 +88,70 @@ describe("PartitionNode", () => {
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(onToggle).toHaveBeenCalledWith("/case/disk.E01", "/");
+    dispose();
+  });
+
+  it("caps partition child rendering and loads more on demand", () => {
+    const entries = makeManyEntries(250);
+
+    const { container, dispose } = renderComponent(() => (
+      <PartitionNode
+        partition={makePartition()}
+        containerPath="/case/disk.E01"
+        index={0}
+        isExpanded={() => true}
+        isLoading={() => false}
+        isSelected={() => false}
+        getChildren={() => entries}
+        onToggle={vi.fn()}
+        onEntryClick={vi.fn()}
+      />
+    ));
+
+    expect(container.querySelectorAll("[data-entry-path]").length).toBe(200);
+    expect(container.textContent).toContain("Load more (200 of 250)");
+
+    clickLoadMore(container);
+
+    expect(container.querySelectorAll("[data-entry-path]").length).toBe(250);
+    dispose();
+  });
+});
+
+describe("VfsTreeNode", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("caps expanded directory child rendering and loads more on demand", () => {
+    const entry = makeVfsEntry({
+      name: "System32",
+      path: "/Partition1_NTFS/Windows/System32",
+      isDir: true,
+    });
+    const entries = makeManyEntries(250, entry.path);
+
+    const { container, dispose } = renderComponent(() => (
+      <VfsTreeNode
+        entry={entry}
+        containerPath="/case/disk.E01"
+        depth={1}
+        partitionIndex={0}
+        isExpanded={() => true}
+        isLoading={() => false}
+        isSelected={() => false}
+        getChildren={() => entries}
+        onToggle={vi.fn()}
+        onClick={vi.fn()}
+      />
+    ));
+
+    expect(container.querySelectorAll("[data-entry-path]").length).toBe(201);
+    expect(container.textContent).toContain("Load more (200 of 250)");
+
+    clickLoadMore(container);
+
+    expect(container.querySelectorAll("[data-entry-path]").length).toBe(251);
     dispose();
   });
 });
