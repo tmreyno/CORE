@@ -214,6 +214,57 @@ export function restoreCenterTabs(
   return restoredTabs;
 }
 
+type ActiveTabProjectState = {
+  active_tab_path?: string | null;
+  center_pane_state?: {
+    active_tab_id?: string | null;
+  } | null;
+};
+
+function centerTabPaths(tab: CenterTab): string[] {
+  return [
+    tab.file?.path,
+    tab.documentPath,
+    tab.entry?.containerPath,
+    tab.entry?.entryPath,
+    tab.processedDb?.path,
+  ].filter((path): path is string => Boolean(path));
+}
+
+function resolveActiveCenterTab(
+  restoredTabs: CenterTab[],
+  project: ActiveTabProjectState,
+): CenterTab | undefined {
+  const savedActiveId = project.center_pane_state?.active_tab_id;
+  const byId = savedActiveId
+    ? restoredTabs.find((tab) => tab.id === savedActiveId)
+    : undefined;
+  if (byId) return byId;
+
+  const savedActivePath = project.active_tab_path;
+  if (savedActivePath) {
+    const byPath = restoredTabs.find((tab) =>
+      centerTabPaths(tab).includes(savedActivePath),
+    );
+    if (byPath) return byPath;
+  }
+
+  return restoredTabs[0];
+}
+
+function evidenceFileForCenterTab(
+  tab: CenterTab | undefined,
+  discoveredFiles: DiscoveredFile[],
+): DiscoveredFile | undefined {
+  if (!tab) return undefined;
+  if (tab.file) return tab.file;
+
+  const containerPath = tab.entry?.containerPath;
+  if (!containerPath) return undefined;
+
+  return discoveredFiles.find((file) => file.path === containerPath);
+}
+
 // ─── Main Load Handler ───────────────────────────────────────────────────────
 
 /**
@@ -530,14 +581,14 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
           log.debug(
             `Restored ${restoredCenterTabs.length} center pane tabs`,
           );
+          const activeTab = resolveActiveCenterTab(
+            restoredCenterTabs,
+            project,
+          );
 
           // Restore active tab and view mode
           if (setActiveTabId) {
-            const savedActiveId = project.center_pane_state?.active_tab_id;
-            const restoredActiveTab = savedActiveId
-              ? restoredCenterTabs.find((tab) => tab.id === savedActiveId)
-              : undefined;
-            setActiveTabId((restoredActiveTab || restoredCenterTabs[0]).id);
+            setActiveTabId(activeTab?.id || restoredCenterTabs[0].id);
           }
 
           if (
@@ -550,14 +601,13 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
             );
           }
 
-          // Set active file for evidence tabs
-          const activeTab =
-            restoredCenterTabs.find(
-              (t) =>
-                t.id === project.center_pane_state?.active_tab_id,
-            ) || restoredCenterTabs[0];
-          if (activeTab?.file) {
-            fileManager.setActiveFile(activeTab.file);
+          // Set active evidence context for evidence tabs and entries inside containers.
+          const activeFile = evidenceFileForCenterTab(
+            activeTab,
+            discoveredFiles,
+          );
+          if (activeFile) {
+            fileManager.setActiveFile(activeFile);
           }
         }
       } else if (setOpenTabs) {
