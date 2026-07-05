@@ -74,15 +74,19 @@ export async function readTextFromSource(
   offset: number,
   maxChars: number
 ): Promise<TextReadResult> {
-  const { bytes, totalSize } = await readBytesFromSource(file, entry, offset, maxChars * 4);
-  const prefixLength = completeUtf8PrefixLength(bytes);
-  const completeBytes = bytes.slice(0, prefixLength === 0 && bytes.length > 0 ? bytes.length : prefixLength);
-  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(completeBytes));
-  const text = decoded.length > maxChars ? Array.from(decoded).slice(0, maxChars).join("") : decoded;
-  const bytesRead = text.length === decoded.length
-    ? completeBytes.length
-    : new TextEncoder().encode(text).length;
-  return { text, bytesRead, totalSize };
+  if (!isTauri) {
+    throw new Error("Evidence content viewing is available in the desktop app.");
+  }
+
+  const source = buildEvidenceSourceInput(file, entry);
+  if (!source) throw new Error("No file or entry provided");
+
+  const chunk = await commands.viewer.readTextSource(source, offset, maxChars);
+  return {
+    text: chunk.text,
+    bytesRead: chunk.bytesRead,
+    totalSize: chunk.totalSize,
+  };
 }
 
 /**
@@ -116,24 +120,4 @@ function base64ToBytes(data: string): number[] {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
-}
-
-function completeUtf8PrefixLength(bytes: number[]): number {
-  if (bytes.length === 0) return 0;
-
-  let start = bytes.length - 1;
-  while (start >= 0 && (bytes[start] & 0b1100_0000) === 0b1000_0000) {
-    start -= 1;
-  }
-  if (start < 0) return bytes.length;
-
-  const first = bytes[start];
-  const expectedLength =
-    (first & 0b1000_0000) === 0 ? 1 :
-    (first & 0b1110_0000) === 0b1100_0000 ? 2 :
-    (first & 0b1111_0000) === 0b1110_0000 ? 3 :
-    (first & 0b1111_1000) === 0b1111_0000 ? 4 :
-    1;
-
-  return bytes.length - start < expectedLength ? start : bytes.length;
 }

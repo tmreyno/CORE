@@ -353,6 +353,16 @@ export interface ViewerBinaryBase64Chunk {
   data: string;
 }
 
+/** Ranged text chunk returned for source-backed viewers */
+export interface ViewerTextChunk {
+  path: string;
+  offset: number;
+  bytesRead: number;
+  totalSize: number;
+  eof: boolean;
+  text: string;
+}
+
 /** Detected source signature */
 export interface SourceSignature {
   offset: number;
@@ -888,6 +898,17 @@ export const viewerCommands = {
 
   readBinarySourceBase64: (source: HashSourceInput): Promise<string> =>
     invoke<string>("viewer_read_binary_source_base64", { source }),
+
+  readTextSource: (
+    source: HashSourceInput,
+    offset: number,
+    maxChars: number,
+  ): Promise<ViewerTextChunk> =>
+    invoke<ViewerTextChunk>("viewer_read_text_source", {
+      source,
+      offset,
+      maxChars,
+    }),
 
   readBinaryBase64Chunk: (
     path: string,

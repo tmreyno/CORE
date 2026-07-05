@@ -613,6 +613,7 @@ fn run_full(context: tauri::Context) {
             commands::viewer_analyze_path,
             commands::viewer_analyze_source,
             commands::viewer_read_text,
+            commands::viewer_read_text_source,
             commands::viewer_get_binary_info,
             commands::viewer_get_binary_info_source,
             commands::viewer_read_binary_base64,

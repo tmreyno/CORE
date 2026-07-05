@@ -62,6 +62,15 @@ const makeChunk = (bytes: number[], totalSize = bytes.length, offset = 0) => ({
   data: globalThis.btoa(String.fromCharCode(...bytes)),
 });
 
+const makeTextChunk = (text: string, bytesRead = text.length, totalSize = bytesRead, offset = 0) => ({
+  path: "source",
+  offset,
+  bytesRead,
+  totalSize,
+  eof: offset + bytesRead >= totalSize,
+  text,
+});
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
@@ -350,36 +359,45 @@ describe("readBytesFromSource", () => {
 // ---------------------------------------------------------------------------
 
 describe("readTextFromSource", () => {
-  it("reads text from entry by decoding bytes", async () => {
+  it("reads text from entry using the source text command", async () => {
     const entry = makeEntry({ isVfsEntry: true, size: 100 });
-    // "Hello" in UTF-8
-    mockInvoke.mockResolvedValueOnce(makeChunk([0x48, 0x65, 0x6c, 0x6c, 0x6f], 100));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("Hello", 5, 100));
 
     const result = await readTextFromSource(null, entry, 0, 256);
 
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "viewer_read_text_source",
+      expect.objectContaining({
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "/files/test.bin",
+        }),
+        offset: 0,
+        maxChars: 256,
+      })
+    );
     expect(result.text).toBe("Hello");
     expect(result.bytesRead).toBe(5);
     expect(result.totalSize).toBe(100);
   });
 
-  it("reads text from disk file using the source byte command", async () => {
+  it("reads text from disk file using the source text command", async () => {
     const file = makeFile("/evidence/notes.txt", 500);
-    const bytes = Array.from(new TextEncoder().encode("File contents here"));
-    mockInvoke.mockResolvedValueOnce(makeChunk(bytes, 500));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("File contents here", 18, 500));
 
     const result = await readTextFromSource(file, undefined, 0, 1024);
 
-    expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_source_base64_chunk", {
+    expect(mockInvoke).toHaveBeenCalledWith("viewer_read_text_source", {
       source: expect.objectContaining({
         path: file.path,
         containerType: "disk",
         size: 500,
       }),
       offset: 0,
-      size: 4096,
+      maxChars: 1024,
     });
     expect(result.text).toBe("File contents here");
-    expect(result.bytesRead).toBe(bytes.length);
+    expect(result.bytesRead).toBe(18);
     expect(result.totalSize).toBe(500);
   });
 
@@ -391,7 +409,7 @@ describe("readTextFromSource", () => {
 
   it("handles non-UTF8 bytes gracefully", async () => {
     const entry = makeEntry({ size: 4 });
-    mockInvoke.mockResolvedValueOnce(makeChunk([0xFF, 0xFE, 0x00, 0x01], 4));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("\uFFFD\uFFFD\u0000\u0001", 4, 4));
 
     const result = await readTextFromSource(null, entry, 0, 4);
 
@@ -403,39 +421,26 @@ describe("readTextFromSource", () => {
 
   it("truncates decoded text to maxChars", async () => {
     const entry = makeEntry({ size: 10 });
-    const bytes = Array.from(new TextEncoder().encode("abcdef"));
-    mockInvoke.mockResolvedValueOnce(makeChunk(bytes, 10));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("abc", 3, 10));
 
     const result = await readTextFromSource(null, entry, 0, 3);
 
     expect(result.text).toBe("abc");
     expect(result.bytesRead).toBe(3);
     expect(mockInvoke).toHaveBeenCalledWith(
-      "viewer_read_binary_source_base64_chunk",
-      expect.objectContaining({ size: 12 })
+      "viewer_read_text_source",
+      expect.objectContaining({ maxChars: 3 })
     );
   });
 
-  it("does not consume an incomplete trailing UTF-8 sequence", async () => {
+  it("returns backend byte counts for partial source text", async () => {
     const entry = makeEntry({ size: 8 });
-    const bytes = Array.from(new TextEncoder().encode("abc")).concat([0xE2, 0x82]);
-    mockInvoke.mockResolvedValueOnce(makeChunk(bytes, 8));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("abc", 3, 8));
 
     const result = await readTextFromSource(null, entry, 0, 256);
 
     expect(result.text).toBe("abc");
     expect(result.bytesRead).toBe(3);
     expect(result.totalSize).toBe(8);
-  });
-
-  it("still advances when a chunk contains only incomplete UTF-8 bytes", async () => {
-    const entry = makeEntry({ size: 2 });
-    mockInvoke.mockResolvedValueOnce(makeChunk([0xE2, 0x82], 2));
-
-    const result = await readTextFromSource(null, entry, 0, 256);
-
-    expect(result.text.length).toBeGreaterThan(0);
-    expect(result.bytesRead).toBe(2);
-    expect(result.totalSize).toBe(2);
   });
 });

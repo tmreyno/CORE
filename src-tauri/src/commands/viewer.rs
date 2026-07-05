@@ -17,6 +17,7 @@ use std::path::Path;
 
 const MAX_INLINE_BINARY_BASE64_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_BINARY_BASE64_CHUNK_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TEXT_SOURCE_CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +37,17 @@ pub struct ViewerBinaryBase64Chunk {
     pub total_size: u64,
     pub eof: bool,
     pub data: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewerTextChunk {
+    pub path: String,
+    pub offset: u64,
+    pub bytes_read: usize,
+    pub total_size: u64,
+    pub eof: bool,
+    pub text: String,
 }
 
 fn binary_info_for_source(
@@ -113,6 +125,74 @@ fn binary_chunk_source_error_to_string(
         ),
         EvidenceSourceError::OversizedRead { actual, .. } => format!(
             "Binary chunk source returned too many bytes: requested {read_size}, received {actual}"
+        ),
+        other => source_error_to_string(other),
+    }
+}
+
+fn read_text_for_source(
+    source_id: String,
+    source: &dyn EvidenceByteSource,
+    offset: u64,
+    max_chars: usize,
+) -> Result<ViewerTextChunk, String> {
+    let total_size = source.len().map_err(source_error_to_string)?;
+    if offset > total_size {
+        return Err(format!(
+            "Text chunk offset is beyond EOF for {source_id}: offset {offset} > size {total_size}"
+        ));
+    }
+
+    if max_chars == 0 || offset == total_size {
+        return Ok(ViewerTextChunk {
+            path: source_id,
+            offset,
+            bytes_read: 0,
+            total_size,
+            eof: offset >= total_size,
+            text: String::new(),
+        });
+    }
+
+    let requested_bytes = max_chars.saturating_mul(4).min(MAX_TEXT_SOURCE_CHUNK_BYTES);
+    let remaining = total_size - offset;
+    let read_size = usize::try_from(remaining.min(requested_bytes as u64))
+        .map_err(|_| "Text chunk read size does not fit this platform".to_string())?;
+    let data = read_range_fully(source, offset, read_size).map_err(|e| {
+        text_chunk_source_error_to_string(e, &source_id, total_size, offset, read_size)
+    })?;
+
+    let mut text = String::from_utf8_lossy(&data).into_owned();
+    let mut consumed_bytes = data.len();
+    if text.chars().count() > max_chars {
+        text = text.chars().take(max_chars).collect();
+        consumed_bytes = text.len().min(data.len());
+    }
+    let eof = offset.saturating_add(consumed_bytes as u64) >= total_size;
+
+    Ok(ViewerTextChunk {
+        path: source_id,
+        offset,
+        bytes_read: consumed_bytes,
+        total_size,
+        eof,
+        text,
+    })
+}
+
+fn text_chunk_source_error_to_string(
+    error: EvidenceSourceError,
+    source_id: &str,
+    total_size: u64,
+    actual_offset: u64,
+    read_size: usize,
+) -> String {
+    match error {
+        EvidenceSourceError::ShortRead { actual, .. } => format!(
+            "Short text chunk read for {source_id}: source reported {total_size} bytes but read {actual} of {read_size} requested bytes at offset {actual_offset}"
+        ),
+        EvidenceSourceError::OversizedRead { actual, .. } => format!(
+            "Text chunk source returned too many bytes: requested {read_size}, received {actual}"
         ),
         other => source_error_to_string(other),
     }
@@ -255,6 +335,22 @@ pub async fn viewer_read_text(
     })
     .await
     .map_err(|e| format!("Failed to join text read task: {e}"))?
+}
+
+/// Read source bytes as lossy UTF-8 text for the text viewer.
+#[tauri::command]
+pub async fn viewer_read_text_source(
+    source: HashSourceInput,
+    offset: u64,
+    max_chars: usize,
+) -> Result<ViewerTextChunk, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let byte_source = open_hash_source(&source)?;
+        let source_id = byte_source.source_ref().display_id();
+        read_text_for_source(source_id, byte_source.as_ref(), offset, max_chars)
+    })
+    .await
+    .map_err(|e| format!("Failed to join source text read task: {e}"))?
 }
 
 /// Get binary viewer metadata before choosing full or ranged reads.
@@ -614,6 +710,81 @@ mod tests {
         };
 
         assert!(err.contains("Short binary chunk read for sample.bin"));
+        assert!(err.contains("offset 2"));
+    }
+
+    #[test]
+    fn read_text_for_source_reads_bounded_chunk() {
+        let source = ChunkedByteSource::new("setupapi.dev.log", b"alpha\nbeta\ngamma", 16);
+
+        let chunk = read_text_for_source("setupapi.dev.log".to_string(), &source, 6, 4).unwrap();
+
+        assert_eq!(chunk.path, "setupapi.dev.log");
+        assert_eq!(chunk.offset, 6);
+        assert_eq!(chunk.bytes_read, 4);
+        assert_eq!(chunk.total_size, 16);
+        assert!(!chunk.eof);
+        assert_eq!(chunk.text, "beta");
+    }
+
+    #[test]
+    fn read_text_for_source_assembles_chunked_source() {
+        let source = ChunkedByteSource::new("system.sys", b"driver metadata", 2);
+
+        let chunk = read_text_for_source("system.sys".to_string(), &source, 0, 15).unwrap();
+
+        assert_eq!(chunk.bytes_read, 15);
+        assert!(chunk.eof);
+        assert_eq!(chunk.text, "driver metadata");
+    }
+
+    #[test]
+    fn read_text_for_source_truncates_by_character_count() {
+        let data = "serial: \u{6e2c}\u{8a66}-system".as_bytes();
+        let source = ChunkedByteSource::new("metadata.txt", data, 64);
+
+        let chunk = read_text_for_source("metadata.txt".to_string(), &source, 0, 9).unwrap();
+
+        assert_eq!(chunk.text, "serial: \u{6e2c}");
+        assert_eq!(chunk.bytes_read, "serial: \u{6e2c}".len());
+        assert!(!chunk.eof);
+    }
+
+    #[test]
+    fn read_text_for_source_allows_zero_max_chars_without_read() {
+        let source = EmptyBeforeEofByteSource::new("metadata.txt", 12);
+
+        let chunk = read_text_for_source("metadata.txt".to_string(), &source, 2, 0).unwrap();
+
+        assert_eq!(chunk.offset, 2);
+        assert_eq!(chunk.bytes_read, 0);
+        assert_eq!(chunk.total_size, 12);
+        assert!(!chunk.eof);
+        assert_eq!(chunk.text, "");
+    }
+
+    #[test]
+    fn read_text_for_source_rejects_offset_past_eof() {
+        let source = ChunkedByteSource::new("metadata.txt", b"abc", 16);
+
+        let err = match read_text_for_source("metadata.txt".to_string(), &source, 4, 8) {
+            Ok(_) => panic!("expected offset past EOF to fail"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("offset 4 > size 3"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn read_text_for_source_rejects_empty_read_before_eof() {
+        let source = EmptyBeforeEofByteSource::new("metadata.txt", 6);
+
+        let err = match read_text_for_source("metadata.txt".to_string(), &source, 2, 3) {
+            Ok(_) => panic!("expected empty source read before EOF to fail"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("Short text chunk read for metadata.txt"));
         assert!(err.contains("offset 2"));
     }
 }
