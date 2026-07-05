@@ -29,6 +29,7 @@ export interface SectionInfo {
   virtual_size: number;
   raw_size: number;
   characteristics: string;
+  entropy: number | null;
 }
 
 export interface BinaryInfo {

@@ -125,6 +125,7 @@ pub struct SectionInfo {
     pub virtual_size: u64,
     pub raw_size: u64,
     pub characteristics: String,
+    pub entropy: Option<f64>,
 }
 
 /// Binary analysis result (read-only)
@@ -179,7 +180,7 @@ pub fn analyze_binary_bytes(
 
     match obj {
         Object::PE(pe) => analyze_pe(pe, &source_id, data, file_size, strings),
-        Object::Elf(elf) => analyze_elf(elf, &source_id, file_size, strings),
+        Object::Elf(elf) => analyze_elf(elf, &source_id, data, file_size, strings),
         Object::Mach(mach) => analyze_mach(mach, &source_id, data, file_size, strings),
         _ => Err(DocumentError::UnsupportedFormat(
             "Not a recognized binary format".to_string(),
@@ -244,6 +245,11 @@ fn analyze_pe(
                 virtual_size: sec.virtual_size as u64,
                 raw_size: sec.size_of_raw_data as u64,
                 characteristics: format!("0x{:08x}", sec.characteristics),
+                entropy: section_entropy(
+                    data,
+                    sec.pointer_to_raw_data as u64,
+                    sec.size_of_raw_data as u64,
+                ),
             }
         })
         .collect();
@@ -309,6 +315,7 @@ fn analyze_pe(
 fn analyze_elf(
     elf: goblin::elf::Elf,
     source_id: &str,
+    data: &[u8],
     file_size: u64,
     strings: Vec<String>,
 ) -> DocumentResult<BinaryInfo> {
@@ -365,6 +372,7 @@ fn analyze_elf(
                 virtual_size: sec.sh_size,
                 raw_size: sec.sh_size,
                 characteristics: format!("0x{:08x}", sec.sh_flags),
+                entropy: section_entropy(data, sec.sh_offset, sec.sh_size),
             })
         })
         .take(MAX_BINARY_SECTIONS)
@@ -419,7 +427,7 @@ fn analyze_mach(
 ) -> DocumentResult<BinaryInfo> {
     match mach {
         goblin::mach::Mach::Binary(macho) => {
-            analyze_single_mach(macho, source_id, file_size, strings)
+            analyze_single_mach(macho, source_id, data, file_size, strings)
         }
         goblin::mach::Mach::Fat(fat) => {
             let narches = fat.narches;
@@ -430,7 +438,8 @@ fn analyze_mach(
                     if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) =
                         Object::parse(slice)
                     {
-                        let mut info = analyze_single_mach(inner, source_id, file_size, strings)?;
+                        let mut info =
+                            analyze_single_mach(inner, source_id, slice, file_size, strings)?;
                         info.format = BinaryFormat::MachOFat;
                         info.architecture = format!(
                             "{} (Universal, {} architectures)",
@@ -480,6 +489,30 @@ fn checked_u64_slice(data: &[u8], offset: u64, size: u64) -> Option<&[u8]> {
     let len = usize::try_from(size).ok()?;
     let end = start.checked_add(len)?;
     data.get(start..end)
+}
+
+fn section_entropy(data: &[u8], offset: u64, size: u64) -> Option<f64> {
+    let bytes = checked_u64_slice(data, offset, size)?;
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let mut counts = [0usize; 256];
+    for byte in bytes {
+        counts[*byte as usize] += 1;
+    }
+
+    let len = bytes.len() as f64;
+    let entropy = counts
+        .iter()
+        .filter(|count| **count > 0)
+        .map(|count| {
+            let probability = *count as f64 / len;
+            -probability * probability.log2()
+        })
+        .sum::<f64>();
+
+    Some((entropy * 1000.0).round() / 1000.0)
 }
 
 fn push_limited_import(
@@ -906,6 +939,7 @@ fn push_limited_string(strings: &mut Vec<String>, seen: &mut HashSet<String>, va
 fn analyze_single_mach(
     macho: goblin::mach::MachO,
     source_id: &str,
+    data: &[u8],
     file_size: u64,
     strings: Vec<String>,
 ) -> DocumentResult<BinaryInfo> {
@@ -978,6 +1012,7 @@ fn analyze_single_mach(
             virtual_size: sec.size,
             raw_size: sec.size,
             characteristics: format!("0x{:08x}", sec.flags),
+            entropy: section_entropy(data, sec.offset as u64, sec.size),
         })
         .collect();
 
@@ -1102,6 +1137,19 @@ mod tests {
     fn test_checked_u64_slice_rejects_overflow_range() {
         let data = b"hello";
         assert!(checked_u64_slice(data, 4, u64::MAX).is_none());
+    }
+
+    #[test]
+    fn section_entropy_scores_raw_section_bytes() {
+        let mut data = vec![0u8; 16];
+        for value in 0u8..=255 {
+            data.push(value);
+        }
+
+        assert_eq!(section_entropy(&data, 0, 16), Some(0.0));
+        assert_eq!(section_entropy(&data, 16, 256), Some(8.0));
+        assert_eq!(section_entropy(&data, 16, 0), None);
+        assert_eq!(section_entropy(&data, 10_000, 4), None);
     }
 
     #[test]

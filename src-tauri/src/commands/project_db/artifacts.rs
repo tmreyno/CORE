@@ -4461,6 +4461,33 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
             .map(|section| section.name.clone())
             .collect();
         insert_joined_metadata(&mut metadata, "binary.sections", &sections);
+
+        if let Some(max_entropy) = info
+            .sections
+            .iter()
+            .filter_map(|section| section.entropy)
+            .max_by(f64::total_cmp)
+        {
+            metadata.insert(
+                "binary.maxSectionEntropy".to_string(),
+                format!("{max_entropy:.3}"),
+            );
+        }
+
+        let high_entropy_sections: Vec<String> = info
+            .sections
+            .iter()
+            .filter_map(|section| {
+                let entropy = section.entropy?;
+                (entropy >= 7.0).then(|| format!("{}={entropy:.3}", section.name))
+            })
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .collect();
+        insert_joined_metadata(
+            &mut metadata,
+            "binary.highEntropySections",
+            &high_entropy_sections,
+        );
     }
     if !info.strings.is_empty() {
         let strings: Vec<String> = info
@@ -5067,6 +5094,7 @@ mod tests {
                 virtual_size: 0x2000,
                 raw_size: 0x2000,
                 characteristics: "0x60000020".to_string(),
+                entropy: Some(7.812),
             }],
             strings: vec![
                 "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt".to_string(),
@@ -5122,6 +5150,16 @@ mod tests {
         assert_eq!(
             metadata.get("binary.exports").map(String::as_str),
             Some("DriverEntry")
+        );
+        assert_eq!(
+            metadata.get("binary.maxSectionEntropy").map(String::as_str),
+            Some("7.812")
+        );
+        assert_eq!(
+            metadata
+                .get("binary.highEntropySections")
+                .map(String::as_str),
+            Some(".text=7.812")
         );
         assert_eq!(
             metadata.get("binary.stringCount").map(String::as_str),

@@ -53,6 +53,7 @@ const mockPeData = {
       virtual_address: 4096,
       virtual_size: 32768,
       raw_size: 32768,
+      entropy: 6.421,
       characteristics: "CNT_CODE | MEM_EXECUTE | MEM_READ",
     },
     {
@@ -60,6 +61,7 @@ const mockPeData = {
       virtual_address: 40960,
       virtual_size: 8192,
       raw_size: 8192,
+      entropy: 5.117,
       characteristics: "CNT_INITIALIZED_DATA | MEM_READ",
     },
     {
@@ -67,6 +69,7 @@ const mockPeData = {
       virtual_address: 49152,
       virtual_size: 4096,
       raw_size: 2048,
+      entropy: 3.904,
       characteristics: "CNT_INITIALIZED_DATA | MEM_READ | MEM_WRITE",
     },
   ],
@@ -119,6 +122,7 @@ const mockElfData = {
       virtual_address: 4096,
       virtual_size: 16384,
       raw_size: 16384,
+      entropy: 5.733,
       characteristics: "ALLOC | EXECINSTR",
     },
   ],
@@ -227,6 +231,7 @@ describe("BinaryViewer", () => {
       expect(container.textContent).toContain(".text");
       expect(container.textContent).toContain(".rdata");
       expect(container.textContent).toContain(".data");
+      expect(container.textContent).toContain("6.421");
     });
 
     it("renders imports list", async () => {
