@@ -6,7 +6,7 @@
 
 import { createSignal, createEffect, createMemo, on, Show, lazy, Suspense, batch } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { useFileManager, useHashManager, useDatabase, useProject, useProcessedDatabases, useHistoryContext, usePreferenceEffects, useKeyboardHandler, createSearchHandlers, createContextMenuBuilders, createCommandPaletteActions, useAppState, useDatabaseEffects, useCenterPaneTabs, useActivityManager, useEntryNavigation, useActivityLogging, useProjectActions, useMenuActions, useLoadingState, useSearchIndex, useWorkspaceMode, TAB_MODULE_MAP, type DetailViewType } from "./hooks";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { useAppHandlers } from "./hooks/useAppHandlers";
@@ -815,12 +815,27 @@ function App() {
     if (projectLoadInProgress) return;
     projectLoadInProgress = true;
     try {
+      if (!path) {
+        if (!projectManager.hasProject() || !isTauri) {
+          await _handleLoadProject();
+          return;
+        }
+
+        const selected = await open({
+          filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
+          title: "Open Project",
+          multiple: false,
+        });
+
+        if (!selected) {
+          return;
+        }
+
+        path = selected as string;
+      }
+
       const canProceed = await closeCurrentProject("switch-project");
       if (!canProceed) return;
-      if (!path) {
-        await _handleLoadProject();
-        return;
-      }
       await globalLoading.run("Loading project…", () => _handleLoadProject(path));
     } finally {
       projectLoadInProgress = false;

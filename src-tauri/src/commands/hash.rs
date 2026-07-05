@@ -6,7 +6,8 @@
 
 //! Parallel batch hashing operations for multiple files.
 
-use std::collections::HashMap;
+use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
@@ -670,6 +671,58 @@ fn batch_hash_cache_scope(container_type: &str) -> String {
     } else {
         format!("raw-file:{normalized}")
     }
+}
+
+fn batch_hash_cache_scope_for_path(container_type: &str, path: &str) -> String {
+    let base_scope = batch_hash_cache_scope(container_type);
+    if is_ad1_type(container_type) {
+        if let Ok(segment_paths) = ad1::get_segment_paths(path) {
+            return segmented_batch_hash_cache_scope(&base_scope, &segment_paths);
+        }
+    } else if is_ewf_type(container_type) {
+        let lower_path = path.to_ascii_lowercase();
+        let segments = if lower_path.ends_with(".l01") || lower_path.ends_with(".lx01") {
+            crate::common::segments::discover_l01_segments(path)
+        } else {
+            crate::common::segments::discover_e01_segments(path)
+        };
+        if let Ok(segment_paths) = segments {
+            return segmented_batch_hash_cache_scope(&base_scope, &segment_paths);
+        }
+    }
+
+    base_scope
+}
+
+fn segmented_batch_hash_cache_scope(
+    base_scope: &str,
+    segment_paths: &[std::path::PathBuf],
+) -> String {
+    if segment_paths.len() <= 1 {
+        return base_scope.to_string();
+    }
+
+    let mut fingerprint = DefaultHasher::new();
+    segment_paths.len().hash(&mut fingerprint);
+    for segment_path in segment_paths {
+        segment_path.to_string_lossy().hash(&mut fingerprint);
+        match std::fs::metadata(segment_path) {
+            Ok(metadata) => {
+                metadata.len().hash(&mut fingerprint);
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                        duration.as_secs().hash(&mut fingerprint);
+                        duration.subsec_nanos().hash(&mut fingerprint);
+                    }
+                }
+            }
+            Err(_) => {
+                "missing".hash(&mut fingerprint);
+            }
+        }
+    }
+
+    format!("{base_scope}:segments-{:#016x}", fingerprint.finish())
 }
 
 fn hash_algorithm_worker_name(algorithm: HashAlgorithm) -> &'static str {
@@ -1436,7 +1489,8 @@ pub async fn batch_hash(
 
                 info!(container_type = %container_for_hash, algorithm = %algo_for_hash, path = %path_for_hash, "[HASH-DIAG] About to start hashing");
                 let _hash_start = std::time::Instant::now();
-                let cache_scope = batch_hash_cache_scope(&container_for_hash);
+                let cache_scope =
+                    batch_hash_cache_scope_for_path(&container_for_hash, &path_for_hash);
 
                 // Check cache first - this can skip expensive recomputation
                 let cached_hash = hash_cache::get_cached_hash_scoped(
@@ -1842,6 +1896,38 @@ mod tests {
         assert_eq!(batch_hash_cache_scope("AFF4"), "decoded-aff4");
         assert_eq!(batch_hash_cache_scope("raw"), "raw-file:raw");
         assert_eq!(batch_hash_cache_scope(" "), "raw-file:disk");
+    }
+
+    #[test]
+    fn segmented_batch_hash_cache_scope_changes_when_companion_segment_changes() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("case.ad1");
+        let second = temp_dir.path().join("case.ad2");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+        let segment_paths = vec![first, second.clone()];
+
+        let before = segmented_batch_hash_cache_scope("ad1-segments", &segment_paths);
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = segmented_batch_hash_cache_scope("ad1-segments", &segment_paths);
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn batch_hash_cache_scope_for_e01_includes_companion_segment_metadata() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("image.E01");
+        let second = temp_dir.path().join("image.E02");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+
+        let before = batch_hash_cache_scope_for_path("E01", first.to_str().unwrap());
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = batch_hash_cache_scope_for_path("E01", first.to_str().unwrap());
+
+        assert!(before.starts_with("decoded-ewf:segments-"));
+        assert_ne!(before, after);
     }
 
     #[test]
