@@ -968,6 +968,15 @@ fn system_info_metadata(
     if is_linux_machine_info_path(&normalized_path, &normalized_name) {
         return linux_machine_info_metadata(header);
     }
+    if is_linux_locale_path(&normalized_path) {
+        return linux_locale_metadata(header);
+    }
+    if is_unix_timezone_path(&normalized_path) {
+        return unix_timezone_metadata(&normalized_path, header);
+    }
+    if is_unix_mount_table_path(&normalized_path) {
+        return unix_mount_table_metadata(header);
+    }
     if is_linux_cpuinfo_path(&normalized_path, &normalized_name) {
         return linux_cpuinfo_metadata(header);
     }
@@ -1044,6 +1053,21 @@ fn is_linux_machine_id_path(path: &str, name: &str) -> bool {
 
 fn is_linux_machine_info_path(path: &str, name: &str) -> bool {
     name == "machine-info" && path.ends_with("etc/machine-info")
+}
+
+fn is_linux_locale_path(path: &str) -> bool {
+    path.ends_with("etc/default/locale")
+}
+
+fn is_unix_timezone_path(path: &str) -> bool {
+    path.ends_with("etc/timezone")
+        || path.ends_with("etc/localtime")
+        || path.ends_with("private/etc/localtime")
+        || path.ends_with("var/db/timezone/localtime")
+}
+
+fn is_unix_mount_table_path(path: &str) -> bool {
+    path.ends_with("etc/fstab") || path.ends_with("etc/mtab")
 }
 
 fn is_linux_cpuinfo_path(path: &str, name: &str) -> bool {
@@ -1635,6 +1659,129 @@ fn linux_machine_info_metadata(header: &[u8]) -> BTreeMap<String, String> {
         metadata.insert("system.infoType".to_string(), "machine-info".to_string());
     }
     metadata
+}
+
+fn linux_locale_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let text = String::from_utf8_lossy(header);
+    let values = parse_shell_key_values(&text);
+    let mut metadata = BTreeMap::new();
+
+    insert_key_value_alias(&mut metadata, &values, "LANG", "system.locale");
+    insert_key_value_alias(&mut metadata, &values, "LANGUAGE", "system.language");
+    insert_key_value_alias(&mut metadata, &values, "LC_TIME", "system.localeTime");
+    insert_key_value_alias(&mut metadata, &values, "LC_NUMERIC", "system.localeNumeric");
+
+    if !metadata.is_empty() {
+        metadata.insert("system.osFamily".to_string(), "linux".to_string());
+        metadata.insert("system.infoType".to_string(), "locale".to_string());
+    }
+    metadata
+}
+
+fn unix_timezone_metadata(path: &str, header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+
+    if header.starts_with(b"TZif") {
+        metadata.insert("system.timeZoneFormat".to_string(), "TZif".to_string());
+        if let Some(version) = header.get(4).copied().filter(|byte| *byte != 0) {
+            metadata.insert(
+                "system.timeZoneFileVersion".to_string(),
+                (version as char).to_string(),
+            );
+        }
+        if let Some(rule) = tzif_posix_rule(header) {
+            metadata.insert("system.timeZoneRule".to_string(), rule);
+        }
+    } else {
+        let text = String::from_utf8_lossy(header);
+        let value = text.trim();
+        let zone = if path.ends_with("etc/timezone") {
+            (!value.is_empty()).then(|| value.to_string())
+        } else {
+            value
+                .split("/zoneinfo/")
+                .nth(1)
+                .or_else(|| value.strip_prefix("zoneinfo/"))
+                .map(|value| value.trim_matches('/').to_string())
+        };
+        if let Some(zone) = zone.filter(|value| !value.is_empty()) {
+            metadata.insert("system.timeZone".to_string(), truncate_chars(&zone, 180));
+        }
+    }
+
+    if !metadata.is_empty() {
+        metadata.insert("system.osFamily".to_string(), "unix".to_string());
+        metadata.insert("system.infoType".to_string(), "timezone".to_string());
+    }
+    metadata
+}
+
+fn tzif_posix_rule(data: &[u8]) -> Option<String> {
+    data.get(4)
+        .copied()
+        .filter(|byte| matches!(*byte, b'2' | b'3' | b'4'))?;
+    let last_newline = data.iter().rposition(|byte| *byte == b'\n')?;
+    let previous_newline = data[..last_newline]
+        .iter()
+        .rposition(|byte| *byte == b'\n')?;
+    let value = std::str::from_utf8(&data[previous_newline + 1..last_newline])
+        .ok()?
+        .trim();
+    (!value.is_empty() && value.chars().all(|ch| ch.is_ascii_graphic()))
+        .then(|| truncate_chars(value, 180))
+}
+
+fn unix_mount_table_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let text = String::from_utf8_lossy(header);
+    let mut descriptions = Vec::new();
+    let mut root_device = None;
+
+    for raw_line in text.lines().take(2048) {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 3 {
+            continue;
+        }
+        let device = decode_mount_field(fields[0]);
+        let mount_point = decode_mount_field(fields[1]);
+        let fs_type = fields[2];
+        let options = fields.get(3).copied().unwrap_or("-");
+        if mount_point == "/" && root_device.is_none() {
+            root_device = Some(device.clone());
+        }
+        push_limited_system_value(
+            &mut descriptions,
+            &format!("{device} on {mount_point} ({fs_type}, {options})"),
+        );
+    }
+
+    let mut metadata = BTreeMap::new();
+    if let Some(root_device) = root_device {
+        metadata.insert("system.rootDevice".to_string(), root_device);
+    }
+    if !descriptions.is_empty() {
+        metadata.insert(
+            "system.mountCount".to_string(),
+            descriptions.len().to_string(),
+        );
+        insert_limited_system_values(&mut metadata, "system.mounts", &descriptions);
+    }
+    if !metadata.is_empty() {
+        metadata.insert("system.osFamily".to_string(), "unix".to_string());
+        metadata.insert("system.infoType".to_string(), "mount-table".to_string());
+    }
+    metadata
+}
+
+fn decode_mount_field(value: &str) -> String {
+    value
+        .replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
 }
 
 #[derive(Default)]
@@ -3249,12 +3396,15 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("linux"), Some("hostname")) => "Linux Hostname",
         (Some("linux"), Some("machine-id")) => "Linux Machine ID",
         (Some("linux"), Some("machine-info")) => "Linux Machine Information",
+        (Some("linux"), Some("locale")) => "Linux Locale Configuration",
         (Some("linux"), Some("cpuinfo")) => "Linux CPU Information",
         (Some("linux"), Some("meminfo")) => "Linux Memory Information",
         (Some("linux"), Some("network-config")) => "Linux Network Configuration",
         (Some("linux"), Some("firewall")) => "Linux Firewall Configuration",
         (Some("linux"), Some("dmi")) => "Linux DMI System Information",
         (Some("unix"), Some("account-config")) => "Unix Account Configuration",
+        (Some("unix"), Some("timezone")) => "Unix Time Zone Configuration",
+        (Some("unix"), Some("mount-table")) => "Unix Mount Table",
         (Some("macos"), Some("hardware-identity")) => "macOS Hardware Identity",
         (Some("macos"), Some("system-version")) => "macOS System Version Info",
         (Some("macos"), Some("system-identity")) => "macOS System Identity",
@@ -5397,6 +5547,119 @@ LOCATION="Lab 3"
             artifact.metadata.get("system.location").map(String::as_str),
             Some("Lab 3")
         );
+    }
+
+    #[test]
+    fn extracts_linux_locale_metadata() {
+        let bytes = br#"LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_TIME=en_GB.UTF-8
+LC_NUMERIC=C
+"#;
+        let source = ChunkedByteSource::new("/mnt/image/etc/default/locale", bytes, 128);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Linux Locale Configuration");
+        assert_eq!(
+            artifact.metadata.get("system.locale").map(String::as_str),
+            Some("en_US.UTF-8")
+        );
+        assert_eq!(
+            artifact.metadata.get("system.language").map(String::as_str),
+            Some("en_US:en")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.localeTime")
+                .map(String::as_str),
+            Some("en_GB.UTF-8")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.localeNumeric")
+                .map(String::as_str),
+            Some("C")
+        );
+    }
+
+    #[test]
+    fn extracts_unix_timezone_metadata() {
+        let timezone_source =
+            ChunkedByteSource::new("/mnt/image/etc/timezone", b"America/Anchorage\n", 32);
+        let localtime_source = ChunkedByteSource::new(
+            "/mnt/image/etc/localtime",
+            b"/usr/share/zoneinfo/America/Anchorage\n",
+            64,
+        );
+
+        let timezone_artifact =
+            extract_normalized_artifact(&timezone_source, ArtifactExtractionOptions::default())
+                .unwrap();
+        let localtime_artifact =
+            extract_normalized_artifact(&localtime_source, ArtifactExtractionOptions::default())
+                .unwrap();
+
+        assert_eq!(timezone_artifact.category, "systeminfo");
+        assert_eq!(
+            timezone_artifact.type_description,
+            "Unix Time Zone Configuration"
+        );
+        assert_eq!(
+            timezone_artifact
+                .metadata
+                .get("system.timeZone")
+                .map(String::as_str),
+            Some("America/Anchorage")
+        );
+        assert_eq!(localtime_artifact.category, "systeminfo");
+        assert_eq!(
+            localtime_artifact
+                .metadata
+                .get("system.timeZone")
+                .map(String::as_str),
+            Some("America/Anchorage")
+        );
+    }
+
+    #[test]
+    fn extracts_unix_mount_table_metadata() {
+        let bytes = br#"# /etc/fstab
+UUID=root-uuid / ext4 defaults 0 1
+/dev/disk/by-label/Case\040Data /mnt/case\040data xfs ro,nosuid 0 0
+tmpfs /run tmpfs rw,nosuid,nodev 0 0
+"#;
+        let source = ChunkedByteSource::new("/mnt/image/etc/fstab", bytes, 512);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Unix Mount Table");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.rootDevice")
+                .map(String::as_str),
+            Some("UUID=root-uuid")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.mountCount")
+                .map(String::as_str),
+            Some("3")
+        );
+        let mounts = artifact
+            .metadata
+            .get("system.mounts")
+            .expect("mount descriptions are captured");
+        assert!(mounts.contains("UUID=root-uuid on / (ext4, defaults)"));
+        assert!(mounts.contains("/dev/disk/by-label/Case Data on /mnt/case data (xfs, ro,nosuid)"));
     }
 
     #[test]
