@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { HexViewer } from "./HexViewer";
 import { mockInvoke } from "../__tests__/setup";
@@ -206,6 +207,54 @@ describe("HexViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Cannot read binary data");
+    });
+
+    it("ignores stale byte loads after the selected file changes", async () => {
+      let resolveSlow: (value: { bytes: number[]; totalSize: number }) => void = () => {};
+      const slowRead = new Promise<{ bytes: number[]; totalSize: number }>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const slowFile = {
+        ...mockDiskFile,
+        path: "/evidence/slow.bin",
+        filename: "slow.bin",
+      };
+      const currentFile = {
+        ...mockDiskFile,
+        path: "/evidence/current.bin",
+        filename: "current.bin",
+      };
+
+      mockGetSourceKey.mockImplementation((file) => file?.path ?? "none");
+      mockReadBytesFromSource.mockImplementation((file) => {
+        if (file?.path === "/evidence/slow.bin") {
+          return slowRead;
+        }
+        if (file?.path === "/evidence/current.bin") {
+          return Promise.resolve({
+            bytes: createMockBytes(32),
+            totalSize: 32,
+          });
+        }
+        return Promise.reject(new Error("Unexpected source"));
+      });
+
+      const [file, setFile] = createSignal(slowFile);
+      const { container } = renderComponent(() => <HexViewer file={file()} />);
+      await tick();
+
+      setFile(currentFile);
+      await tick();
+
+      expect(container.querySelectorAll('[data-testid="hex-line"]').length).toBe(2);
+
+      resolveSlow({
+        bytes: createMockBytes(128),
+        totalSize: 128,
+      });
+      await tick();
+
+      expect(container.querySelectorAll('[data-testid="hex-line"]').length).toBe(2);
     });
   });
 

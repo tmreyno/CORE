@@ -150,6 +150,7 @@ export function useHexData(opts: UseHexDataOptions) {
     offset: number;
     size: number;
   } | null>(null);
+  let byteLoadGeneration = 0;
 
   // ── Derived state ──
   const sourceKey = createMemo(() => getSourceKey(opts.file(), opts.entry()));
@@ -165,6 +166,7 @@ export function useHexData(opts: UseHexDataOptions) {
 
   // ── Data loading ──
   const loadInitialData = async () => {
+    const generation = ++byteLoadGeneration;
     setLoading(true);
     setError(null);
     setLoadedBytes([]);
@@ -201,20 +203,25 @@ export function useHexData(opts: UseHexDataOptions) {
         "totalSize:",
         result.totalSize,
       );
+      if (generation !== byteLoadGeneration) return;
       setLoadedBytes(result.bytes);
       setLoadedUpTo(result.bytes.length);
       setTotalFileSize(result.totalSize);
     } catch (e) {
+      if (generation !== byteLoadGeneration) return;
       log.error("loadInitialData error:", e);
       setError(`Failed to load file: ${e}`);
       setLoadedBytes([]);
     } finally {
-      setLoading(false);
+      if (generation === byteLoadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
   const loadMoreData = async () => {
     if (loadingMore() || loading()) return;
+    const generation = byteLoadGeneration;
     const currentLoaded = loadedUpTo();
     const total = totalFileSize();
     const maxBytes = getMaxLoadedBytes();
@@ -233,12 +240,16 @@ export function useHexData(opts: UseHexDataOptions) {
         currentLoaded,
         sizeToLoad,
       );
+      if (generation !== byteLoadGeneration) return;
       setLoadedBytes((prev) => [...prev, ...result.bytes]);
       setLoadedUpTo(currentLoaded + result.bytes.length);
     } catch (e) {
+      if (generation !== byteLoadGeneration) return;
       log.error("Failed to load more data:", e);
     } finally {
-      setLoadingMore(false);
+      if (generation === byteLoadGeneration) {
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -266,6 +277,7 @@ export function useHexData(opts: UseHexDataOptions) {
 
   const navigateToOffset = async (offset: number, size?: number) => {
     if (typeof offset !== "number" || isNaN(offset) || offset < 0) return;
+    const generation = byteLoadGeneration;
     setNavigatedRange({ offset, size: size ?? 4 });
     if (offset >= loadedUpTo()) {
       const targetOffset = Math.min(offset + LOAD_MORE_SIZE, totalFileSize());
@@ -277,18 +289,23 @@ export function useHexData(opts: UseHexDataOptions) {
           0,
           targetOffset,
         );
+        if (generation !== byteLoadGeneration) return;
         setLoadedBytes(result.bytes);
         setLoadedUpTo(result.bytes.length);
       } catch (e) {
+        if (generation !== byteLoadGeneration) return;
         log.error("Failed to navigate to offset:", e);
       } finally {
-        setLoadingMore(false);
+        if (generation === byteLoadGeneration) {
+          setLoadingMore(false);
+        }
       }
     }
     setTimeout(() => scrollToOffset(offset), 100);
   };
 
   const handleGotoOffset = async () => {
+    const generation = byteLoadGeneration;
     const input = gotoOffset().trim();
     let offset: number;
     if (input.toLowerCase().startsWith("0x")) {
@@ -317,13 +334,17 @@ export function useHexData(opts: UseHexDataOptions) {
           0,
           targetOffset,
         );
+        if (generation !== byteLoadGeneration) return;
         setLoadedBytes(result.bytes);
         setLoadedUpTo(result.bytes.length);
       } catch (e) {
+        if (generation !== byteLoadGeneration) return;
         setError(`Failed to navigate: ${e}`);
         return;
       } finally {
-        setLoadingMore(false);
+        if (generation === byteLoadGeneration) {
+          setLoadingMore(false);
+        }
       }
     }
 
@@ -333,6 +354,7 @@ export function useHexData(opts: UseHexDataOptions) {
   };
 
   const handleSelectRegion = async (idx: number) => {
+    const generation = byteLoadGeneration;
     const regions = metadataRegions();
     if (!regions[idx]) return;
     const region = regions[idx];
@@ -354,12 +376,16 @@ export function useHexData(opts: UseHexDataOptions) {
           0,
           targetOffset,
         );
+        if (generation !== byteLoadGeneration) return;
         setLoadedBytes(result.bytes);
         setLoadedUpTo(result.bytes.length);
       } catch (err) {
+        if (generation !== byteLoadGeneration) return;
         log.error("Failed to load region:", err);
       } finally {
-        setLoadingMore(false);
+        if (generation === byteLoadGeneration) {
+          setLoadingMore(false);
+        }
       }
     }
     setTimeout(() => scrollToOffset(region.start), 100);
