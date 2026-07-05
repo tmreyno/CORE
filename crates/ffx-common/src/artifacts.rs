@@ -723,6 +723,9 @@ fn system_info_metadata(
     if is_macos_preferences_identity_path(&normalized_path, &normalized_name, extension) {
         return macos_preferences_identity_metadata(header);
     }
+    if is_macos_network_interfaces_path(&normalized_path, &normalized_name, extension) {
+        return macos_network_interfaces_metadata(header);
+    }
     if let Some(metadata) = windows_registry_system_info_metadata(&normalized_path, header) {
         return metadata;
     }
@@ -784,6 +787,13 @@ fn is_macos_preferences_identity_path(path: &str, name: &str, extension: Option<
         && matches!(extension, Some("plist"))
         && (path.ends_with("library/preferences/systemconfiguration/preferences.plist")
             || path.ends_with("private/var/db/systemconfiguration/preferences.plist"))
+}
+
+fn is_macos_network_interfaces_path(path: &str, name: &str, extension: Option<&str>) -> bool {
+    name.eq_ignore_ascii_case("networkinterfaces.plist")
+        && matches!(extension, Some("plist"))
+        && (path.ends_with("library/preferences/systemconfiguration/networkinterfaces.plist")
+            || path.ends_with("private/var/db/systemconfiguration/networkinterfaces.plist"))
 }
 
 fn windows_registry_system_info_metadata(
@@ -1157,6 +1167,73 @@ fn macos_preferences_identity_metadata(header: &[u8]) -> BTreeMap<String, String
     metadata
 }
 
+fn macos_network_interfaces_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_plist(header, Some("plist")) {
+        return metadata;
+    }
+    let Ok(value) = PlistValue::from_reader(Cursor::new(header)) else {
+        return metadata;
+    };
+    let Some(interfaces) = plist_find_array(&value, "Interfaces") else {
+        return metadata;
+    };
+
+    let mut descriptions = Vec::new();
+    let mut mac_addresses = Vec::new();
+    for interface in interfaces.iter().take(32) {
+        let PlistValue::Dictionary(interface) = interface else {
+            continue;
+        };
+        let bsd_name = plist_dict_string(interface, "BSD Name");
+        let interface_type = plist_dict_string(interface, "SCNetworkInterfaceType")
+            .or_else(|| plist_dict_string(interface, "SCNetworkInterfaceSubType"));
+        let display_name = interface
+            .get("SCNetworkInterfaceInfo")
+            .and_then(|value| match value {
+                PlistValue::Dictionary(info) => plist_dict_string(info, "UserDefinedName"),
+                _ => None,
+            });
+        let mac_address = interface
+            .get("IOMACAddress")
+            .and_then(plist_data_mac_address);
+
+        if let Some(mac_address) = &mac_address {
+            push_limited_system_value(&mut mac_addresses, mac_address);
+        }
+        if let Some(description) = describe_macos_network_interface(
+            bsd_name,
+            display_name,
+            interface_type,
+            mac_address.as_deref(),
+        ) {
+            push_limited_system_value(&mut descriptions, &description);
+        }
+    }
+
+    if descriptions.is_empty() && mac_addresses.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert("system.osFamily".to_string(), "macos".to_string());
+    metadata.insert(
+        "system.infoType".to_string(),
+        "network-interfaces".to_string(),
+    );
+    if !descriptions.is_empty() {
+        metadata.insert(
+            "system.networkInterfaceCount".to_string(),
+            descriptions.len().to_string(),
+        );
+        insert_limited_system_values(&mut metadata, "system.networkInterfaces", &descriptions);
+    }
+    if let Some(primary) = mac_addresses.first() {
+        metadata.insert("system.primaryMacAddress".to_string(), primary.clone());
+    }
+    insert_limited_system_values(&mut metadata, "system.macAddresses", &mac_addresses);
+    metadata
+}
+
 fn macos_hardware_identity_metadata(header: &[u8]) -> BTreeMap<String, String> {
     let mut metadata = BTreeMap::new();
     if !looks_like_plist(header, Some("plist")) {
@@ -1216,6 +1293,71 @@ fn plist_find_scalar_string(value: &PlistValue, wanted_key: &str) -> Option<Stri
     }
 }
 
+fn plist_find_array<'a>(value: &'a PlistValue, wanted_key: &str) -> Option<&'a Vec<PlistValue>> {
+    match value {
+        PlistValue::Dictionary(dictionary) => {
+            if let Some(PlistValue::Array(value)) = dictionary.get(wanted_key) {
+                return Some(value);
+            }
+            dictionary
+                .values()
+                .find_map(|child| plist_find_array(child, wanted_key))
+        }
+        PlistValue::Array(items) => items
+            .iter()
+            .find_map(|child| plist_find_array(child, wanted_key)),
+        _ => None,
+    }
+}
+
+fn plist_dict_string<'a>(dictionary: &'a plist::Dictionary, key: &str) -> Option<&'a str> {
+    dictionary.get(key).and_then(PlistValue::as_string)
+}
+
+fn plist_data_mac_address(value: &PlistValue) -> Option<String> {
+    let PlistValue::Data(data) = value else {
+        return None;
+    };
+    format_mac_address(data)
+}
+
+fn format_mac_address(data: &[u8]) -> Option<String> {
+    if data.len() != 6 {
+        return None;
+    }
+    Some(
+        data.iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join(":"),
+    )
+}
+
+fn describe_macos_network_interface(
+    bsd_name: Option<&str>,
+    display_name: Option<&str>,
+    interface_type: Option<&str>,
+    mac_address: Option<&str>,
+) -> Option<String> {
+    let name = bsd_name.or(display_name)?;
+    let mut parts = Vec::new();
+    if let Some(display_name) = display_name.filter(|value| Some(*value) != bsd_name) {
+        parts.push(display_name.to_string());
+    }
+    if let Some(interface_type) = interface_type {
+        parts.push(interface_type.to_string());
+    }
+    if let Some(mac_address) = mac_address {
+        parts.push(mac_address.to_string());
+    }
+
+    if parts.is_empty() {
+        Some(name.to_string())
+    } else {
+        Some(format!("{} ({})", name, parts.join(", ")))
+    }
+}
+
 fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
     match (
         metadata.get("system.osFamily").map(String::as_str),
@@ -1231,6 +1373,7 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("macos"), Some("hardware-identity")) => "macOS Hardware Identity",
         (Some("macos"), Some("system-version")) => "macOS System Version Info",
         (Some("macos"), Some("system-identity")) => "macOS System Identity",
+        (Some("macos"), Some("network-interfaces")) => "macOS Network Interfaces",
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
         _ => "System Information Artifact",
     }
@@ -3397,6 +3540,61 @@ MemFree:         1024000 kB
                 .map(String::as_str),
             Some("Case-MacBook")
         );
+    }
+
+    #[test]
+    fn extracts_macos_network_interfaces_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Interfaces</key>
+  <array>
+    <dict>
+      <key>BSD Name</key><string>en0</string>
+      <key>SCNetworkInterfaceType</key><string>IEEE80211</string>
+      <key>SCNetworkInterfaceInfo</key>
+      <dict>
+        <key>UserDefinedName</key><string>Wi-Fi</string>
+      </dict>
+      <key>IOMACAddress</key><data>qrvM3e7/</data>
+    </dict>
+  </array>
+</dict>
+</plist>
+"#;
+        let source = ChunkedByteSource::new(
+            "/Volumes/Macintosh HD/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist",
+            bytes,
+            usize::MAX,
+        );
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS Network Interfaces");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.primaryMacAddress")
+                .map(String::as_str),
+            Some("aa:bb:cc:dd:ee:ff")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.macAddresses")
+                .map(String::as_str),
+            Some("aa:bb:cc:dd:ee:ff")
+        );
+        let interfaces = artifact
+            .metadata
+            .get("system.networkInterfaces")
+            .expect("network interface description");
+        assert!(interfaces.contains("en0"));
+        assert!(interfaces.contains("Wi-Fi"));
+        assert!(interfaces.contains("IEEE80211"));
     }
 
     #[test]
