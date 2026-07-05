@@ -18,6 +18,7 @@ import type {
   ProjectDbAnnotationRecord,
 } from "../api/commands";
 import { formatBytes } from "../utils";
+import { isTauri } from "../utils/platform";
 
 export interface ProjectDbReportAppendix {
   appendix_id: string;
@@ -334,6 +335,11 @@ export function containersToInputs(
 export async function extractEvidenceFromContainers(
   containers: ContainerInfoInput[],
 ): Promise<EvidenceItem[]> {
+  if (!isTauri) {
+    void containers;
+    return [];
+  }
+
   return invoke<EvidenceItem[]>("extract_evidence_from_containers", {
     containers,
   });
@@ -343,9 +349,31 @@ export async function extractEvidenceFromContainers(
  * Extract report-ready evidence, hashes, and normalized artifacts from .ffxdb.
  */
 export async function extractReportEvidenceFromProjectDb(): Promise<ProjectDbReportEvidence> {
+  if (!isTauri) {
+    return emptyProjectDbReportEvidence();
+  }
+
   return invoke<ProjectDbReportEvidence>(
     "extract_report_evidence_from_project_db",
   );
+}
+
+function emptyProjectDbReportEvidence(): ProjectDbReportEvidence {
+  return {
+    evidenceItems: [],
+    hashRecords: [],
+    hashAlgorithmSummaries: [],
+    verificationResultSummaries: [],
+    artifacts: [],
+    artifactSummaries: [],
+    artifactCategories: [],
+    artifactEvidenceSummaries: [],
+    artifactExtractorSummaries: [],
+    sourceAnalyses: [],
+    sourceAnalysisSummaries: [],
+    sourceAnalysisCategorySummaries: [],
+    annotations: [],
+  };
 }
 
 /**
@@ -412,6 +440,12 @@ export async function createEvidenceFromContainer(
   container: ContainerInfoInput,
   evidenceId: string,
 ): Promise<EvidenceItem> {
+  if (!isTauri) {
+    void container;
+    void evidenceId;
+    throw new Error("Report evidence extraction is available in the desktop app.");
+  }
+
   return invoke<EvidenceItem>("create_evidence_from_container", {
     container,
     evidenceId,
@@ -729,6 +763,11 @@ export async function generateEvidenceFromFiles(
 export async function getReportTemplate(
   investigationType: string,
 ): Promise<unknown> {
+  if (!isTauri) {
+    void investigationType;
+    return null;
+  }
+
   return invoke("get_report_template", { investigationType });
 }
 
@@ -736,6 +775,10 @@ export async function getReportTemplate(
  * Check if AI assistant is available
  */
 export async function isAiAvailable(): Promise<boolean> {
+  if (!isTauri) {
+    return false;
+  }
+
   return invoke<boolean>("is_ai_available");
 }
 
@@ -768,6 +811,10 @@ export type NarrativeType =
  * Get available AI providers
  */
 export async function getAiProviders(): Promise<AiProviderInfo[]> {
+  if (!isTauri) {
+    return [];
+  }
+
   return invoke<AiProviderInfo[]>("get_ai_providers");
 }
 
@@ -775,6 +822,10 @@ export async function getAiProviders(): Promise<AiProviderInfo[]> {
  * Check if Ollama is running locally
  */
 export async function checkOllamaConnection(): Promise<boolean> {
+  if (!isTauri) {
+    return false;
+  }
+
   return invoke<boolean>("check_ollama_connection");
 }
 
@@ -788,6 +839,15 @@ export async function generateAiNarrative(
   model: string,
   apiKey?: string,
 ): Promise<string> {
+  if (!isTauri) {
+    void context;
+    void narrativeType;
+    void provider;
+    void model;
+    void apiKey;
+    throw new Error("AI report narrative generation is available in the desktop app.");
+  }
+
   return invoke<string>("generate_ai_narrative", {
     context,
     narrativeType,
@@ -842,6 +902,10 @@ export function buildEvidenceContext(evidenceItems: EvidenceItem[]): string {
  * Export report to JSON
  */
 export async function exportReportJson(report: unknown): Promise<string> {
+  if (!isTauri) {
+    return JSON.stringify(report, null, 2);
+  }
+
   return invoke<string>("export_report_json", { report });
 }
 
@@ -849,5 +913,9 @@ export async function exportReportJson(report: unknown): Promise<string> {
  * Import report from JSON
  */
 export async function importReportJson(json: string): Promise<unknown> {
+  if (!isTauri) {
+    return JSON.parse(json);
+  }
+
   return invoke("import_report_json", { json });
 }

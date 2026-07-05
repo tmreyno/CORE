@@ -49,7 +49,15 @@ export async function confirmUnsavedChanges(options?: {
 }): Promise<"save" | "discard" | "cancel"> {
   if (!isTauri) {
     log.debug?.("Skipping native unsaved-changes confirmation outside Tauri runtime", options);
-    return "cancel";
+    if (typeof window === "undefined" || typeof window.confirm !== "function") {
+      return "cancel";
+    }
+
+    const title = options?.title ?? "Discard unsaved changes?";
+    const message = options?.message ?? "The current project has unsaved changes.";
+    return window.confirm(`${title}\n\n${message}\n\nSaving is available in the desktop app. Continue and discard changes?`)
+      ? "discard"
+      : "cancel";
   }
 
   return confirmSharedUnsavedChanges(options, { log });

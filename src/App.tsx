@@ -804,6 +804,10 @@ function App() {
         message: "The current project has unsaved changes. Save it before closing or switching projects?",
       });
 
+      if (decision === "cancel") {
+        return false;
+      }
+
       shouldSave = decision === "save";
     }
 
