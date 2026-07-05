@@ -497,7 +497,9 @@ fn is_linux_network_identity_source(source_id: &str) -> bool {
     let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
     source_id.ends_with("/etc/network/interfaces")
         || source_id.ends_with("/etc/resolv.conf")
+        || source_id.ends_with("/private/etc/resolv.conf")
         || source_id.ends_with("/etc/hosts")
+        || source_id.ends_with("/private/etc/hosts")
         || source_id.ends_with("/windows/system32/drivers/etc/hosts")
         || source_id.contains("/etc/networkmanager/system-connections/")
         || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
@@ -6066,7 +6068,9 @@ COMMIT
         assert!(is_system_identity_source("/etc/mtab"));
         assert!(is_system_identity_source("/etc/network/interfaces"));
         assert!(is_system_identity_source("/etc/resolv.conf"));
+        assert!(is_system_identity_source("/private/etc/resolv.conf"));
         assert!(is_system_identity_source("/etc/hosts"));
+        assert!(is_system_identity_source("/private/etc/hosts"));
         assert!(is_system_identity_source("/etc/passwd"));
         assert!(is_system_identity_source("/etc/group"));
         assert!(is_system_identity_source("/etc/shadow"));
