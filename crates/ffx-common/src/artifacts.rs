@@ -1007,6 +1007,9 @@ fn system_info_metadata(
     if is_macos_wifi_preferences_path(&normalized_path, &normalized_name, extension) {
         return macos_wifi_preferences_metadata(header);
     }
+    if is_macos_disk_management_path(&normalized_path, &normalized_name, extension) {
+        return macos_disk_management_metadata(header);
+    }
     if is_macos_firewall_preferences_path(&normalized_path, &normalized_name, extension) {
         return macos_firewall_preferences_metadata(header);
     }
@@ -1135,6 +1138,13 @@ fn is_macos_wifi_preferences_path(path: &str, name: &str, extension: Option<&str
                 "library/preferences/systemconfiguration/com.apple.airport.preferences.plist",
             )
             || path.ends_with("library/preferences/com.apple.wifi.known-networks.plist"))
+}
+
+fn is_macos_disk_management_path(path: &str, name: &str, extension: Option<&str>) -> bool {
+    matches!(extension, Some("plist"))
+        && (name.eq_ignore_ascii_case("diskmanagement.plist")
+            || path.ends_with("var/db/diskmanagement.plist")
+            || path.ends_with("library/preferences/systemconfiguration/diskmanagement.plist"))
 }
 
 fn is_macos_firewall_preferences_path(path: &str, name: &str, extension: Option<&str>) -> bool {
@@ -3090,6 +3100,175 @@ fn macos_wifi_ssid(dictionary: &plist::Dictionary) -> Option<String> {
     None
 }
 
+#[derive(Default)]
+struct MacosDiskManagementSummary {
+    volume_names: Vec<String>,
+    volume_uuids: Vec<String>,
+    disk_identifiers: Vec<String>,
+    filesystems: Vec<String>,
+    mount_points: Vec<String>,
+    descriptions: Vec<String>,
+    total_size_bytes: u64,
+}
+
+fn macos_disk_management_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_plist(header, Some("plist")) {
+        return metadata;
+    }
+    let Ok(value) = PlistValue::from_reader(Cursor::new(header)) else {
+        return metadata;
+    };
+    let mut summary = MacosDiskManagementSummary::default();
+    collect_macos_disk_management_metadata(&value, &mut summary);
+
+    if summary.descriptions.is_empty() {
+        return metadata;
+    }
+
+    metadata.insert("system.osFamily".to_string(), "macos".to_string());
+    metadata.insert("system.infoType".to_string(), "disk-management".to_string());
+    metadata.insert(
+        "system.volumeCount".to_string(),
+        summary.descriptions.len().to_string(),
+    );
+    if summary.total_size_bytes > 0 {
+        metadata.insert(
+            "system.totalVolumeBytes".to_string(),
+            summary.total_size_bytes.to_string(),
+        );
+    }
+    insert_limited_system_values(&mut metadata, "system.volumeNames", &summary.volume_names);
+    insert_limited_system_values(&mut metadata, "system.volumeUuids", &summary.volume_uuids);
+    insert_limited_system_values(
+        &mut metadata,
+        "system.diskIdentifiers",
+        &summary.disk_identifiers,
+    );
+    insert_limited_system_values(
+        &mut metadata,
+        "system.volumeFilesystems",
+        &summary.filesystems,
+    );
+    insert_limited_system_values(&mut metadata, "system.volumeMounts", &summary.mount_points);
+    insert_limited_system_values(&mut metadata, "system.volumes", &summary.descriptions);
+    metadata
+}
+
+fn collect_macos_disk_management_metadata(
+    value: &PlistValue,
+    summary: &mut MacosDiskManagementSummary,
+) {
+    match value {
+        PlistValue::Dictionary(dictionary) => {
+            collect_macos_disk_management_dictionary(dictionary, summary);
+            for child in dictionary.values() {
+                collect_macos_disk_management_metadata(child, summary);
+            }
+        }
+        PlistValue::Array(items) => {
+            for child in items {
+                collect_macos_disk_management_metadata(child, summary);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_macos_disk_management_dictionary(
+    dictionary: &plist::Dictionary,
+    summary: &mut MacosDiskManagementSummary,
+) {
+    let bsd_name = plist_dict_first_scalar_string(
+        dictionary,
+        &["BSD Name", "BSDName", "DeviceIdentifier", "DAMediaBSDName"],
+    );
+    let uuid = plist_dict_first_scalar_string(dictionary, &["VolumeUUID", "DAVolumeUUID"]);
+    let filesystem = plist_dict_first_scalar_string(
+        dictionary,
+        &[
+            "FilesystemName",
+            "FilesystemType",
+            "DAVolumeKind",
+            "Content",
+            "DAMediaContent",
+        ],
+    );
+    let mount_point =
+        plist_dict_first_scalar_string(dictionary, &["MountPoint", "DAVolumePath", "Path"]);
+    let size = plist_dict_first_scalar_string(dictionary, &["Size", "VolumeSize", "DAMediaSize"]);
+
+    if bsd_name.is_none()
+        && uuid.is_none()
+        && filesystem.is_none()
+        && mount_point.is_none()
+        && size.is_none()
+    {
+        return;
+    }
+
+    let name = plist_dict_first_scalar_string(dictionary, &["VolumeName", "DAVolumeName", "Name"]);
+    if let Some(name) = &name {
+        push_limited_system_value(&mut summary.volume_names, name);
+    }
+    if let Some(uuid) = &uuid {
+        push_limited_system_value(&mut summary.volume_uuids, uuid);
+    }
+    if let Some(bsd_name) = &bsd_name {
+        push_limited_system_value(&mut summary.disk_identifiers, bsd_name);
+    }
+    if let Some(filesystem) = &filesystem {
+        push_limited_system_value(&mut summary.filesystems, filesystem);
+    }
+    if let Some(mount_point) = &mount_point {
+        push_limited_system_value(&mut summary.mount_points, mount_point);
+    }
+    if let Some(size) = &size {
+        if let Ok(size) = size.parse::<u64>() {
+            summary.total_size_bytes = summary.total_size_bytes.saturating_add(size);
+        }
+    }
+
+    if let Some(description) =
+        macos_disk_description(name, bsd_name, uuid, filesystem, mount_point, size)
+    {
+        push_limited_system_value(&mut summary.descriptions, &description);
+    }
+}
+
+fn macos_disk_description(
+    name: Option<String>,
+    bsd_name: Option<String>,
+    uuid: Option<String>,
+    filesystem: Option<String>,
+    mount_point: Option<String>,
+    size: Option<String>,
+) -> Option<String> {
+    let label = name.or_else(|| bsd_name.clone()).or_else(|| uuid.clone())?;
+    let mut parts = Vec::new();
+    if let Some(bsd_name) = bsd_name.filter(|value| value != &label) {
+        parts.push(bsd_name);
+    }
+    if let Some(filesystem) = filesystem {
+        parts.push(filesystem);
+    }
+    if let Some(mount_point) = mount_point {
+        parts.push(format!("mounted={mount_point}"));
+    }
+    if let Some(uuid) = uuid.filter(|value| value != &label) {
+        parts.push(format!("uuid={uuid}"));
+    }
+    if let Some(size) = size {
+        parts.push(format!("size={size}"));
+    }
+
+    if parts.is_empty() {
+        Some(label)
+    } else {
+        Some(format!("{} ({})", label, parts.join(", ")))
+    }
+}
+
 fn macos_firewall_preferences_metadata(header: &[u8]) -> BTreeMap<String, String> {
     let mut metadata = BTreeMap::new();
     if !looks_like_plist(header, Some("plist")) {
@@ -3270,6 +3449,11 @@ fn plist_dict_string<'a>(dictionary: &'a plist::Dictionary, key: &str) -> Option
     dictionary.get(key).and_then(PlistValue::as_string)
 }
 
+fn plist_dict_first_scalar_string(dictionary: &plist::Dictionary, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| dictionary.get(*key).and_then(plist_scalar_string))
+}
+
 fn plist_dict_string_array(dictionary: &plist::Dictionary, key: &str) -> Option<Vec<String>> {
     let PlistValue::Array(values) = dictionary.get(key)? else {
         return None;
@@ -3410,6 +3594,7 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("macos"), Some("system-identity")) => "macOS System Identity",
         (Some("macos"), Some("network-interfaces")) => "macOS Network Interfaces",
         (Some("macos"), Some("wifi-preferences")) => "macOS Wi-Fi Preferences",
+        (Some("macos"), Some("disk-management")) => "macOS Disk Management",
         (Some("macos"), Some("firewall")) => "macOS Firewall Preferences",
         (Some("macos"), Some("install-history")) => "macOS Install History",
         (Some("windows"), Some("registry-hive")) => "Windows Registry System Information",
@@ -6843,6 +7028,98 @@ COMMIT
                 .map(String::as_str),
             Some("com.apple.pkg.update.os, com.apple.pkg.update.firmware")
         );
+    }
+
+    #[test]
+    fn extracts_macos_disk_management_metadata() {
+        let bytes = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>AllDisksAndPartitions</key>
+  <array>
+    <dict>
+      <key>VolumeName</key><string>Macintosh HD</string>
+      <key>VolumeUUID</key><string>11111111-2222-3333-4444-555555555555</string>
+      <key>BSD Name</key><string>disk3s1</string>
+      <key>DAVolumeKind</key><string>apfs</string>
+      <key>DAVolumePath</key><string>/</string>
+      <key>DAMediaSize</key><integer>512000000000</integer>
+    </dict>
+    <dict>
+      <key>DAVolumeName</key><string>Case Data</string>
+      <key>DAVolumeUUID</key><string>aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</string>
+      <key>DAMediaBSDName</key><string>disk4s2</string>
+      <key>DAMediaContent</key><string>Apple_HFS</string>
+      <key>MountPoint</key><string>/Volumes/Case Data</string>
+      <key>Size</key><integer>1024</integer>
+    </dict>
+  </array>
+</dict>
+</plist>
+"#;
+        let source = ChunkedByteSource::new("/var/db/DiskManagement.plist", bytes, usize::MAX);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "macOS Disk Management");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.volumeCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.volumeNames")
+                .map(String::as_str),
+            Some("Macintosh HD; Case Data")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.volumeUuids")
+                .map(String::as_str),
+            Some("11111111-2222-3333-4444-555555555555; aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.diskIdentifiers")
+                .map(String::as_str),
+            Some("disk3s1; disk4s2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.volumeFilesystems")
+                .map(String::as_str),
+            Some("apfs; Apple_HFS")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.volumeMounts")
+                .map(String::as_str),
+            Some("/; /Volumes/Case Data")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.totalVolumeBytes")
+                .map(String::as_str),
+            Some("512000001024")
+        );
+        let volumes = artifact
+            .metadata
+            .get("system.volumes")
+            .expect("volume descriptions should be captured");
+        assert!(volumes.contains("Macintosh HD (disk3s1, apfs, mounted=/"));
+        assert!(volumes.contains("Case Data (disk4s2, Apple_HFS, mounted=/Volumes/Case Data"));
     }
 
     #[test]
