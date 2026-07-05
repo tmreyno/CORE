@@ -60,11 +60,24 @@ export function buildEvidenceSourceInput(
 }
 
 function inferEntryContainerType(entry: SelectedEntry): string {
-  const explicitType = entry.containerType?.toLowerCase();
+  const explicitType = normalizeEntryContainerType(entry.containerType, entry.containerPath);
   if (explicitType && explicitType !== "vfs" && explicitType !== "lazy") return explicitType;
   if (entry.isArchiveEntry) return extensionOrDefault(entry.containerPath, "archive");
   if (entry.isVfsEntry) return extensionOrDefault(entry.containerPath, "e01");
   return "ad1";
+}
+
+function normalizeEntryContainerType(containerType: string | undefined, containerPath: string): string | undefined {
+  const explicitType = containerType?.trim().toLowerCase();
+  if (!explicitType) return undefined;
+  if (explicitType === "vfs" || explicitType === "lazy") return explicitType;
+  if (explicitType.includes("encase") || explicitType.includes("ewf") || explicitType.includes("e01")) return "e01";
+  if (explicitType.includes("ex01")) return "ex01";
+  if (explicitType.includes("l01")) return "l01";
+  if (explicitType.includes("lx01")) return "lx01";
+  if (explicitType.includes("raw image") || explicitType.includes("disk image")) return "raw";
+  if (explicitType.includes("tar")) return extensionOrDefault(containerPath, "tar");
+  return explicitType;
 }
 
 function extensionOrDefault(path: string, fallback: string): string {

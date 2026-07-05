@@ -532,7 +532,12 @@ fn is_ewf_type(kind: &str) -> bool {
 }
 
 fn is_raw_type(kind: &str) -> bool {
-    kind == "raw" || kind == "dd" || kind == "img" || kind == "001"
+    kind == "raw"
+        || kind == "dd"
+        || kind == "img"
+        || kind == "001"
+        || kind.contains("raw image")
+        || kind.contains("disk image")
 }
 
 fn is_archive_type(kind: &str) -> bool {
@@ -671,6 +676,16 @@ mod tests {
             "tar.bz2", "tbz2", "tar.zst", "tar.lz4", "dmg", "iso",
         ] {
             assert!(is_archive_type(kind), "{kind} should route to ArchiveVfs");
+        }
+    }
+
+    #[test]
+    fn raw_type_gate_accepts_project_display_labels() {
+        for kind in ["raw", "dd", "img", "001", "Raw Image", "raw disk image"] {
+            assert!(
+                is_raw_type(&kind.to_lowercase()),
+                "{kind} should route to RawVfs"
+            );
         }
     }
 

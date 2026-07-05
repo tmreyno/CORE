@@ -76,6 +76,46 @@ describe("buildEvidenceSourceInput", () => {
     });
   });
 
+  it("normalizes saved raw image display labels for VFS entries", () => {
+    const source = buildEvidenceSourceInput(
+      null,
+      makeEntry({
+        containerPath: "/case/usb.dd",
+        entryPath: "/Partition_1_Ntfs/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+        isVfsEntry: true,
+        containerType: "Raw Image",
+      }),
+    );
+
+    expect(source).toEqual({
+      containerPath: "/case/usb.dd",
+      entryPath: "/Partition_1_Ntfs/Windows/System32/config/SYSTEM",
+      containerType: "raw",
+      size: 128,
+    });
+  });
+
+  it("normalizes saved E01 display labels for VFS entries", () => {
+    const source = buildEvidenceSourceInput(
+      null,
+      makeEntry({
+        containerPath: "/case/workstation.E01",
+        entryPath: "/Partition1_NTFS/CONFIG.SYS",
+        name: "CONFIG.SYS",
+        isVfsEntry: true,
+        containerType: "EnCase (E01)",
+      }),
+    );
+
+    expect(source).toEqual({
+      containerPath: "/case/workstation.E01",
+      entryPath: "/Partition1_NTFS/CONFIG.SYS",
+      containerType: "e01",
+      size: 128,
+    });
+  });
+
   it("preserves explicit archive source type from the evidence file", () => {
     const source = buildEvidenceSourceInput(
       null,
@@ -92,6 +132,26 @@ describe("buildEvidenceSourceInput", () => {
       containerPath: "/case/logs.tar.gz",
       entryPath: "logs/system.log",
       containerType: "tar.gz",
+      size: 128,
+    });
+  });
+
+  it("normalizes saved logical TAR display labels from the container path", () => {
+    const source = buildEvidenceSourceInput(
+      null,
+      makeEntry({
+        containerPath: "/case/mobile-data.tar",
+        entryPath: "data/system/users/0/settings_secure.xml",
+        name: "settings_secure.xml",
+        isArchiveEntry: true,
+        containerType: "TAR (Logical)",
+      }),
+    );
+
+    expect(source).toEqual({
+      containerPath: "/case/mobile-data.tar",
+      entryPath: "data/system/users/0/settings_secure.xml",
+      containerType: "tar",
       size: 128,
     });
   });
