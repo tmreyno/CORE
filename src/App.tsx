@@ -888,11 +888,6 @@ function App() {
   
   // Loading-wrapped versions of slow project operations
   const handleLoadProject = async (path?: string) => {
-    if (!isTauri && !path) {
-      await _handleLoadProject();
-      return;
-    }
-
     const canProceed = await closeCurrentProject("switch-project");
     if (!canProceed) return;
     if (!isTauri && !path) {
