@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { RegistryViewer } from "./RegistryViewer";
 import { mockInvoke } from "../__tests__/setup";
@@ -211,6 +212,127 @@ describe("RegistryViewer", () => {
       source,
       keyPath: "CMI-CreateHive\\Software",
     });
+  });
+
+  it("ignores stale registry hive reads after the selected hive changes", async () => {
+    let resolveSlowInfo: (value: typeof mockHiveInfo) => void = () => {};
+    const slowInfo = new Promise<typeof mockHiveInfo>((resolve) => {
+      resolveSlowInfo = resolve;
+    });
+    const currentHiveInfo = {
+      ...mockHiveInfo,
+      path: "/test/current/SOFTWARE",
+      rootKeyName: "CURRENT-HIVE",
+      rootKeyPath: "CURRENT-HIVE",
+      totalKeys: 10,
+      totalValues: 20,
+    };
+    const currentSubkeys = {
+      parentPath: "CURRENT-HIVE",
+      subkeys: [
+        {
+          name: "Microsoft",
+          path: "CURRENT-HIVE\\Microsoft",
+          timestamp: "2024-02-01 00:00:00 UTC",
+          subkeyCount: 1,
+          valueCount: 1,
+          hasSubkeys: false,
+        },
+      ],
+    };
+    const currentKeyInfo = {
+      ...mockKeyInfo,
+      name: "Microsoft",
+      path: "CURRENT-HIVE\\Microsoft",
+      prettyPath: "CURRENT-HIVE\\Microsoft",
+      values: [
+        {
+          name: "ProductName",
+          dataType: "REG_SZ",
+          data: "Current Windows",
+          size: 30,
+        },
+      ],
+    };
+
+    mockInvoke.mockImplementation((cmd: string, args: any) => {
+      if (cmd === "registry_get_info" && args?.path === "/test/slow/SOFTWARE") {
+        return slowInfo;
+      }
+      if (cmd === "registry_get_info" && args?.path === "/test/current/SOFTWARE") {
+        return Promise.resolve(currentHiveInfo);
+      }
+      if (
+        cmd === "registry_get_subkeys" &&
+        args?.hivePath === "/test/current/SOFTWARE"
+      ) {
+        return Promise.resolve(currentSubkeys);
+      }
+      if (
+        cmd === "registry_get_key_info" &&
+        args?.hivePath === "/test/current/SOFTWARE"
+      ) {
+        return Promise.resolve(currentKeyInfo);
+      }
+      if (
+        cmd === "registry_get_subkeys" &&
+        args?.hivePath === "/test/slow/SOFTWARE"
+      ) {
+        return Promise.resolve({
+          parentPath: "STALE-HIVE",
+          subkeys: [
+            {
+              name: "StaleKey",
+              path: "STALE-HIVE\\StaleKey",
+              timestamp: "2024-01-01 00:00:00 UTC",
+              subkeyCount: 0,
+              valueCount: 1,
+              hasSubkeys: false,
+            },
+          ],
+        });
+      }
+      if (
+        cmd === "registry_get_key_info" &&
+        args?.hivePath === "/test/slow/SOFTWARE"
+      ) {
+        return Promise.resolve({
+          ...mockKeyInfo,
+          values: [
+            {
+              name: "StaleValue",
+              dataType: "REG_SZ",
+              data: "Stale registry data",
+              size: 38,
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error(`Unexpected invoke: ${cmd}`));
+    });
+
+    const [path, setPath] = createSignal("/test/slow/SOFTWARE");
+    const { container } = renderComponent(() => <RegistryViewer path={path()} />);
+    await tick();
+
+    setPath("/test/current/SOFTWARE");
+    await tick();
+
+    expect(container.textContent).toContain("CURRENT-HIVE");
+    expect(container.textContent).toContain("Current Windows");
+
+    resolveSlowInfo({
+      ...mockHiveInfo,
+      path: "/test/slow/SOFTWARE",
+      rootKeyName: "STALE-HIVE",
+      rootKeyPath: "STALE-HIVE",
+    });
+    await tick();
+
+    expect(container.textContent).toContain("CURRENT-HIVE");
+    expect(container.textContent).toContain("Current Windows");
+    expect(container.textContent).not.toContain("STALE-HIVE");
+    expect(container.textContent).not.toContain("Stale registry data");
   });
 
   it("shows Registry badge in header", async () => {
