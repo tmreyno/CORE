@@ -48,6 +48,7 @@ export interface BinaryInfo {
   pe_is_driver: boolean;
   pe_driver_type: string | null;
   pe_driver_indicators: string[];
+  pe_version_info: Record<string, string>;
   // Mach-O specific
   macho_cpu_type: string | null;
   macho_filetype: string | null;

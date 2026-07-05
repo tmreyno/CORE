@@ -5,7 +5,7 @@
 
 use goblin::Object;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::io::{Read, Take};
 use std::path::Path;
@@ -18,6 +18,23 @@ const MAX_BINARY_IMPORT_LIBRARIES: usize = 512;
 const MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY: usize = 2048;
 const MAX_BINARY_EXPORTS: usize = 4096;
 const MAX_BINARY_SECTIONS: usize = 2048;
+const MAX_PE_VERSION_INFO_FIELDS: usize = 32;
+const MAX_PE_VERSION_INFO_VALUE_CHARS: usize = 512;
+
+const PE_VERSION_INFO_KEYS: &[&str] = &[
+    "CompanyName",
+    "FileDescription",
+    "FileVersion",
+    "InternalName",
+    "OriginalFilename",
+    "ProductName",
+    "ProductVersion",
+    "LegalCopyright",
+    "LegalTrademarks",
+    "PrivateBuild",
+    "SpecialBuild",
+    "Comments",
+];
 
 #[derive(Debug, Default)]
 struct ImportAccumulator {
@@ -126,6 +143,7 @@ pub struct BinaryInfo {
     pub pe_is_driver: bool,
     pub pe_driver_type: Option<String>,
     pub pe_driver_indicators: Vec<String>,
+    pub pe_version_info: BTreeMap<String, String>,
     // Mach-O specific
     pub macho_cpu_type: Option<String>,
     pub macho_filetype: Option<String>,
@@ -155,7 +173,7 @@ pub fn analyze_binary_bytes(
         .map_err(|e| DocumentError::Parse(format!("Failed to parse binary: {}", e)))?;
 
     match obj {
-        Object::PE(pe) => analyze_pe(pe, &source_id, file_size),
+        Object::PE(pe) => analyze_pe(pe, &source_id, data, file_size),
         Object::Elf(elf) => analyze_elf(elf, &source_id, file_size),
         Object::Mach(mach) => analyze_mach(mach, &source_id, data, file_size),
         _ => Err(DocumentError::UnsupportedFormat(
@@ -164,7 +182,12 @@ pub fn analyze_binary_bytes(
     }
 }
 
-fn analyze_pe(pe: goblin::pe::PE, source_id: &str, file_size: u64) -> DocumentResult<BinaryInfo> {
+fn analyze_pe(
+    pe: goblin::pe::PE,
+    source_id: &str,
+    data: &[u8],
+    file_size: u64,
+) -> DocumentResult<BinaryInfo> {
     let is_64bit = pe.is_64;
     let format = if is_64bit {
         BinaryFormat::PE64
@@ -249,6 +272,7 @@ fn analyze_pe(pe: goblin::pe::PE, source_id: &str, file_size: u64) -> DocumentRe
         .unwrap_or(false);
     let (pe_is_driver, pe_driver_type, pe_driver_indicators) =
         classify_pe_driver(source_id, subsystem.as_deref(), &imports, &exports);
+    let pe_version_info = extract_pe_version_info_strings(data);
 
     Ok(BinaryInfo {
         path: source_id.to_string(),
@@ -266,6 +290,7 @@ fn analyze_pe(pe: goblin::pe::PE, source_id: &str, file_size: u64) -> DocumentRe
         pe_is_driver,
         pe_driver_type,
         pe_driver_indicators,
+        pe_version_info,
         macho_cpu_type: None,
         macho_filetype: None,
         has_debug_info: pe.debug_data.is_some(),
@@ -367,6 +392,7 @@ fn analyze_elf(
         pe_is_driver: false,
         pe_driver_type: None,
         pe_driver_indicators: Vec::new(),
+        pe_version_info: BTreeMap::new(),
         macho_cpu_type: None,
         macho_filetype: None,
         has_debug_info,
@@ -425,6 +451,7 @@ fn analyze_mach(
                 pe_is_driver: false,
                 pe_driver_type: None,
                 pe_driver_indicators: Vec::new(),
+                pe_version_info: BTreeMap::new(),
                 macho_cpu_type: Some(format!("Fat ({} architectures)", narches)),
                 macho_filetype: None,
                 has_debug_info: false,
@@ -565,6 +592,93 @@ fn exports_function(exports: &[ExportInfo], function: &str) -> bool {
         .any(|export| export.name.eq_ignore_ascii_case(function))
 }
 
+fn extract_pe_version_info_strings(data: &[u8]) -> BTreeMap<String, String> {
+    let mut version_info = BTreeMap::new();
+    for key in PE_VERSION_INFO_KEYS {
+        if version_info.len() >= MAX_PE_VERSION_INFO_FIELDS {
+            break;
+        }
+        if let Some(value) = find_utf16le_version_value(data, key) {
+            version_info.insert((*key).to_string(), value);
+        }
+    }
+    version_info
+}
+
+fn find_utf16le_version_value(data: &[u8], key: &str) -> Option<String> {
+    let key_pattern = utf16le_nul_terminated_pattern(key);
+    let key_offset = find_subslice(data, &key_pattern)?;
+    let value_search_start = key_offset.checked_add(key_pattern.len())?;
+    let mut candidate_offsets = Vec::new();
+    for skipped in (0..=32).step_by(2) {
+        if let Some(offset) = value_search_start.checked_add(skipped) {
+            candidate_offsets.push(offset);
+            candidate_offsets.push(align_up(offset, 4)?);
+        }
+    }
+
+    candidate_offsets.sort_unstable();
+    candidate_offsets.dedup();
+    candidate_offsets
+        .into_iter()
+        .filter_map(|offset| read_utf16le_string_at(data, offset))
+        .find(|value| looks_like_version_resource_value(value))
+}
+
+fn utf16le_nul_terminated_pattern(value: &str) -> Vec<u8> {
+    value
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .flat_map(u16::to_le_bytes)
+        .collect()
+}
+
+fn find_subslice(data: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > data.len() {
+        return None;
+    }
+    data.windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn align_up(value: usize, alignment: usize) -> Option<usize> {
+    let mask = alignment.checked_sub(1)?;
+    value.checked_add(mask).map(|candidate| candidate & !mask)
+}
+
+fn read_utf16le_string_at(data: &[u8], offset: usize) -> Option<String> {
+    if offset >= data.len() || !offset.is_multiple_of(2) {
+        return None;
+    }
+
+    let mut units = Vec::new();
+    for chunk in data[offset..].chunks_exact(2) {
+        let unit = u16::from_le_bytes([chunk[0], chunk[1]]);
+        if unit == 0 {
+            break;
+        }
+        units.push(unit);
+        if units.len() >= MAX_PE_VERSION_INFO_VALUE_CHARS {
+            break;
+        }
+    }
+
+    if units.is_empty() {
+        return None;
+    }
+    String::from_utf16(&units)
+        .ok()
+        .map(|value| value.trim().to_string())
+}
+
+fn looks_like_version_resource_value(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| !ch.is_control() || matches!(ch, '\t' | '\n' | '\r'))
+        && value.chars().any(|ch| ch.is_ascii_alphanumeric())
+}
+
 fn analyze_single_mach(
     macho: goblin::mach::MachO,
     source_id: &str,
@@ -669,6 +783,7 @@ fn analyze_single_mach(
         pe_is_driver: false,
         pe_driver_type: None,
         pe_driver_indicators: Vec::new(),
+        pe_version_info: BTreeMap::new(),
         macho_cpu_type: Some(cpu_type),
         macho_filetype: Some(filetype.to_string()),
         has_debug_info,
@@ -857,6 +972,34 @@ mod tests {
     }
 
     #[test]
+    fn extract_pe_version_info_strings_reads_driver_identity_fields() {
+        let mut data = Vec::new();
+        append_utf16le_version_pair(&mut data, "CompanyName", "Contoso Driver Labs");
+        append_utf16le_version_pair(&mut data, "FileDescription", "Contoso Storage Filter");
+        append_utf16le_version_pair(&mut data, "FileVersion", "1.2.3.4");
+        append_utf16le_version_pair(&mut data, "OriginalFilename", "contosoflt.sys");
+
+        let version_info = extract_pe_version_info_strings(&data);
+
+        assert_eq!(
+            version_info.get("CompanyName").map(String::as_str),
+            Some("Contoso Driver Labs")
+        );
+        assert_eq!(
+            version_info.get("FileDescription").map(String::as_str),
+            Some("Contoso Storage Filter")
+        );
+        assert_eq!(
+            version_info.get("FileVersion").map(String::as_str),
+            Some("1.2.3.4")
+        );
+        assert_eq!(
+            version_info.get("OriginalFilename").map(String::as_str),
+            Some("contosoflt.sys")
+        );
+    }
+
+    #[test]
     fn detect_binary_format_bytes_identifies_pe64_from_prefix() {
         let data = minimal_pe_header(0x20b);
 
@@ -927,6 +1070,21 @@ mod tests {
         data[pe_offset..pe_offset + 4].copy_from_slice(b"PE\0\0");
         data[pe_offset + 24..pe_offset + 26].copy_from_slice(&optional_magic.to_le_bytes());
         data
+    }
+
+    fn append_utf16le_version_pair(data: &mut Vec<u8>, key: &str, value: &str) {
+        data.extend_from_slice(&[0u8; 6]);
+        append_utf16le_nul_terminated(data, key);
+        while data.len() % 4 != 0 {
+            data.push(0);
+        }
+        append_utf16le_nul_terminated(data, value);
+    }
+
+    fn append_utf16le_nul_terminated(data: &mut Vec<u8>, value: &str) {
+        for unit in value.encode_utf16().chain(std::iter::once(0)) {
+            data.extend_from_slice(&unit.to_le_bytes());
+        }
     }
 
     fn minimal_elf64_header() -> Vec<u8> {

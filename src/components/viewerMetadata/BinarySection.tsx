@@ -14,10 +14,7 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
       <CollapsibleGroup title="Binary Info" defaultOpen>
         <MetadataRow label="Format" value={props.data.format} />
         <Show when={props.data.architecture}>
-          <MetadataRow
-            label="Architecture"
-            value={props.data.architecture!}
-          />
+          <MetadataRow label="Architecture" value={props.data.architecture!} />
         </Show>
         <Show when={props.data.entryPoint}>
           <MetadataRow
@@ -27,16 +24,10 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
           />
         </Show>
         <Show when={props.data.subsystem}>
-          <MetadataRow
-            label="Subsystem"
-            value={props.data.subsystem!}
-          />
+          <MetadataRow label="Subsystem" value={props.data.subsystem!} />
         </Show>
         <Show when={props.data.compiler}>
-          <MetadataRow
-            label="Compiler"
-            value={props.data.compiler!}
-          />
+          <MetadataRow label="Compiler" value={props.data.compiler!} />
         </Show>
         <Show when={props.data.compiledDate}>
           <MetadataRow
@@ -62,16 +53,10 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
           />
         </Show>
         <Show when={props.data.importCount != null}>
-          <MetadataRow
-            label="Imports"
-            value={String(props.data.importCount)}
-          />
+          <MetadataRow label="Imports" value={String(props.data.importCount)} />
         </Show>
         <Show when={props.data.exportCount != null}>
-          <MetadataRow
-            label="Exports"
-            value={String(props.data.exportCount)}
-          />
+          <MetadataRow label="Exports" value={String(props.data.exportCount)} />
         </Show>
         <MetadataRow
           label="Stripped"
@@ -85,8 +70,20 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
 
       <Show
         when={
-          props.data.characteristics &&
-          props.data.characteristics.length > 0
+          props.data.versionInfo &&
+          Object.keys(props.data.versionInfo).length > 0
+        }
+      >
+        <CollapsibleGroup title="Version Info" defaultOpen>
+          <For each={Object.entries(props.data.versionInfo!)}>
+            {([key, value]) => <MetadataRow label={key} value={value} />}
+          </For>
+        </CollapsibleGroup>
+      </Show>
+
+      <Show
+        when={
+          props.data.characteristics && props.data.characteristics.length > 0
         }
       >
         <CollapsibleGroup title="Characteristics" defaultOpen={false}>
@@ -104,8 +101,7 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
 
       <Show
         when={
-          props.data.driverIndicators &&
-          props.data.driverIndicators.length > 0
+          props.data.driverIndicators && props.data.driverIndicators.length > 0
         }
       >
         <CollapsibleGroup title="Driver Indicators" defaultOpen>

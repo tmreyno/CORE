@@ -22,7 +22,7 @@ function renderComponent(component: () => any) {
 }
 
 // Wait for async updates
-const tick = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms));
+const tick = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Mock PE binary data (matches BinaryInfo interface)
 const mockPeData = {
@@ -41,16 +41,46 @@ const mockPeData = {
   pe_is_driver: false,
   pe_driver_type: null,
   pe_driver_indicators: [],
+  pe_version_info: {
+    CompanyName: "CORE Test Tools",
+    FileVersion: "1.2.3.4",
+  },
   macho_cpu_type: null,
   macho_filetype: null,
   sections: [
-    { name: ".text", virtual_address: 4096, virtual_size: 32768, raw_size: 32768, characteristics: "CNT_CODE | MEM_EXECUTE | MEM_READ" },
-    { name: ".rdata", virtual_address: 40960, virtual_size: 8192, raw_size: 8192, characteristics: "CNT_INITIALIZED_DATA | MEM_READ" },
-    { name: ".data", virtual_address: 49152, virtual_size: 4096, raw_size: 2048, characteristics: "CNT_INITIALIZED_DATA | MEM_READ | MEM_WRITE" },
+    {
+      name: ".text",
+      virtual_address: 4096,
+      virtual_size: 32768,
+      raw_size: 32768,
+      characteristics: "CNT_CODE | MEM_EXECUTE | MEM_READ",
+    },
+    {
+      name: ".rdata",
+      virtual_address: 40960,
+      virtual_size: 8192,
+      raw_size: 8192,
+      characteristics: "CNT_INITIALIZED_DATA | MEM_READ",
+    },
+    {
+      name: ".data",
+      virtual_address: 49152,
+      virtual_size: 4096,
+      raw_size: 2048,
+      characteristics: "CNT_INITIALIZED_DATA | MEM_READ | MEM_WRITE",
+    },
   ],
   imports: [
-    { library: "KERNEL32.dll", functions: ["CreateFileW", "ReadFile", "CloseHandle", "GetLastError"], function_count: 4 },
-    { library: "USER32.dll", functions: ["MessageBoxW", "GetWindowTextW"], function_count: 2 },
+    {
+      library: "KERNEL32.dll",
+      functions: ["CreateFileW", "ReadFile", "CloseHandle", "GetLastError"],
+      function_count: 4,
+    },
+    {
+      library: "USER32.dll",
+      functions: ["MessageBoxW", "GetWindowTextW"],
+      function_count: 2,
+    },
   ],
   exports: [
     { name: "DllMain", ordinal: 1, address: 4096 },
@@ -75,10 +105,17 @@ const mockElfData = {
   pe_is_driver: false,
   pe_driver_type: null,
   pe_driver_indicators: [],
+  pe_version_info: {},
   macho_cpu_type: null,
   macho_filetype: null,
   sections: [
-    { name: ".text", virtual_address: 4096, virtual_size: 16384, raw_size: 16384, characteristics: "ALLOC | EXECINSTR" },
+    {
+      name: ".text",
+      virtual_address: 4096,
+      virtual_size: 16384,
+      raw_size: 16384,
+      characteristics: "ALLOC | EXECINSTR",
+    },
   ],
   imports: [],
   exports: [],
@@ -101,6 +138,7 @@ const mockMachoData = {
   pe_is_driver: false,
   pe_driver_type: null,
   pe_driver_indicators: [],
+  pe_version_info: {},
   macho_cpu_type: "ARM64",
   macho_filetype: "Execute",
   sections: [],
@@ -133,7 +171,9 @@ describe("BinaryViewer", () => {
       renderComponent(() => <BinaryViewer path="/tmp/program.exe" />);
       await tick();
 
-      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze", { path: "/tmp/program.exe" });
+      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze", {
+        path: "/tmp/program.exe",
+      });
     });
 
     it("calls binary_analyze_source when an evidence source is provided", async () => {
@@ -148,10 +188,14 @@ describe("BinaryViewer", () => {
         size: 8192,
       };
 
-      renderComponent(() => <BinaryViewer path="/tmp/program.exe" source={source} />);
+      renderComponent(() => (
+        <BinaryViewer path="/tmp/program.exe" source={source} />
+      ));
       await tick();
 
-      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", { source });
+      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", {
+        source,
+      });
     });
 
     it("shows PE-specific information", async () => {
@@ -278,7 +322,9 @@ describe("BinaryViewer", () => {
     });
 
     it("shows error when analysis fails", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("Not a recognized binary format"));
+      mockInvoke.mockRejectedValueOnce(
+        new Error("Not a recognized binary format"),
+      );
 
       const { container } = renderComponent(() => (
         <BinaryViewer path="/tmp/unknown.bin" />

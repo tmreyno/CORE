@@ -153,6 +153,7 @@ export interface BinaryMetadataSection {
   isDriver?: boolean;
   driverType?: string;
   driverIndicators?: string[];
+  versionInfo?: Record<string, string>;
   // Timestamps
   compiledDate?: string;
 }

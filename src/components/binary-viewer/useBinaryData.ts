@@ -4,7 +4,12 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, createMemo, type Accessor } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  createMemo,
+  type Accessor,
+} from "solid-js";
 import { commands } from "../../api/commands";
 import { getBasename } from "../../utils/pathUtils";
 import { logger } from "../../utils/logger";
@@ -85,7 +90,7 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     return data.imports.filter(
       (imp) =>
         imp.library.toLowerCase().includes(query) ||
-        imp.functions.some((f) => f.toLowerCase().includes(query))
+        imp.functions.some((f) => f.toLowerCase().includes(query)),
     );
   });
 
@@ -103,9 +108,13 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
       kind: "binary",
       format: data.format,
       architecture: data.architecture,
-      entryPoint: data.entry_point !== null ? formatHex(data.entry_point) : undefined,
+      entryPoint:
+        data.entry_point !== null ? formatHex(data.entry_point) : undefined,
       sectionCount: data.sections.length,
-      importCount: data.imports.reduce((sum, imp) => sum + imp.function_count, 0),
+      importCount: data.imports.reduce(
+        (sum, imp) => sum + imp.function_count,
+        0,
+      ),
       exportCount: data.exports.length,
       isStripped: data.is_stripped,
       isDynamic: !data.is_stripped,
@@ -113,7 +122,11 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
       isDriver: data.pe_is_driver,
       driverType: data.pe_driver_type || undefined,
       driverIndicators: data.pe_driver_indicators,
-      compiledDate: data.pe_timestamp !== null ? formatTimestamp(data.pe_timestamp) : undefined,
+      versionInfo: data.pe_version_info,
+      compiledDate:
+        data.pe_timestamp !== null
+          ? formatTimestamp(data.pe_timestamp)
+          : undefined,
     };
     props.onMetadata(section);
   });
