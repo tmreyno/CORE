@@ -45,6 +45,9 @@ export interface BinaryInfo {
   pe_timestamp: number | null;
   pe_checksum: number | null;
   pe_subsystem: string | null;
+  pe_is_driver: boolean;
+  pe_driver_type: string | null;
+  pe_driver_indicators: string[];
   // Mach-O specific
   macho_cpu_type: string | null;
   macho_filetype: string | null;

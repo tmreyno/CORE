@@ -45,6 +45,13 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
             highlight
           />
         </Show>
+        <Show when={props.data.isDriver}>
+          <MetadataRow
+            label="Driver Type"
+            value={props.data.driverType || "Windows kernel driver"}
+            highlight
+          />
+        </Show>
       </CollapsibleGroup>
 
       <CollapsibleGroup title="Structure" defaultOpen>
@@ -88,6 +95,25 @@ export function BinarySection(props: { data: BinaryMetadataSection }) {
               {(char) => (
                 <span class="px-1.5 py-0.5 text-2xs bg-bg-hover text-txt-secondary rounded">
                   {char}
+                </span>
+              )}
+            </For>
+          </div>
+        </CollapsibleGroup>
+      </Show>
+
+      <Show
+        when={
+          props.data.driverIndicators &&
+          props.data.driverIndicators.length > 0
+        }
+      >
+        <CollapsibleGroup title="Driver Indicators" defaultOpen>
+          <div class="flex flex-wrap gap-1">
+            <For each={props.data.driverIndicators!}>
+              {(indicator) => (
+                <span class="px-1.5 py-0.5 text-2xs bg-bg-hover text-txt-secondary rounded">
+                  {indicator}
                 </span>
               )}
             </For>

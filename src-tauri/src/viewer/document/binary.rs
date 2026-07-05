@@ -123,6 +123,9 @@ pub struct BinaryInfo {
     pub pe_timestamp: Option<u32>,
     pub pe_checksum: Option<u32>,
     pub pe_subsystem: Option<String>,
+    pub pe_is_driver: bool,
+    pub pe_driver_type: Option<String>,
+    pub pe_driver_indicators: Vec<String>,
     // Mach-O specific
     pub macho_cpu_type: Option<String>,
     pub macho_filetype: Option<String>,
@@ -244,6 +247,8 @@ fn analyze_pe(pe: goblin::pe::PE, source_id: &str, file_size: u64) -> DocumentRe
             opt.data_directories.get_certificate_table().is_some()
         })
         .unwrap_or(false);
+    let (pe_is_driver, pe_driver_type, pe_driver_indicators) =
+        classify_pe_driver(source_id, subsystem.as_deref(), &imports, &exports);
 
     Ok(BinaryInfo {
         path: source_id.to_string(),
@@ -258,6 +263,9 @@ fn analyze_pe(pe: goblin::pe::PE, source_id: &str, file_size: u64) -> DocumentRe
         pe_timestamp: timestamp,
         pe_checksum: checksum,
         pe_subsystem: subsystem,
+        pe_is_driver,
+        pe_driver_type,
+        pe_driver_indicators,
         macho_cpu_type: None,
         macho_filetype: None,
         has_debug_info: pe.debug_data.is_some(),
@@ -356,6 +364,9 @@ fn analyze_elf(
         pe_timestamp: None,
         pe_checksum: None,
         pe_subsystem: None,
+        pe_is_driver: false,
+        pe_driver_type: None,
+        pe_driver_indicators: Vec::new(),
         macho_cpu_type: None,
         macho_filetype: None,
         has_debug_info,
@@ -411,6 +422,9 @@ fn analyze_mach(
                 pe_timestamp: None,
                 pe_checksum: None,
                 pe_subsystem: None,
+                pe_is_driver: false,
+                pe_driver_type: None,
+                pe_driver_indicators: Vec::new(),
                 macho_cpu_type: Some(format!("Fat ({} architectures)", narches)),
                 macho_filetype: None,
                 has_debug_info: false,
@@ -457,6 +471,98 @@ fn import_infos_from_accumulators(
         .collect();
     imports.sort_by(|left, right| left.library.cmp(&right.library));
     imports
+}
+
+fn classify_pe_driver(
+    source_id: &str,
+    subsystem: Option<&str>,
+    imports: &[ImportInfo],
+    exports: &[ExportInfo],
+) -> (bool, Option<String>, Vec<String>) {
+    let mut indicators = Vec::new();
+    let has_sys_extension = source_id
+        .to_ascii_lowercase()
+        .rsplit(['/', '\\', ':'])
+        .next()
+        .is_some_and(|name| name.ends_with(".sys") || name.ends_with(".drv"));
+    if has_sys_extension {
+        indicators.push("driver file extension".to_string());
+    }
+    if subsystem == Some("Native") {
+        indicators.push("PE native subsystem".to_string());
+    }
+
+    let imports_ntoskrnl = imports_library(imports, "ntoskrnl.exe");
+    if imports_ntoskrnl {
+        indicators.push("imports ntoskrnl.exe".to_string());
+    }
+    if imports_library(imports, "hal.dll") {
+        indicators.push("imports hal.dll".to_string());
+    }
+    if exports_function(exports, "DriverEntry") || imports_function(imports, "DriverEntry") {
+        indicators.push("DriverEntry entry point".to_string());
+    }
+    if imports_library(imports, "fltmgr.sys") || imports_function(imports, "FltRegisterFilter") {
+        indicators.push("file-system filter driver APIs".to_string());
+    }
+    if imports_library(imports, "ndis.sys") || imports_function(imports, "NdisRegister") {
+        indicators.push("network driver APIs".to_string());
+    }
+    if imports_library(imports, "wdf01000.sys") || imports_function(imports, "WdfDriverCreate") {
+        indicators.push("KMDF driver framework APIs".to_string());
+    }
+
+    indicators.sort();
+    indicators.dedup();
+
+    let is_driver = has_sys_extension
+        || imports_ntoskrnl
+        || imports_library(imports, "hal.dll")
+        || exports_function(exports, "DriverEntry")
+        || imports_function(imports, "DriverEntry")
+        || imports_library(imports, "fltmgr.sys")
+        || imports_library(imports, "ndis.sys")
+        || imports_library(imports, "wdf01000.sys")
+        || imports_function(imports, "FltRegisterFilter")
+        || imports_function(imports, "WdfDriverCreate");
+    let driver_type = if !is_driver {
+        None
+    } else if imports_library(imports, "fltmgr.sys")
+        || imports_function(imports, "FltRegisterFilter")
+    {
+        Some("File system minifilter driver".to_string())
+    } else if imports_library(imports, "ndis.sys") || imports_function(imports, "NdisRegister") {
+        Some("Network driver".to_string())
+    } else if imports_library(imports, "wdf01000.sys")
+        || imports_function(imports, "WdfDriverCreate")
+    {
+        Some("Kernel-Mode Driver Framework driver".to_string())
+    } else {
+        Some("Windows kernel driver".to_string())
+    };
+
+    (is_driver, driver_type, indicators)
+}
+
+fn imports_library(imports: &[ImportInfo], library: &str) -> bool {
+    imports
+        .iter()
+        .any(|import| import.library.eq_ignore_ascii_case(library))
+}
+
+fn imports_function(imports: &[ImportInfo], function: &str) -> bool {
+    imports.iter().any(|import| {
+        import
+            .functions
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(function))
+    })
+}
+
+fn exports_function(exports: &[ExportInfo], function: &str) -> bool {
+    exports
+        .iter()
+        .any(|export| export.name.eq_ignore_ascii_case(function))
 }
 
 fn analyze_single_mach(
@@ -560,6 +666,9 @@ fn analyze_single_mach(
         pe_timestamp: None,
         pe_checksum: None,
         pe_subsystem: None,
+        pe_is_driver: false,
+        pe_driver_type: None,
+        pe_driver_indicators: Vec::new(),
         macho_cpu_type: Some(cpu_type),
         macho_filetype: Some(filetype.to_string()),
         has_debug_info,
@@ -679,6 +788,72 @@ mod tests {
             kernel32.functions.len(),
             MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY
         );
+    }
+
+    #[test]
+    fn classify_pe_driver_identifies_sys_kernel_driver() {
+        let imports = vec![ImportInfo {
+            library: "ntoskrnl.exe".to_string(),
+            functions: vec!["IoCreateDevice".to_string()],
+            function_count: 1,
+        }];
+        let exports = vec![ExportInfo {
+            name: "DriverEntry".to_string(),
+            ordinal: None,
+            address: 0x1000,
+        }];
+
+        let (is_driver, driver_type, indicators) = classify_pe_driver(
+            "evidence.ad1:/Windows/System32/drivers/example.sys",
+            Some("Native"),
+            &imports,
+            &exports,
+        );
+
+        assert!(is_driver);
+        assert_eq!(driver_type.as_deref(), Some("Windows kernel driver"));
+        assert!(indicators.contains(&"driver file extension".to_string()));
+        assert!(indicators.contains(&"imports ntoskrnl.exe".to_string()));
+        assert!(indicators.contains(&"DriverEntry entry point".to_string()));
+    }
+
+    #[test]
+    fn classify_pe_driver_identifies_minifilter_driver() {
+        let imports = vec![ImportInfo {
+            library: "fltmgr.sys".to_string(),
+            functions: vec!["FltRegisterFilter".to_string()],
+            function_count: 1,
+        }];
+
+        let (is_driver, driver_type, indicators) = classify_pe_driver(
+            "C:\\Windows\\System32\\drivers\\filter.sys",
+            Some("Native"),
+            &imports,
+            &[],
+        );
+
+        assert!(is_driver);
+        assert_eq!(
+            driver_type.as_deref(),
+            Some("File system minifilter driver")
+        );
+        assert!(indicators.contains(&"file-system filter driver APIs".to_string()));
+    }
+
+    #[test]
+    fn classify_pe_driver_leaves_user_mode_exe_unclassified() {
+        let imports = vec![ImportInfo {
+            library: "KERNEL32.dll".to_string(),
+            functions: vec!["CreateFileW".to_string()],
+            function_count: 1,
+        }];
+
+        let (is_driver, driver_type, indicators) =
+            classify_pe_driver("C:\\Tools\\viewer.exe", Some("Console"), &imports, &[]);
+
+        assert!(!is_driver);
+        assert!(driver_type.is_none());
+        assert!(indicators.is_empty());
     }
 
     #[test]

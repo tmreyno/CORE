@@ -66,6 +66,31 @@ export function BinaryOverview(props: BinaryOverviewProps) {
         </div>
       </Show>
 
+      {/* Windows driver-specific info */}
+      <Show when={data().pe_is_driver}>
+        <div class="card">
+          <h3 class="text-xs font-semibold text-txt-secondary uppercase tracking-wider mb-2">Driver Analysis</h3>
+          <Show when={data().pe_driver_type}>
+            <div class="flex gap-2 text-xs py-0.5">
+              <span class="text-txt-muted w-24">Type</span>
+              <span class="text-txt">{data().pe_driver_type}</span>
+            </div>
+          </Show>
+          <Show when={data().pe_driver_indicators.length > 0}>
+            <div class="flex gap-2 text-xs py-0.5">
+              <span class="text-txt-muted w-24">Indicators</span>
+              <div class="flex flex-wrap gap-1">
+                {data().pe_driver_indicators.map((indicator) => (
+                  <span class="px-1.5 py-0.5 text-2xs bg-bg-hover text-txt-secondary rounded">
+                    {indicator}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </Show>
+        </div>
+      </Show>
+
       {/* Mach-O specific */}
       <Show when={data().macho_cpu_type || data().macho_filetype}>
         <div class="card">

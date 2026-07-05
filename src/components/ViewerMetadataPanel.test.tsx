@@ -434,6 +434,30 @@ describe("ViewerMetadataPanel", () => {
       dispose();
     });
 
+    it("shows Windows driver metadata", () => {
+      const metadata = makeMetadata({
+        viewerType: "Binary",
+        sections: [{
+          kind: "binary",
+          format: "PE64",
+          architecture: "x86_64",
+          isStripped: false,
+          isDynamic: true,
+          subsystem: "Native",
+          isDriver: true,
+          driverType: "File system minifilter driver",
+          driverIndicators: ["driver file extension", "file-system filter driver APIs"],
+        }],
+      });
+      const { container, dispose } = renderComponent(() =>
+        <ViewerMetadataPanel metadata={metadata} />
+      );
+      expect(container.textContent).toContain("File system minifilter driver");
+      expect(container.textContent).toContain("driver file extension");
+      expect(container.textContent).toContain("file-system filter driver APIs");
+      dispose();
+    });
+
     it("shows email info with headers", () => {
       const metadata = makeMetadata({
         viewerType: "Email",

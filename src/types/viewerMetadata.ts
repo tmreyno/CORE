@@ -150,6 +150,9 @@ export interface BinaryMetadataSection {
   // PE-specific
   subsystem?: string;
   characteristics?: string[];
+  isDriver?: boolean;
+  driverType?: string;
+  driverIndicators?: string[];
   // Timestamps
   compiledDate?: string;
 }

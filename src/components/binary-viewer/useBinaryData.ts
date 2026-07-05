@@ -110,6 +110,9 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
       isStripped: data.is_stripped,
       isDynamic: !data.is_stripped,
       subsystem: data.pe_subsystem || undefined,
+      isDriver: data.pe_is_driver,
+      driverType: data.pe_driver_type || undefined,
+      driverIndicators: data.pe_driver_indicators,
       compiledDate: data.pe_timestamp !== null ? formatTimestamp(data.pe_timestamp) : undefined,
     };
     props.onMetadata(section);
