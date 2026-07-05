@@ -328,6 +328,31 @@ export interface ProjectDbExtractArtifactResult {
   record: DbNormalizedArtifact;
 }
 
+/** Request to collect known OS identity artifacts from mixed evidence sources */
+export interface ProjectDbCollectSystemIdentityRequest {
+  sources: HashSourceInput[];
+  options?: ArtifactExtractionOptions | null;
+  evidenceFileId?: string;
+  evidenceFile?: ProjectDbEvidenceFile;
+  extractor?: string;
+}
+
+/** Per-source extraction failure from system identity collection */
+export interface ProjectDbSystemIdentityCollectionError {
+  sourceId: string;
+  error: string;
+}
+
+/** Result from collecting known OS identity artifacts */
+export interface ProjectDbCollectSystemIdentityResult {
+  scanned: number;
+  matched: number;
+  inserted: number;
+  skipped: number;
+  records: DbNormalizedArtifact[];
+  errors: ProjectDbSystemIdentityCollectionError[];
+}
+
 /** Bounded byte/source analysis options for hex and data review */
 export interface SourceAnalysisOptions {
   offset?: number;
@@ -759,6 +784,20 @@ export const artifactCommands = {
   ): Promise<ProjectDbExtractArtifactResult> =>
     invoke<ProjectDbExtractArtifactResult>(
       "project_db_extract_artifact_source",
+      {
+        request,
+      },
+    ),
+
+  /**
+   * Extract and persist known Windows/Linux/macOS system identity artifacts
+   * from a batch of candidate evidence sources.
+   */
+  collectSystemIdentitySources: (
+    request: ProjectDbCollectSystemIdentityRequest,
+  ): Promise<ProjectDbCollectSystemIdentityResult> =>
+    invoke<ProjectDbCollectSystemIdentityResult>(
+      "project_db_collect_system_identity_sources",
       {
         request,
       },

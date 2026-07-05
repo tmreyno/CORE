@@ -219,6 +219,7 @@ const MAX_ARTIFACT_JSON_DEPTH: usize = 4;
 const MAX_ARTIFACT_JSON_ITEMS: usize = 256;
 const MAX_ARTIFACT_METADATA_ENTRIES: usize = 96;
 const MAX_ARTIFACT_METADATA_VALUE_CHARS: usize = 384;
+const MAX_SYSTEM_IDENTITY_COLLECTION_SOURCES: usize = 512;
 const ARTIFACT_TRUNCATED_SUFFIX: &str = "... [truncated]";
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -236,6 +237,34 @@ pub struct ProjectDbExtractArtifactRequest {
 pub struct ProjectDbExtractArtifactResult {
     pub artifact: NormalizedArtifact,
     pub record: DbNormalizedArtifact,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDbCollectSystemIdentityRequest {
+    pub sources: Vec<HashSourceInput>,
+    pub options: Option<ArtifactExtractionOptions>,
+    pub evidence_file_id: Option<String>,
+    pub evidence_file: Option<DbEvidenceFile>,
+    pub extractor: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDbSystemIdentityCollectionError {
+    pub source_id: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDbCollectSystemIdentityResult {
+    pub scanned: usize,
+    pub matched: usize,
+    pub inserted: usize,
+    pub skipped: usize,
+    pub records: Vec<DbNormalizedArtifact>,
+    pub errors: Vec<ProjectDbSystemIdentityCollectionError>,
 }
 
 /// Insert or replace a normalized artifact record.
@@ -375,6 +404,107 @@ pub async fn project_db_extract_artifact_source(
     Ok(ProjectDbExtractArtifactResult { artifact, record })
 }
 
+/// Extract and persist known OS identity artifacts from a batch of candidate
+/// evidence sources. This is intended for evidence-tree collection workflows:
+/// callers may provide mixed files, and the backend keeps only recognized
+/// Windows, Linux, and macOS identity paths.
+#[tauri::command]
+pub async fn project_db_collect_system_identity_sources(
+    window: tauri::Window,
+    request: ProjectDbCollectSystemIdentityRequest,
+) -> Result<ProjectDbCollectSystemIdentityResult, String> {
+    let ProjectDbCollectSystemIdentityRequest {
+        sources,
+        options,
+        evidence_file_id,
+        evidence_file,
+        extractor,
+    } = request;
+
+    if sources.len() > MAX_SYSTEM_IDENTITY_COLLECTION_SOURCES {
+        return Err(format!(
+            "System identity collection source count exceeds limit: {} > {}",
+            sources.len(),
+            MAX_SYSTEM_IDENTITY_COLLECTION_SOURCES
+        ));
+    }
+
+    let scanned = sources.len();
+    let resolved_evidence_id = evidence_file
+        .as_ref()
+        .map(|file| file.id.clone())
+        .or(evidence_file_id);
+    let extractor = extractor
+        .map(|value| normalize_artifact_extractor(Some(value)))
+        .filter(|value| value != "artifact_extract_source")
+        .unwrap_or_else(|| "system_identity_collector".to_string());
+
+    let mut matched = 0usize;
+    let mut records = Vec::new();
+    let mut errors = Vec::new();
+
+    for source in sources {
+        let source_id = source_input_identity_path(&source);
+        if !is_system_identity_source(&source_id) {
+            continue;
+        }
+        matched += 1;
+
+        match extract_project_db_artifact_record(
+            source,
+            options.clone(),
+            resolved_evidence_id.clone(),
+            extractor.clone(),
+        )
+        .await
+        {
+            Ok((_artifact, record)) => records.push(record),
+            Err(error) => errors.push(ProjectDbSystemIdentityCollectionError {
+                source_id,
+                error: truncate_metadata_value(&error, 180),
+            }),
+        }
+    }
+
+    let inserted = records.len();
+    let skipped = scanned.saturating_sub(matched);
+
+    with_project_db(window.label(), |db| {
+        if let Some(file) = &evidence_file {
+            db.upsert_evidence_file(file)?;
+        }
+        for record in &records {
+            db.upsert_artifact(record)?;
+        }
+        Ok(())
+    })?;
+
+    Ok(ProjectDbCollectSystemIdentityResult {
+        scanned,
+        matched,
+        inserted,
+        skipped,
+        records,
+        errors,
+    })
+}
+
+async fn extract_project_db_artifact_record(
+    source: HashSourceInput,
+    options: Option<ArtifactExtractionOptions>,
+    evidence_file_id: Option<String>,
+    extractor: String,
+) -> Result<(NormalizedArtifact, DbNormalizedArtifact), String> {
+    let source_for_enrichment = source.clone();
+    let mut artifact = artifact_extract_source(source, options).await?;
+    enrich_sqlite_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
+    enrich_image_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
+    enrich_binary_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
+    enrich_system_identity_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
+    let record = normalized_to_db_artifact(&artifact, evidence_file_id, extractor)?;
+    Ok((artifact, record))
+}
+
 async fn enrich_system_identity_artifact_metadata(
     source: &HashSourceInput,
     artifact: &mut NormalizedArtifact,
@@ -419,6 +549,16 @@ fn source_identity_path(source: &HashSourceInput, artifact: &NormalizedArtifact)
         .as_deref()
         .or(source.path.as_deref())
         .unwrap_or(&artifact.source_id)
+        .replace('\\', "/")
+}
+
+fn source_input_identity_path(source: &HashSourceInput) -> String {
+    source
+        .entry_path
+        .as_deref()
+        .or(source.path.as_deref())
+        .or(source.container_path.as_deref())
+        .unwrap_or_default()
         .replace('\\', "/")
 }
 
@@ -9230,6 +9370,50 @@ COMMIT
         assert!(!is_system_identity_source(
             "/Users/test/Library/Preferences/preferences.plist"
         ));
+    }
+
+    #[test]
+    fn source_input_identity_path_prefers_entry_path_for_image_sources() {
+        let source = HashSourceInput {
+            path: Some("/cases/disk.E01".to_string()),
+            container_path: Some("/cases/disk.E01".to_string()),
+            entry_path: Some(r"\Windows\System32\config\SYSTEM".to_string()),
+            nested_archive_path: None,
+            container_type: Some("e01".to_string()),
+            size: Some(1024),
+            data_addr: None,
+            item_addr: None,
+        };
+
+        assert_eq!(
+            source_input_identity_path(&source),
+            "/Windows/System32/config/SYSTEM"
+        );
+        assert!(is_system_identity_source(&source_input_identity_path(
+            &source
+        )));
+    }
+
+    #[test]
+    fn source_input_identity_path_uses_local_file_path_when_no_entry() {
+        let source = HashSourceInput {
+            path: Some(r"C:\Evidence\etc\machine-id".to_string()),
+            container_path: None,
+            entry_path: None,
+            nested_archive_path: None,
+            container_type: Some("disk".to_string()),
+            size: Some(32),
+            data_addr: None,
+            item_addr: None,
+        };
+
+        assert_eq!(
+            source_input_identity_path(&source),
+            "C:/Evidence/etc/machine-id"
+        );
+        assert!(is_system_identity_source(&source_input_identity_path(
+            &source
+        )));
     }
 
     #[test]
