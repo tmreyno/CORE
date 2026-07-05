@@ -421,11 +421,20 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "product_uuid"
                 | "product_serial"
                 | "product_name"
+                | "product_version"
+                | "product_family"
                 | "sys_vendor"
                 | "board_serial"
                 | "board_name"
+                | "board_vendor"
+                | "board_version"
                 | "bios_version"
                 | "bios_vendor"
+                | "bios_date"
+                | "chassis_vendor"
+                | "chassis_type"
+                | "chassis_serial"
+                | "chassis_version"
         )
     )
 }
@@ -956,6 +965,12 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "product_name" => {
             insert_trimmed_metadata(&mut metadata, "system.model", &text);
         }
+        "product_version" => {
+            insert_trimmed_metadata(&mut metadata, "system.productVersion", &text);
+        }
+        "product_family" => {
+            insert_trimmed_metadata(&mut metadata, "system.family", &text);
+        }
         "sys_vendor" => {
             insert_trimmed_metadata(&mut metadata, "system.manufacturer", &text);
         }
@@ -965,11 +980,32 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "board_name" => {
             insert_trimmed_metadata(&mut metadata, "system.boardName", &text);
         }
+        "board_vendor" => {
+            insert_trimmed_metadata(&mut metadata, "system.boardVendor", &text);
+        }
+        "board_version" => {
+            insert_trimmed_metadata(&mut metadata, "system.boardVersion", &text);
+        }
         "bios_version" => {
             insert_trimmed_metadata(&mut metadata, "system.biosVersion", &text);
         }
         "bios_vendor" => {
             insert_trimmed_metadata(&mut metadata, "system.biosVendor", &text);
+        }
+        "bios_date" => {
+            insert_trimmed_metadata(&mut metadata, "system.biosDate", &text);
+        }
+        "chassis_vendor" => {
+            insert_trimmed_metadata(&mut metadata, "system.chassisVendor", &text);
+        }
+        "chassis_type" => {
+            insert_trimmed_metadata(&mut metadata, "system.chassisType", &text);
+        }
+        "chassis_serial" => {
+            insert_trimmed_metadata(&mut metadata, "system.chassisSerial", &text);
+        }
+        "chassis_version" => {
+            insert_trimmed_metadata(&mut metadata, "system.chassisVersion", &text);
         }
         "networkinterfaces.plist" => {
             metadata.extend(parse_macos_network_interfaces_metadata(data));
@@ -3327,6 +3363,24 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             "/image/sys/class/dmi/id/sys_vendor",
             b"Dell Inc.\n",
         );
+        let product_version =
+            system_identity_metadata_from_bytes("/image/sys/class/dmi/id/product_version", b"01\n");
+        let product_family = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/product_family",
+            b"Precision\n",
+        );
+        let board_vendor = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/board_vendor",
+            b"Dell Inc.\n",
+        );
+        let chassis_serial = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/chassis_serial",
+            b"CHS123\n",
+        );
+        let bios_date = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/bios_date",
+            b"05/01/2026\n",
+        );
 
         assert_eq!(
             serial.get("system.serialNumber").map(String::as_str),
@@ -3335,6 +3389,30 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
         assert_eq!(
             vendor.get("system.manufacturer").map(String::as_str),
             Some("Dell Inc.")
+        );
+        assert_eq!(
+            product_version
+                .get("system.productVersion")
+                .map(String::as_str),
+            Some("01")
+        );
+        assert_eq!(
+            product_family.get("system.family").map(String::as_str),
+            Some("Precision")
+        );
+        assert_eq!(
+            board_vendor.get("system.boardVendor").map(String::as_str),
+            Some("Dell Inc.")
+        );
+        assert_eq!(
+            chassis_serial
+                .get("system.chassisSerial")
+                .map(String::as_str),
+            Some("CHS123")
+        );
+        assert_eq!(
+            bios_date.get("system.biosDate").map(String::as_str),
+            Some("05/01/2026")
         );
     }
 
@@ -4234,6 +4312,14 @@ COMMIT
             "/Users/Alice/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadLine/ConsoleHost_history.txt"
         ));
         assert!(is_system_identity_source("/sys/class/dmi/id/product_uuid"));
+        assert!(is_system_identity_source(
+            "/sys/class/dmi/id/product_version"
+        ));
+        assert!(is_system_identity_source("/sys/class/dmi/id/board_vendor"));
+        assert!(is_system_identity_source(
+            "/sys/class/dmi/id/chassis_serial"
+        ));
+        assert!(is_system_identity_source("/sys/class/dmi/id/bios_date"));
         assert!(is_system_identity_source(
             "/System/Library/CoreServices/SystemVersion.plist"
         ));
