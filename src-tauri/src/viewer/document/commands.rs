@@ -9,13 +9,19 @@
 //! This module exposes document functionality to the frontend via Tauri commands.
 
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use tauri::command;
 
 use crate::commands::hash::{open_hash_source, HashSourceInput};
 use crate::common::{
     read_all_with_limit, read_range_fully, EvidenceByteSource, EvidenceSourceReader,
+    EvidenceSourceRef,
 };
 
 use super::types::{DocumentContent, DocumentMetadata};
@@ -918,13 +924,18 @@ use super::registry_viewer::{
 };
 
 const REGISTRY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
+const REGISTRY_SOURCE_CACHE_MAX_ENTRIES: usize = 8;
+
+static REGISTRY_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn with_registry_source<T>(
     source: HashSourceInput,
     operation: impl FnOnce(&Path, String) -> Result<T, String>,
 ) -> Result<T, String> {
     let byte_source = open_hash_source(&source)?;
-    let source_id = byte_source.source_ref().display_id();
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
     if size > REGISTRY_SOURCE_MAX_BYTES {
         return Err(format!(
@@ -933,19 +944,90 @@ fn with_registry_source<T>(
         ));
     }
 
+    if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+        return operation(Path::new(path), source_id);
+    }
+
+    let cached_path =
+        cached_registry_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+    operation(&cached_path, source_id)
+}
+
+fn cached_registry_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = registry_source_cache_key(source_ref, size);
+    if let Some(path) = registry_source_cache_get(&cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-registry-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create registry source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.hive"));
+
+    if cache_path.exists() {
+        registry_source_cache_insert(cache_key, cache_path.clone());
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-registry-")
         .suffix(".hive")
-        .tempfile()
-        .map_err(|e| format!("Failed to create temporary registry copy: {}", e))?;
-    copy_evidence_source_to_writer(byte_source.as_ref(), size, "registry", &mut temp)?;
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary registry copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "registry", &mut temp)?;
     temp.flush()
-        .map_err(|e| format!("Failed to flush temporary registry copy: {}", e))?;
+        .map_err(|e| format!("Failed to flush temporary registry copy: {e}"))?;
     temp.as_file()
         .sync_all()
-        .map_err(|e| format!("Failed to sync temporary registry copy: {}", e))?;
+        .map_err(|e| format!("Failed to sync temporary registry copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist registry source cache copy: {}", e.error))?;
 
-    operation(temp.path(), source_id)
+    registry_source_cache_insert(cache_key, cache_path.clone());
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached registry evidence source for viewer navigation"
+    );
+    Ok(cache_path)
+}
+
+fn registry_source_cache_get(cache_key: &str) -> Option<PathBuf> {
+    let mut cache = REGISTRY_SOURCE_CACHE.lock().ok()?;
+    let path = cache.get(cache_key).cloned()?;
+    if path.exists() {
+        return Some(path);
+    }
+    cache.remove(cache_key);
+    None
+}
+
+fn registry_source_cache_insert(cache_key: String, cache_path: PathBuf) {
+    let Ok(mut cache) = REGISTRY_SOURCE_CACHE.lock() else {
+        return;
+    };
+    if cache.len() >= REGISTRY_SOURCE_CACHE_MAX_ENTRIES && !cache.contains_key(&cache_key) {
+        let remove_count = cache.len() - REGISTRY_SOURCE_CACHE_MAX_ENTRIES + 1;
+        let keys: Vec<String> = cache.keys().take(remove_count).cloned().collect();
+        for key in keys {
+            if let Some(path) = cache.remove(&key) {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+    cache.insert(cache_key, cache_path);
+}
+
+fn registry_source_cache_key(source_ref: &EvidenceSourceRef, size: u64) -> String {
+    let mut hasher = DefaultHasher::new();
+    source_ref.display_id().hash(&mut hasher);
+    size.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 /// Get overview information about a Windows Registry hive file
@@ -1362,6 +1444,49 @@ mod tests {
         let err = checked_materialized_copy_read_size(10, 11, "database", "source.db").unwrap_err();
 
         assert!(err.contains("byte counter exceeded source size"));
+    }
+
+    #[test]
+    fn registry_source_cache_key_changes_with_size() {
+        let source_ref = EvidenceSourceRef::VfsEntry {
+            container_path: "/cases/windows.E01".to_string(),
+            entry_path: "/Windows/System32/config/SYSTEM".to_string(),
+            container_type: Some("e01".to_string()),
+        };
+
+        assert_eq!(
+            registry_source_cache_key(&source_ref, 4096),
+            registry_source_cache_key(&source_ref, 4096)
+        );
+        assert_ne!(
+            registry_source_cache_key(&source_ref, 4096),
+            registry_source_cache_key(&source_ref, 8192)
+        );
+    }
+
+    #[test]
+    fn registry_source_uses_local_file_without_materializing_copy() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"regf").unwrap();
+        tmp.flush().unwrap();
+        let local_path = tmp.path().to_string_lossy().to_string();
+        let source = HashSourceInput {
+            path: Some(local_path.clone()),
+            container_path: None,
+            entry_path: None,
+            nested_archive_path: None,
+            container_type: Some("disk".to_string()),
+            size: Some(4),
+            data_addr: None,
+            item_addr: None,
+        };
+
+        with_registry_source(source, |path, source_id| {
+            assert_eq!(path, Path::new(&local_path));
+            assert_eq!(source_id, local_path);
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]
