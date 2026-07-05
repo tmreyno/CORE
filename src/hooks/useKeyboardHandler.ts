@@ -51,6 +51,7 @@ export interface KeyboardHandlerDeps {
   
   // Project actions
   onLoadProject?: () => void;  // Open project file picker
+  onNewProject?: () => void;   // Create/open the correct new project flow
   onOpenDirectory?: () => void; // Open directory (shows project wizard)
   
   // History (undo/redo)
@@ -107,6 +108,7 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     setShowProjectWizard,
     setShowReportWizard,
     onLoadProject,
+    onNewProject,
     onOpenDirectory,
     showCommandPalette,
     showShortcutsModal,
@@ -171,7 +173,10 @@ export function useKeyboardHandler(deps: KeyboardHandlerDeps) {
     // Cmd+Shift+N: New Project
     if (meta && e.shiftKey && key === "n") {
       e.preventDefault();
-      if (setShowProjectWizard) {
+      if (onNewProject) {
+        onNewProject();
+        announce("New Project opened");
+      } else if (setShowProjectWizard) {
         setShowProjectWizard(true);
         announce("New Project wizard opened");
       }

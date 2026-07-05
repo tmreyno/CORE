@@ -63,6 +63,8 @@ export interface CommandPaletteConfig {
   onOpenDirectory?: () => void;
   /** Unified open project handler (shows file picker for .cffx) */
   onOpenProject?: () => void;
+  /** Unified new project handler */
+  onNewProject?: () => void;
   /** Close the current project */
   onCloseProject?: () => void;
   /** Open help / user guide tab */
@@ -117,6 +119,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     onOpenEvidenceCollectionList,
     onOpenDirectory,
     onOpenProject,
+    onNewProject,
     onCloseProject,
     onOpenHelp,
     onOpenExport,
@@ -419,7 +422,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       label: "Project Setup",
       icon: <HiOutlineCog6Tooth class="w-4 h-4" />,
       category: "Project",
-      onSelect: () => setShowProjectWizard(true),
+      onSelect: () => onNewProject ? onNewProject() : setShowProjectWizard(true),
     },
     ];
 
