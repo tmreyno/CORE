@@ -223,6 +223,61 @@ describe("ImageViewer", () => {
       expect(img!.src).toContain("blob:core-ffx-image-1");
       expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:core-ffx-image-2");
     });
+
+    it("ignores stale image decode errors after the selected path changes", async () => {
+      const firstSize = atob(MOCK_BASE64).length;
+      const SECOND_BASE64 = "c2Vjb25k";
+      const secondSize = atob(SECOND_BASE64).length;
+      const [path, setPath] = createSignal("/evidence/first.jpg");
+      mockInvoke.mockImplementation((command: string, args: any) => {
+        if (command === "viewer_get_binary_info" && args.path === "/evidence/first.jpg") {
+          return Promise.resolve({
+            path: "/evidence/first.jpg",
+            size: firstSize,
+            maxInlineBytes: INLINE_IMAGE_LIMIT,
+            supportsRangeReads: true,
+          });
+        }
+        if (command === "viewer_read_binary_base64_chunk" && args.path === "/evidence/first.jpg") {
+          return Promise.resolve(makeChunk(MOCK_BASE64, firstSize));
+        }
+        if (command === "viewer_get_binary_info" && args.path === "/evidence/second.png") {
+          return Promise.resolve({
+            path: "/evidence/second.png",
+            size: secondSize,
+            maxInlineBytes: INLINE_IMAGE_LIMIT,
+            supportsRangeReads: true,
+          });
+        }
+        if (command === "viewer_read_binary_base64_chunk" && args.path === "/evidence/second.png") {
+          return Promise.resolve(makeChunk(SECOND_BASE64, secondSize));
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path={path()} />
+      ));
+      await tick();
+
+      const img = container.querySelector("img")!;
+      expect(img.src).toContain("blob:core-ffx-image-1");
+
+      setPath("/evidence/second.png");
+      await tick(100);
+      const currentImg = container.querySelector("img")!;
+      expect(currentImg.src).toContain("blob:core-ffx-image-2");
+
+      Object.defineProperty(currentImg, "currentSrc", {
+        configurable: true,
+        value: "blob:core-ffx-image-1",
+      });
+      currentImg.dispatchEvent(new Event("error"));
+      await tick();
+
+      expect(container.textContent).not.toContain("Failed to decode image data");
+      expect(container.textContent).not.toContain("Failed to load image");
+    });
   });
 
   describe("error state", () => {

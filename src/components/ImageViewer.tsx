@@ -174,6 +174,13 @@ export function ImageViewer(props: ImageViewerProps) {
     setImageSrc(url);
   };
 
+  const isCurrentImageEvent = (img: HTMLImageElement) => {
+    const currentSrc = imageSrc();
+    if (!currentSrc) return false;
+    const eventSrc = img.currentSrc || img.src;
+    return eventSrc === currentSrc;
+  };
+
   onCleanup(() => {
     if (objectUrl) {
       URL.revokeObjectURL(objectUrl);
@@ -356,9 +363,12 @@ export function ImageViewer(props: ImageViewerProps) {
               style={transformStyle()}
               onLoad={(e) => {
                 const img = e.currentTarget as HTMLImageElement;
+                if (!isCurrentImageEvent(img)) return;
                 setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
               }}
-              onError={() => {
+              onError={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                if (!isCurrentImageEvent(img)) return;
                 if (hasLimitedSupport()) {
                   setError(`This image format (.${extension()}) may not be supported by the built-in viewer. Try exporting and opening with an external application.`);
                 } else {
