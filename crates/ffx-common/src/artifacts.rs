@@ -511,6 +511,12 @@ fn system_info_metadata(
     if is_linux_machine_id_path(&normalized_path, &normalized_name) {
         return single_line_system_metadata(header, "system.machineId", "linux", "machine-id");
     }
+    if is_linux_cpuinfo_path(&normalized_path, &normalized_name) {
+        return linux_cpuinfo_metadata(header);
+    }
+    if is_linux_meminfo_path(&normalized_path, &normalized_name) {
+        return linux_meminfo_metadata(header);
+    }
     if let Some(metadata) = linux_dmi_metadata(&normalized_path, header) {
         return metadata;
     }
@@ -547,6 +553,14 @@ fn is_linux_hostname_path(path: &str, name: &str) -> bool {
 fn is_linux_machine_id_path(path: &str, name: &str) -> bool {
     name == "machine-id"
         && (path.ends_with("etc/machine-id") || path.ends_with("var/lib/dbus/machine-id"))
+}
+
+fn is_linux_cpuinfo_path(path: &str, name: &str) -> bool {
+    name == "cpuinfo" && path.ends_with("proc/cpuinfo")
+}
+
+fn is_linux_meminfo_path(path: &str, name: &str) -> bool {
+    name == "meminfo" && path.ends_with("proc/meminfo")
 }
 
 fn is_macos_system_version_path(path: &str, name: &str, extension: Option<&str>) -> bool {
@@ -607,6 +621,138 @@ fn linux_os_release_metadata(header: &[u8]) -> BTreeMap<String, String> {
     insert_key_value_alias(&mut metadata, &values, "BUILD_ID", "os.release.buildId");
     insert_key_value_alias(&mut metadata, &values, "HOME_URL", "os.release.homeUrl");
     metadata
+}
+
+#[derive(Default)]
+struct LinuxCpuInfoSummary {
+    logical_processors: usize,
+    model_names: Vec<String>,
+    vendors: Vec<String>,
+    core_counts: Vec<String>,
+    architectures: Vec<String>,
+    hardware: Vec<String>,
+    features: Vec<String>,
+}
+
+fn linux_cpuinfo_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let text = String::from_utf8_lossy(header);
+    let mut summary = LinuxCpuInfoSummary::default();
+
+    for line in text.lines().take(2048) {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+
+        match key {
+            "processor" => {
+                summary.logical_processors = summary.logical_processors.saturating_add(1)
+            }
+            "model name" | "Processor" => {
+                push_limited_system_value(&mut summary.model_names, value)
+            }
+            "vendor_id" | "CPU implementer" => {
+                push_limited_system_value(&mut summary.vendors, value)
+            }
+            "cpu cores" => push_limited_system_value(&mut summary.core_counts, value),
+            "Architecture" | "CPU architecture" => {
+                push_limited_system_value(&mut summary.architectures, value)
+            }
+            "Hardware" => push_limited_system_value(&mut summary.hardware, value),
+            "flags" | "Features" => {
+                for feature in value.split_whitespace() {
+                    push_limited_system_value(&mut summary.features, feature);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut metadata = BTreeMap::new();
+    if summary.logical_processors > 0 {
+        metadata.insert(
+            "system.cpuLogicalProcessorCount".to_string(),
+            summary.logical_processors.to_string(),
+        );
+    }
+    insert_limited_system_values(&mut metadata, "system.cpuModels", &summary.model_names);
+    insert_limited_system_values(&mut metadata, "system.cpuVendors", &summary.vendors);
+    insert_limited_system_values(&mut metadata, "system.cpuCoreCounts", &summary.core_counts);
+    insert_limited_system_values(
+        &mut metadata,
+        "system.cpuArchitectures",
+        &summary.architectures,
+    );
+    insert_limited_system_values(&mut metadata, "system.cpuHardware", &summary.hardware);
+    insert_limited_system_values(&mut metadata, "system.cpuFeatures", &summary.features);
+
+    if !metadata.is_empty() {
+        metadata.insert("system.osFamily".to_string(), "linux".to_string());
+        metadata.insert("system.infoType".to_string(), "cpuinfo".to_string());
+    }
+    metadata
+}
+
+fn linux_meminfo_metadata(header: &[u8]) -> BTreeMap<String, String> {
+    let text = String::from_utf8_lossy(header);
+    let mut metadata = BTreeMap::new();
+
+    for line in text.lines().take(256) {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if key.trim() != "MemTotal" {
+            continue;
+        }
+        if let Some(kib) = value
+            .split_whitespace()
+            .next()
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            metadata.insert("system.memoryTotalKiB".to_string(), kib.to_string());
+            metadata.insert(
+                "system.memoryTotalBytes".to_string(),
+                kib.saturating_mul(1024).to_string(),
+            );
+        }
+        break;
+    }
+
+    if !metadata.is_empty() {
+        metadata.insert("system.osFamily".to_string(), "linux".to_string());
+        metadata.insert("system.infoType".to_string(), "meminfo".to_string());
+    }
+    metadata
+}
+
+fn push_limited_system_value(values: &mut Vec<String>, value: &str) {
+    const MAX_SYSTEM_VALUES: usize = 32;
+    const MAX_SYSTEM_VALUE_CHARS: usize = 180;
+    if values.len() >= MAX_SYSTEM_VALUES {
+        return;
+    }
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    let normalized: String = value.chars().take(MAX_SYSTEM_VALUE_CHARS).collect();
+    if !values.iter().any(|existing| existing == &normalized) {
+        values.push(normalized);
+    }
+}
+
+fn insert_limited_system_values(
+    metadata: &mut BTreeMap<String, String>,
+    key: &str,
+    values: &[String],
+) {
+    if !values.is_empty() {
+        metadata.insert(key.to_string(), values.join("; "));
+    }
 }
 
 fn parse_shell_key_values(text: &str) -> BTreeMap<String, String> {
@@ -821,6 +967,8 @@ fn system_info_type_description(metadata: &BTreeMap<String, String>) -> String {
         (Some("linux"), Some("os-release")) => "Linux OS Release Info",
         (Some("linux"), Some("hostname")) => "Linux Hostname",
         (Some("linux"), Some("machine-id")) => "Linux Machine ID",
+        (Some("linux"), Some("cpuinfo")) => "Linux CPU Information",
+        (Some("linux"), Some("meminfo")) => "Linux Memory Information",
         (Some("linux"), Some("dmi")) => "Linux DMI System Information",
         (Some("macos"), Some("hardware-identity")) => "macOS Hardware Identity",
         (Some("macos"), Some("system-version")) => "macOS System Version Info",
@@ -2711,6 +2859,96 @@ BUILD_ID=20260201
                 .get("system.machineId")
                 .map(String::as_str),
             Some("0123456789abcdef0123456789abcdef")
+        );
+    }
+
+    #[test]
+    fn extracts_linux_cpuinfo_metadata() {
+        let bytes = br#"processor   : 0
+vendor_id   : GenuineIntel
+cpu cores   : 8
+model name  : Intel(R) Core(TM) i7-1185G7
+flags       : fpu vme de pse tsc
+
+processor   : 1
+vendor_id   : GenuineIntel
+cpu cores   : 8
+model name  : Intel(R) Core(TM) i7-1185G7
+flags       : fpu vme de pse tsc
+"#;
+        let source = ChunkedByteSource::new("/mnt/image/proc/cpuinfo", bytes, 64);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Linux CPU Information");
+        assert_eq!(
+            artifact.metadata.get("system.osFamily").map(String::as_str),
+            Some("linux")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.cpuLogicalProcessorCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.cpuModels")
+                .map(String::as_str),
+            Some("Intel(R) Core(TM) i7-1185G7")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.cpuVendors")
+                .map(String::as_str),
+            Some("GenuineIntel")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.cpuCoreCounts")
+                .map(String::as_str),
+            Some("8")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.cpuFeatures")
+                .map(String::as_str),
+            Some("fpu; vme; de; pse; tsc")
+        );
+    }
+
+    #[test]
+    fn extracts_linux_meminfo_metadata() {
+        let bytes = br#"MemTotal:       32768000 kB
+MemFree:         1024000 kB
+"#;
+        let source = ChunkedByteSource::new("/mnt/image/proc/meminfo", bytes, usize::MAX);
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "systeminfo");
+        assert_eq!(artifact.type_description, "Linux Memory Information");
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.memoryTotalKiB")
+                .map(String::as_str),
+            Some("32768000")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("system.memoryTotalBytes")
+                .map(String::as_str),
+            Some("33554432000")
         );
     }
 
