@@ -71,6 +71,7 @@ export function useLazyTree(): UseLazyTreeReturn {
   const [expandedLazyPaths, setExpandedLazyPaths] = createSignal<Set<string>>(new Set());
   // Legacy UFED cache (fallback)
   const [ufedTreeCache] = createSignal<Map<string, UfedTreeEntry[]>>(new Map());
+  const inFlightLazyLoads = new Map<string, Promise<LazyTreeEntry[]>>();
 
   // Get container summary with lazy loading recommendation
   const loadLazySummary = async (containerPath: string): Promise<ContainerSummary | null> => {
@@ -106,6 +107,7 @@ export function useLazyTree(): UseLazyTreeReturn {
   ): Promise<LazyTreeEntry[]> => {
     log.debug(`loadLazyRootChildren called, path=${containerPath}, offset=${offset}, limit=${limit}`);
     const cacheKey = `${containerPath}::lazy::root`;
+    const loadKey = `${cacheKey}::${offset}::${limit}`;
     
     // If offset is 0, check cache first
     if (offset === 0) {
@@ -115,8 +117,10 @@ export function useLazyTree(): UseLazyTreeReturn {
         return cached;
       }
     }
+    const inFlight = inFlightLazyLoads.get(loadKey);
+    if (inFlight) return inFlight;
     
-    try {
+    const loadPromise = (async () => {
       const result = await getRootChildren(containerPath, offset, limit);
       
       // Update total count
@@ -142,9 +146,16 @@ export function useLazyTree(): UseLazyTreeReturn {
       });
       
       return result.entries;
+    })();
+
+    inFlightLazyLoads.set(loadKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error("Failed:", err);
       return [];
+    } finally {
+      inFlightLazyLoads.delete(loadKey);
     }
   };
   
@@ -156,14 +167,17 @@ export function useLazyTree(): UseLazyTreeReturn {
     limit: number = 100
   ): Promise<LazyTreeEntry[]> => {
     const cacheKey = `${containerPath}::lazy::${parentPath}`;
+    const loadKey = `${cacheKey}::${offset}::${limit}`;
     
     // If offset is 0, check cache first
     if (offset === 0) {
       const cached = lazyChildrenCache().get(cacheKey);
       if (cached && cached.length > 0) return cached;
     }
+    const inFlight = inFlightLazyLoads.get(loadKey);
+    if (inFlight) return inFlight;
     
-    try {
+    const loadPromise = (async () => {
       const result = await getChildren(containerPath, parentPath, offset, limit);
       
       // Update total count
@@ -189,9 +203,16 @@ export function useLazyTree(): UseLazyTreeReturn {
       });
       
       return result.entries;
+    })();
+
+    inFlightLazyLoads.set(loadKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error("Failed:", err);
       return [];
+    } finally {
+      inFlightLazyLoads.delete(loadKey);
     }
   };
   
@@ -258,8 +279,10 @@ export function useLazyTree(): UseLazyTreeReturn {
     
     const currentEntries = lazyChildrenCache().get(cacheKey) || [];
     const offset = currentEntries.length;
+    const loadingKey = `${cacheKey}::more`;
+    if (_loading.has(loadingKey)) return;
     
-    setLoading(prev => new Set([...prev, `${cacheKey}::more`]));
+    setLoading(prev => new Set([...prev, loadingKey]));
 
     try {
       if (parentPath === "root") {
@@ -270,7 +293,7 @@ export function useLazyTree(): UseLazyTreeReturn {
     } finally {
       setLoading(prev => {
         const next = new Set(prev);
-        next.delete(`${cacheKey}::more`);
+        next.delete(loadingKey);
         return next;
       });
     }
