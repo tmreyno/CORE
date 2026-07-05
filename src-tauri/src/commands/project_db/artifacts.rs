@@ -477,7 +477,9 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "product_name"
                 | "product_version"
                 | "product_family"
+                | "product_sku"
                 | "sys_vendor"
+                | "board_asset_tag"
                 | "board_serial"
                 | "board_name"
                 | "board_vendor"
@@ -485,6 +487,7 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "bios_version"
                 | "bios_vendor"
                 | "bios_date"
+                | "chassis_asset_tag"
                 | "chassis_vendor"
                 | "chassis_type"
                 | "chassis_serial"
@@ -1192,8 +1195,14 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "product_family" => {
             insert_trimmed_metadata(&mut metadata, "system.family", &text);
         }
+        "product_sku" => {
+            insert_trimmed_metadata(&mut metadata, "system.sku", &text);
+        }
         "sys_vendor" => {
             insert_trimmed_metadata(&mut metadata, "system.manufacturer", &text);
+        }
+        "board_asset_tag" => {
+            insert_trimmed_metadata(&mut metadata, "system.boardAssetTag", &text);
         }
         "board_serial" => {
             insert_trimmed_metadata(&mut metadata, "system.boardSerial", &text);
@@ -1215,6 +1224,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         }
         "bios_date" => {
             insert_trimmed_metadata(&mut metadata, "system.biosDate", &text);
+        }
+        "chassis_asset_tag" => {
+            insert_trimmed_metadata(&mut metadata, "system.chassisAssetTag", &text);
         }
         "chassis_vendor" => {
             insert_trimmed_metadata(&mut metadata, "system.chassisVendor", &text);
@@ -4720,9 +4732,19 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             "/image/sys/class/dmi/id/product_family",
             b"Precision\n",
         );
+        let product_sku =
+            system_identity_metadata_from_bytes("/image/sys/class/dmi/id/product_sku", b"SKU-42\n");
+        let board_asset_tag = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/board_asset_tag",
+            b"BOARD-ASSET\n",
+        );
         let board_vendor = system_identity_metadata_from_bytes(
             "/image/sys/class/dmi/id/board_vendor",
             b"Dell Inc.\n",
+        );
+        let chassis_asset_tag = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/chassis_asset_tag",
+            b"CHASSIS-ASSET\n",
         );
         let chassis_serial = system_identity_metadata_from_bytes(
             "/image/sys/class/dmi/id/chassis_serial",
@@ -4752,8 +4774,24 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             Some("Precision")
         );
         assert_eq!(
+            product_sku.get("system.sku").map(String::as_str),
+            Some("SKU-42")
+        );
+        assert_eq!(
+            board_asset_tag
+                .get("system.boardAssetTag")
+                .map(String::as_str),
+            Some("BOARD-ASSET")
+        );
+        assert_eq!(
             board_vendor.get("system.boardVendor").map(String::as_str),
             Some("Dell Inc.")
+        );
+        assert_eq!(
+            chassis_asset_tag
+                .get("system.chassisAssetTag")
+                .map(String::as_str),
+            Some("CHASSIS-ASSET")
         );
         assert_eq!(
             chassis_serial
@@ -6100,7 +6138,16 @@ COMMIT
         assert!(is_system_identity_source(
             "/sys/class/dmi/id/product_version"
         ));
+        assert!(is_system_identity_source(
+            "/sys/devices/virtual/dmi/id/product_sku"
+        ));
+        assert!(is_system_identity_source(
+            "/sys/devices/virtual/dmi/id/board_asset_tag"
+        ));
         assert!(is_system_identity_source("/sys/class/dmi/id/board_vendor"));
+        assert!(is_system_identity_source(
+            "/sys/devices/virtual/dmi/id/chassis_asset_tag"
+        ));
         assert!(is_system_identity_source(
             "/sys/class/dmi/id/chassis_serial"
         ));
