@@ -146,7 +146,10 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
     path.endsWith("/etc/gshadow") ||
     path.endsWith("/private/etc/gshadow") ||
     path.includes("/etc/networkmanager/system-connections/") ||
+    path.includes("/var/lib/networkmanager/system-connections/") ||
     path.includes("/etc/sysconfig/network-scripts/ifcfg-") ||
+    (path.includes("/etc/systemd/network/") &&
+      (path.endsWith(".network") || path.endsWith(".netdev") || path.endsWith(".link"))) ||
     path.includes("/etc/netplan/") ||
     path.includes("/sys/class/dmi/id/") ||
     path.includes("/sys/devices/virtual/dmi/id/") ||

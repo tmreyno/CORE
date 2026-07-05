@@ -787,9 +787,22 @@ fn is_linux_network_identity_source(source_id: &str) -> bool {
         || source_id.ends_with("/private/etc/hosts")
         || source_id.ends_with("/windows/system32/drivers/etc/hosts")
         || source_id.contains("/etc/networkmanager/system-connections/")
+        || source_id.contains("/var/lib/networkmanager/system-connections/")
         || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
+        || is_systemd_network_config_source(&source_id)
         || (source_id.contains("/etc/netplan/")
             && (source_id.ends_with(".yaml") || source_id.ends_with(".yml")))
+}
+
+fn is_systemd_network_config_source(source_id: &str) -> bool {
+    source_id.contains("/etc/systemd/network/")
+        && matches!(
+            source_id.rsplit('/').next(),
+            Some(name)
+                if name.ends_with(".network")
+                    || name.ends_with(".netdev")
+                    || name.ends_with(".link")
+        )
 }
 
 fn is_linux_machine_identity_source(source_id: &str) -> bool {
@@ -2809,9 +2822,14 @@ fn parse_linux_network_config_metadata(source_id: &str, text: &str) -> BTreeMap<
     } else if source_id.contains("/etc/sysconfig/network-scripts/ifcfg-") {
         parse_ifcfg_metadata(source_id, text, &mut values);
         "ifcfg"
-    } else if source_id.contains("/etc/networkmanager/system-connections/") {
+    } else if source_id.contains("/etc/networkmanager/system-connections/")
+        || source_id.contains("/var/lib/networkmanager/system-connections/")
+    {
         parse_network_manager_metadata(text, &mut values);
         "networkmanager"
+    } else if is_systemd_network_config_source(source_id) {
+        parse_systemd_network_metadata(text, &mut values);
+        "systemd-networkd"
     } else {
         parse_netplan_metadata(text, &mut values);
         "netplan"
@@ -3060,6 +3078,98 @@ fn parse_network_manager_metadata(text: &str, values: &mut LinuxNetworkMetadata)
             push_unique_limited(&mut values.interfaces, connection_type);
         }
     }
+}
+
+fn parse_systemd_network_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
+    let mut section = "";
+    let mut interface: Option<String> = None;
+    let mut netdev_name: Option<String> = None;
+
+    for raw_line in text.lines() {
+        let line = trim_network_config_line(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line.trim_start_matches('[').trim_end_matches(']');
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        if value.is_empty() {
+            continue;
+        }
+
+        match (section, key) {
+            ("Match", "Name") | ("Link", "Name") => {
+                interface = Some(value.to_string());
+                for name in split_systemd_network_values(value) {
+                    push_unique_limited(&mut values.interfaces, name);
+                }
+            }
+            ("NetDev", "Name") => {
+                netdev_name = Some(value.to_string());
+                push_unique_limited(&mut values.interfaces, value.to_string());
+            }
+            ("NetDev", "Kind") => {
+                if let Some(name) = netdev_name.as_deref().or(interface.as_deref()) {
+                    push_unique_limited(&mut values.methods, format!("{name}:netdev:{value}"));
+                }
+            }
+            ("Network", "DHCP") if value.eq_ignore_ascii_case("yes") => {
+                let interface = interface
+                    .as_deref()
+                    .or(netdev_name.as_deref())
+                    .unwrap_or("unknown");
+                push_unique_limited(&mut values.methods, format!("{interface}:dhcp"));
+            }
+            ("Network", "DHCP")
+                if value.eq_ignore_ascii_case("ipv4") || value.eq_ignore_ascii_case("ipv6") =>
+            {
+                let interface = interface
+                    .as_deref()
+                    .or(netdev_name.as_deref())
+                    .unwrap_or("unknown");
+                push_unique_limited(&mut values.methods, format!("{interface}:dhcp-{value}"));
+            }
+            ("Network", "Address") | ("Address", "Address") => {
+                push_unique_limited(&mut values.addresses, truncate_metadata_value(value, 120));
+            }
+            ("Network", "Gateway") | ("Route", "Gateway") => {
+                push_unique_limited(&mut values.gateways, truncate_metadata_value(value, 120));
+            }
+            ("Network", "DNS") => {
+                for server in split_systemd_network_values(value) {
+                    push_unique_limited(&mut values.dns_servers, server);
+                }
+            }
+            ("Network", "Domains") => {
+                for domain in split_systemd_network_values(value) {
+                    push_unique_limited(&mut values.search_domains, domain);
+                }
+            }
+            ("Link", "MACAddress") => {
+                push_unique_limited(
+                    &mut values.mac_addresses,
+                    truncate_metadata_value(value, 120),
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn split_systemd_network_values(value: &str) -> Vec<String> {
+    value
+        .split_whitespace()
+        .filter_map(|part| {
+            let part = part.trim().trim_matches('"').trim_matches('\'');
+            (!part.is_empty()).then(|| truncate_metadata_value(part, 120))
+        })
+        .collect()
 }
 
 fn collect_network_manager_addresses(value: &str, values: &mut LinuxNetworkMetadata) {
@@ -8414,7 +8524,7 @@ nameserver 1.1.1.1
     #[test]
     fn system_identity_metadata_extracts_network_manager_profile() {
         let metadata = system_identity_metadata_from_bytes(
-            "/image/etc/NetworkManager/system-connections/Corp WiFi.nmconnection",
+            "/image/var/lib/NetworkManager/system-connections/Corp WiFi.nmconnection",
             br#"[connection]
 id=Corp WiFi
 uuid=11111111-2222-3333-4444-555555555555
@@ -8468,6 +8578,52 @@ dns-search=corp.example.com;
         assert_eq!(
             metadata.get("system.networkMethods").map(String::as_str),
             Some("wlp2s0:inet:manual")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_systemd_networkd_config() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/systemd/network/20-wired.network",
+            br#"[Match]
+Name=enp1s0
+
+[Network]
+Address=10.20.30.40/24
+Gateway=10.20.30.1
+DNS=10.20.30.2 1.1.1.1
+Domains=corp.example.com lab.example.com
+DHCP=ipv6
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("systemd-networkd")
+        );
+        assert_eq!(
+            metadata.get("system.networkInterfaces").map(String::as_str),
+            Some("enp1s0")
+        );
+        assert_eq!(
+            metadata.get("system.ipv4Addresses").map(String::as_str),
+            Some("10.20.30.40/24")
+        );
+        assert_eq!(
+            metadata.get("system.gateways").map(String::as_str),
+            Some("10.20.30.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsServers").map(String::as_str),
+            Some("10.20.30.2; 1.1.1.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsSearchDomains").map(String::as_str),
+            Some("corp.example.com; lab.example.com")
+        );
+        assert_eq!(
+            metadata.get("system.networkMethods").map(String::as_str),
+            Some("enp1s0:dhcp-ipv6")
         );
     }
 
@@ -9448,7 +9604,13 @@ COMMIT
             "/etc/NetworkManager/system-connections/Corp WiFi.nmconnection"
         ));
         assert!(is_system_identity_source(
+            "/var/lib/NetworkManager/system-connections/Corp WiFi.nmconnection"
+        ));
+        assert!(is_system_identity_source(
             "/etc/sysconfig/network-scripts/ifcfg-ens192"
+        ));
+        assert!(is_system_identity_source(
+            "/etc/systemd/network/20-wired.network"
         ));
         assert!(is_system_identity_source("/etc/netplan/01-netcfg.yaml"));
         assert!(is_system_identity_source(

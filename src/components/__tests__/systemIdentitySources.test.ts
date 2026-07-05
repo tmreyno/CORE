@@ -95,6 +95,22 @@ describe("system identity source helpers", () => {
         }),
       ),
     ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "corp.nmconnection",
+          entryPath: "/var/lib/NetworkManager/system-connections/corp.nmconnection",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "20-wired.network",
+          entryPath: "/etc/systemd/network/20-wired.network",
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("classifies macOS system plist identity sources", () => {
