@@ -18,7 +18,7 @@ use crate::common::{
     hash_byte_source_with_progress, hash_cache, EvidenceByteSource, EvidenceSourceError,
     EvidenceSourceRef, HashAlgorithm, LocalFileByteSource,
 };
-use crate::containers::open_container_entry_source;
+use crate::containers::{open_container_entry_source_with_options, ContainerEntrySourceOptions};
 use crate::ewf;
 use crate::raw;
 use ffx_aff4::Aff4Reader;
@@ -109,6 +109,10 @@ pub struct HashSourceInput {
     pub container_type: Option<String>,
     /// Optional known byte size. Avoids metadata reads for some container types.
     pub size: Option<u64>,
+    /// AD1 zlib metadata/data address for direct entry reads when available.
+    pub data_addr: Option<u64>,
+    /// AD1 item header address. Preserved for source metadata and future engines.
+    pub item_addr: Option<u64>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -408,8 +412,16 @@ pub(crate) fn open_hash_source(
         )));
     }
 
-    open_container_entry_source(container_path, entry_path, &container_type, input.size)
-        .map_err(|e| e.to_string())
+    open_container_entry_source_with_options(
+        container_path,
+        entry_path,
+        &container_type,
+        ContainerEntrySourceOptions {
+            known_size: input.size,
+            data_addr: input.data_addr,
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn hash_source_id(input: &HashSourceInput, source_ref: Option<&EvidenceSourceRef>) -> String {
@@ -1714,6 +1726,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: None,
+            data_addr: None,
+            item_addr: None,
         }
     }
 
@@ -1818,6 +1832,32 @@ mod tests {
     }
 
     #[test]
+    fn open_hash_source_accepts_ad1_address_metadata() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/evidence.ad1".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: Some(128),
+            data_addr: Some(8192),
+            item_addr: Some(4096),
+        };
+
+        let source = open_hash_source(&input).unwrap();
+
+        assert_eq!(source.len().unwrap(), 128);
+        assert_eq!(
+            source.source_ref(),
+            EvidenceSourceRef::ContainerEntry {
+                container_path: "/cases/evidence.ad1".to_string(),
+                entry_path: "/Documents/file.txt".to_string(),
+                container_type: "ad1".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn open_hash_source_requires_container_entry_path() {
         let input = HashSourceInput {
             path: Some("/cases/evidence.ad1".to_string()),
@@ -1826,6 +1866,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("ad1".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let err = match open_hash_source(&input) {
@@ -1910,6 +1952,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("ad1".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let err = validate_hash_source_request(&input, "sha256").unwrap_err();
@@ -1926,6 +1970,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("zip".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let err = validate_hash_source_request(&input, "sha256").unwrap_err();
@@ -2049,6 +2095,8 @@ mod tests {
             nested_archive_path: Some("inner.zip".to_string()),
             container_type: Some("zip".to_string()),
             size: Some(42),
+            data_addr: None,
+            item_addr: None,
         };
 
         let source = open_hash_source(&input).unwrap();
@@ -2078,6 +2126,8 @@ mod tests {
             nested_archive_path: Some("inner.zip".to_string()),
             container_type: Some("zip".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let source = open_hash_source(&input).unwrap();

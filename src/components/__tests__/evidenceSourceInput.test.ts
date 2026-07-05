@@ -23,7 +23,7 @@ describe("buildEvidenceSourceInput", () => {
   it("preserves explicit AD1 entry source type", () => {
     const source = buildEvidenceSourceInput(
       null,
-      makeEntry({ containerType: "ad1" }),
+      makeEntry({ containerType: "ad1", dataAddr: 8192, itemAddr: 4096 }),
     );
 
     expect(source).toEqual({
@@ -31,6 +31,8 @@ describe("buildEvidenceSourceInput", () => {
       entryPath: "/Users/alice/report.pdf",
       containerType: "ad1",
       size: 128,
+      dataAddr: 8192,
+      itemAddr: 4096,
     });
   });
 

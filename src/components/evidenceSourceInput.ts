@@ -24,6 +24,8 @@ export function buildEvidenceSourceInput(
         entryPath: nestedEntryPath,
         containerType: entry.containerType?.toLowerCase() ?? extensionOrDefault(nestedArchivePath, "archive"),
         size: entry.size,
+        dataAddr: entry.dataAddr,
+        itemAddr: entry.itemAddr,
       };
     }
 
@@ -41,6 +43,8 @@ export function buildEvidenceSourceInput(
       entryPath: entry.entryPath,
       containerType: inferEntryContainerType(entry),
       size: entry.size,
+      dataAddr: entry.dataAddr,
+      itemAddr: entry.itemAddr,
     };
   }
 

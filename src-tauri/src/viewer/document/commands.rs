@@ -1230,6 +1230,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         (tmp, source)
@@ -1332,6 +1334,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("disk".to_string()),
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let detected = detect_content_format_source(source).await.unwrap();
@@ -1405,6 +1409,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let error = registry_get_info_source(source).await.unwrap_err();
@@ -1428,6 +1434,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let response = document_read_source(source.clone()).await.unwrap();
@@ -1457,6 +1465,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let error = pst_get_folders_source(source).await.unwrap_err();
@@ -1480,6 +1490,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let error = email_parse_msg_source(source).await.unwrap_err();

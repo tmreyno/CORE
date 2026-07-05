@@ -28,6 +28,29 @@ pub fn open_container_entry_source(
     container_type: impl Into<String>,
     known_size: Option<u64>,
 ) -> EvidenceSourceResult<Box<dyn EvidenceByteSource>> {
+    open_container_entry_source_with_options(
+        container_path,
+        entry_path,
+        container_type,
+        ContainerEntrySourceOptions {
+            known_size,
+            ..ContainerEntrySourceOptions::default()
+        },
+    )
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ContainerEntrySourceOptions {
+    pub known_size: Option<u64>,
+    pub data_addr: Option<u64>,
+}
+
+pub fn open_container_entry_source_with_options(
+    container_path: impl Into<String>,
+    entry_path: impl Into<String>,
+    container_type: impl Into<String>,
+    options: ContainerEntrySourceOptions,
+) -> EvidenceSourceResult<Box<dyn EvidenceByteSource>> {
     let container_path = container_path.into();
     let entry_path = entry_path.into();
     let container_type = container_type.into();
@@ -37,7 +60,8 @@ pub fn open_container_entry_source(
         return Ok(Box::new(Ad1EntryByteSource::new(
             container_path,
             entry_path,
-            known_size,
+            options.known_size,
+            options.data_addr,
         )));
     }
 
@@ -45,7 +69,7 @@ pub fn open_container_entry_source(
         return Ok(Box::new(L01EntryByteSource::new(
             container_path,
             entry_path,
-            known_size,
+            options.known_size,
         )));
     }
 
@@ -70,7 +94,7 @@ pub fn open_container_entry_source(
         return Ok(Box::new(UfedEntryByteSource::new(
             container_path,
             entry_path,
-            known_size,
+            options.known_size,
         )));
     }
 
@@ -123,14 +147,21 @@ pub struct Ad1EntryByteSource {
     container_path: String,
     entry_path: String,
     known_size: Option<u64>,
+    data_addr: Option<u64>,
 }
 
 impl Ad1EntryByteSource {
-    pub fn new(container_path: String, entry_path: String, known_size: Option<u64>) -> Self {
+    pub fn new(
+        container_path: String,
+        entry_path: String,
+        known_size: Option<u64>,
+        data_addr: Option<u64>,
+    ) -> Self {
         Self {
             container_path,
             entry_path,
             known_size,
+            data_addr,
         }
     }
 }
@@ -157,8 +188,22 @@ impl EvidenceByteSource for Ad1EntryByteSource {
             return Ok(Vec::new());
         }
 
-        ad1::read_entry_chunk(&self.container_path, &self.entry_path, offset, read_size)
-            .map_err(|e| source_error(&self.container_path, &self.entry_path, "ad1", e.to_string()))
+        if let Some(data_addr) = self.data_addr {
+            return ad1::read_entry_chunk_by_addr(
+                &self.container_path,
+                data_addr,
+                total_size,
+                offset,
+                read_size,
+            )
+            .map_err(|e| {
+                source_error(&self.container_path, &self.entry_path, "ad1", e.to_string())
+            });
+        }
+
+        ad1::read_entry_chunk(&self.container_path, &self.entry_path, offset, read_size).map_err(
+            |e| source_error(&self.container_path, &self.entry_path, "ad1", e.to_string()),
+        )
     }
 }
 
@@ -529,6 +574,7 @@ mod tests {
             "/cases/evidence.ad1".to_string(),
             "/Documents/file.txt".to_string(),
             Some(128),
+            Some(4096),
         );
 
         assert_eq!(

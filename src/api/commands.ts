@@ -69,6 +69,8 @@ export interface HashSourceInput {
   nestedArchivePath?: string;
   containerType?: string;
   size?: number;
+  dataAddr?: number | null;
+  itemAddr?: number | null;
 }
 
 /** Source-aware hash result */

@@ -209,6 +209,8 @@ pub async fn viewer_analyze_path(
         nested_archive_path: None,
         container_type: Some("disk".to_string()),
         size: None,
+        data_addr: None,
+        item_addr: None,
     };
     viewer_analyze_source(source, options).await
 }

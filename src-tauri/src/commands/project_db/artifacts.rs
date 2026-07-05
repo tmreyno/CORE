@@ -911,6 +911,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("disk".to_string()),
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let metadata = sqlite_artifact_metadata_from_source(&source).unwrap();

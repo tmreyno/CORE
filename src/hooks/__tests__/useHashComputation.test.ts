@@ -115,7 +115,7 @@ describe("useHashComputation.hashEntry", () => {
         recordHashToHistory: vi.fn(),
       });
 
-      const hash = await computation.hashEntry(makeEntry(), makeFile());
+      const hash = await computation.hashEntry(makeEntry({ dataAddr: 8192, itemAddr: 4096 }), makeFile());
 
       expect(hash).toBe("A".repeat(64));
       expect(mockInvoke).toHaveBeenCalledWith("project_db_hash_source_and_insert", {
@@ -125,6 +125,8 @@ describe("useHashComputation.hashEntry", () => {
             entryPath: "/Users/alice/report.pdf",
             containerType: "ad1",
             size: 512,
+            dataAddr: 8192,
+            itemAddr: 4096,
           },
           algorithm: "SHA-256",
           evidenceFile: {

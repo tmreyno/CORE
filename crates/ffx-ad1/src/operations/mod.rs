@@ -27,7 +27,7 @@ pub use export::{
 pub use search::{find_by_extension, find_by_hash, find_by_name};
 pub use tree::{
     get_children, get_children_at_addr, get_children_at_addr_lazy, get_entry_info, get_tree,
-    read_entry_chunk, read_entry_data, read_entry_data_by_addr,
+    read_entry_chunk, read_entry_chunk_by_addr, read_entry_data, read_entry_data_by_addr,
 };
 pub use verify::{
     hash_segments, hash_segments_with_progress, hash_single_segment, verify, verify_against_log,
