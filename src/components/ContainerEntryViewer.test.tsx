@@ -852,6 +852,44 @@ describe("ContainerEntryViewer", () => {
   });
 
   describe("viewer delegation", () => {
+    const binaryInfo = (path: string) => ({
+      path,
+      format: "PE",
+      architecture: "x86_64",
+      is_64bit: true,
+      entry_point: 4096,
+      imports: [],
+      exports: [],
+      sections: [],
+      strings: [],
+      file_size: 1024,
+      pe_timestamp: null,
+      pe_checksum: null,
+      pe_subsystem: "Native",
+      pe_linker_version: null,
+      pe_os_version: null,
+      pe_image_version: null,
+      pe_subsystem_version: null,
+      pe_image_base: null,
+      pe_section_alignment: null,
+      pe_file_alignment: null,
+      pe_size_of_image: null,
+      pe_size_of_headers: null,
+      pe_dll_characteristics: null,
+      pe_dll_characteristics_detail: [],
+      pe_certificate_table_size: null,
+      pe_is_driver: true,
+      pe_driver_type: "kernel-driver",
+      pe_driver_indicators: ["extension:.sys"],
+      pe_version_info: {},
+      macho_cpu_type: null,
+      macho_filetype: null,
+      linux_module_info: null,
+      has_debug_info: false,
+      is_stripped: false,
+      has_code_signing: false,
+    });
+
     // Helper to set up a successful preview extraction
     function setupPreview(extractedPath = "/tmp/extracted") {
       mockInvoke.mockImplementation(async (cmd: string) => {
@@ -870,7 +908,8 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "email_parse_msg") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
         if (cmd === "email_parse_msg_source") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
         if (cmd === "plist_read") return { success: true, data: {}, error: null };
-        if (cmd === "binary_analyze") return { success: true, analysis: {}, error: null };
+        if (cmd === "binary_analyze") return binaryInfo(extractedPath);
+        if (cmd === "binary_analyze_source") return binaryInfo(extractedPath);
         if (cmd === "registry_get_info") return { path: extractedPath, rootKeyName: "ROOT", rootKeyPath: "ROOT", rootTimestamp: "", totalKeys: 0, totalValues: 0, rootSubkeyCount: 0, rootValueCount: 0 };
         if (cmd === "registry_get_info_source") return { path: extractedPath, rootKeyName: "ROOT", rootKeyPath: "ROOT", rootTimestamp: "", totalKeys: 0, totalValues: 0, rootSubkeyCount: 0, rootValueCount: 0 };
         if (cmd === "registry_get_subkeys") return { parentPath: "", subkeys: [] };
@@ -967,6 +1006,34 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
       expect(container.innerHTML).toBeTruthy();
+      dispose();
+    });
+
+    it("routes uppercase .SYS evidence entries to source-backed binary analysis without extraction", async () => {
+      setupPreview("/tmp/DRIVER.SYS");
+      const entry = makeEntry({
+        name: "DRIVER.SYS",
+        entryPath: "Windows/System32/drivers/DRIVER.SYS",
+        isArchiveEntry: false,
+        isVfsEntry: true,
+        isDiskFile: false,
+      });
+      const { container, dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(200);
+
+      expect(container.textContent).toContain("PE");
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "Windows/System32/drivers/DRIVER.SYS",
+          containerType: "ad1",
+          size: 1024,
+        }),
+      });
       dispose();
     });
 
