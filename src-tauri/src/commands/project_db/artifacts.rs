@@ -17,6 +17,8 @@ use crate::project_db::{
     DbEvidenceFile, DbNormalizedArtifact,
 };
 use crate::viewer::document::database_viewer::get_database_info;
+use notatin::cell_value::CellValue;
+use notatin::parser_builder::ParserBuilder;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
@@ -24,6 +26,7 @@ use std::path::Path;
 const SQLITE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const SQLITE_ARTIFACT_COPY_CHUNK_BYTES: usize = 1024 * 1024;
 const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024;
+const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 const SQLITE_METADATA_NAME_LIMIT: usize = 12;
 const DEFAULT_ARTIFACT_EXTRACTOR: &str = "core-artifact-extractor";
 const MAX_ARTIFACT_EXTRACTOR_CHARS: usize = 128;
@@ -241,6 +244,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
     if source_id.ends_with("/library/preferences/systemconfiguration/preferences.plist")
         || source_id.ends_with("/system/library/coreservices/systemversion.plist")
         || source_id.ends_with("/library/preferences/systemconfiguration/com.apple.boot.plist")
+        || source_id.ends_with("/windows/system32/config/system")
+        || source_id.ends_with("/windows/system32/config/software")
+        || source_id.ends_with("/config/system")
+        || source_id.ends_with("/config/software")
     {
         return true;
     }
@@ -273,6 +280,10 @@ fn system_identity_metadata_from_source(
     let source_ref = byte_source.source_ref();
     let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
+    if is_windows_registry_identity_source(&source_id) {
+        return registry_identity_metadata_from_byte_source(byte_source.as_ref(), size, &source_id);
+    }
+
     if size > SYSTEM_IDENTITY_SOURCE_MAX_BYTES {
         return Err(format!(
             "System identity source is too large for metadata extraction: {size} bytes > {SYSTEM_IDENTITY_SOURCE_MAX_BYTES} bytes"
@@ -288,6 +299,246 @@ fn system_identity_metadata_from_source(
     };
 
     Ok(system_identity_metadata_from_bytes(&source_id, &data))
+}
+
+fn is_windows_registry_identity_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/windows/system32/config/system")
+        || source_id.ends_with("/windows/system32/config/software")
+        || source_id.ends_with("/config/system")
+        || source_id.ends_with("/config/software")
+}
+
+fn registry_identity_metadata_from_byte_source(
+    byte_source: &dyn EvidenceByteSource,
+    size: u64,
+    source_id: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    if size > REGISTRY_IDENTITY_SOURCE_MAX_BYTES {
+        return Err(format!(
+            "Registry identity source is too large for metadata extraction: {size} bytes > {REGISTRY_IDENTITY_SOURCE_MAX_BYTES} bytes"
+        ));
+    }
+
+    let suffix = if source_id.to_ascii_lowercase().ends_with("software") {
+        ".software.hive"
+    } else {
+        ".system.hive"
+    };
+    let mut temp = tempfile::Builder::new()
+        .prefix("core-ffx-registry-identity-")
+        .suffix(suffix)
+        .tempfile()
+        .map_err(|e| format!("Failed to create temporary registry identity copy: {e}"))?;
+    copy_artifact_source(byte_source, size, source_id, &mut temp, "registry identity")?;
+    temp.flush()
+        .map_err(|e| format!("Failed to flush temporary registry identity copy: {e}"))?;
+    temp.as_file()
+        .sync_all()
+        .map_err(|e| format!("Failed to sync temporary registry identity copy: {e}"))?;
+
+    registry_identity_metadata_from_hive_path(temp.path(), source_id)
+}
+
+fn registry_identity_metadata_from_hive_path(
+    hive_path: &Path,
+    source_id: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    let lower = source_id.replace('\\', "/").to_ascii_lowercase();
+    if lower.ends_with("software") {
+        registry_software_identity_metadata(hive_path)
+    } else {
+        registry_system_identity_metadata(hive_path)
+    }
+}
+
+fn registry_system_identity_metadata(hive_path: &Path) -> Result<BTreeMap<String, String>, String> {
+    let hive_path = hive_path.to_path_buf();
+    let mut parser = ParserBuilder::from_path(hive_path)
+        .build()
+        .map_err(|e| format!("Failed to open SYSTEM registry hive: {e}"))?;
+    let current_control_set = registry_current_control_set(&mut parser).unwrap_or(1);
+    let control_set = format!("ControlSet{current_control_set:03}");
+    let mut metadata = BTreeMap::new();
+
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Control\\ComputerName\\ComputerName"),
+        "ComputerName",
+        "system.computerName",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Services\\Tcpip\\Parameters"),
+        "Hostname",
+        "system.hostname",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Services\\Tcpip\\Parameters"),
+        "Domain",
+        "system.domain",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Services\\Tcpip\\Parameters"),
+        "NV Hostname",
+        "system.networkHostname",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Control\\TimeZoneInformation"),
+        "TimeZoneKeyName",
+        "system.timeZone",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        &format!("{control_set}\\Control\\TimeZoneInformation"),
+        "StandardName",
+        "system.timeZoneStandardName",
+    );
+
+    Ok(finalize_registry_identity_metadata(
+        metadata,
+        "windows.system",
+    ))
+}
+
+fn registry_software_identity_metadata(
+    hive_path: &Path,
+) -> Result<BTreeMap<String, String>, String> {
+    let hive_path = hive_path.to_path_buf();
+    let mut parser = ParserBuilder::from_path(hive_path)
+        .build()
+        .map_err(|e| format!("Failed to open SOFTWARE registry hive: {e}"))?;
+    let current_version = "Microsoft\\Windows NT\\CurrentVersion";
+    let mut metadata = BTreeMap::new();
+
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "ProductName",
+        "system.osName",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "DisplayVersion",
+        "system.osDisplayVersion",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "CurrentBuild",
+        "system.osBuild",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "CurrentBuildNumber",
+        "system.osBuildNumber",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "EditionID",
+        "system.osEdition",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "ProductId",
+        "system.productId",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "RegisteredOwner",
+        "system.registeredOwner",
+    );
+    insert_registry_string_value(
+        &mut metadata,
+        &mut parser,
+        current_version,
+        "RegisteredOrganization",
+        "system.registeredOrganization",
+    );
+
+    Ok(finalize_registry_identity_metadata(
+        metadata,
+        "windows.software",
+    ))
+}
+
+fn finalize_registry_identity_metadata(
+    mut metadata: BTreeMap<String, String>,
+    source: &str,
+) -> BTreeMap<String, String> {
+    if metadata.is_empty() {
+        return metadata;
+    }
+    metadata.insert("system.identityStatus".to_string(), "parsed".to_string());
+    metadata.insert("system.identityHive".to_string(), source.to_string());
+    metadata
+}
+
+fn registry_current_control_set(parser: &mut notatin::parser::Parser) -> Option<u32> {
+    registry_value(parser, "Select", "Current").and_then(|value| match value {
+        CellValue::U32(value) => Some(value),
+        CellValue::I32(value) => u32::try_from(value).ok(),
+        CellValue::String(value) => value.trim().parse::<u32>().ok(),
+        _ => None,
+    })
+}
+
+fn insert_registry_string_value(
+    metadata: &mut BTreeMap<String, String>,
+    parser: &mut notatin::parser::Parser,
+    key_path: &str,
+    value_name: &str,
+    metadata_key: &str,
+) {
+    let Some(value) = registry_value(parser, key_path, value_name).and_then(registry_value_text)
+    else {
+        return;
+    };
+    insert_trimmed_metadata(metadata, metadata_key, &value);
+}
+
+fn registry_value(
+    parser: &mut notatin::parser::Parser,
+    key_path: &str,
+    value_name: &str,
+) -> Option<CellValue> {
+    let key = parser.get_key(key_path, false).ok().flatten()?;
+    key.value_iter().find_map(|value| {
+        (value.detail.value_name().eq_ignore_ascii_case(value_name)).then(|| value.get_content().0)
+    })
+}
+
+fn registry_value_text(value: CellValue) -> Option<String> {
+    match value {
+        CellValue::String(value) => Some(value),
+        CellValue::MultiString(values) => Some(values.join("; ")),
+        CellValue::U32(value) => Some(value.to_string()),
+        CellValue::I32(value) => Some(value.to_string()),
+        CellValue::U64(value) => Some(value.to_string()),
+        CellValue::I64(value) => Some(value.to_string()),
+        _ => None,
+    }
 }
 
 fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap<String, String> {
@@ -612,31 +863,47 @@ fn copy_sqlite_artifact_source(
     writer: &mut impl Write,
 ) -> Result<(), String> {
     let source_id = byte_source.source_ref().display_id();
+    copy_artifact_source(
+        byte_source,
+        expected_size,
+        &source_id,
+        writer,
+        "SQLite artifact",
+    )
+}
+
+fn copy_artifact_source(
+    byte_source: &dyn EvidenceByteSource,
+    expected_size: u64,
+    source_id: &str,
+    writer: &mut impl Write,
+    label: &str,
+) -> Result<(), String> {
     let mut offset = 0u64;
 
     while offset < expected_size {
         let remaining = expected_size - offset;
         let read_size = remaining.min(SQLITE_ARTIFACT_COPY_CHUNK_BYTES as u64) as usize;
         let chunk = byte_source.read_range(offset, read_size).map_err(|e| {
-            format!("Failed to read SQLite artifact source {source_id} at offset {offset}: {e}")
+            format!("Failed to read {label} source {source_id} at offset {offset}: {e}")
         })?;
 
         if chunk.is_empty() {
             return Err(format!(
-                "Short read materializing SQLite artifact source {source_id}: expected {expected_size} bytes but read {offset} bytes"
+                "Short read materializing {label} source {source_id}: expected {expected_size} bytes but read {offset} bytes"
             ));
         }
         if chunk.len() as u64 > remaining {
             return Err(format!(
-                "Invalid oversized read materializing SQLite artifact source {source_id}: {} bytes returned with {remaining} bytes remaining",
+                "Invalid oversized read materializing {label} source {source_id}: {} bytes returned with {remaining} bytes remaining",
                 chunk.len()
             ));
         }
 
         writer.write_all(&chunk).map_err(|e| {
-            format!("Failed to write SQLite artifact source {source_id} at offset {offset}: {e}")
+            format!("Failed to write {label} source {source_id} at offset {offset}: {e}")
         })?;
-        offset = checked_sqlite_copy_offset_add(offset, chunk.len(), &source_id)?;
+        offset = checked_sqlite_copy_offset_add(offset, chunk.len(), source_id)?;
     }
 
     Ok(())
@@ -1072,6 +1339,10 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
 
     #[test]
     fn system_identity_source_classifier_matches_known_identity_files() {
+        assert!(is_system_identity_source("/Windows/System32/config/SYSTEM"));
+        assert!(is_system_identity_source(
+            "/Windows/System32/config/SOFTWARE"
+        ));
         assert!(is_system_identity_source("/etc/machine-id"));
         assert!(is_system_identity_source("/sys/class/dmi/id/product_uuid"));
         assert!(is_system_identity_source(
@@ -1086,6 +1357,43 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
         assert!(!is_system_identity_source(
             "/Users/test/Library/Preferences/preferences.plist"
         ));
+    }
+
+    #[test]
+    fn registry_identity_source_classifier_matches_windows_hives() {
+        assert!(is_windows_registry_identity_source(
+            "ad1:/Windows/System32/config/SYSTEM"
+        ));
+        assert!(is_windows_registry_identity_source(
+            "e01:/Windows/System32/config/SOFTWARE"
+        ));
+        assert!(!is_windows_registry_identity_source(
+            "ad1:/Windows/System32/config/SAM"
+        ));
+        assert!(!is_windows_registry_identity_source(
+            "ad1:/Users/test/NTUSER.DAT"
+        ));
+    }
+
+    #[test]
+    fn registry_value_text_converts_scalar_identity_values() {
+        assert_eq!(
+            registry_value_text(CellValue::String("Windows 11 Pro".to_string())).as_deref(),
+            Some("Windows 11 Pro")
+        );
+        assert_eq!(
+            registry_value_text(CellValue::MultiString(vec![
+                "example".to_string(),
+                "local".to_string()
+            ]))
+            .as_deref(),
+            Some("example; local")
+        );
+        assert_eq!(
+            registry_value_text(CellValue::U32(22631)).as_deref(),
+            Some("22631")
+        );
+        assert!(registry_value_text(CellValue::Binary(vec![1, 2, 3])).is_none());
     }
 
     #[test]
