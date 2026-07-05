@@ -190,6 +190,25 @@ describe("ImageViewer", () => {
       expect(container.textContent).toContain("Retry");
     });
 
+    it("rejects oversized source images before full base64 read", async () => {
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "photos/huge.jpg",
+        containerType: "ad1",
+        size: 101 * 1024 * 1024,
+      };
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/huge.jpg" source={source} />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Image is too large for inline preview");
+      expect(mockInvoke).not.toHaveBeenCalledWith("viewer_read_binary_source_base64", {
+        source,
+      });
+    });
+
     it("retries loading when retry button clicked", async () => {
       mockInvoke.mockRejectedValueOnce(new Error("Temporary error"));
 

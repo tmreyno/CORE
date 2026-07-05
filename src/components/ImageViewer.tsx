@@ -75,6 +75,7 @@ const LIMITED_SUPPORT_EXTENSIONS = new Set([
   'heic', 'heif', 'tiff', 'tif',
   'raw', 'cr2', 'nef', 'arw', 'dng', 'orf', 'rw2',
 ]);
+const MAX_INLINE_IMAGE_BYTES = 100 * 1024 * 1024;
 
 // ============================================================================
 // Component
@@ -119,6 +120,15 @@ export function ImageViewer(props: ImageViewerProps) {
     try {
       if (!isTauri) {
         throw new Error("Image evidence viewing is available in the desktop app.");
+      }
+
+      if (
+        typeof requestedSource?.size === "number" &&
+        requestedSource.size > MAX_INLINE_IMAGE_BYTES
+      ) {
+        throw new Error(
+          `Image is too large for inline preview: ${requestedSource.size} bytes > ${MAX_INLINE_IMAGE_BYTES} bytes. Use hex or export the file for external viewing.`,
+        );
       }
 
       const base64Data = requestedSource
