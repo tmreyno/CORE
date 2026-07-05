@@ -286,7 +286,8 @@ fn category_from_extension(extension: &str) -> String {
         "txt" | "log" | "md" | "csv" | "tsv" => "text",
         "json" | "xml" | "yaml" | "yml" | "toml" | "ini" | "plist" | "reg" => "config",
         "pdf" | "doc" | "docx" | "rtf" | "odt" => "document",
-        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tif" | "tiff" | "webp" => "image",
+        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tif" | "tiff" | "webp" | "heic" | "heif"
+        | "avif" => "image",
         "zip" | "7z" | "rar" | "tar" | "gz" | "bz2" | "xz" => "archive",
         "db" | "sqlite" | "sqlite3" => "database",
         "e01" | "l01" | "ad1" | "ufdr" | "ufdx" | "dd" | "raw" | "img" => "forensic",
@@ -395,6 +396,9 @@ fn refine_type_from_extension(
         "bmp" => Some(("image/bmp", "Bitmap Image", "image")),
         "tif" | "tiff" => Some(("image/tiff", "TIFF Image", "image")),
         "webp" => Some(("image/webp", "WebP Image", "image")),
+        "heic" => Some(("image/heic", "HEIC Image", "image")),
+        "heif" => Some(("image/heif", "HEIF Image", "image")),
+        "avif" => Some(("image/avif", "AVIF Image", "image")),
         _ => None,
     };
 
@@ -450,7 +454,19 @@ fn header_metadata(
 fn is_image_extension(extension: Option<&str>) -> bool {
     matches!(
         extension,
-        Some("jpg" | "jpeg" | "png" | "gif" | "bmp" | "tif" | "tiff" | "webp")
+        Some(
+            "jpg"
+                | "jpeg"
+                | "png"
+                | "gif"
+                | "bmp"
+                | "tif"
+                | "tiff"
+                | "webp"
+                | "heic"
+                | "heif"
+                | "avif",
+        )
     )
 }
 
@@ -2322,6 +2338,38 @@ mod tests {
     }
 
     #[test]
+    fn refines_modern_image_artifact_types_from_extension_when_magic_is_short() {
+        for (extension, mime_type, description) in [
+            (".heic", "image/heic", "HEIC Image"),
+            (".heif", "image/heif", "HEIF Image"),
+            (".avif", "image/avif", "AVIF Image"),
+        ] {
+            let file = write_temp_file(extension, b"\0\0\0\x18ftyp");
+            let source = LocalFileByteSource::new(file.path());
+
+            let artifact =
+                extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+            assert_eq!(artifact.category, "image", "{extension}");
+            assert_eq!(
+                artifact.mime_type.as_deref(),
+                Some(mime_type),
+                "{extension}"
+            );
+            assert_eq!(artifact.type_description, description, "{extension}");
+            assert_eq!(artifact.confidence, "medium", "{extension}");
+            assert!(
+                !artifact.metadata.contains_key("image.width"),
+                "{extension}"
+            );
+            assert!(
+                !artifact.metadata.contains_key("image.height"),
+                "{extension}"
+            );
+        }
+    }
+
+    #[test]
     fn extracts_png_image_dimensions() {
         let mut bytes = Vec::from(&b"\x89PNG\r\n\x1a\n"[..]);
         bytes.extend_from_slice(&13u32.to_be_bytes());
@@ -2696,7 +2744,10 @@ mod tests {
             artifact.mime_type.as_deref(),
             Some("application/vnd.microsoft.portable-executable")
         );
-        assert_eq!(artifact.metadata.get("extension").map(String::as_str), Some("sys"));
+        assert_eq!(
+            artifact.metadata.get("extension").map(String::as_str),
+            Some("sys")
+        );
     }
 
     #[test]
