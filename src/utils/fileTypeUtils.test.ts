@@ -431,11 +431,18 @@ describe("isBinaryExecutable", () => {
     expect(isBinaryExecutable("lib.so")).toBe(true);
     expect(isBinaryExecutable("lib.dylib")).toBe(true);
     expect(isBinaryExecutable("driver.sys")).toBe(true);
+    expect(isBinaryExecutable("C:\\Windows\\System32\\drivers\\ndis.sys")).toBe(true);
   });
 
   it("returns false for non-executable files", () => {
     expect(isBinaryExecutable("script.py")).toBe(false);
     expect(isBinaryExecutable("doc.pdf")).toBe(false);
+  });
+
+  it("does not route Windows memory backing files as PE drivers", () => {
+    expect(isBinaryExecutable("C:\\pagefile.sys")).toBe(false);
+    expect(isBinaryExecutable("C:\\hiberfil.sys")).toBe(false);
+    expect(isBinaryExecutable("C:\\swapfile.sys")).toBe(false);
   });
 });
 
@@ -573,6 +580,7 @@ describe("detectFileType", () => {
   it("detects binary executables", () => {
     expect(detectFileType("app.exe")).toBe("binary");
     expect(detectFileType("lib.dll")).toBe("binary");
+    expect(detectFileType("C:\\Windows\\System32\\drivers\\ndis.sys")).toBe("binary");
   });
 
   it("detects registry hives as binary", () => {

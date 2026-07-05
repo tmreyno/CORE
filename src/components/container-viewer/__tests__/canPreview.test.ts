@@ -88,7 +88,15 @@ describe("canPreview", () => {
   it("returns true for binary executables", () => {
     expect(canPreview("program.exe")).toBe(true);
     expect(canPreview("library.dll")).toBe(true);
+    expect(canPreview("driver.sys")).toBe(true);
+    expect(canPreview("C:\\Windows\\System32\\drivers\\ndis.sys")).toBe(true);
     expect(canPreview("binary.elf")).toBe(true);
+  });
+
+  it("returns false for Windows memory backing files that are not PE drivers", () => {
+    expect(canPreview("C:\\pagefile.sys")).toBe(false);
+    expect(canPreview("C:\\hiberfil.sys")).toBe(false);
+    expect(canPreview("C:\\swapfile.sys")).toBe(false);
   });
 
   // Database files
