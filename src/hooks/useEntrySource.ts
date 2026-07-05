@@ -96,9 +96,21 @@ export function getSourceKey(
   file: DiscoveredFile | null | undefined,
   entry: SelectedEntry | undefined
 ): string | null {
-  if (entry) return `entry:${entry.containerPath}:${entry.entryPath}`;
-  if (file) return `file:${file.path}`;
-  return null;
+  const source = buildEvidenceSourceInput(file ?? null, entry);
+  if (!source) return null;
+
+  const parts = [
+    source.containerType ?? "",
+    source.path ?? "",
+    source.containerPath ?? "",
+    source.nestedArchivePath ?? "",
+    source.entryPath ?? "",
+    source.size ?? "",
+    source.dataAddr ?? "",
+    source.itemAddr ?? "",
+  ];
+
+  return `${entry ? "entry" : "file"}:${parts.map(encodeKeyPart).join(":")}`;
 }
 
 /**
@@ -120,4 +132,8 @@ function base64ToBytes(data: string): number[] {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+function encodeKeyPart(value: string | number): string {
+  return encodeURIComponent(String(value));
 }

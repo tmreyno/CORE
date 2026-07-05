@@ -89,19 +89,23 @@ describe("getSourceKey", () => {
       containerPath: "/evidence/disk.ad1",
       entryPath: "/files/doc.pdf",
     });
-    expect(getSourceKey(null, entry)).toBe("entry:/evidence/disk.ad1:/files/doc.pdf");
+    expect(getSourceKey(null, entry)).toBe(
+      "entry:ad1::%2Fevidence%2Fdisk.ad1::%2Ffiles%2Fdoc.pdf:2048::"
+    );
   });
 
   it("returns file key for DiscoveredFile", () => {
     const file = makeFile("/evidence/disk.e01");
-    expect(getSourceKey(file, undefined)).toBe("file:/evidence/disk.e01");
+    expect(getSourceKey(file, undefined)).toBe(
+      "file:disk:%2Fevidence%2Fdisk.e01::::1024::"
+    );
   });
 
   it("prefers entry over file when both provided", () => {
     const file = makeFile("/evidence/disk.e01");
     const entry = makeEntry();
     expect(getSourceKey(file, entry)).toBe(
-      "entry:/evidence/container.ad1:/files/test.bin"
+      "entry:ad1::%2Fevidence%2Fcontainer.ad1::%2Ffiles%2Ftest.bin:2048::"
     );
   });
 
@@ -111,6 +115,48 @@ describe("getSourceKey", () => {
 
   it("returns null for undefined file", () => {
     expect(getSourceKey(undefined, undefined)).toBeNull();
+  });
+
+  it("separates AD1 entries with the same path but different data addresses", () => {
+    const first = makeEntry({ dataAddr: 8192, itemAddr: 4096 });
+    const second = makeEntry({ dataAddr: 16384, itemAddr: 12288 });
+
+    expect(getSourceKey(null, first)).not.toBe(getSourceKey(null, second));
+  });
+
+  it("separates nested archive entries from same-named parent entries", () => {
+    const nested = makeEntry({
+      containerPath: "/evidence/archive.zip",
+      isArchiveEntry: true,
+      entryPath: "inner.zip::file.txt",
+      size: 12,
+    });
+    const outer = makeEntry({
+      containerPath: "/evidence/archive.zip",
+      isArchiveEntry: true,
+      entryPath: "file.txt",
+      size: 12,
+    });
+
+    expect(getSourceKey(null, nested)).not.toBe(getSourceKey(null, outer));
+    expect(getSourceKey(null, nested)).toContain("inner.zip");
+  });
+
+  it("separates VFS entries from different image source types", () => {
+    const e01Entry = makeEntry({
+      containerPath: "/evidence/disk.e01",
+      isVfsEntry: true,
+      containerType: "vfs",
+    });
+    const rawEntry = makeEntry({
+      containerPath: "/evidence/disk.raw",
+      isVfsEntry: true,
+      containerType: "vfs",
+    });
+
+    expect(getSourceKey(null, e01Entry)).not.toBe(getSourceKey(null, rawEntry));
+    expect(getSourceKey(null, e01Entry)).toContain("e01");
+    expect(getSourceKey(null, rawEntry)).toContain("raw");
   });
 });
 
