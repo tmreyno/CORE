@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { PstViewer } from "./PstViewer";
 import { mockInvoke } from "../__tests__/setup";
@@ -145,6 +146,73 @@ describe("PstViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Invalid PST format");
+    });
+
+    it("ignores stale PST folder loads after the selected archive changes", async () => {
+      let resolveSlow: (value: typeof mockPstInfo) => void = () => {};
+      const slowFolders = new Promise<typeof mockPstInfo>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const currentInfo = {
+        ...mockPstInfo,
+        path: "/tmp/current.pst",
+        displayName: "Current Archive",
+        folders: [
+          {
+            name: "Current Inbox",
+            nodeId: 2001,
+            contentCount: 1,
+            unreadCount: 0,
+            hasSubFolders: false,
+            children: [],
+          },
+        ],
+        totalFolders: 1,
+      };
+      const staleInfo = {
+        ...mockPstInfo,
+        path: "/tmp/slow.pst",
+        displayName: "Stale Archive",
+        folders: [
+          {
+            name: "Stale Inbox",
+            nodeId: 3001,
+            contentCount: 1,
+            unreadCount: 0,
+            hasSubFolders: false,
+            children: [],
+          },
+        ],
+        totalFolders: 1,
+      };
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "pst_get_folders" && args?.path === "/tmp/slow.pst") {
+          return slowFolders;
+        }
+        if (command === "pst_get_folders" && args?.path === "/tmp/current.pst") {
+          return Promise.resolve(currentInfo);
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
+
+      const [path, setPath] = createSignal("/tmp/slow.pst");
+      const { container } = renderComponent(() => <PstViewer path={path()} />);
+      await tick();
+
+      setPath("/tmp/current.pst");
+      await tick();
+
+      expect(container.textContent).toContain("Current Archive");
+      expect(container.textContent).toContain("Current Inbox");
+
+      resolveSlow(staleInfo);
+      await tick();
+
+      expect(container.textContent).toContain("Current Archive");
+      expect(container.textContent).toContain("Current Inbox");
+      expect(container.textContent).not.toContain("Stale Archive");
+      expect(container.textContent).not.toContain("Stale Inbox");
     });
   });
 
