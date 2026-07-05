@@ -16,6 +16,7 @@ use crate::project_db::{
     DbArtifactCategorySummary, DbArtifactEvidenceSummary, DbArtifactExtractorSummary,
     DbEvidenceFile, DbNormalizedArtifact,
 };
+use crate::viewer::document::binary::{analyze_binary_bytes, BinaryFormat, BinaryInfo};
 use crate::viewer::document::database_viewer::get_database_info;
 use notatin::cell_value::CellValue;
 use notatin::parser_builder::ParserBuilder;
@@ -32,6 +33,7 @@ struct RegistryStringMapping {
 }
 
 const SQLITE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const BINARY_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const SQLITE_ARTIFACT_COPY_CHUNK_BYTES: usize = 1024 * 1024;
 const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -301,6 +303,7 @@ pub async fn project_db_extract_artifact_source(
         .or(evidence_file_id);
     let mut artifact = artifact_extract_source(source, options).await?;
     enrich_sqlite_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
+    enrich_binary_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
     enrich_system_identity_artifact_metadata(&source_for_enrichment, &mut artifact).await?;
     let record = normalized_to_db_artifact(
         &artifact,
@@ -2292,6 +2295,198 @@ fn is_sqlite_artifact(artifact: &NormalizedArtifact) -> bool {
         )
 }
 
+async fn enrich_binary_artifact_metadata(
+    source: &HashSourceInput,
+    artifact: &mut NormalizedArtifact,
+) -> Result<(), String> {
+    if !is_binary_artifact(artifact) {
+        return Ok(());
+    }
+
+    let source = source.clone();
+    let metadata_result =
+        tauri::async_runtime::spawn_blocking(move || binary_artifact_metadata_from_source(&source))
+            .await
+            .map_err(|e| format!("Binary artifact metadata task failed: {e}"))?;
+
+    match metadata_result {
+        Ok(metadata) => {
+            let is_driver = metadata
+                .get("pe.isDriver")
+                .is_some_and(|value| value == "true");
+            if is_driver {
+                artifact.category = "system".to_string();
+                artifact.type_description = metadata
+                    .get("pe.driverType")
+                    .map(|driver_type| format!("Windows {driver_type}"))
+                    .unwrap_or_else(|| "Windows Driver Artifact".to_string());
+            }
+            artifact.metadata.extend(metadata);
+        }
+        Err(error) => {
+            artifact.metadata.insert(
+                "binary.analysisStatus".to_string(),
+                "unavailable".to_string(),
+            );
+            artifact.metadata.insert(
+                "binary.analysisError".to_string(),
+                truncate_metadata_value(&error, 180),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn is_binary_artifact(artifact: &NormalizedArtifact) -> bool {
+    artifact.category == "executable"
+        || artifact
+            .mime_type
+            .as_deref()
+            .is_some_and(|mime| mime.contains("executable") || mime.contains("mach-binary"))
+        || matches!(
+            artifact.extension.as_deref(),
+            Some("sys" | "drv" | "exe" | "dll" | "ocx" | "efi" | "elf" | "so" | "dylib" | "kext")
+        )
+}
+
+fn binary_artifact_metadata_from_source(
+    source: &HashSourceInput,
+) -> Result<BTreeMap<String, String>, String> {
+    let byte_source = open_hash_source(source)?;
+    let source_id = byte_source.source_ref().display_id();
+    let size = byte_source.len().map_err(|e| e.to_string())?;
+    if size > BINARY_ARTIFACT_SOURCE_MAX_BYTES {
+        return Err(format!(
+            "Binary artifact source is too large for analysis: {size} bytes > {BINARY_ARTIFACT_SOURCE_MAX_BYTES} bytes"
+        ));
+    }
+
+    let read_len = usize::try_from(size)
+        .map_err(|_| format!("Binary artifact source size does not fit this platform: {size}"))?;
+    let data = if read_len > 0 {
+        read_range_fully(byte_source.as_ref(), 0, read_len).map_err(|e| e.to_string())?
+    } else {
+        Vec::new()
+    };
+    let info = analyze_binary_bytes(source_id, &data).map_err(|e| e.to_string())?;
+    Ok(binary_artifact_metadata_from_info(&info))
+}
+
+fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("binary.analysisStatus".to_string(), "parsed".to_string());
+    metadata.insert(
+        "binary.format".to_string(),
+        binary_format_name(&info.format).to_string(),
+    );
+    metadata.insert("binary.architecture".to_string(), info.architecture.clone());
+    metadata.insert("binary.is64Bit".to_string(), info.is_64bit.to_string());
+    metadata.insert("binary.fileSize".to_string(), info.file_size.to_string());
+    metadata.insert(
+        "binary.importLibraryCount".to_string(),
+        info.imports.len().to_string(),
+    );
+    metadata.insert(
+        "binary.exportCount".to_string(),
+        info.exports.len().to_string(),
+    );
+    metadata.insert(
+        "binary.sectionCount".to_string(),
+        info.sections.len().to_string(),
+    );
+    if let Some(entry_point) = info.entry_point {
+        metadata.insert(
+            "binary.entryPoint".to_string(),
+            format!("0x{entry_point:x}"),
+        );
+    }
+    if !info.imports.is_empty() {
+        let libraries: Vec<String> = info
+            .imports
+            .iter()
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .map(|import| import.library.clone())
+            .collect();
+        insert_joined_metadata(&mut metadata, "binary.importLibraries", &libraries);
+    }
+    if !info.exports.is_empty() {
+        let exports: Vec<String> = info
+            .exports
+            .iter()
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .map(|export| export.name.clone())
+            .collect();
+        insert_joined_metadata(&mut metadata, "binary.exports", &exports);
+    }
+    if !info.sections.is_empty() {
+        let sections: Vec<String> = info
+            .sections
+            .iter()
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .map(|section| section.name.clone())
+            .collect();
+        insert_joined_metadata(&mut metadata, "binary.sections", &sections);
+    }
+
+    metadata.insert(
+        "binary.hasDebugInfo".to_string(),
+        info.has_debug_info.to_string(),
+    );
+    metadata.insert(
+        "binary.isStripped".to_string(),
+        info.is_stripped.to_string(),
+    );
+    metadata.insert(
+        "binary.hasCodeSigning".to_string(),
+        info.has_code_signing.to_string(),
+    );
+
+    if let Some(timestamp) = info.pe_timestamp {
+        metadata.insert("pe.timestamp".to_string(), timestamp.to_string());
+    }
+    if let Some(checksum) = info.pe_checksum {
+        metadata.insert("pe.checksum".to_string(), format!("0x{checksum:08x}"));
+    }
+    if let Some(subsystem) = &info.pe_subsystem {
+        metadata.insert("pe.subsystem".to_string(), subsystem.clone());
+    }
+    metadata.insert("pe.isDriver".to_string(), info.pe_is_driver.to_string());
+    if let Some(driver_type) = &info.pe_driver_type {
+        metadata.insert("pe.driverType".to_string(), driver_type.clone());
+    }
+    insert_joined_metadata(
+        &mut metadata,
+        "pe.driverIndicators",
+        &info.pe_driver_indicators,
+    );
+    for (key, value) in &info.pe_version_info {
+        metadata.insert(format!("pe.version.{key}"), value.clone());
+    }
+
+    if let Some(cpu_type) = &info.macho_cpu_type {
+        metadata.insert("macho.cpuType".to_string(), cpu_type.clone());
+    }
+    if let Some(filetype) = &info.macho_filetype {
+        metadata.insert("macho.fileType".to_string(), filetype.clone());
+    }
+
+    metadata
+}
+
+fn binary_format_name(format: &BinaryFormat) -> &'static str {
+    match format {
+        BinaryFormat::PE32 => "PE32",
+        BinaryFormat::PE64 => "PE64",
+        BinaryFormat::ELF32 => "ELF32",
+        BinaryFormat::ELF64 => "ELF64",
+        BinaryFormat::MachO32 => "MachO32",
+        BinaryFormat::MachO64 => "MachO64",
+        BinaryFormat::MachOFat => "MachOFat",
+        BinaryFormat::Unknown => "Unknown",
+    }
+}
+
 fn sqlite_artifact_metadata_from_source(
     source: &HashSourceInput,
 ) -> Result<BTreeMap<String, String>, String> {
@@ -2733,6 +2928,112 @@ mod tests {
             let end = start.saturating_add(read_size).min(self.data.len());
             Ok(self.data[start..end].to_vec())
         }
+    }
+
+    #[test]
+    fn binary_artifact_metadata_from_info_flattens_driver_analysis() {
+        let mut version_info = BTreeMap::new();
+        version_info.insert("CompanyName".to_string(), "Contoso Driver Labs".to_string());
+        version_info.insert("OriginalFilename".to_string(), "contosoflt.sys".to_string());
+
+        let info = BinaryInfo {
+            path: "case.ad1:/Windows/System32/drivers/contosoflt.sys".to_string(),
+            format: BinaryFormat::PE64,
+            architecture: "x86_64".to_string(),
+            is_64bit: true,
+            entry_point: Some(0x140001000),
+            imports: vec![crate::viewer::document::binary::ImportInfo {
+                library: "fltmgr.sys".to_string(),
+                functions: vec!["FltRegisterFilter".to_string()],
+                function_count: 1,
+            }],
+            exports: vec![crate::viewer::document::binary::ExportInfo {
+                name: "DriverEntry".to_string(),
+                ordinal: None,
+                address: 0x1000,
+            }],
+            sections: vec![crate::viewer::document::binary::SectionInfo {
+                name: ".text".to_string(),
+                virtual_address: 0x1000,
+                virtual_size: 0x2000,
+                raw_size: 0x2000,
+                characteristics: "0x60000020".to_string(),
+            }],
+            file_size: 4096,
+            pe_timestamp: Some(1_717_260_000),
+            pe_checksum: Some(0x1234abcd),
+            pe_subsystem: Some("Native".to_string()),
+            pe_is_driver: true,
+            pe_driver_type: Some("File system minifilter driver".to_string()),
+            pe_driver_indicators: vec![
+                "driver file extension".to_string(),
+                "file-system filter driver APIs".to_string(),
+            ],
+            pe_version_info: version_info,
+            macho_cpu_type: None,
+            macho_filetype: None,
+            has_debug_info: false,
+            is_stripped: true,
+            has_code_signing: true,
+        };
+
+        let metadata = binary_artifact_metadata_from_info(&info);
+
+        assert_eq!(
+            metadata.get("binary.analysisStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("binary.format").map(String::as_str),
+            Some("PE64")
+        );
+        assert_eq!(
+            metadata.get("binary.entryPoint").map(String::as_str),
+            Some("0x140001000")
+        );
+        assert_eq!(
+            metadata.get("pe.isDriver").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            metadata.get("pe.driverType").map(String::as_str),
+            Some("File system minifilter driver")
+        );
+        assert_eq!(
+            metadata.get("binary.importLibraries").map(String::as_str),
+            Some("fltmgr.sys")
+        );
+        assert_eq!(
+            metadata.get("binary.exports").map(String::as_str),
+            Some("DriverEntry")
+        );
+        assert_eq!(
+            metadata.get("pe.version.CompanyName").map(String::as_str),
+            Some("Contoso Driver Labs")
+        );
+    }
+
+    #[test]
+    fn is_binary_artifact_matches_driver_extension_even_when_magic_is_unknown() {
+        let artifact = NormalizedArtifact {
+            id: "artifact_1".to_string(),
+            source_ref: EvidenceSourceRef::LocalFile {
+                path: "/case/example.sys".to_string(),
+            },
+            source_id: "/case/example.sys".to_string(),
+            name: "example.sys".to_string(),
+            extension: Some("sys".to_string()),
+            size: 1024,
+            mime_type: None,
+            type_description: "Unknown".to_string(),
+            category: "unknown".to_string(),
+            confidence: "low".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: BTreeMap::new(),
+        };
+
+        assert!(is_binary_artifact(&artifact));
     }
 
     #[test]
