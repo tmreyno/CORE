@@ -710,13 +710,18 @@ use super::pst::{
 };
 
 const PST_SOURCE_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const PST_SOURCE_CACHE_MAX_ENTRIES: usize = 4;
+
+static PST_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn with_pst_source<T>(
     source: HashSourceInput,
     operation: impl FnOnce(&Path, String) -> Result<T, String>,
 ) -> Result<T, String> {
     let byte_source = open_hash_source(&source)?;
-    let source_id = byte_source.source_ref().display_id();
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
     if size > PST_SOURCE_MAX_BYTES {
         return Err(format!(
@@ -725,19 +730,66 @@ fn with_pst_source<T>(
         ));
     }
 
+    if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+        return operation(Path::new(path), source_id);
+    }
+
+    let cached_path = cached_pst_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+    operation(&cached_path, source_id)
+}
+
+fn cached_pst_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = materialized_source_cache_key(source_ref, size);
+    if let Some(path) = materialized_source_cache_get(&PST_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-pst-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create PST source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.pst"));
+
+    if cache_path.exists() {
+        materialized_source_cache_insert(
+            &PST_SOURCE_CACHE,
+            PST_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-pst-")
         .suffix(".pst")
-        .tempfile()
-        .map_err(|e| format!("Failed to create temporary PST copy: {}", e))?;
-    copy_evidence_source_to_writer(byte_source.as_ref(), size, "PST", &mut temp)?;
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary PST copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "PST", &mut temp)?;
     temp.flush()
-        .map_err(|e| format!("Failed to flush temporary PST copy: {}", e))?;
+        .map_err(|e| format!("Failed to flush temporary PST copy: {e}"))?;
     temp.as_file()
         .sync_all()
-        .map_err(|e| format!("Failed to sync temporary PST copy: {}", e))?;
+        .map_err(|e| format!("Failed to sync temporary PST copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist PST source cache copy: {}", e.error))?;
 
-    operation(temp.path(), source_id)
+    materialized_source_cache_insert(
+        &PST_SOURCE_CACHE,
+        PST_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached PST evidence source for viewer navigation"
+    );
+    Ok(cache_path)
 }
 
 /// List all folders in a PST/OST file
@@ -1566,6 +1618,31 @@ mod tests {
         let local_path = tmp.path().to_string_lossy().to_string();
 
         with_database_source(source, |path, source_id| {
+            assert_eq!(path, Path::new(&local_path));
+            assert_eq!(source_id, local_path);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pst_source_uses_local_file_without_materializing_copy() {
+        let mut tmp = tempfile::Builder::new().suffix(".pst").tempfile().unwrap();
+        tmp.write_all(b"!BDN").unwrap();
+        tmp.flush().unwrap();
+        let local_path = tmp.path().to_string_lossy().to_string();
+        let source = HashSourceInput {
+            path: Some(local_path.clone()),
+            container_path: None,
+            entry_path: None,
+            nested_archive_path: None,
+            container_type: Some("disk".to_string()),
+            size: Some(4),
+            data_addr: None,
+            item_addr: None,
+        };
+
+        with_pst_source(source, |path, source_id| {
             assert_eq!(path, Path::new(&local_path));
             assert_eq!(source_id, local_path);
             Ok(())
