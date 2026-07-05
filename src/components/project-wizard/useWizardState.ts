@@ -101,6 +101,7 @@ export interface WizardState {
   // Actions
   browseProjectRoot: () => Promise<void>;
   browseAndCreateTemplate: (name: string, examiner: string) => Promise<void>;
+  createBrowserPreviewProject: () => void;
   browseEvidence: () => Promise<void>;
   browseProcessed: () => Promise<void>;
   browseCaseDocs: () => Promise<void>;
@@ -494,6 +495,38 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     }
   };
 
+  const createBrowserPreviewProject = () => {
+    if (isTauri) return;
+
+    const root = "browser-preview-project";
+    setLocalProjectRoot(root);
+    setProjectName("Browser Preview Project");
+    setEvidencePath(`${root}/Evidence`);
+    setProcessedDbPath(`${root}/Processed`);
+    setCaseDocumentsPath(`${root}/Case.Documents`);
+    setExportsPath(`${root}/Exports`);
+    setDiscoveredEvidence([]);
+    setDiscoveredDatabases([]);
+    setSuggestedEvidence([]);
+    setSuggestedProcessed([]);
+    setSuggestedCaseDocs([]);
+    setDiscoveredCaseDocCount(0);
+    setLoadStoredHashes(false);
+    setError(null);
+
+    props.onComplete({
+      projectName: "Browser Preview Project",
+      projectRoot: root,
+      evidencePath: `${root}/Evidence`,
+      processedDbPath: `${root}/Processed`,
+      caseDocumentsPath: `${root}/Case.Documents`,
+      exportsPath: `${root}/Exports`,
+      discoveredEvidence: [],
+      discoveredDatabases: [],
+      loadStoredHashes: false,
+    });
+  };
+
   const browseEvidence = async () => {
     if (!canUseNativeFolderPicker()) return;
     try {
@@ -756,6 +789,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     loadedStoredHashes,
     browseProjectRoot,
     browseAndCreateTemplate,
+    createBrowserPreviewProject,
     browseEvidence,
     browseProcessed,
     browseCaseDocs,

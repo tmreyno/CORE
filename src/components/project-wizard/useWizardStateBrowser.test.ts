@@ -77,4 +77,27 @@ describe("useWizardState browser runtime guards", () => {
     expect(state.error()).toBeNull();
     dispose();
   });
+
+  it("creates a browser preview project without native filesystem access", () => {
+    const { state, dispose, onComplete } = createState({ isOpen: true });
+
+    state.createBrowserPreviewProject();
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectName: "Browser Preview Project",
+        projectRoot: "browser-preview-project",
+        evidencePath: "browser-preview-project/Evidence",
+        processedDbPath: "browser-preview-project/Processed",
+        caseDocumentsPath: "browser-preview-project/Case.Documents",
+        exportsPath: "browser-preview-project/Exports",
+        discoveredEvidence: [],
+        discoveredDatabases: [],
+        loadStoredHashes: false,
+      }),
+    );
+    expect(state.error()).toBeNull();
+    dispose();
+  });
 });

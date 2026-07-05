@@ -14,6 +14,8 @@ interface SelectFolderStepProps {
   onBrowse: () => void;
   /** Create template folders: called with (projectName, examiner) — handler opens location picker */
   onCreateFromTemplate: (projectName: string, examiner: string) => void;
+  /** Browser-preview project creation without desktop filesystem access */
+  onCreatePreviewProject: () => void;
 }
 
 export const SelectFolderStep: Component<SelectFolderStepProps> = (props) => {
@@ -56,6 +58,16 @@ export const SelectFolderStep: Component<SelectFolderStepProps> = (props) => {
               <div>
                 <div class="text-sm font-medium text-txt">Open Project File</div>
                 <div class="text-xs text-txt-muted">Choose a .cffx file from this browser session</div>
+              </div>
+            </button>
+            <button
+              class="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover transition-colors text-left cursor-pointer"
+              onClick={props.onCreatePreviewProject}
+            >
+              <HiOutlineDocumentDuplicate class="w-6 h-6 text-accent shrink-0" />
+              <div>
+                <div class="text-sm font-medium text-txt">Create Preview Project</div>
+                <div class="text-xs text-txt-muted">Start an in-memory project without folder scanning</div>
               </div>
             </button>
           </Show>
