@@ -3651,7 +3651,19 @@ fn is_binary_artifact(artifact: &NormalizedArtifact) -> bool {
             .is_some_and(|mime| mime.contains("executable") || mime.contains("mach-binary"))
         || matches!(
             artifact.extension.as_deref(),
-            Some("sys" | "drv" | "exe" | "dll" | "ocx" | "efi" | "elf" | "so" | "dylib" | "kext")
+            Some(
+                "sys"
+                    | "drv"
+                    | "ko"
+                    | "exe"
+                    | "dll"
+                    | "ocx"
+                    | "efi"
+                    | "elf"
+                    | "so"
+                    | "dylib"
+                    | "kext",
+            )
         )
 }
 
@@ -4531,25 +4543,27 @@ mod tests {
 
     #[test]
     fn is_binary_artifact_matches_driver_extension_even_when_magic_is_unknown() {
-        let artifact = NormalizedArtifact {
-            id: "artifact_1".to_string(),
-            source_ref: EvidenceSourceRef::LocalFile {
-                path: "/case/example.sys".to_string(),
-            },
-            source_id: "/case/example.sys".to_string(),
-            name: "example.sys".to_string(),
-            extension: Some("sys".to_string()),
-            size: 1024,
-            mime_type: None,
-            type_description: "Unknown".to_string(),
-            category: "unknown".to_string(),
-            confidence: "low".to_string(),
-            is_text: false,
-            content_preview: None,
-            metadata: BTreeMap::new(),
-        };
+        for extension in ["sys", "ko", "kext"] {
+            let name = format!("example.{extension}");
+            let path = format!("/case/{name}");
+            let artifact = NormalizedArtifact {
+                id: format!("artifact_{extension}"),
+                source_ref: EvidenceSourceRef::LocalFile { path: path.clone() },
+                source_id: path,
+                name,
+                extension: Some(extension.to_string()),
+                size: 1024,
+                mime_type: None,
+                type_description: "Unknown".to_string(),
+                category: "unknown".to_string(),
+                confidence: "low".to_string(),
+                is_text: false,
+                content_preview: None,
+                metadata: BTreeMap::new(),
+            };
 
-        assert!(is_binary_artifact(&artifact));
+            assert!(is_binary_artifact(&artifact), "{extension}");
+        }
     }
 
     #[test]

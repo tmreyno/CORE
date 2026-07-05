@@ -291,7 +291,7 @@ fn category_from_extension(extension: &str) -> String {
         "zip" | "7z" | "rar" | "tar" | "gz" | "bz2" | "xz" => "archive",
         "db" | "sqlite" | "sqlite3" => "database",
         "e01" | "l01" | "ad1" | "ufdr" | "ufdx" | "dd" | "raw" | "img" => "forensic",
-        "sys" | "drv" => "system",
+        "sys" | "drv" | "ko" | "kext" => "system",
         _ => "unknown",
     }
     .to_string()
@@ -388,6 +388,16 @@ fn refine_type_from_extension(
         "drv" => Some((
             "application/vnd.microsoft.portable-executable",
             "Windows Driver",
+            "system",
+        )),
+        "ko" => Some((
+            "application/x-linux-kernel-module",
+            "Linux Kernel Module",
+            "system",
+        )),
+        "kext" => Some((
+            "application/x-macos-kernel-extension",
+            "macOS Kernel Extension",
             "system",
         )),
         "jpg" | "jpeg" => Some(("image/jpeg", "JPEG Image", "image")),
@@ -2748,6 +2758,36 @@ mod tests {
             artifact.metadata.get("extension").map(String::as_str),
             Some("sys")
         );
+    }
+
+    #[test]
+    fn kernel_extension_extensions_classify_as_system_artifacts() {
+        for (extension, mime_type, description) in [
+            (
+                ".ko",
+                "application/x-linux-kernel-module",
+                "Linux Kernel Module",
+            ),
+            (
+                ".kext",
+                "application/x-macos-kernel-extension",
+                "macOS Kernel Extension",
+            ),
+        ] {
+            let file = write_temp_file(extension, b"\x7fELF");
+            let source = LocalFileByteSource::new(file.path());
+
+            let artifact =
+                extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+            assert_eq!(artifact.category, "system", "{extension}");
+            assert_eq!(artifact.type_description, description, "{extension}");
+            assert_eq!(
+                artifact.mime_type.as_deref(),
+                Some(mime_type),
+                "{extension}"
+            );
+        }
     }
 
     #[test]
