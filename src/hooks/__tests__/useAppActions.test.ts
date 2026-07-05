@@ -68,6 +68,7 @@ const mockFileManager = (files: DiscoveredFile[] = []) => {
     setActiveFile,
     selectAndViewFile: vi.fn(async (file: DiscoveredFile) => {
       setActiveFile(file);
+      return true;
     }),
     scanDir: () => "/evidence",
     selectedFiles,
@@ -289,7 +290,7 @@ describe("createSearchHandlers", () => {
   });
 
   describe("handleSearchResultSelect", () => {
-    it("opens top-level file results through the normal select-and-view path", () => {
+    it("opens top-level file results through the normal select-and-view path", async () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
       const onOpenEvidenceFile = vi.fn();
@@ -308,13 +309,14 @@ describe("createSearchHandlers", () => {
         score: 100,
         matchType: "name",
       });
+      await Promise.resolve();
 
       expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
       expect(onOpenEvidenceFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
     });
 
-    it("opens the parent container for container results through the normal select-and-view path", () => {
+    it("opens the parent container for container results through the normal select-and-view path", async () => {
       const container = makeFile("/evidence/archive.zip");
       const fm = mockFileManager([container]);
       const onOpenEvidenceFile = vi.fn();
@@ -334,6 +336,7 @@ describe("createSearchHandlers", () => {
         matchType: "name",
         containerPath: "/evidence/archive.zip",
       });
+      await Promise.resolve();
 
       expect(fm.selectAndViewFile).toHaveBeenCalledWith(container);
       expect(onOpenEvidenceFile).toHaveBeenCalledWith(container);
@@ -357,6 +360,32 @@ describe("createSearchHandlers", () => {
 
       // Should not set active file
       expect(fm.activeFile()).toBeNull();
+    });
+
+    it("does not open evidence tab when search result selection is cancelled", async () => {
+      const file = makeFile("/evidence/large.e01");
+      const fm = mockFileManager([file]);
+      fm.selectAndViewFile.mockResolvedValueOnce(false);
+      const onOpenEvidenceFile = vi.fn();
+      const { handleSearchResultSelect } = createSearchHandlers({
+        fileManager: fm as any,
+        projectManager: mockProjectManager() as any,
+        onOpenEvidenceFile,
+      });
+
+      handleSearchResultSelect({
+        id: file.path,
+        path: file.path,
+        name: "large.e01",
+        size: 1024,
+        isDir: false,
+        score: 100,
+        matchType: "name",
+      });
+      await Promise.resolve();
+
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).not.toHaveBeenCalled();
     });
   });
 });
@@ -410,7 +439,7 @@ describe("createContextMenuBuilders", () => {
       expect(items.find((i) => i.id === "copy-name")).toBeDefined();
     });
 
-    it("open action uses the normal select-and-view path", () => {
+    it("open action uses the normal select-and-view path", async () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
       const hm = mockHashManager();
@@ -429,9 +458,36 @@ describe("createContextMenuBuilders", () => {
 
       const items = getFileContextMenuItems(() => file);
       items.find((i) => i.id === "open")!.onSelect!();
+      await Promise.resolve();
       expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
       expect(onOpenEvidenceFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
+    });
+
+    it("open action does not open evidence tab when selection is cancelled", async () => {
+      const file = makeFile("/evidence/large.e01");
+      const fm = mockFileManager([file]);
+      fm.selectAndViewFile.mockResolvedValueOnce(false);
+      const hm = mockHashManager();
+      const pm = mockProjectManager();
+      const toast = mockToast();
+      const onOpenEvidenceFile = vi.fn();
+
+      const { getFileContextMenuItems } = createContextMenuBuilders({
+        fileManager: fm as any,
+        hashManager: hm as any,
+        projectManager: pm as any,
+        toast,
+        buildSaveOptions: () => null,
+        onOpenEvidenceFile,
+      });
+
+      const items = getFileContextMenuItems(() => file);
+      items.find((i) => i.id === "open")!.onSelect!();
+      await Promise.resolve();
+
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).not.toHaveBeenCalled();
     });
 
     it("hash action calls hashSingleFile", () => {

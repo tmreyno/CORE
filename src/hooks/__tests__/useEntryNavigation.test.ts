@@ -173,18 +173,26 @@ describe("useEntryNavigation", () => {
   // handleSelectEvidenceFile
   // ---------------------------------------------------------------------------
   describe("handleSelectEvidenceFile", () => {
-    it("calls selectAndViewFile on file manager", () => {
+    it("calls selectAndViewFile on file manager", async () => {
       const nav = testWithRoot(() => useEntryNavigation(deps));
       const file = makeFile();
-      nav.handleSelectEvidenceFile(file);
+      await nav.handleSelectEvidenceFile(file);
       expect(deps.mocks.selectAndViewFile).toHaveBeenCalledWith(file);
     });
 
-    it("opens evidence file in center pane tab", () => {
+    it("opens evidence file in center pane tab", async () => {
       const nav = testWithRoot(() => useEntryNavigation(deps));
       const file = makeFile();
-      nav.handleSelectEvidenceFile(file);
+      await nav.handleSelectEvidenceFile(file);
       expect(deps.mocks.openEvidenceFile).toHaveBeenCalledWith(file);
+    });
+
+    it("does not open evidence tab when selection is cancelled", async () => {
+      deps.mocks.selectAndViewFile.mockResolvedValueOnce(false);
+      const nav = testWithRoot(() => useEntryNavigation(deps));
+      const file = makeFile();
+      await nav.handleSelectEvidenceFile(file);
+      expect(deps.mocks.openEvidenceFile).not.toHaveBeenCalled();
     });
   });
 
@@ -230,9 +238,10 @@ describe("useEntryNavigation", () => {
       expect(addedFile.filename).toBe("📦 child.zip (from parentonly)");
     });
 
-    it("selects and views the nested file", () => {
+    it("selects and views the nested file", async () => {
       const nav = testWithRoot(() => useEntryNavigation(deps));
       nav.handleOpenNestedContainer("/tmp/nested.ad1", "inner.ad1", "ad1", "/evidence/outer.e01");
+      await Promise.resolve();
 
       expect(deps.mocks.selectAndViewFile).toHaveBeenCalledTimes(1);
       expect(deps.mocks.openEvidenceFile).toHaveBeenCalledTimes(1);

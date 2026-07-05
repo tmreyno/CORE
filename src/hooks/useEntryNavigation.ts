@@ -51,7 +51,7 @@ export interface EntryNavigation {
   /** Handle selecting a container entry — opens in center pane tab */
   handleSelectEntry: (entry: SelectedEntry) => void;
   /** Handle selecting an evidence file — opens in center pane tab */
-  handleSelectEvidenceFile: (file: DiscoveredFile) => void;
+  handleSelectEvidenceFile: (file: DiscoveredFile) => Promise<void>;
   /** Handle opening a nested container extracted from a parent */
   handleOpenNestedContainer: (tempPath: string, originalName: string, containerType: string, parentPath: string) => void;
   /** Handle selecting a processed database */
@@ -100,9 +100,11 @@ export function useEntryNavigation(deps: UseEntryNavigationDeps): EntryNavigatio
   };
 
   /** Handle selecting an evidence file - opens in center pane tab */
-  const handleSelectEvidenceFile = (file: DiscoveredFile) => {
-    fileManager.selectAndViewFile(file);
-    centerPaneTabs.openEvidenceFile(file);
+  const handleSelectEvidenceFile = async (file: DiscoveredFile) => {
+    const selected = await fileManager.selectAndViewFile(file);
+    if (selected !== false) {
+      centerPaneTabs.openEvidenceFile(file);
+    }
   };
 
   /** Handle opening a nested container */

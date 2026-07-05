@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, expect, it, vi } from "vitest";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { mockInvoke } from "../../__tests__/setup";
 import { useFileManager } from "../useFileManager";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
@@ -62,6 +63,31 @@ describe("useFileManager", () => {
     const result = await fileManager.loadFileInfo(file, false);
 
     expect(result).toBe(basicAd1Info);
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("returns true after selecting a normal evidence file", async () => {
+    const fileManager = useFileManager();
+    mockInvoke.mockResolvedValueOnce(basicAd1Info);
+
+    const selected = await fileManager.selectAndViewFile(file);
+
+    expect(selected).toBe(true);
+    expect(fileManager.activeFile()).toBe(file);
+  });
+
+  it("returns false and leaves active file unchanged when large-container selection is cancelled", async () => {
+    const fileManager = useFileManager();
+    vi.mocked(ask).mockResolvedValueOnce(false);
+    const largeFile: DiscoveredFile = {
+      ...file,
+      size: 51 * 1024 * 1024 * 1024,
+    };
+
+    const selected = await fileManager.selectAndViewFile(largeFile);
+
+    expect(selected).toBe(false);
+    expect(fileManager.activeFile()).toBeNull();
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 });

@@ -74,6 +74,22 @@ type EvidenceOpenDeps = {
   onOpenEvidenceFile?: (file: DiscoveredFile) => void;
 };
 
+function openEvidenceAfterSelection(
+  selectAndViewFile: (file: DiscoveredFile) => Promise<boolean | void>,
+  file: DiscoveredFile,
+  onOpenEvidenceFile?: (file: DiscoveredFile) => void,
+) {
+  void selectAndViewFile(file)
+    .then(selected => {
+      if (selected !== false) {
+        onOpenEvidenceFile?.(file);
+      }
+    })
+    .catch(err => {
+      log.warn(`Failed to select ${file.filename || file.path}:`, err);
+    });
+}
+
 export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 'projectManager'> & EvidenceOpenDeps) {
   const { fileManager, projectManager, onOpenEvidenceFile } = deps;
   
@@ -194,16 +210,14 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
       // Result is inside a container - find container and select entry
       const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
       if (containerFile) {
-        void fileManager.selectAndViewFile(containerFile);
-        onOpenEvidenceFile?.(containerFile);
+        openEvidenceAfterSelection(fileManager.selectAndViewFile, containerFile, onOpenEvidenceFile);
         announce(`Found ${result.name} in ${getBasename(containerFile.path)}`);
       }
     } else {
       // Result is a top-level file
       const file = fileManager.discoveredFiles().find(f => f.path === result.path);
       if (file) {
-        void fileManager.selectAndViewFile(file);
-        onOpenEvidenceFile?.(file);
+        openEvidenceAfterSelection(fileManager.selectAndViewFile, file, onOpenEvidenceFile);
         announce(`Selected ${result.name}`);
       }
     }
@@ -228,8 +242,7 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
     
     return [
       { id: "open", label: "Open", icon: "📂", onSelect: () => {
-        void fileManager.selectAndViewFile(f);
-        onOpenEvidenceFile?.(f);
+        openEvidenceAfterSelection(fileManager.selectAndViewFile, f, onOpenEvidenceFile);
       } },
       { id: "sep1", label: "", separator: true },
       { id: "hash", label: "Compute Hash", icon: "🔐", shortcut: "cmd+h", onSelect: () => hashManager.hashSingleFile(f) },

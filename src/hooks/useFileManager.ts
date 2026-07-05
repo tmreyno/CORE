@@ -592,7 +592,7 @@ export function useFileManager() {
   // because it can take 15-20 seconds for large AD1 files.
   // The EvidenceTree component uses V2 lazy loading APIs which are ~17,000x faster
   // (1ms for root children vs 17s for full tree parsing).
-  const selectAndViewFile = async (file: DiscoveredFile): Promise<void> => {
+  const selectAndViewFile = async (file: DiscoveredFile): Promise<boolean> => {
     // Check for large container warning preference
     if (getPreference("warnOnLargeContainers")) {
       const thresholdGb = getPreference("largeContainerThresholdGb");
@@ -607,8 +607,11 @@ export function useFileManager() {
           const confirmed = await ask(
             `This container (${formatBytes(file.size)}) exceeds ${thresholdGb}GB.\n\nLarge containers may take longer to process and use more memory. Continue?`,
             { title: "Large Container", kind: "warning" },
-          );
-          if (!confirmed) return;
+          ).catch(err => {
+            log.warn(`Large-container confirmation failed for ${file.filename}:`, normalizeError(err));
+            return false;
+          });
+          if (!confirmed) return false;
         }
       }
     }
@@ -627,16 +630,15 @@ export function useFileManager() {
     
     // Load basic container info (without tree) if not already cached
     if (!existingInfo && isTauri) {
-      try {
-        await loadFileInfo(file, false);  // Fast: ~3ms for AD1, ~5s for E01
-      } catch (err) {
+      void loadFileInfo(file, false).catch(err => {
         // Log but don't propagate - file may have missing segments
         log.warn(`Failed to load info for ${file.filename}:`, normalizeError(err));
-      }
+      });
     } else if (!existingInfo) {
       updateFileStatus(file.path, "metadata-unavailable", 0, BROWSER_METADATA_MESSAGE);
     }
     // Tree is populated by EvidenceTree via V2 lazy loading APIs
+    return true;
   };
 
   // ===== PROJECT RESTORE FUNCTIONS =====
