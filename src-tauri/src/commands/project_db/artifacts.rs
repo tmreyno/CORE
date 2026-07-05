@@ -515,6 +515,7 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "bios_version"
                 | "bios_vendor"
                 | "bios_date"
+                | "bios_release"
                 | "chassis_asset_tag"
                 | "chassis_vendor"
                 | "chassis_type"
@@ -1806,6 +1807,7 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         }
         "product_uuid" => {
             insert_trimmed_metadata(&mut metadata, "system.hardwareUuid", &text);
+            insert_trimmed_metadata(&mut metadata, "system.uuid", &text);
         }
         "product_serial" => {
             insert_trimmed_metadata(&mut metadata, "system.serialNumber", &text);
@@ -1821,6 +1823,7 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         }
         "product_sku" => {
             insert_trimmed_metadata(&mut metadata, "system.sku", &text);
+            insert_trimmed_metadata(&mut metadata, "system.productSku", &text);
         }
         "sys_vendor" => {
             insert_trimmed_metadata(&mut metadata, "system.manufacturer", &text);
@@ -1830,6 +1833,7 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         }
         "board_serial" => {
             insert_trimmed_metadata(&mut metadata, "system.boardSerial", &text);
+            insert_trimmed_metadata(&mut metadata, "system.boardSerialNumber", &text);
         }
         "board_name" => {
             insert_trimmed_metadata(&mut metadata, "system.boardName", &text);
@@ -1848,6 +1852,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         }
         "bios_date" => {
             insert_trimmed_metadata(&mut metadata, "system.biosDate", &text);
+        }
+        "bios_release" => {
+            insert_trimmed_metadata(&mut metadata, "system.biosRelease", &text);
         }
         "chassis_asset_tag" => {
             insert_trimmed_metadata(&mut metadata, "system.chassisAssetTag", &text);
@@ -7114,6 +7121,10 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             "/image/sys/class/dmi/id/product_serial",
             b"ABC123\n",
         );
+        let uuid = system_identity_metadata_from_bytes(
+            "/image/sys/devices/virtual/dmi/id/product_uuid",
+            b"00112233-4455-6677-8899-aabbccddeeff\n",
+        );
         let vendor = system_identity_metadata_from_bytes(
             "/image/sys/class/dmi/id/sys_vendor",
             b"Dell Inc.\n",
@@ -7134,6 +7145,10 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             "/image/sys/class/dmi/id/board_vendor",
             b"Dell Inc.\n",
         );
+        let board_serial = system_identity_metadata_from_bytes(
+            "/image/sys/class/dmi/id/board_serial",
+            b"BOARD123\n",
+        );
         let chassis_asset_tag = system_identity_metadata_from_bytes(
             "/image/sys/class/dmi/id/chassis_asset_tag",
             b"CHASSIS-ASSET\n",
@@ -7146,10 +7161,20 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             "/image/sys/class/dmi/id/bios_date",
             b"05/01/2026\n",
         );
+        let bios_release =
+            system_identity_metadata_from_bytes("/image/sys/class/dmi/id/bios_release", b"1.32\n");
 
         assert_eq!(
             serial.get("system.serialNumber").map(String::as_str),
             Some("ABC123")
+        );
+        assert_eq!(
+            uuid.get("system.hardwareUuid").map(String::as_str),
+            Some("00112233-4455-6677-8899-aabbccddeeff")
+        );
+        assert_eq!(
+            uuid.get("system.uuid").map(String::as_str),
+            Some("00112233-4455-6677-8899-aabbccddeeff")
         );
         assert_eq!(
             vendor.get("system.manufacturer").map(String::as_str),
@@ -7170,6 +7195,10 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
             Some("SKU-42")
         );
         assert_eq!(
+            product_sku.get("system.productSku").map(String::as_str),
+            Some("SKU-42")
+        );
+        assert_eq!(
             board_asset_tag
                 .get("system.boardAssetTag")
                 .map(String::as_str),
@@ -7178,6 +7207,16 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
         assert_eq!(
             board_vendor.get("system.boardVendor").map(String::as_str),
             Some("Dell Inc.")
+        );
+        assert_eq!(
+            board_serial.get("system.boardSerial").map(String::as_str),
+            Some("BOARD123")
+        );
+        assert_eq!(
+            board_serial
+                .get("system.boardSerialNumber")
+                .map(String::as_str),
+            Some("BOARD123")
         );
         assert_eq!(
             chassis_asset_tag
@@ -7194,6 +7233,10 @@ PRETTY_NAME="Ubuntu 24.04.2 LTS"
         assert_eq!(
             bios_date.get("system.biosDate").map(String::as_str),
             Some("05/01/2026")
+        );
+        assert_eq!(
+            bios_release.get("system.biosRelease").map(String::as_str),
+            Some("1.32")
         );
     }
 
@@ -9141,6 +9184,7 @@ COMMIT
             "/sys/class/dmi/id/chassis_serial"
         ));
         assert!(is_system_identity_source("/sys/class/dmi/id/bios_date"));
+        assert!(is_system_identity_source("/sys/class/dmi/id/bios_release"));
         assert!(is_system_identity_source(
             "/System/Library/CoreServices/SystemVersion.plist"
         ));
