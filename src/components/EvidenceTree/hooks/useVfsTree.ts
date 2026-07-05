@@ -16,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { VfsMountInfo, VfsEntry } from "../../../types";
 import { logger } from "../../../utils/logger";
 import { isTauri } from "../../../utils/platform";
+import { collectSystemIdentityEntries } from "../../systemIdentitySources";
 
 const log = logger.scope("VfsTree");
 
@@ -141,6 +142,14 @@ export function useVfsTree(): UseVfsTreeReturn {
           const next = new Map(prev);
           next.set(cacheKey, children);
           return next;
+        });
+
+        void collectSystemIdentityEntries(
+          containerPath,
+          children,
+          inferVfsContainerType(containerPath),
+        ).catch((err) => {
+          log.warn(`System identity collection failed for ${vfsPath}:`, err);
         });
 
         return children;
@@ -288,4 +297,11 @@ export function useVfsTree(): UseVfsTreeReturn {
     collapseAllVfsDirs,
     restoreExpandedPaths,
   };
+}
+
+function inferVfsContainerType(containerPath: string): string {
+  const extension = containerPath.split(".").pop()?.toLowerCase() ?? "";
+  if (["e01", "ex01", "l01", "lx01"].includes(extension)) return extension;
+  if (["raw", "dd", "img"].includes(extension) || /^\d{3}$/.test(extension)) return "raw";
+  return extension || "e01";
 }

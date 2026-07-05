@@ -5,12 +5,57 @@
 // =============================================================================
 
 import type { HashSourceInput } from "../api/commands";
+import { commands } from "../api/commands";
+import type { TreeEntry, VfsEntry } from "../types";
 import type { SelectedEntry } from "./EvidenceTree/types";
 import { buildEvidenceSourceInput } from "./evidenceSourceInput";
 
 export function buildSystemIdentitySourceInput(entry: SelectedEntry): HashSourceInput | null {
   if (!isLikelySystemIdentityEntry(entry)) return null;
   return buildEvidenceSourceInput(null, entry);
+}
+
+export async function collectSystemIdentityEntries(
+  containerPath: string,
+  entries: Array<TreeEntry | VfsEntry>,
+  containerType: string,
+  extractor = "evidence-tree-system-identity",
+): Promise<void> {
+  const sources = entries
+    .filter((entry) => !isDirectoryEntry(entry))
+    .map((entry) => buildTreeSystemIdentitySourceInput(containerPath, entry, containerType))
+    .filter((source): source is HashSourceInput => source !== null);
+
+  if (sources.length === 0) return;
+  if (!(await commands.projectDb.isOpen().catch(() => false))) return;
+
+  await commands.artifact.collectSystemIdentitySources({
+    sources,
+    extractor,
+  });
+}
+
+export function buildTreeSystemIdentitySourceInput(
+  containerPath: string,
+  entry: TreeEntry | VfsEntry,
+  containerType: string,
+): HashSourceInput | null {
+  if (isDirectoryEntry(entry)) return null;
+
+  const normalizedEntry = {
+    name: entry.name,
+    entryPath: entry.path,
+  };
+  if (!isLikelySystemIdentityEntry(normalizedEntry)) return null;
+
+  return {
+    containerPath,
+    entryPath: normalizedEntry.entryPath,
+    containerType,
+    size: entry.size,
+    dataAddr: "data_addr" in entry ? entry.data_addr : undefined,
+    itemAddr: "item_addr" in entry ? entry.item_addr : undefined,
+  };
 }
 
 export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPath" | "name">): boolean {
@@ -135,3 +180,7 @@ const SYSTEM_IDENTITY_FILE_NAMES = new Set([
   "lshw.txt",
   "lshw-short.txt",
 ]);
+
+function isDirectoryEntry(entry: TreeEntry | VfsEntry): boolean {
+  return "is_dir" in entry ? entry.is_dir : entry.isDir;
+}

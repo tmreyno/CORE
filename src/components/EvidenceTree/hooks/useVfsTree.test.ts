@@ -28,6 +28,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 const mountInfo: VfsMountInfo = {
   containerPath: "/case/disk.E01",
   containerType: "e01",
@@ -94,6 +99,45 @@ describe("useVfsTree", () => {
     expect(mockInvoke).toHaveBeenCalledTimes(1);
     expect(firstEntries).toEqual(secondEntries);
     expect(hook.vfsChildrenCache().get("/case/disk.E01::vfs::/Partition1_NTFS")).toHaveLength(1);
+    dispose();
+  });
+
+  it("collects system identity entries from VFS directory listings", async () => {
+    const systemHive: VfsEntry = {
+      name: "SYSTEM",
+      path: "/Partition1_NTFS/Windows/System32/config/SYSTEM",
+      isDir: false,
+      size: 8192,
+      fileType: "file",
+    };
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "vfs_list_dir") return [systemHive];
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_system_identity_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const { hook, dispose } = withHook(useVfsTree);
+
+    await hook.loadVfsChildren("/case/disk.E01", "/Partition1_NTFS/Windows/System32/config");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_system_identity_sources", {
+      request: {
+        sources: [
+          {
+            containerPath: "/case/disk.E01",
+            entryPath: "/Partition1_NTFS/Windows/System32/config/SYSTEM",
+            containerType: "e01",
+            size: 8192,
+            dataAddr: undefined,
+            itemAddr: undefined,
+          },
+        ],
+        extractor: "evidence-tree-system-identity",
+      },
+    });
     dispose();
   });
 });

@@ -16,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { TreeEntry, Ad1ContainerSummary } from "../../../types";
 import { logger } from "../../../utils/logger";
 import { isTauri } from "../../../utils/platform";
+import { collectSystemIdentityEntries } from "../../systemIdentitySources";
 
 const log = logger.scope("Ad1Tree");
 
@@ -236,6 +237,10 @@ export function useAd1Tree(): UseAd1TreeReturn {
         next.set(cacheKey, children);
         return next;
       });
+
+      void collectSystemIdentityEntries(containerPath, children, "ad1").catch((err) => {
+        log.warn("System identity collection failed for AD1 root children:", err);
+      });
       
       log.debug(`loadRootChildren - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
       return children;
@@ -293,6 +298,10 @@ export function useAd1Tree(): UseAd1TreeReturn {
         const next = new Map(prev);
         next.set(cacheKey, children);
         return next;
+      });
+
+      void collectSystemIdentityEntries(containerPath, children, "ad1").catch((err) => {
+        log.warn("System identity collection failed for AD1 child entries:", err);
       });
       
       return children;

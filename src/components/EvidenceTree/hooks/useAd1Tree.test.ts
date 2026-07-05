@@ -28,6 +28,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 function entry(name: string, overrides: Partial<TreeEntry> = {}): TreeEntry {
   return {
     path: name,
@@ -81,6 +86,44 @@ describe("useAd1Tree", () => {
     expect(mockInvoke).toHaveBeenCalledTimes(1);
     expect(firstEntries).toEqual(secondEntries);
     expect(hook.childrenCache().get("/case/source.AD1::addr:42")).toHaveLength(1);
+    dispose();
+  });
+
+  it("collects system identity entries from AD1 child loads", async () => {
+    const systemHive = entry("SYSTEM", {
+      path: "/Windows/System32/config/SYSTEM",
+      size: 8192,
+      data_addr: 123,
+      item_addr: 456,
+    });
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "container_get_children_at_addr_v2") return [systemHive];
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_system_identity_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const { hook, dispose } = withHook(useAd1Tree);
+
+    await hook.loadChildrenByAddr("/case/source.AD1", 42, "/Windows/System32/config");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_system_identity_sources", {
+      request: {
+        sources: [
+          {
+            containerPath: "/case/source.AD1",
+            entryPath: "/Windows/System32/config/SYSTEM",
+            containerType: "ad1",
+            size: 8192,
+            dataAddr: 123,
+            itemAddr: 456,
+          },
+        ],
+        extractor: "evidence-tree-system-identity",
+      },
+    });
     dispose();
   });
 

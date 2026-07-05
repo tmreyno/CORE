@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { mockInvoke } from "../../__tests__/setup";
+import type { TreeEntry, VfsEntry } from "../../types";
 import type { SelectedEntry } from "../EvidenceTree/types";
 import {
+  buildTreeSystemIdentitySourceInput,
   buildSystemIdentitySourceInput,
+  collectSystemIdentityEntries,
   isLikelySystemIdentityEntry,
 } from "../systemIdentitySources";
 
@@ -17,7 +21,33 @@ function entry(overrides: Partial<SelectedEntry>): SelectedEntry {
   };
 }
 
+function treeEntry(overrides: Partial<TreeEntry>): TreeEntry {
+  return {
+    name: "file",
+    path: "/file",
+    is_dir: false,
+    size: 128,
+    item_type: 0,
+    ...overrides,
+  };
+}
+
+function vfsEntry(overrides: Partial<VfsEntry>): VfsEntry {
+  return {
+    name: "file",
+    path: "/file",
+    isDir: false,
+    size: 128,
+    fileType: "file",
+    ...overrides,
+  };
+}
+
 describe("system identity source helpers", () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
   it("classifies Windows registry hives", () => {
     expect(
       isLikelySystemIdentityEntry(
@@ -119,5 +149,146 @@ describe("system identity source helpers", () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it("builds AD1 tree source input with item and data addresses", () => {
+    expect(
+      buildTreeSystemIdentitySourceInput(
+        "/case/source.AD1",
+        treeEntry({
+          name: "SYSTEM",
+          path: "/Windows/System32/config/SYSTEM",
+          size: 8192,
+          data_addr: 123,
+          item_addr: 456,
+        }),
+        "ad1",
+      ),
+    ).toEqual({
+      containerPath: "/case/source.AD1",
+      entryPath: "/Windows/System32/config/SYSTEM",
+      containerType: "ad1",
+      size: 8192,
+      dataAddr: 123,
+      itemAddr: 456,
+    });
+  });
+
+  it("builds VFS tree source input for mounted image entries", () => {
+    expect(
+      buildTreeSystemIdentitySourceInput(
+        "/case/disk.E01",
+        vfsEntry({
+          name: "SystemVersion.plist",
+          path: "/Partition1_APFS/System/Library/CoreServices/SystemVersion.plist",
+          size: 2048,
+        }),
+        "e01",
+      ),
+    ).toEqual({
+      containerPath: "/case/disk.E01",
+      entryPath: "/Partition1_APFS/System/Library/CoreServices/SystemVersion.plist",
+      containerType: "e01",
+      size: 2048,
+      dataAddr: undefined,
+      itemAddr: undefined,
+    });
+  });
+
+  it("does not build tree source input for directories or unrelated files", () => {
+    expect(
+      buildTreeSystemIdentitySourceInput(
+        "/case/source.AD1",
+        treeEntry({
+          name: "SYSTEM",
+          path: "/Windows/System32/config/SYSTEM",
+          is_dir: true,
+        }),
+        "ad1",
+      ),
+    ).toBeNull();
+    expect(
+      buildTreeSystemIdentitySourceInput(
+        "/case/source.AD1",
+        treeEntry({
+          name: "vacation.jpg",
+          path: "/Users/test/Pictures/vacation.jpg",
+        }),
+        "ad1",
+      ),
+    ).toBeNull();
+  });
+
+  it("collects matching identity entries when a project database is open", async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_system_identity_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await collectSystemIdentityEntries(
+      "/case/disk.E01",
+      [
+        vfsEntry({
+          name: "product_serial",
+          path: "/Partition1_EXT4/sys/class/dmi/id/product_serial",
+          size: 32,
+        }),
+      ],
+      "e01",
+      "test-extractor",
+    );
+
+    expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_system_identity_sources", {
+      request: {
+        sources: [
+          {
+            containerPath: "/case/disk.E01",
+            entryPath: "/Partition1_EXT4/sys/class/dmi/id/product_serial",
+            containerType: "e01",
+            size: 32,
+            dataAddr: undefined,
+            itemAddr: undefined,
+          },
+        ],
+        extractor: "test-extractor",
+      },
+    });
+  });
+
+  it("does not collect when no matching entries exist", async () => {
+    await collectSystemIdentityEntries(
+      "/case/disk.E01",
+      [vfsEntry({ name: "notes.txt", path: "/Users/test/Documents/notes.txt" })],
+      "e01",
+    );
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("does not collect when the project database is closed", async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "project_db_is_open") return false;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await collectSystemIdentityEntries(
+      "/case/disk.E01",
+      [
+        vfsEntry({
+          name: "product_name",
+          path: "/Partition1_EXT4/sys/class/dmi/id/product_name",
+        }),
+      ],
+      "e01",
+    );
+
+    expect(mockInvoke).toHaveBeenCalledWith("project_db_is_open");
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "project_db_collect_system_identity_sources",
+      expect.anything(),
+    );
   });
 });
