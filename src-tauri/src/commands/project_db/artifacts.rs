@@ -481,6 +481,8 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "machine-id"
                 | "machine-info"
                 | "hostname"
+                | "cpuinfo"
+                | "meminfo"
                 | "timezone"
                 | "localtime"
                 | "locale"
@@ -1714,6 +1716,12 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         "hostname" => {
             insert_trimmed_metadata(&mut metadata, "system.hostname", &text);
         }
+        "cpuinfo" => {
+            metadata.extend(parse_linux_cpuinfo_metadata(&text));
+        }
+        "meminfo" => {
+            metadata.extend(parse_linux_meminfo_metadata(&text));
+        }
         "timezone" => {
             insert_trimmed_metadata(&mut metadata, "system.timeZone", &text);
         }
@@ -1887,6 +1895,131 @@ fn parse_linux_machine_info_metadata(text: &str) -> BTreeMap<String, String> {
         metadata.insert("system.location".to_string(), value.clone());
     }
 
+    metadata
+}
+
+#[derive(Default)]
+struct LinuxCpuInfoMetadata {
+    processor_count: usize,
+    core_counts: Vec<String>,
+    model_names: Vec<String>,
+    vendors: Vec<String>,
+    architectures: Vec<String>,
+    hardware: Vec<String>,
+    features: Vec<String>,
+}
+
+fn parse_linux_cpuinfo_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut values = LinuxCpuInfoMetadata::default();
+
+    for raw_line in text.lines() {
+        let Some((key, value)) = raw_line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = truncate_metadata_value(value.trim(), 180);
+        if value.is_empty() {
+            continue;
+        }
+
+        match key {
+            "processor" => {
+                values.processor_count = values.processor_count.saturating_add(1);
+            }
+            "model name" | "Processor" => {
+                push_unique_limited(&mut values.model_names, value);
+            }
+            "vendor_id" | "CPU implementer" => {
+                push_unique_limited(&mut values.vendors, value);
+            }
+            "cpu cores" => {
+                push_unique_limited(&mut values.core_counts, value);
+            }
+            "Architecture" | "CPU architecture" => {
+                push_unique_limited(&mut values.architectures, value);
+            }
+            "Hardware" => {
+                push_unique_limited(&mut values.hardware, value);
+            }
+            "flags" | "Features" => {
+                collect_limited_cpu_features(&value, &mut values.features);
+            }
+            _ => {}
+        }
+    }
+
+    linux_cpuinfo_metadata_to_map(values)
+}
+
+fn collect_limited_cpu_features(value: &str, features: &mut Vec<String>) {
+    for feature in value.split_whitespace() {
+        if features.len() >= MAX_SYSTEM_IDENTITY_LIST_ITEMS {
+            break;
+        }
+        let feature = feature.trim();
+        if !feature.is_empty() {
+            push_unique_limited(features, truncate_metadata_value(feature, 40));
+        }
+    }
+}
+
+fn linux_cpuinfo_metadata_to_map(values: LinuxCpuInfoMetadata) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if values.processor_count > 0 {
+        metadata.insert(
+            "system.cpuLogicalProcessorCount".to_string(),
+            values.processor_count.to_string(),
+        );
+    }
+    insert_joined_metadata(&mut metadata, "system.cpuModels", &values.model_names);
+    insert_joined_metadata(&mut metadata, "system.cpuVendors", &values.vendors);
+    insert_joined_metadata(&mut metadata, "system.cpuCoreCounts", &values.core_counts);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.cpuArchitectures",
+        &values.architectures,
+    );
+    insert_joined_metadata(&mut metadata, "system.cpuHardware", &values.hardware);
+    insert_joined_metadata(&mut metadata, "system.cpuFeatures", &values.features);
+    if !metadata.is_empty() {
+        metadata.insert(
+            "system.hardwareInventorySource".to_string(),
+            "linux-cpuinfo".to_string(),
+        );
+    }
+    metadata
+}
+
+fn parse_linux_meminfo_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    for raw_line in text.lines() {
+        let Some((key, value)) = raw_line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        if key != "MemTotal" {
+            continue;
+        }
+        if let Some(kib) = value
+            .split_whitespace()
+            .next()
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            metadata.insert("system.memoryTotalKiB".to_string(), kib.to_string());
+            metadata.insert(
+                "system.memoryTotalBytes".to_string(),
+                kib.saturating_mul(1024).to_string(),
+            );
+        }
+        break;
+    }
+    if !metadata.is_empty() {
+        metadata.insert(
+            "system.hardwareInventorySource".to_string(),
+            "linux-meminfo".to_string(),
+        );
+    }
     metadata
 }
 
@@ -6938,6 +7071,78 @@ LOCATION="Forensic Bench 2"
     }
 
     #[test]
+    fn system_identity_metadata_extracts_linux_cpuinfo() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/proc/cpuinfo",
+            br#"processor   : 0
+vendor_id   : GenuineIntel
+cpu cores   : 4
+model name  : Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz
+flags       : fpu vme de pse tsc msr pae mce cx8 apic sep
+
+processor   : 1
+vendor_id   : GenuineIntel
+cpu cores   : 4
+model name  : Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz
+flags       : fpu vme de pse tsc msr pae mce cx8 apic sep
+"#,
+        );
+
+        assert_eq!(
+            metadata
+                .get("system.hardwareInventorySource")
+                .map(String::as_str),
+            Some("linux-cpuinfo")
+        );
+        assert_eq!(
+            metadata
+                .get("system.cpuLogicalProcessorCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.cpuModels").map(String::as_str),
+            Some("Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz")
+        );
+        assert_eq!(
+            metadata.get("system.cpuVendors").map(String::as_str),
+            Some("GenuineIntel")
+        );
+        assert_eq!(
+            metadata.get("system.cpuCoreCounts").map(String::as_str),
+            Some("4")
+        );
+        assert!(metadata
+            .get("system.cpuFeatures")
+            .is_some_and(|value| value.contains("tsc")));
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_linux_meminfo() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/proc/meminfo",
+            br#"MemTotal:       16384256 kB
+MemFree:         1234567 kB
+"#,
+        );
+
+        assert_eq!(
+            metadata
+                .get("system.hardwareInventorySource")
+                .map(String::as_str),
+            Some("linux-meminfo")
+        );
+        assert_eq!(
+            metadata.get("system.memoryTotalKiB").map(String::as_str),
+            Some("16384256")
+        );
+        assert_eq!(
+            metadata.get("system.memoryTotalBytes").map(String::as_str),
+            Some("16777478144")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_dmidecode_hardware_inventory() {
         let metadata = system_identity_metadata_from_bytes(
             "/case/reports/dmidecode.txt",
@@ -8608,6 +8813,8 @@ COMMIT
         assert!(is_system_identity_source("/etc/machine-id"));
         assert!(is_system_identity_source("/var/lib/dbus/machine-id"));
         assert!(is_system_identity_source("/etc/machine-info"));
+        assert!(is_system_identity_source("/proc/cpuinfo"));
+        assert!(is_system_identity_source("/proc/meminfo"));
         assert!(is_system_identity_source("/etc/default/locale"));
         assert!(is_system_identity_source("/etc/timezone"));
         assert!(is_system_identity_source("/etc/localtime"));
