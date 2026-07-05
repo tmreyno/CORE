@@ -374,6 +374,7 @@ fn is_system_identity_source(source_id: &str) -> bool {
             "/library/preferences/systemconfiguration/com.apple.airport.preferences.plist",
         )
         || source_id.ends_with("/library/preferences/com.apple.wifi.known-networks.plist")
+        || source_id.ends_with("/library/preferences/com.apple.alf.plist")
         || source_id.ends_with("/library/preferences/.globalpreferences.plist")
         || source_id.ends_with("/library/receipts/installhistory.plist")
         || source_id.ends_with("/windows/system32/config/system")
@@ -385,6 +386,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
     }
 
     if is_linux_network_identity_source(&source_id) {
+        return true;
+    }
+
+    if is_firewall_identity_source(&source_id) {
         return true;
     }
 
@@ -422,6 +427,14 @@ fn is_linux_network_identity_source(source_id: &str) -> bool {
         || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
         || (source_id.contains("/etc/netplan/")
             && (source_id.ends_with(".yaml") || source_id.ends_with(".yml")))
+}
+
+fn is_firewall_identity_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/library/preferences/com.apple.alf.plist")
+        || source_id.ends_with("/etc/sysconfig/iptables")
+        || source_id.contains("/etc/iptables/")
+        || source_id.ends_with("/windows/system32/logfiles/firewall/pfirewall.log")
 }
 
 fn system_identity_metadata_from_source(
@@ -689,6 +702,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     if is_linux_network_identity_source(&lower) {
         metadata.extend(parse_linux_network_config_metadata(&lower, &text));
     }
+    if is_firewall_identity_source(&lower) {
+        metadata.extend(parse_firewall_metadata(&lower, data, &text));
+    }
 
     match file_name {
         "os-release" | "lsb-release" => {
@@ -744,6 +760,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
         }
         "com.apple.airport.preferences.plist" | "com.apple.wifi.known-networks.plist" => {
             metadata.extend(parse_macos_wifi_metadata(data));
+        }
+        "com.apple.alf.plist" => {
+            metadata.extend(parse_macos_firewall_metadata(data));
         }
         ".globalpreferences.plist" => {
             metadata.extend(parse_macos_global_preferences_metadata(data));
@@ -1300,6 +1319,117 @@ fn insert_joined_metadata(metadata: &mut BTreeMap<String, String>, key: &str, va
     );
 }
 
+fn parse_firewall_metadata(source_id: &str, _data: &[u8], text: &str) -> BTreeMap<String, String> {
+    if source_id.ends_with("/etc/sysconfig/iptables") || source_id.contains("/etc/iptables/") {
+        return parse_iptables_metadata(text);
+    }
+    if source_id.ends_with("/windows/system32/logfiles/firewall/pfirewall.log") {
+        return parse_windows_firewall_log_metadata(text);
+    }
+    BTreeMap::new()
+}
+
+fn parse_iptables_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let mut tables = Vec::new();
+    let mut chains = Vec::new();
+    let mut policies = Vec::new();
+    let mut rule_count = 0usize;
+
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(table) = line.strip_prefix('*') {
+            push_unique_limited(&mut tables, table.to_string());
+            continue;
+        }
+        if let Some(chain) = line.strip_prefix(':') {
+            let mut parts = chain.split_whitespace();
+            let Some(name) = parts.next() else {
+                continue;
+            };
+            push_unique_limited(&mut chains, name.to_string());
+            if let Some(policy) = parts.next().filter(|policy| *policy != "-") {
+                push_unique_limited(&mut policies, format!("{name}:{policy}"));
+            }
+            continue;
+        }
+        if line.starts_with("-A ") || line.starts_with("-I ") {
+            rule_count = rule_count.saturating_add(1);
+        }
+    }
+
+    metadata.insert(
+        "system.firewallConfigType".to_string(),
+        "iptables".to_string(),
+    );
+    if rule_count > 0 {
+        metadata.insert(
+            "system.firewallRuleCount".to_string(),
+            rule_count.to_string(),
+        );
+    }
+    insert_joined_metadata(&mut metadata, "system.firewallTables", &tables);
+    insert_joined_metadata(&mut metadata, "system.firewallChains", &chains);
+    insert_joined_metadata(&mut metadata, "system.firewallPolicies", &policies);
+    metadata
+}
+
+fn parse_windows_firewall_log_metadata(text: &str) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let mut entries = 0usize;
+    let mut allowed = 0usize;
+    let mut dropped = 0usize;
+    let mut protocols = Vec::new();
+
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 5 {
+            continue;
+        }
+        entries = entries.saturating_add(1);
+        match fields.get(2).copied().unwrap_or_default() {
+            "ALLOW" => allowed = allowed.saturating_add(1),
+            "DROP" => dropped = dropped.saturating_add(1),
+            _ => {}
+        }
+        if let Some(protocol) = fields.get(3) {
+            push_unique_limited(&mut protocols, (*protocol).to_string());
+        }
+    }
+
+    metadata.insert(
+        "system.firewallConfigType".to_string(),
+        "windows-firewall-log".to_string(),
+    );
+    if entries > 0 {
+        metadata.insert(
+            "system.firewallLogEntryCount".to_string(),
+            entries.to_string(),
+        );
+    }
+    if allowed > 0 {
+        metadata.insert(
+            "system.firewallAllowedCount".to_string(),
+            allowed.to_string(),
+        );
+    }
+    if dropped > 0 {
+        metadata.insert(
+            "system.firewallDroppedCount".to_string(),
+            dropped.to_string(),
+        );
+    }
+    insert_joined_metadata(&mut metadata, "system.firewallProtocols", &protocols);
+    metadata
+}
+
 fn parse_key_value_lines(text: &str) -> BTreeMap<String, String> {
     text.lines()
         .filter_map(|line| {
@@ -1544,6 +1674,88 @@ fn plist_data_utf8_string(value: &plist::Value) -> Option<String> {
     };
     let value = std::str::from_utf8(data).ok()?.trim();
     (!value.is_empty()).then(|| value.to_string())
+}
+
+fn parse_macos_firewall_metadata(data: &[u8]) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    let Ok(value) = plist::from_bytes::<plist::Value>(data) else {
+        return metadata;
+    };
+    let plist::Value::Dictionary(dict) = value else {
+        return metadata;
+    };
+
+    metadata.insert(
+        "system.firewallConfigType".to_string(),
+        "macos-alf".to_string(),
+    );
+    insert_plist_integer_metadata(
+        &mut metadata,
+        &dict,
+        "globalstate",
+        "system.firewallGlobalState",
+    );
+    insert_plist_bool_metadata(
+        &mut metadata,
+        &dict,
+        "stealthenabled",
+        "system.firewallStealthEnabled",
+    );
+    insert_plist_bool_metadata(
+        &mut metadata,
+        &dict,
+        "allowsignedenabled",
+        "system.firewallAllowSignedEnabled",
+    );
+    insert_plist_bool_metadata(
+        &mut metadata,
+        &dict,
+        "loggingenabled",
+        "system.firewallLoggingEnabled",
+    );
+    if let Some(apps) = plist_dict_array_len(&dict, "applications") {
+        metadata.insert(
+            "system.firewallApplicationRuleCount".to_string(),
+            apps.to_string(),
+        );
+    }
+    metadata
+}
+
+fn insert_plist_bool_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    dict: &plist::Dictionary,
+    plist_key: &str,
+    metadata_key: &str,
+) {
+    if let Some(value) = plist_dict_bool(dict, plist_key) {
+        metadata.insert(metadata_key.to_string(), value.to_string());
+    }
+}
+
+fn insert_plist_integer_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    dict: &plist::Dictionary,
+    plist_key: &str,
+    metadata_key: &str,
+) {
+    if let Some(value) = plist_dict_integer(dict, plist_key) {
+        metadata.insert(metadata_key.to_string(), value.to_string());
+    }
+}
+
+fn plist_dict_integer(dict: &plist::Dictionary, key: &str) -> Option<i64> {
+    let plist::Value::Integer(value) = dict.get(key)? else {
+        return None;
+    };
+    value.as_signed()
+}
+
+fn plist_dict_array_len(dict: &plist::Dictionary, key: &str) -> Option<usize> {
+    let plist::Value::Array(values) = dict.get(key)? else {
+        return None;
+    };
+    Some(values.len())
 }
 
 fn parse_macos_global_preferences_metadata(data: &[u8]) -> BTreeMap<String, String> {
@@ -2618,6 +2830,86 @@ dns-search=corp.example.com;
     }
 
     #[test]
+    fn system_identity_metadata_extracts_iptables_rules() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/sysconfig/iptables",
+            br#"# sample rules
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -p tcp --dport 22 -j ACCEPT
+-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+COMMIT
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallConfigType")
+                .map(String::as_str),
+            Some("iptables")
+        );
+        assert_eq!(
+            metadata.get("system.firewallRuleCount").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.firewallTables").map(String::as_str),
+            Some("filter")
+        );
+        assert_eq!(
+            metadata.get("system.firewallPolicies").map(String::as_str),
+            Some("INPUT:DROP; FORWARD:DROP; OUTPUT:ACCEPT")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_windows_firewall_log_summary() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Windows/System32/LogFiles/Firewall/pfirewall.log",
+            br#"#Version: 1.5
+#Fields: date time action protocol src-ip dst-ip src-port dst-port size tcpflags tcpsyn tcpack tcpwin icmptype icmpcode info path
+2026-06-01 12:00:00 DROP TCP 10.0.0.5 10.0.0.10 51515 445 60 S 1 0 8192 - - - RECEIVE
+2026-06-01 12:00:01 ALLOW UDP 10.0.0.5 8.8.8.8 51516 53 80 - - - - - - - SEND
+"#,
+        );
+
+        assert_eq!(
+            metadata
+                .get("system.firewallConfigType")
+                .map(String::as_str),
+            Some("windows-firewall-log")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallLogEntryCount")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallDroppedCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallAllowedCount")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata.get("system.firewallProtocols").map(String::as_str),
+            Some("TCP; UDP")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_system_version_plist() {
         let metadata = system_identity_metadata_from_bytes(
             "/System/Library/CoreServices/SystemVersion.plist",
@@ -2803,6 +3095,60 @@ dns-search=corp.example.com;
     }
 
     #[test]
+    fn system_identity_metadata_extracts_macos_firewall_preferences() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/Library/Preferences/com.apple.alf.plist",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>globalstate</key><integer>1</integer>
+  <key>stealthenabled</key><true/>
+  <key>allowsignedenabled</key><false/>
+  <key>loggingenabled</key><true/>
+  <key>applications</key>
+  <array>
+    <dict><key>path</key><string>/Applications/Test.app</string></dict>
+    <dict><key>path</key><string>/Applications/Other.app</string></dict>
+  </array>
+</dict>
+</plist>
+"#,
+        );
+
+        assert_eq!(
+            metadata
+                .get("system.firewallConfigType")
+                .map(String::as_str),
+            Some("macos-alf")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallGlobalState")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallStealthEnabled")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallAllowSignedEnabled")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            metadata
+                .get("system.firewallApplicationRuleCount")
+                .map(String::as_str),
+            Some("2")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_global_preferences() {
         let metadata = system_identity_metadata_from_bytes(
             "/Library/Preferences/.GlobalPreferences.plist",
@@ -2937,6 +3283,14 @@ dns-search=corp.example.com;
         ));
         assert!(is_system_identity_source(
             "/Library/Preferences/com.apple.wifi.known-networks.plist"
+        ));
+        assert!(is_system_identity_source(
+            "/Library/Preferences/com.apple.alf.plist"
+        ));
+        assert!(is_system_identity_source("/etc/sysconfig/iptables"));
+        assert!(is_system_identity_source("/etc/iptables/rules.v4"));
+        assert!(is_system_identity_source(
+            "/Windows/System32/LogFiles/Firewall/pfirewall.log"
         ));
         assert!(is_system_identity_source(
             "/Library/Preferences/.GlobalPreferences.plist"
