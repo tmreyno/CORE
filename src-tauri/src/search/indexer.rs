@@ -646,12 +646,14 @@ fn is_index_binary_artifact(artifact: &NormalizedArtifact, entry: &CrawledEntry)
 }
 
 fn is_index_binary_extension(extension: Option<&str>) -> bool {
-    matches!(
-        extension,
-        Some(
-            "sys" | "drv" | "ko" | "exe" | "dll" | "ocx" | "efi" | "elf" | "so" | "dylib" | "kext"
-        )
-    )
+    let Some(extension) = extension else {
+        return false;
+    };
+    [
+        "sys", "drv", "ko", "exe", "dll", "ocx", "efi", "elf", "so", "dylib", "kext",
+    ]
+    .iter()
+    .any(|candidate| extension.eq_ignore_ascii_case(candidate))
 }
 
 fn index_binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, String> {
@@ -1580,6 +1582,43 @@ mod tests {
     fn add_indexed_count_saturates_on_overflow() {
         assert_eq!(add_indexed_count(40, 2), 42);
         assert_eq!(add_indexed_count(u64::MAX - 1, 8), u64::MAX);
+    }
+
+    #[test]
+    fn index_binary_classifier_matches_uppercase_driver_extensions() {
+        let artifact = NormalizedArtifact {
+            id: "driver".to_string(),
+            source_ref: EvidenceSourceRef::LocalFile {
+                path: "/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            },
+            source_id: "/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            name: "CONTOSO.SYS".to_string(),
+            extension: Some("SYS".to_string()),
+            size: 4096,
+            mime_type: None,
+            type_description: "Unknown".to_string(),
+            category: "unknown".to_string(),
+            confidence: "low".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: BTreeMap::new(),
+        };
+        let entry = CrawledEntry {
+            doc_id: "case:/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            container_path: "/cases/windows.E01".to_string(),
+            container_type: "e01".to_string(),
+            entry_path: "/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            filename: "CONTOSO.SYS".to_string(),
+            extension: "SYS".to_string(),
+            size: 4096,
+            modified: 0,
+            is_dir: false,
+            category: "unknown".to_string(),
+            text_eligible: false,
+        };
+
+        assert!(is_index_binary_artifact(&artifact, &entry));
+        assert!(is_index_binary_extension(Some("KO")));
     }
 
     fn disk_entry(path: &Path, category: &str, text_eligible: bool) -> CrawledEntry {
