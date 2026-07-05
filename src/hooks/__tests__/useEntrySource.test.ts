@@ -358,6 +358,7 @@ describe("readTextFromSource", () => {
     const result = await readTextFromSource(null, entry, 0, 256);
 
     expect(result.text).toBe("Hello");
+    expect(result.bytesRead).toBe(5);
     expect(result.totalSize).toBe(100);
   });
 
@@ -378,6 +379,7 @@ describe("readTextFromSource", () => {
       size: 4096,
     });
     expect(result.text).toBe("File contents here");
+    expect(result.bytesRead).toBe(bytes.length);
     expect(result.totalSize).toBe(500);
   });
 
@@ -395,6 +397,7 @@ describe("readTextFromSource", () => {
 
     // TextDecoder with fatal:false replaces invalid sequences
     expect(typeof result.text).toBe("string");
+    expect(result.bytesRead).toBe(4);
     expect(result.totalSize).toBe(4);
   });
 
@@ -406,9 +409,33 @@ describe("readTextFromSource", () => {
     const result = await readTextFromSource(null, entry, 0, 3);
 
     expect(result.text).toBe("abc");
+    expect(result.bytesRead).toBe(3);
     expect(mockInvoke).toHaveBeenCalledWith(
       "viewer_read_binary_source_base64_chunk",
       expect.objectContaining({ size: 12 })
     );
+  });
+
+  it("does not consume an incomplete trailing UTF-8 sequence", async () => {
+    const entry = makeEntry({ size: 8 });
+    const bytes = Array.from(new TextEncoder().encode("abc")).concat([0xE2, 0x82]);
+    mockInvoke.mockResolvedValueOnce(makeChunk(bytes, 8));
+
+    const result = await readTextFromSource(null, entry, 0, 256);
+
+    expect(result.text).toBe("abc");
+    expect(result.bytesRead).toBe(3);
+    expect(result.totalSize).toBe(8);
+  });
+
+  it("still advances when a chunk contains only incomplete UTF-8 bytes", async () => {
+    const entry = makeEntry({ size: 2 });
+    mockInvoke.mockResolvedValueOnce(makeChunk([0xE2, 0x82], 2));
+
+    const result = await readTextFromSource(null, entry, 0, 256);
+
+    expect(result.text.length).toBeGreaterThan(0);
+    expect(result.bytesRead).toBe(2);
+    expect(result.totalSize).toBe(2);
   });
 });

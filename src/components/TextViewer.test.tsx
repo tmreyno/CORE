@@ -70,6 +70,7 @@ describe("TextViewer", () => {
     it("loads text content from disk file", async () => {
       mockReadTextFromSource.mockResolvedValueOnce({
         text: "Hello, World!\nThis is a test file.",
+        bytesRead: 33,
         totalSize: 33,
       });
 
@@ -85,6 +86,7 @@ describe("TextViewer", () => {
     it("calls readTextFromSource with correct arguments", async () => {
       mockReadTextFromSource.mockResolvedValueOnce({
         text: "content",
+        bytesRead: 7,
         totalSize: 7,
       });
 
@@ -104,6 +106,7 @@ describe("TextViewer", () => {
     it("loads text from container entry", async () => {
       mockReadTextFromSource.mockResolvedValueOnce({
         text: "Container file content",
+        bytesRead: 22,
         totalSize: 22,
       });
 
@@ -145,6 +148,7 @@ describe("TextViewer", () => {
     it("handles empty file", async () => {
       mockReadTextFromSource.mockResolvedValueOnce({
         text: "",
+        bytesRead: 0,
         totalSize: 0,
       });
 
@@ -162,6 +166,44 @@ describe("TextViewer", () => {
 
       // Should render empty state without crashing
       expect(container.innerHTML).toBeTruthy();
+    });
+  });
+
+  describe("incremental loading", () => {
+    it("uses consumed bytes, not character count, as the next text offset", async () => {
+      mockReadTextFromSource
+        .mockResolvedValueOnce({
+          text: "éé",
+          bytesRead: 4,
+          totalSize: 8,
+        })
+        .mockResolvedValueOnce({
+          text: "ab",
+          bytesRead: 2,
+          totalSize: 8,
+        });
+
+      const { container } = renderComponent(() => (
+        <TextViewer file={mockDiskFile} />
+      ));
+      await tick();
+
+      const loadMoreButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.includes("Load More"),
+      ) as HTMLButtonElement;
+      expect(loadMoreButton).toBeDefined();
+
+      loadMoreButton.click();
+      await tick();
+
+      expect(mockReadTextFromSource).toHaveBeenNthCalledWith(
+        2,
+        mockDiskFile,
+        undefined,
+        4,
+        4,
+      );
+      expect(container.textContent).toContain("ééab");
     });
   });
 });

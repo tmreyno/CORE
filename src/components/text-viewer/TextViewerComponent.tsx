@@ -54,10 +54,10 @@ export function TextViewer(props: TextViewerProps) {
         <div class="flex items-center gap-2 px-3 py-2 text-xs text-amber-400 bg-amber-900/20 border-t border-border">
           <HiOutlineExclamationTriangle class="w-4 h-4" />
           <span>
-            Loaded {formatBytes(tv.loadedChars())} of {formatBytes(tv.totalSize())} (
-            {Math.round((tv.loadedChars() / tv.totalSize()) * 100)}%)
+            Loaded {formatBytes(tv.loadedBytes())} of {formatBytes(tv.totalSize())} (
+            {Math.round((tv.loadedBytes() / tv.totalSize()) * 100)}%)
           </span>
-          <Show when={tv.loadedChars() < tv.maxLoadedChars()}>
+          <Show when={tv.loadedBytes() < tv.maxLoadedChars()}>
             <button
               class="px-2 py-0.5 bg-bg-hover hover:bg-bg-active rounded text-txt-tertiary"
               onClick={tv.loadMoreContent}
@@ -66,7 +66,7 @@ export function TextViewer(props: TextViewerProps) {
               {tv.loadingMore() ? "Loading..." : "Load More"}
             </button>
           </Show>
-          <Show when={tv.loadedChars() >= tv.maxLoadedChars()}>
+          <Show when={tv.loadedBytes() >= tv.maxLoadedChars()}>
             <span class="text-txt-muted">(max preview reached)</span>
           </Show>
         </div>

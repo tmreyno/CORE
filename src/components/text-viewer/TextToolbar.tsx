@@ -21,7 +21,7 @@ export function TextToolbar(props: TextToolbarProps) {
       <div class="row text-xs">
         <span class="text-accent">{tv.detectLanguage()}</span>
         <span class="text-txt-muted">
-          {formatBytesInline(tv.loadedChars())}
+          {formatBytesInline(tv.loadedBytes())}
           <Show when={tv.isTruncated()}>
             {" / " + formatBytesInline(tv.totalSize()) + " (truncated)"}
           </Show>
