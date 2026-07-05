@@ -327,6 +327,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       lastDetectedEntryKey = "";
       previewPathEntryKey = "";
       setPreviewPath(null);
+      setPreviewLoading(false);
       setPreviewError(null);
       setDetectedFormat(null);
       setAutoMode(determineAutoMode());

@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { ContainerEntryViewer } from "./ContainerEntryViewer";
 import { mockInvoke } from "../__tests__/setup";
@@ -1439,6 +1440,34 @@ describe("ContainerEntryViewer", () => {
       );
 
       expect(container.textContent).toContain("Makefile");
+      dispose();
+    });
+
+    it("clears stale preview loading when the selected entry changes", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "container_extract_entry_to_temp") {
+          return new Promise(() => {});
+        }
+        return null;
+      });
+
+      const [entry, setEntry] = createSignal(
+        makeEntry({ name: "photo.jpg", entryPath: "/files/photo.jpg" }),
+      );
+      const [viewMode, setViewMode] = createSignal<"preview" | "hex">("preview");
+      const { container, dispose } = renderComponent(() => (
+        <ContainerEntryViewer entry={entry()} viewMode={viewMode()} />
+      ));
+
+      await tick(50);
+      expect(container.textContent).toContain("Extracting file");
+
+      setViewMode("hex");
+      setEntry(makeEntry({ name: "notes.bin", entryPath: "/files/notes.bin" }));
+      await tick(50);
+
+      expect(container.textContent).not.toContain("Extracting file");
+      expect(container.textContent).toContain("notes.bin");
       dispose();
     });
 
