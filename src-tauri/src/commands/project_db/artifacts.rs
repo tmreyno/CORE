@@ -5211,6 +5211,9 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
     if info.pe_is_driver {
         insert_pe_driver_string_metadata(&mut metadata, &info.strings);
     }
+    if is_linux_kernel_module_path(&info.path) {
+        insert_linux_kernel_module_string_metadata(&mut metadata, &info.strings);
+    }
 
     if let Some(cpu_type) = &info.macho_cpu_type {
         metadata.insert("macho.cpuType".to_string(), cpu_type.clone());
@@ -5220,6 +5223,134 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
     }
 
     metadata
+}
+
+#[derive(Default)]
+struct LinuxKernelModuleMetadata {
+    names: Vec<String>,
+    versions: Vec<String>,
+    vermagic: Vec<String>,
+    licenses: Vec<String>,
+    authors: Vec<String>,
+    descriptions: Vec<String>,
+    aliases: Vec<String>,
+    dependencies: Vec<String>,
+    firmware: Vec<String>,
+    signers: Vec<String>,
+    signatures: Vec<String>,
+}
+
+fn is_linux_kernel_module_path(path: &str) -> bool {
+    path.replace('\\', "/")
+        .to_ascii_lowercase()
+        .ends_with(".ko")
+}
+
+fn insert_linux_kernel_module_string_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    strings: &[String],
+) {
+    let values = linux_kernel_module_metadata_from_strings(strings);
+    if !values.has_values() {
+        return;
+    }
+
+    metadata.insert("linux.moduleDetected".to_string(), "true".to_string());
+    insert_joined_metadata(metadata, "linux.moduleNames", &values.names);
+    insert_joined_metadata(metadata, "linux.moduleVersions", &values.versions);
+    insert_joined_metadata(metadata, "linux.moduleVermagic", &values.vermagic);
+    insert_joined_metadata(metadata, "linux.moduleLicenses", &values.licenses);
+    insert_joined_metadata(metadata, "linux.moduleAuthors", &values.authors);
+    insert_joined_metadata(metadata, "linux.moduleDescriptions", &values.descriptions);
+    insert_joined_metadata(metadata, "linux.moduleAliases", &values.aliases);
+    insert_joined_metadata(metadata, "linux.moduleDependencies", &values.dependencies);
+    insert_joined_metadata(metadata, "linux.moduleFirmware", &values.firmware);
+    insert_joined_metadata(metadata, "linux.moduleSigners", &values.signers);
+    insert_joined_metadata(metadata, "linux.moduleSignatures", &values.signatures);
+}
+
+fn linux_kernel_module_metadata_from_strings(strings: &[String]) -> LinuxKernelModuleMetadata {
+    let mut values = LinuxKernelModuleMetadata::default();
+    for value in strings {
+        let Some((key, value)) = split_linux_module_info(value) else {
+            continue;
+        };
+        match key {
+            "name" => push_unique_limited(&mut values.names, value),
+            "version" => push_unique_limited(&mut values.versions, value),
+            "vermagic" => push_unique_limited(&mut values.vermagic, value),
+            "license" => push_unique_limited(&mut values.licenses, value),
+            "author" => push_unique_limited(&mut values.authors, value),
+            "description" => push_unique_limited(&mut values.descriptions, value),
+            "alias" => push_unique_limited(&mut values.aliases, value),
+            "depends" => {
+                for dependency in value.split(',') {
+                    let dependency = dependency.trim();
+                    if !dependency.is_empty() {
+                        push_unique_limited(
+                            &mut values.dependencies,
+                            truncate_metadata_value(dependency, 120),
+                        );
+                    }
+                }
+            }
+            "firmware" => push_unique_limited(&mut values.firmware, value),
+            "signer" => push_unique_limited(&mut values.signers, value),
+            "sig_key" | "sig_hashalgo" => push_unique_limited(
+                &mut values.signatures,
+                truncate_metadata_value(&format!("{key}={value}"), 180),
+            ),
+            _ => {}
+        }
+    }
+    values
+}
+
+impl LinuxKernelModuleMetadata {
+    fn has_values(&self) -> bool {
+        !self.names.is_empty()
+            || !self.versions.is_empty()
+            || !self.vermagic.is_empty()
+            || !self.licenses.is_empty()
+            || !self.authors.is_empty()
+            || !self.descriptions.is_empty()
+            || !self.aliases.is_empty()
+            || !self.dependencies.is_empty()
+            || !self.firmware.is_empty()
+            || !self.signers.is_empty()
+            || !self.signatures.is_empty()
+    }
+}
+
+fn split_linux_module_info(value: &str) -> Option<(&str, String)> {
+    let (key, value) = value.split_once('=')?;
+    let key = key.trim();
+    if !linux_module_info_key_is_supported(key) {
+        return None;
+    }
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some((key, truncate_metadata_value(value, 180)))
+}
+
+fn linux_module_info_key_is_supported(key: &str) -> bool {
+    matches!(
+        key,
+        "name"
+            | "version"
+            | "vermagic"
+            | "license"
+            | "author"
+            | "description"
+            | "alias"
+            | "depends"
+            | "firmware"
+            | "signer"
+            | "sig_key"
+            | "sig_hashalgo"
+    )
 }
 
 fn insert_pe_driver_string_metadata(metadata: &mut BTreeMap<String, String>, strings: &[String]) {
@@ -5950,6 +6081,117 @@ mod tests {
         assert_eq!(
             metadata.get("exif.rawTags").map(String::as_str),
             Some("Make=Canon; Model=EOS R5")
+        );
+    }
+
+    #[test]
+    fn binary_artifact_metadata_extracts_linux_kernel_module_strings() {
+        let info = BinaryInfo {
+            path: "case.e01:/lib/modules/6.8.0/kernel/drivers/usb/contoso_sensor.ko".to_string(),
+            format: BinaryFormat::ELF64,
+            architecture: "x86_64".to_string(),
+            is_64bit: true,
+            entry_point: None,
+            imports: vec![],
+            exports: vec![],
+            sections: vec![],
+            strings: vec![
+                "name=contoso_sensor".to_string(),
+                "version=1.2.3".to_string(),
+                "license=GPL".to_string(),
+                "author=Contoso Driver Labs".to_string(),
+                "description=Contoso USB sensor driver".to_string(),
+                "alias=usb:v1234p5678d*dc*dsc*dp*ic*isc*ip*in*".to_string(),
+                "depends=usbcore,industrialio".to_string(),
+                "firmware=contoso/sensor.bin".to_string(),
+                "vermagic=6.8.0-31-generic SMP preempt mod_unload modversions".to_string(),
+                "signer=Secure Boot Module Signature key".to_string(),
+                "sig_key=AA:BB:CC:DD".to_string(),
+                "sig_hashalgo=sha256".to_string(),
+            ],
+            file_size: 8192,
+            pe_timestamp: None,
+            pe_checksum: None,
+            pe_subsystem: None,
+            pe_is_driver: false,
+            pe_driver_type: None,
+            pe_driver_indicators: vec![],
+            pe_version_info: BTreeMap::new(),
+            macho_cpu_type: None,
+            macho_filetype: None,
+            has_debug_info: false,
+            is_stripped: true,
+            has_code_signing: false,
+        };
+
+        let metadata = binary_artifact_metadata_from_info(&info);
+
+        assert_eq!(
+            metadata.get("linux.moduleDetected").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleNames").map(String::as_str),
+            Some("contoso_sensor")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleVersions").map(String::as_str),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleLicenses").map(String::as_str),
+            Some("GPL")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleAuthors").map(String::as_str),
+            Some("Contoso Driver Labs")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleDescriptions").map(String::as_str),
+            Some("Contoso USB sensor driver")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleAliases").map(String::as_str),
+            Some("usb:v1234p5678d*dc*dsc*dp*ic*isc*ip*in*")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleDependencies").map(String::as_str),
+            Some("usbcore; industrialio")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleFirmware").map(String::as_str),
+            Some("contoso/sensor.bin")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleVermagic").map(String::as_str),
+            Some("6.8.0-31-generic SMP preempt mod_unload modversions")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleSigners").map(String::as_str),
+            Some("Secure Boot Module Signature key")
+        );
+        assert_eq!(
+            metadata.get("linux.moduleSignatures").map(String::as_str),
+            Some("sig_key=AA:BB:CC:DD; sig_hashalgo=sha256")
+        );
+    }
+
+    #[test]
+    fn linux_kernel_module_metadata_only_triggers_for_ko_paths() {
+        assert!(is_linux_kernel_module_path("/lib/modules/example.ko"));
+        assert!(is_linux_kernel_module_path(r"C:\case\modules\example.ko"));
+        assert!(!is_linux_kernel_module_path("/usr/bin/example"));
+
+        let values = linux_kernel_module_metadata_from_strings(&[
+            "license=GPL".to_string(),
+            "depends=usbcore, industrialio".to_string(),
+            "unrelated=value".to_string(),
+        ]);
+        assert!(values.has_values());
+        assert_eq!(values.licenses, vec!["GPL".to_string()]);
+        assert_eq!(
+            values.dependencies,
+            vec!["usbcore".to_string(), "industrialio".to_string()]
         );
     }
 
