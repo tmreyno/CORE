@@ -269,6 +269,32 @@ describe("readBytesFromSource", () => {
     expect(result.totalSize).toBe(1024);
   });
 
+  it("preserves outer image type for nested archive entries inside E01 sources", async () => {
+    const entry = makeEntry({
+      containerPath: "/evidence/disk.E01",
+      isArchiveEntry: true,
+      entryPath: "Users/alice/archive.zip::docs/report.txt",
+      containerType: "zip",
+      size: 1024,
+    });
+    mockInvoke.mockResolvedValueOnce(makeChunk([0x52, 0x50], 1024));
+
+    const result = await readBytesFromSource(null, entry, 0, 64);
+
+    expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_source_base64_chunk", {
+      source: expect.objectContaining({
+        containerPath: "/evidence/disk.E01",
+        nestedArchivePath: "Users/alice/archive.zip",
+        entryPath: "docs/report.txt",
+        containerType: "e01",
+        size: 1024,
+      }),
+      offset: 0,
+      size: 64,
+    });
+    expect(result.bytes).toEqual([0x52, 0x50]);
+  });
+
   it("reads from disk file entry using the source byte command", async () => {
     const entry = makeEntry({ isDiskFile: true, size: 8192 });
     mockInvoke.mockResolvedValueOnce(makeChunk([0xAA, 0xBB], 8192));
