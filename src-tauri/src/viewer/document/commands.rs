@@ -160,6 +160,7 @@ impl From<DocumentMetadata> for DocumentMetadataDto {
 // =============================================================================
 
 const MATERIALIZED_SOURCE_COPY_CHUNK_BYTES: usize = 1024 * 1024;
+const MATERIALIZED_SOURCE_CACHE_FINGERPRINT_BYTES: usize = 4096;
 const DOCUMENT_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 
 fn copy_evidence_source_to_writer(
@@ -708,7 +709,7 @@ fn cached_msg_source_path(
     source_id: &str,
     size: u64,
 ) -> Result<PathBuf, String> {
-    let cache_key = materialized_source_cache_key(source_ref, size);
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
     if let Some(path) = materialized_source_cache_get(&MSG_SOURCE_CACHE, &cache_key) {
         return Ok(path);
     }
@@ -800,7 +801,7 @@ fn cached_pst_source_path(
     source_id: &str,
     size: u64,
 ) -> Result<PathBuf, String> {
-    let cache_key = materialized_source_cache_key(source_ref, size);
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
     if let Some(path) = materialized_source_cache_get(&PST_SOURCE_CACHE, &cache_key) {
         return Ok(path);
     }
@@ -1067,7 +1068,7 @@ fn cached_registry_source_path(
     source_id: &str,
     size: u64,
 ) -> Result<PathBuf, String> {
-    let cache_key = materialized_source_cache_key(source_ref, size);
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
     if let Some(path) = materialized_source_cache_get(&REGISTRY_SOURCE_CACHE, &cache_key) {
         return Ok(path);
     }
@@ -1149,11 +1150,47 @@ fn materialized_source_cache_insert(
     cache.insert(cache_key, cache_path);
 }
 
-fn materialized_source_cache_key(source_ref: &EvidenceSourceRef, size: u64) -> String {
+fn materialized_source_cache_key(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    size: u64,
+) -> Result<String, String> {
     let mut hasher = DefaultHasher::new();
-    source_ref.display_id().hash(&mut hasher);
+    match serde_json::to_string(source_ref) {
+        Ok(value) => value.hash(&mut hasher),
+        Err(_) => source_ref.display_id().hash(&mut hasher),
+    }
     size.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+
+    let fingerprint_size = usize::try_from(
+        size.min(MATERIALIZED_SOURCE_CACHE_FINGERPRINT_BYTES as u64),
+    )
+    .map_err(|_| {
+        format!(
+            "Materialized source fingerprint size does not fit this platform for {}",
+            source_ref.display_id()
+        )
+    })?;
+    if fingerprint_size > 0 {
+        let fingerprint = byte_source.read_range(0, fingerprint_size).map_err(|e| {
+            format!(
+                "Failed to fingerprint materialized source {}: {e}",
+                source_ref.display_id()
+            )
+        })?;
+        if fingerprint.len() > fingerprint_size {
+            return Err(format!(
+                "Materialized source {} returned {} fingerprint bytes for {} requested bytes",
+                source_ref.display_id(),
+                fingerprint.len(),
+                fingerprint_size
+            ));
+        }
+        fingerprint.len().hash(&mut hasher);
+        fingerprint.hash(&mut hasher);
+    }
+
+    Ok(format!("{:016x}", hasher.finish()))
 }
 
 /// Get overview information about a Windows Registry hive file
@@ -1278,7 +1315,7 @@ fn cached_database_source_path(
     source_id: &str,
     size: u64,
 ) -> Result<PathBuf, String> {
-    let cache_key = materialized_source_cache_key(source_ref, size);
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
     if let Some(path) = materialized_source_cache_get(&DATABASE_SOURCE_CACHE, &cache_key) {
         return Ok(path);
     }
@@ -1626,20 +1663,30 @@ mod tests {
     }
 
     #[test]
-    fn materialized_source_cache_key_changes_with_size() {
+    fn materialized_source_cache_key_changes_with_size_and_prefix_bytes() {
         let source_ref = EvidenceSourceRef::VfsEntry {
             container_path: "/cases/windows.E01".to_string(),
             entry_path: "/Windows/System32/config/SYSTEM".to_string(),
             container_type: Some("e01".to_string()),
         };
+        let source_a = ChunkedByteSource {
+            source_ref: source_ref.clone(),
+            data: b"regf-system-a".to_vec(),
+            max_chunk: 4096,
+        };
+        let source_b = ChunkedByteSource {
+            source_ref: source_ref.clone(),
+            data: b"regf-system-b".to_vec(),
+            max_chunk: 4096,
+        };
 
         assert_eq!(
-            materialized_source_cache_key(&source_ref, 4096),
-            materialized_source_cache_key(&source_ref, 4096)
+            materialized_source_cache_key(&source_a, &source_ref, source_a.len().unwrap()).unwrap(),
+            materialized_source_cache_key(&source_a, &source_ref, source_a.len().unwrap()).unwrap()
         );
         assert_ne!(
-            materialized_source_cache_key(&source_ref, 4096),
-            materialized_source_cache_key(&source_ref, 8192)
+            materialized_source_cache_key(&source_a, &source_ref, source_a.len().unwrap()).unwrap(),
+            materialized_source_cache_key(&source_b, &source_ref, source_b.len().unwrap()).unwrap()
         );
     }
 
