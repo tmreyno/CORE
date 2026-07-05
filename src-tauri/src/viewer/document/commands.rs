@@ -400,6 +400,12 @@ fn refine_magic_format(magic_format: UniversalFormat, path_ref: &Path) -> Univer
         UniversalFormat::Zip | UniversalFormat::Doc => {
             UniversalFormat::from_path(path_ref).unwrap_or(magic_format)
         }
+        UniversalFormat::Exe => match UniversalFormat::from_path(path_ref) {
+            Some(format @ (UniversalFormat::Sys | UniversalFormat::Dll | UniversalFormat::Exe)) => {
+                format
+            }
+            _ => magic_format,
+        },
         UniversalFormat::RegistryHive => {
             // Registry transaction logs (.log, .log1, .log2, etc.) share the
             // "regf" magic signature with actual hives but have a different
@@ -1380,6 +1386,16 @@ mod tests {
         let detected = detect_content_format_from_header(Path::new("transaction.log1"), b"regf");
         assert_eq!(detected.format, "Binary");
         assert_eq!(detected.viewer_type, "Hex");
+        assert_eq!(detected.method, "magic");
+    }
+
+    #[test]
+    fn content_detection_refines_mz_magic_for_windows_drivers() {
+        let detected = detect_content_format_from_header(Path::new("netadapter.sys"), b"MZ\x90\0");
+        assert_eq!(detected.format, "Sys");
+        assert_eq!(detected.viewer_type, "Binary");
+        assert_eq!(detected.description, "Windows Driver");
+        assert_eq!(detected.mime_type, "application/x-windows-driver");
         assert_eq!(detected.method, "magic");
     }
 
