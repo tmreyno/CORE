@@ -10,7 +10,8 @@ use super::with_project_db;
 use crate::commands::artifacts::artifact_extract_source;
 use crate::commands::hash::{open_hash_source, HashSourceInput};
 use crate::common::{
-    read_range_fully, ArtifactExtractionOptions, EvidenceByteSource, NormalizedArtifact,
+    read_range_fully, ArtifactExtractionOptions, EvidenceByteSource, EvidenceSourceRef,
+    NormalizedArtifact,
 };
 use crate::project_db::{
     DbArtifactCategorySummary, DbArtifactEvidenceSummary, DbArtifactExtractorSummary,
@@ -25,10 +26,14 @@ use notatin::cell_value::CellValue;
 use notatin::parser_builder::ParserBuilder;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use std::collections::BTreeMap;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::Cursor;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 #[derive(Clone, Copy)]
 struct RegistryStringMapping {
@@ -40,6 +45,8 @@ const SQLITE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const BINARY_ARTIFACT_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const IMAGE_ARTIFACT_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 const SQLITE_ARTIFACT_COPY_CHUNK_BYTES: usize = 1024 * 1024;
+const SQLITE_ARTIFACT_SOURCE_CACHE_MAX_ENTRIES: usize = 16;
+const REGISTRY_IDENTITY_SOURCE_CACHE_MAX_ENTRIES: usize = 16;
 const SYSTEM_IDENTITY_SOURCE_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const REGISTRY_IDENTITY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 const SQLITE_METADATA_NAME_LIMIT: usize = 12;
@@ -50,6 +57,11 @@ const UNIX_REGULAR_USER_MAX_UID: u32 = 60000;
 const MACOS_REGULAR_USER_MIN_UID: u32 = 500;
 const DEFAULT_ARTIFACT_EXTRACTOR: &str = "core-artifact-extractor";
 const MAX_ARTIFACT_EXTRACTOR_CHARS: usize = 128;
+
+static SQLITE_ARTIFACT_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static REGISTRY_IDENTITY_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 const WINDOWS_SYSTEM_INFORMATION_REGISTRY_VALUES: &[RegistryStringMapping] = &[
     RegistryStringMapping {
@@ -661,18 +673,48 @@ fn registry_identity_metadata_from_byte_source(
         ));
     }
 
-    let lower = source_id.to_ascii_lowercase();
-    let suffix = if lower.ends_with("software") {
-        ".software.hive"
-    } else if lower.ends_with("sam") {
-        ".sam.hive"
-    } else {
-        ".system.hive"
-    };
+    if let EvidenceSourceRef::LocalFile { path } = byte_source.source_ref() {
+        return registry_identity_metadata_from_hive_path(Path::new(&path), source_id);
+    }
+
+    let cache_path = cached_registry_identity_source_path(byte_source, size, source_id)?;
+    registry_identity_metadata_from_hive_path(&cache_path, source_id)
+}
+
+fn cached_registry_identity_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    size: u64,
+    source_id: &str,
+) -> Result<PathBuf, String> {
+    let source_ref = byte_source.source_ref();
+    let cache_key = artifact_source_cache_key(&source_ref, size);
+    if let Some(path) = artifact_source_cache_get(&REGISTRY_IDENTITY_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-registry-identity-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create registry identity cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!(
+        "{}{}",
+        cache_key,
+        registry_identity_cache_suffix(source_id)
+    ));
+
+    if cache_path.exists() {
+        artifact_source_cache_insert(
+            &REGISTRY_IDENTITY_SOURCE_CACHE,
+            REGISTRY_IDENTITY_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-registry-identity-")
-        .suffix(suffix)
-        .tempfile()
+        .suffix(registry_identity_cache_suffix(source_id))
+        .tempfile_in(&cache_dir)
         .map_err(|e| format!("Failed to create temporary registry identity copy: {e}"))?;
     copy_artifact_source(byte_source, size, source_id, &mut temp, "registry identity")?;
     temp.flush()
@@ -680,8 +722,36 @@ fn registry_identity_metadata_from_byte_source(
     temp.as_file()
         .sync_all()
         .map_err(|e| format!("Failed to sync temporary registry identity copy: {e}"))?;
+    temp.persist(&cache_path).map_err(|e| {
+        format!(
+            "Failed to persist registry identity cache copy: {}",
+            e.error
+        )
+    })?;
 
-    registry_identity_metadata_from_hive_path(temp.path(), source_id)
+    artifact_source_cache_insert(
+        &REGISTRY_IDENTITY_SOURCE_CACHE,
+        REGISTRY_IDENTITY_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached registry identity artifact source"
+    );
+    Ok(cache_path)
+}
+
+fn registry_identity_cache_suffix(source_id: &str) -> &'static str {
+    let lower = source_id.to_ascii_lowercase();
+    if lower.ends_with("software") {
+        ".software.hive"
+    } else if lower.ends_with("sam") {
+        ".sam.hive"
+    } else {
+        ".system.hive"
+    }
 }
 
 fn registry_identity_metadata_from_hive_path(
@@ -6025,7 +6095,8 @@ fn with_sqlite_artifact_source<T>(
     operation: impl FnOnce(&Path, String) -> Result<T, String>,
 ) -> Result<T, String> {
     let byte_source = open_hash_source(source)?;
-    let source_id = byte_source.source_ref().display_id();
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
     if size > SQLITE_ARTIFACT_SOURCE_MAX_BYTES {
         return Err(format!(
@@ -6033,19 +6104,67 @@ fn with_sqlite_artifact_source<T>(
         ));
     }
 
+    if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+        return operation(Path::new(path), source_id);
+    }
+
+    let cache_path =
+        cached_sqlite_artifact_source_path(byte_source.as_ref(), &source_ref, size, &source_id)?;
+    operation(&cache_path, source_id)
+}
+
+fn cached_sqlite_artifact_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    size: u64,
+    source_id: &str,
+) -> Result<PathBuf, String> {
+    let cache_key = artifact_source_cache_key(source_ref, size);
+    if let Some(path) = artifact_source_cache_get(&SQLITE_ARTIFACT_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-artifact-db-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create SQLite artifact cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.sqlite"));
+
+    if cache_path.exists() {
+        artifact_source_cache_insert(
+            &SQLITE_ARTIFACT_SOURCE_CACHE,
+            SQLITE_ARTIFACT_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-artifact-db-")
         .suffix(".sqlite")
-        .tempfile()
+        .tempfile_in(&cache_dir)
         .map_err(|e| format!("Failed to create temporary SQLite artifact copy: {e}"))?;
-    copy_sqlite_artifact_source(byte_source.as_ref(), size, &mut temp)?;
+    copy_sqlite_artifact_source(byte_source, size, &mut temp)?;
     temp.flush()
         .map_err(|e| format!("Failed to flush temporary SQLite artifact copy: {e}"))?;
     temp.as_file()
         .sync_all()
         .map_err(|e| format!("Failed to sync temporary SQLite artifact copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist SQLite artifact cache copy: {}", e.error))?;
 
-    operation(temp.path(), source_id)
+    artifact_source_cache_insert(
+        &SQLITE_ARTIFACT_SOURCE_CACHE,
+        SQLITE_ARTIFACT_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached SQLite artifact source"
+    );
+    Ok(cache_path)
 }
 
 fn copy_sqlite_artifact_source(
@@ -6115,6 +6234,42 @@ fn checked_sqlite_copy_offset_add(
             "SQLite artifact copy offset overflow for {source_id}: offset {offset} + {bytes_read} bytes"
         )
     })
+}
+
+fn artifact_source_cache_key(source_ref: &EvidenceSourceRef, size: u64) -> String {
+    let mut hasher = DefaultHasher::new();
+    source_ref.display_id().hash(&mut hasher);
+    size.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn artifact_source_cache_get(
+    cache: &LazyLock<Mutex<HashMap<String, PathBuf>>>,
+    cache_key: &str,
+) -> Option<PathBuf> {
+    let path = cache.lock().ok()?.get(cache_key).cloned()?;
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn artifact_source_cache_insert(
+    cache: &LazyLock<Mutex<HashMap<String, PathBuf>>>,
+    max_entries: usize,
+    cache_key: String,
+    path: PathBuf,
+) {
+    let Ok(mut cache) = cache.lock() else {
+        return;
+    };
+    if cache.len() >= max_entries {
+        if let Some(first_key) = cache.keys().next().cloned() {
+            cache.remove(&first_key);
+        }
+    }
+    cache.insert(cache_key, path);
 }
 
 fn table_summaries(tables: &[crate::viewer::document::database_viewer::TableSummary]) -> String {
@@ -6372,6 +6527,20 @@ mod tests {
                 source_ref: EvidenceSourceRef::LocalFile {
                     path: "test-source.sqlite".to_string(),
                 },
+                declared_len,
+                data: data.to_vec(),
+                max_chunk,
+            }
+        }
+
+        fn with_source_ref(
+            source_ref: EvidenceSourceRef,
+            declared_len: u64,
+            data: &[u8],
+            max_chunk: usize,
+        ) -> Self {
+            Self {
+                source_ref,
                 declared_len,
                 data: data.to_vec(),
                 max_chunk,
@@ -9693,6 +9862,68 @@ COMMIT
 
         assert!(err.contains("SQLite artifact copy offset overflow"));
         assert!(err.contains("test-source.sqlite"));
+    }
+
+    #[test]
+    fn sqlite_artifact_source_cache_reuses_vfs_copy() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let source_ref = EvidenceSourceRef::VfsEntry {
+            container_path: format!("/cases/system-{nonce}.E01"),
+            entry_path: "/Users/alice/Library/Application Support/app/state.db".to_string(),
+            container_type: Some("e01".to_string()),
+        };
+        let source = TestByteSource::with_source_ref(source_ref.clone(), 10, b"0123456789", 3);
+
+        let first = cached_sqlite_artifact_source_path(
+            &source,
+            &source_ref,
+            source.len().unwrap(),
+            &source_ref.display_id(),
+        )
+        .unwrap();
+        let second = cached_sqlite_artifact_source_path(
+            &source,
+            &source_ref,
+            source.len().unwrap(),
+            &source_ref.display_id(),
+        )
+        .unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(std::fs::read(first).unwrap(), b"0123456789");
+    }
+
+    #[test]
+    fn registry_identity_source_cache_reuses_vfs_copy() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let source_ref = EvidenceSourceRef::VfsEntry {
+            container_path: format!("/cases/windows-{nonce}.ad1"),
+            entry_path: "/Windows/System32/config/SYSTEM".to_string(),
+            container_type: Some("ad1".to_string()),
+        };
+        let source = TestByteSource::with_source_ref(source_ref.clone(), 8, b"reg-hive", 2);
+        let source_id = source_ref.display_id();
+
+        let first =
+            cached_registry_identity_source_path(&source, source.len().unwrap(), &source_id)
+                .unwrap();
+        let second =
+            cached_registry_identity_source_path(&source, source.len().unwrap(), &source_id)
+                .unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(std::fs::read(&first).unwrap(), b"reg-hive");
+        assert!(first
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with(".system.hive"));
     }
 
     #[test]
