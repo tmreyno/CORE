@@ -265,6 +265,30 @@ function evidenceFileForCenterTab(
   return discoveredFiles.find((file) => file.path === containerPath);
 }
 
+export function restoreSelectedEntry(
+  savedEntry: SelectedEntry,
+  discoveredFiles: DiscoveredFile[],
+): SelectedEntry {
+  const matchedFile = discoveredFiles.find(
+    (file) => file.path === savedEntry.containerPath,
+  );
+  const containerType =
+    savedEntry.containerType || matchedFile?.container_type || "";
+  const browserMode = getContainerBrowserMode(containerType);
+
+  return {
+    ...savedEntry,
+    containerPath: savedEntry.containerPath,
+    entryPath: savedEntry.entryPath,
+    name: savedEntry.name,
+    size: savedEntry.size ?? 0,
+    isDir: savedEntry.isDir ?? false,
+    isVfsEntry: savedEntry.isVfsEntry ?? browserMode === "vfs",
+    isArchiveEntry: savedEntry.isArchiveEntry ?? browserMode === "archive",
+    containerType,
+  };
+}
+
 // ─── Main Load Handler ───────────────────────────────────────────────────────
 
 /**
@@ -652,13 +676,12 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     // ===========================================================================
     if (project.ui_state?.selected_entry) {
       const savedEntry = project.ui_state.selected_entry;
-      setSelectedContainerEntry({
-        containerPath: savedEntry.containerPath,
-        entryPath: savedEntry.entryPath,
-        name: savedEntry.name,
-        size: 0, // Will be populated when entry is accessed
-        isDir: false,
-      });
+      setSelectedContainerEntry(
+        restoreSelectedEntry(
+          savedEntry as SelectedEntry,
+          fileManager.discoveredFiles(),
+        ),
+      );
       log.debug(`Restored selected entry: ${savedEntry.name}`);
     }
 

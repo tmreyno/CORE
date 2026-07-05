@@ -5,9 +5,10 @@
 // =============================================================================
 
 import { describe, expect, it, vi } from "vitest";
-import { handleLoadProject, restoreCenterTabs } from "../projectLoader";
+import { handleLoadProject, restoreCenterTabs, restoreSelectedEntry } from "../projectLoader";
 import type { CaseDocument, DiscoveredFile } from "../../../types";
 import type { ProjectTab } from "../../../types/project";
+import type { SelectedEntry } from "../../../components/EvidenceTree/types";
 
 function makeFile(overrides: Partial<DiscoveredFile> = {}): DiscoveredFile {
   return {
@@ -32,6 +33,63 @@ function makeCaseDoc(overrides: Partial<CaseDocument> = {}): CaseDocument {
 }
 
 describe("projectLoader", () => {
+  it("restores selected AD1 entries with saved address metadata", () => {
+    const savedEntry: SelectedEntry = {
+      containerPath: "/cases/1827-1001/1.Evidence/export.AD1",
+      entryPath: "/Users/terry/Documents/report.pdf",
+      name: "report.pdf",
+      size: 4096,
+      isDir: false,
+      containerType: "ad1",
+      dataAddr: 8192,
+      itemAddr: 4096,
+      compressedSize: 2048,
+      dataEndAddr: 10240,
+      metadataAddr: 12288,
+      firstChildAddr: null,
+      metadata: {
+        md5: "abc",
+      },
+    };
+
+    const restored = restoreSelectedEntry(savedEntry, [
+      makeFile({
+        path: savedEntry.containerPath,
+        filename: "export.AD1",
+        container_type: "AccessData (AD1)",
+      }),
+    ]);
+
+    expect(restored).toEqual({
+      ...savedEntry,
+      isVfsEntry: false,
+      isArchiveEntry: false,
+    });
+  });
+
+  it("infers selected entry browser flags from cached evidence when old projects omitted them", () => {
+    const savedEntry = {
+      containerPath: "./1.Evidence/4Dell Latitude CPi/4Dell Latitude CPi.E01",
+      entryPath: "/Partition1_NTFS/pagefile.sys",
+      name: "pagefile.sys",
+      size: undefined,
+      isDir: undefined,
+    } as unknown as SelectedEntry;
+
+    const restored = restoreSelectedEntry(savedEntry, [makeFile()]);
+
+    expect(restored).toMatchObject({
+      containerPath: savedEntry.containerPath,
+      entryPath: savedEntry.entryPath,
+      name: "pagefile.sys",
+      size: 0,
+      isDir: false,
+      isVfsEntry: true,
+      isArchiveEntry: false,
+      containerType: "EnCase (E01)",
+    });
+  });
+
   it("restores legacy entry tabs from file_path plus entry_path", () => {
     const tabs: ProjectTab[] = [
       {
