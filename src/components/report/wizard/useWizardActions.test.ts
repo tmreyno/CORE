@@ -13,6 +13,7 @@ vi.mock("solid-js", async (importOriginal) => {
 import { useWizardActions } from "./useWizardActions";
 
 const BROWSER_EXPORT_MESSAGE = "Report export is available in the desktop app.";
+const BROWSER_PREVIEW_MESSAGE = "Report preview is available in the desktop app.";
 
 function createState() {
   return {
@@ -37,6 +38,17 @@ const props = {
 };
 
 describe("useWizardActions browser export guards", () => {
+  it("sets a preview message instead of invoking native report preview in browser preview", async () => {
+    const state = createState();
+    const actions = useWizardActions(state as any, props);
+
+    await actions.generatePreview();
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(state.setPreviewHtml).toHaveBeenCalledWith(expect.stringContaining(BROWSER_PREVIEW_MESSAGE));
+    expect(state.setPreviewLoading).toHaveBeenLastCalledWith(false);
+  });
+
   it("sets an export error instead of opening a native report save dialog in browser preview", async () => {
     const state = createState();
     const actions = useWizardActions(state as any, props);
