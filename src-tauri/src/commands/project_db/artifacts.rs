@@ -3781,6 +3781,9 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
     for (key, value) in &info.pe_version_info {
         metadata.insert(format!("pe.version.{key}"), value.clone());
     }
+    if info.pe_is_driver {
+        insert_pe_driver_string_metadata(&mut metadata, &info.strings);
+    }
 
     if let Some(cpu_type) = &info.macho_cpu_type {
         metadata.insert("macho.cpuType".to_string(), cpu_type.clone());
@@ -3790,6 +3793,69 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
     }
 
     metadata
+}
+
+fn insert_pe_driver_string_metadata(metadata: &mut BTreeMap<String, String>, strings: &[String]) {
+    let mut service_names = Vec::new();
+    let mut device_names = Vec::new();
+    let mut dos_device_names = Vec::new();
+
+    for value in strings {
+        if let Some(service_name) = extract_windows_driver_service_name(value) {
+            push_unique_limited(&mut service_names, service_name);
+        }
+        if let Some(device_name) = extract_windows_object_name(value, "\\device\\") {
+            push_unique_limited(&mut device_names, device_name);
+        }
+        if let Some(dos_device_name) = extract_windows_object_name(value, "\\dosdevices\\") {
+            push_unique_limited(&mut dos_device_names, dos_device_name);
+        }
+    }
+
+    insert_joined_metadata(metadata, "pe.driverServiceNames", &service_names);
+    insert_joined_metadata(metadata, "pe.driverDeviceNames", &device_names);
+    insert_joined_metadata(metadata, "pe.driverDosDeviceNames", &dos_device_names);
+}
+
+fn extract_windows_driver_service_name(value: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    for marker in [
+        "\\currentcontrolset\\services\\",
+        "\\controlset001\\services\\",
+        "\\controlset002\\services\\",
+        "\\controlset003\\services\\",
+    ] {
+        if let Some(name) = extract_after_marker(&normalized, marker) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn extract_windows_object_name(value: &str, marker: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    extract_after_marker(&normalized, marker)
+}
+
+fn extract_after_marker(value: &str, marker: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find(marker)?.checked_add(marker.len())?;
+    let raw = value.get(start..)?;
+    let end = raw
+        .find(|ch: char| {
+            ch == '\\' || ch == '/' || ch == ';' || ch == '"' || ch == '\'' || ch.is_whitespace()
+        })
+        .unwrap_or(raw.len());
+    let candidate = raw.get(..end)?.trim_matches([':', '.']);
+    if candidate.is_empty()
+        || !candidate.chars().any(|ch| ch.is_ascii_alphanumeric())
+        || !candidate
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+    {
+        return None;
+    }
+    Some(truncate_metadata_value(candidate, 120))
 }
 
 fn binary_format_name(format: &BinaryFormat) -> &'static str {
@@ -4279,7 +4345,10 @@ mod tests {
             }],
             strings: vec![
                 "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt".to_string(),
+                "\\Registry\\Machine\\System\\ControlSet001\\Services\\legacyflt\\Parameters"
+                    .to_string(),
                 "\\Device\\ContosoFilter".to_string(),
+                "\\DosDevices\\ContosoFilter".to_string(),
             ],
             file_size: 4096,
             pe_timestamp: Some(1_717_260_000),
@@ -4331,13 +4400,25 @@ mod tests {
         );
         assert_eq!(
             metadata.get("binary.stringCount").map(String::as_str),
-            Some("2")
+            Some("4")
         );
         assert_eq!(
             metadata.get("binary.strings").map(String::as_str),
             Some(
-                "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt; \\Device\\ContosoFilter"
+                "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt; \\Registry\\Machine\\System\\ControlSet001\\Services\\legacyflt\\Parameters; \\Device\\ContosoFilter; \\DosDevices\\ContosoFilter"
             )
+        );
+        assert_eq!(
+            metadata.get("pe.driverServiceNames").map(String::as_str),
+            Some("contosoflt; legacyflt")
+        );
+        assert_eq!(
+            metadata.get("pe.driverDeviceNames").map(String::as_str),
+            Some("ContosoFilter")
+        );
+        assert_eq!(
+            metadata.get("pe.driverDosDeviceNames").map(String::as_str),
+            Some("ContosoFilter")
         );
         assert_eq!(
             metadata.get("pe.version.CompanyName").map(String::as_str),
