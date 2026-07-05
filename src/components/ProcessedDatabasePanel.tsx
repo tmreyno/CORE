@@ -61,6 +61,7 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
   // UI-only state (always local)
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  let localDetailsEpoch = 0;
 
   /** Load AXIOM case info when database is selected */
   const loadAxiomDetails = async (db: ProcessedDatabase) => {
@@ -73,6 +74,8 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
     // Fallback to local loading
     if (db.db_type !== 'MagnetAxiom') return;
     if (axiomCaseInfo()[db.path]) return; // Already loaded
+    if (localLoadingDetails().has(db.path)) return;
+    const epoch = localDetailsEpoch;
     
     const loadingSet = new Set(localLoadingDetails());
     loadingSet.add(db.path);
@@ -81,14 +84,18 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
     try {
       // Load case info
       const caseInfo = await invoke<AxiomCaseInfo>('get_axiom_case_info', { path: db.path });
+      if (epoch !== localDetailsEpoch || !localDatabases().some(item => item.path === db.path)) return;
       setLocalAxiomCaseInfo({ ...axiomCaseInfo(), [db.path]: caseInfo });
       
       // Load artifact categories
       const categories = await invoke<ArtifactCategorySummary[]>('get_axiom_artifact_categories', { path: db.path });
+      if (epoch !== localDetailsEpoch || !localDatabases().some(item => item.path === db.path)) return;
       setLocalArtifactCategories({ ...localArtifactCategories(), [db.path]: categories });
     } catch (err) {
+      if (epoch !== localDetailsEpoch) return;
       log.warn(`Failed to load AXIOM details for ${db.path}:`, err);
     } finally {
+      if (epoch !== localDetailsEpoch) return;
       const newLoading = new Set(localLoadingDetails());
       newLoading.delete(db.path);
       setLocalLoadingDetails(newLoading);
@@ -214,7 +221,21 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
     if (props.manager) {
       props.manager.removeDatabase(path);
     } else {
+      localDetailsEpoch += 1;
       setLocalDatabases(localDatabases().filter(db => db.path !== path));
+      setLocalAxiomCaseInfo(prev => {
+        const next = { ...prev };
+        delete next[path];
+        return next;
+      });
+      setLocalArtifactCategories(prev => {
+        const next = { ...prev };
+        delete next[path];
+        return next;
+      });
+      const newLoading = new Set(localLoadingDetails());
+      newLoading.delete(path);
+      setLocalLoadingDetails(newLoading);
       if (selectedDb() === path) {
         setLocalSelectedDb(null);
       }
@@ -226,8 +247,12 @@ export const ProcessedDatabasePanel: Component<ProcessedDatabasePanelProps> = (p
     if (props.manager) {
       props.manager.clearAll();
     } else {
+      localDetailsEpoch += 1;
       setLocalDatabases([]);
       setLocalSelectedDb(null);
+      setLocalAxiomCaseInfo({});
+      setLocalArtifactCategories({});
+      setLocalLoadingDetails(new Set<string>());
     }
   };
 
