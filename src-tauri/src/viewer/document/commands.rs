@@ -271,21 +271,25 @@ fn document_content_from_source(source: HashSourceInput) -> Result<DocumentConte
 /// Read a document file and return its content
 #[command]
 pub async fn document_read(path: String) -> Result<DocumentResponse, String> {
-    let service = DocumentService::new();
-    let path = PathBuf::from(&path);
+    tokio::task::spawn_blocking(move || {
+        let service = DocumentService::new();
+        let path = PathBuf::from(&path);
 
-    match service.read(&path) {
-        Ok(content) => Ok(DocumentResponse {
-            success: true,
-            content: Some(content.into()),
-            error: None,
-        }),
-        Err(e) => Ok(DocumentResponse {
-            success: false,
-            content: None,
-            error: Some(e.to_string()),
-        }),
-    }
+        match service.read(&path) {
+            Ok(content) => Ok(DocumentResponse {
+                success: true,
+                content: Some(content.into()),
+                error: None,
+            }),
+            Err(e) => Ok(DocumentResponse {
+                success: false,
+                content: None,
+                error: Some(e.to_string()),
+            }),
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read a document from a local file or supported container entry.
@@ -310,21 +314,25 @@ pub async fn document_read_source(source: HashSourceInput) -> Result<DocumentRes
 /// Get document metadata
 #[command]
 pub async fn document_get_metadata(path: String) -> Result<MetadataResponse, String> {
-    let service = DocumentService::new();
-    let path = PathBuf::from(&path);
+    tokio::task::spawn_blocking(move || {
+        let service = DocumentService::new();
+        let path = PathBuf::from(&path);
 
-    match service.get_metadata(&path) {
-        Ok(metadata) => Ok(MetadataResponse {
-            success: true,
-            metadata: Some(metadata.into()),
-            error: None,
-        }),
-        Err(e) => Ok(MetadataResponse {
-            success: false,
-            metadata: None,
-            error: Some(e.to_string()),
-        }),
-    }
+        match service.get_metadata(&path) {
+            Ok(metadata) => Ok(MetadataResponse {
+                success: true,
+                metadata: Some(metadata.into()),
+                error: None,
+            }),
+            Err(e) => Ok(MetadataResponse {
+                success: false,
+                metadata: None,
+                error: Some(e.to_string()),
+            }),
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get document metadata from a local file or supported container entry.
@@ -475,16 +483,20 @@ fn read_local_header(path_ref: &Path, max_bytes: usize) -> std::io::Result<Vec<u
 /// Returns format info with recommended viewer type.
 #[command]
 pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse, String> {
-    let path_ref = std::path::Path::new(&path);
-    let header = read_local_header(path_ref, 265).map_err(|e| {
-        format!(
-            "Failed to read local header for {}: {}",
-            path_ref.display(),
-            e
-        )
-    })?;
+    tokio::task::spawn_blocking(move || {
+        let path_ref = std::path::Path::new(&path);
+        let header = read_local_header(path_ref, 265).map_err(|e| {
+            format!(
+                "Failed to read local header for {}: {}",
+                path_ref.display(),
+                e
+            )
+        })?;
 
-    Ok(detect_content_format_from_header(path_ref, &header))
+        Ok(detect_content_format_from_header(path_ref, &header))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Detect file format from a local file or supported container entry.
@@ -516,7 +528,9 @@ const SPREADSHEET_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 /// Get spreadsheet metadata (sheets, format, etc.)
 #[command]
 pub async fn spreadsheet_info(path: String) -> Result<SpreadsheetInfo, String> {
-    read_spreadsheet_info(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || read_spreadsheet_info(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get spreadsheet metadata from a local file or supported container entry.
@@ -543,7 +557,11 @@ pub async fn spreadsheet_read_sheet(
 ) -> Result<Vec<Vec<CellValue>>, String> {
     let start = start_row.unwrap_or(0);
     let max = max_rows.unwrap_or(500);
-    read_sheet(&path, &sheet_name, start, max).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        read_sheet(&path, &sheet_name, start, max).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read a sheet from a local file or supported container entry.
@@ -580,7 +598,9 @@ const EMAIL_SOURCE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// Parse an EML email file and return structured email info
 #[command]
 pub async fn email_parse_eml(path: String) -> Result<EmailInfo, String> {
-    parse_eml(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || parse_eml(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse an EML email from a local file or supported container entry.
@@ -603,7 +623,9 @@ pub async fn email_parse_mbox(
     path: String,
     max_messages: Option<usize>,
 ) -> Result<Vec<EmailInfo>, String> {
-    parse_mbox(&path, max_messages).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || parse_mbox(&path, max_messages).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse an MBOX mailbox from a local file or supported container entry.
@@ -626,7 +648,9 @@ pub async fn email_parse_mbox_source(
 /// Parse an Outlook .msg file and return structured email info
 #[command]
 pub async fn email_parse_msg(path: String) -> Result<EmailInfo, String> {
-    parse_msg(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || parse_msg(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse an Outlook .msg file from a local file or supported container entry.
@@ -799,7 +823,9 @@ use super::plist_viewer::{
 /// Read and parse a plist file, returning flattened entries
 #[command]
 pub async fn plist_read(path: String) -> Result<PlistInfo, String> {
-    read_plist(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || read_plist(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read and parse a plist from a local file or supported container entry.
@@ -826,7 +852,9 @@ use super::exif::{ensure_exif_size_allowed, extract_exif, extract_exif_from_read
 /// Extract EXIF metadata from an image file
 #[command]
 pub async fn exif_extract(path: String) -> Result<ExifMetadata, String> {
-    extract_exif(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || extract_exif(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Extract EXIF metadata from a local file or supported container entry.
@@ -917,7 +945,9 @@ fn with_registry_source<T>(
 /// Get overview information about a Windows Registry hive file
 #[command]
 pub async fn registry_get_info(path: String) -> Result<RegistryHiveInfo, String> {
-    get_hive_info(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || get_hive_info(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get overview information about a Windows Registry hive inside an evidence source.
@@ -940,7 +970,11 @@ pub async fn registry_get_subkeys(
     hive_path: String,
     key_path: String,
 ) -> Result<RegistrySubkeysResponse, String> {
-    get_subkeys(&hive_path, &key_path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        get_subkeys(&hive_path, &key_path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get immediate subkeys from a registry hive inside an evidence source.
@@ -964,7 +998,11 @@ pub async fn registry_get_key_info(
     hive_path: String,
     key_path: String,
 ) -> Result<RegistryKeyInfo, String> {
-    get_key_info(&hive_path, &key_path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        get_key_info(&hive_path, &key_path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get detailed key information from a registry hive inside an evidence source.
@@ -1024,7 +1062,9 @@ fn with_database_source<T>(
 /// Get overview information about a SQLite database
 #[command]
 pub async fn database_get_info(path: String) -> Result<DatabaseInfo, String> {
-    get_database_info(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || get_database_info(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get overview information about a SQLite database inside an evidence source.
@@ -1047,7 +1087,11 @@ pub async fn database_get_table_schema(
     db_path: String,
     table_name: String,
 ) -> Result<TableSchema, String> {
-    get_table_schema(&db_path, &table_name).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        get_table_schema(&db_path, &table_name).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get schema for a table in a SQLite database inside an evidence source.
@@ -1073,7 +1117,11 @@ pub async fn database_query_table(
     page: usize,
     page_size: usize,
 ) -> Result<TableRows, String> {
-    query_table_rows(&db_path, &table_name, page, page_size).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        query_table_rows(&db_path, &table_name, page, page_size).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Query paginated rows from a table in a SQLite evidence source.
@@ -1106,7 +1154,9 @@ const OFFICE_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 /// Supports: DOCX, DOC, PPTX, PPT, ODT, ODP, RTF
 #[command]
 pub async fn office_read_document(path: String) -> Result<OfficeDocumentInfo, String> {
-    read_office_document(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || read_office_document(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read an office document from a local file or supported container entry.
