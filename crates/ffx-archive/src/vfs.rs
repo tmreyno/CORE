@@ -517,14 +517,14 @@ impl ArchiveVfs {
             return Err(VfsError::NotAFile(path.to_string()));
         }
 
-        let entry_path = path.trim_start_matches('/');
-        let data = super::libarchive_read_file(&self.path, entry_path)
-            .map_err(|e| VfsError::IoError(format!("Failed to read archive entry: {}", e)))?;
-
-        let Some((start, end)) = bounded_read_range(offset, size, data.len())? else {
+        let declared_size = entry.attr.size;
+        if bounded_read_range_u64(offset, size, declared_size)?.is_none() {
             return Ok(Vec::new());
-        };
-        Ok(data[start..end].to_vec())
+        }
+
+        let entry_path = path.trim_start_matches('/');
+        super::libarchive_read_file_range(&self.path, entry_path, offset, size)
+            .map_err(|e| VfsError::IoError(format!("Failed to read archive entry range: {}", e)))
     }
 
     /// Read file data from archive
@@ -713,26 +713,6 @@ impl VirtualFileSystem for ArchiveVfs {
             _ => self.read_libarchive_file(&normalized, offset, size),
         }
     }
-}
-
-fn bounded_read_range(
-    offset: u64,
-    size: usize,
-    len: usize,
-) -> Result<Option<(usize, usize)>, VfsError> {
-    let len_u64 = u64::try_from(len)
-        .map_err(|_| VfsError::InvalidPath("Archive entry length too large".to_string()))?;
-    if offset > len_u64 {
-        return Err(VfsError::OutOfBounds { offset, size });
-    }
-    if offset == len_u64 || size == 0 {
-        return Ok(None);
-    }
-
-    let start = usize::try_from(offset)
-        .map_err(|_| VfsError::InvalidPath("Archive range offset too large".to_string()))?;
-    let end = start.saturating_add(size).min(len);
-    Ok(Some((start, end)))
 }
 
 fn bounded_read_range_u64(
@@ -1183,12 +1163,12 @@ mod tests {
 
     #[test]
     fn test_bounded_read_range_allows_exact_eof() {
-        assert_eq!(bounded_read_range(8, 4, 8).unwrap(), None);
+        assert_eq!(bounded_read_range_u64(8, 4, 8).unwrap(), None);
     }
 
     #[test]
     fn test_bounded_read_range_rejects_offset_past_end() {
-        let err = bounded_read_range(10, 4, 8).unwrap_err();
+        let err = bounded_read_range_u64(10, 4, 8).unwrap_err();
         assert!(matches!(
             err,
             VfsError::OutOfBounds {
@@ -1200,7 +1180,10 @@ mod tests {
 
     #[test]
     fn test_bounded_read_range_saturates_large_size() {
-        assert_eq!(bounded_read_range(6, usize::MAX, 8).unwrap(), Some((6, 8)));
+        assert_eq!(
+            bounded_read_range_u64(6, usize::MAX, 8).unwrap(),
+            Some((6, 8))
+        );
     }
 
     #[test]

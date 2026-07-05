@@ -45,7 +45,8 @@ pub use libarchive_backend::{
     detect_format as libarchive_detect_format, is_supported_archive as libarchive_is_supported,
     list_all_entries as libarchive_list_all, list_root as libarchive_list_root,
     quick_summary as libarchive_summary, read_file as libarchive_read_file,
-    read_file_encrypted as libarchive_read_encrypted, ArchiveEntryInfo, LibarchiveHandler,
+    read_file_encrypted as libarchive_read_encrypted,
+    read_file_range as libarchive_read_file_range, ArchiveEntryInfo, LibarchiveHandler,
 };
 pub use sevenz::is_split_archive;
 pub use types::{ArchiveFormat, ArchiveInfo};
