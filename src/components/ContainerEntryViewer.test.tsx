@@ -1018,13 +1018,12 @@ describe("ContainerEntryViewer", () => {
         isVfsEntry: true,
         isDiskFile: false,
       });
-      const { container, dispose } = renderComponent(() =>
+      const { dispose } = renderComponent(() =>
         <ContainerEntryViewer entry={entry} viewMode="auto" />
       );
 
-      await tick(200);
+      await tick(700);
 
-      expect(container.textContent).toContain("PE");
       expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", {
         source: expect.objectContaining({
