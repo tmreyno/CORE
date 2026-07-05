@@ -7,6 +7,7 @@
 import { createSignal, createEffect, createMemo } from "solid-js";
 import { commands } from "../../api/commands";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 import type { ExifMetadataSection } from "../../types/viewerMetadata";
 import type { ExifMetadata, ExifPanelProps } from "./types";
 
@@ -23,6 +24,10 @@ export function useExifData(props: ExifPanelProps) {
     setLoading(true);
     setError(null);
     try {
+      if (!isTauri) {
+        throw new Error("Image EXIF metadata is available in the desktop app.");
+      }
+
       const data = props.source
         ? await commands.image.extractExifSource(props.source)
         : await commands.image.extractExif(props.path);
