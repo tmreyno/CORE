@@ -1172,7 +1172,7 @@ fn materialized_source_cache_key(
         )
     })?;
     if fingerprint_size > 0 {
-        let fingerprint = byte_source.read_range(0, fingerprint_size).map_err(|e| {
+        let fingerprint = read_range_fully(byte_source, 0, fingerprint_size).map_err(|e| {
             format!(
                 "Failed to fingerprint materialized source {}: {e}",
                 source_ref.display_id()
