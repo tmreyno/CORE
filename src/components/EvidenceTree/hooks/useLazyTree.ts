@@ -230,12 +230,15 @@ export function useLazyTree(): UseLazyTreeReturn {
       // Load children if not cached
       if (!lazyChildrenCache().has(nodeKey)) {
         setLoading(prev => new Set([...prev, nodeKey]));
-        await loadLazyChildren(containerPath, entryPath);
-        setLoading(prev => {
-          const next = new Set(prev);
-          next.delete(nodeKey);
-          return next;
-        });
+        try {
+          await loadLazyChildren(containerPath, entryPath);
+        } finally {
+          setLoading(prev => {
+            const next = new Set(prev);
+            next.delete(nodeKey);
+            return next;
+          });
+        }
       }
       expanded.add(nodeKey);
       setExpandedLazyPaths(new Set(expanded));
@@ -257,18 +260,20 @@ export function useLazyTree(): UseLazyTreeReturn {
     const offset = currentEntries.length;
     
     setLoading(prev => new Set([...prev, `${cacheKey}::more`]));
-    
-    if (parentPath === "root") {
-      await loadLazyRootChildren(containerPath, offset, 100);
-    } else {
-      await loadLazyChildren(containerPath, parentPath, offset, 100);
+
+    try {
+      if (parentPath === "root") {
+        await loadLazyRootChildren(containerPath, offset, 100);
+      } else {
+        await loadLazyChildren(containerPath, parentPath, offset, 100);
+      }
+    } finally {
+      setLoading(prev => {
+        const next = new Set(prev);
+        next.delete(`${cacheKey}::more`);
+        return next;
+      });
     }
-    
-    setLoading(prev => {
-      const next = new Set(prev);
-      next.delete(`${cacheKey}::more`);
-      return next;
-    });
   };
   
   // Check if currently loading more for a lazy path

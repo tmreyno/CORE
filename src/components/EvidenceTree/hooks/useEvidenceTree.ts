@@ -185,15 +185,18 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
     if (browserMode === "lazy") {
       // UFED and L01 both use the lazy tree backend.
       setLoadingState(path, true);
-      await lazy.loadLazySummary(path);
-      expanded.add(path);
-      setExpandedContainers(new Set(expanded));
+      try {
+        await lazy.loadLazySummary(path);
+        expanded.add(path);
+        setExpandedContainers(new Set(expanded));
 
-      const rootKey = `${path}::lazy::root`;
-      if (!lazy.lazyChildrenCache().has(rootKey)) {
-        await lazy.loadLazyRootChildren(path, 0, 100);
+        const rootKey = `${path}::lazy::root`;
+        if (!lazy.lazyChildrenCache().has(rootKey)) {
+          await lazy.loadLazyRootChildren(path, 0, 100);
+        }
+      } finally {
+        setLoadingState(path, false);
       }
-      setLoadingState(path, false);
       return;
     }
 
@@ -210,21 +213,27 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       setExpandedContainers(new Set(expanded));
       
       if (needsMount) {
-        await vfs.mountVfsContainer(path);
-        setLoadingState(path, false);
+        try {
+          await vfs.mountVfsContainer(path);
+        } finally {
+          setLoadingState(path, false);
+        }
       }
       return;
     } else if (isArchiveContainer(containerType)) {
       // Load archive metadata first (fast), then tree
       setLoadingState(path, true);
-      await archive.loadArchiveMetadata(path);
-      expanded.add(path);
-      setExpandedContainers(new Set(expanded));
-      
-      if (!archive.archiveTreeCache().has(path)) {
-        await archive.loadArchiveTree(path);
+      try {
+        await archive.loadArchiveMetadata(path);
+        expanded.add(path);
+        setExpandedContainers(new Set(expanded));
+
+        if (!archive.archiveTreeCache().has(path)) {
+          await archive.loadArchiveTree(path);
+        }
+      } finally {
+        setLoadingState(path, false);
       }
-      setLoadingState(path, false);
       return;
     } else if (isAd1Container(containerType)) {
       // AD1 container - load tree, info, and status
@@ -241,13 +250,16 @@ export function useEvidenceTree(props: UseEvidenceTreeProps): UseEvidenceTreeRet
       log.debug(' AD1 EXPANDED - set contains path:', expandedContainers().has(path), 'size:', expandedContainers().size);
       
       if (needsLoad) {
-        await Promise.all([
-          ad1.loadRootChildren(path),
-          ad1.loadAd1Info(path),
-          ad1.loadContainerStatus(path),  // Load segment status for incomplete container detection
-        ]);
-        setLoadingState(path, false);
-        log.debug(' AD1 loading complete - still expanded:', expandedContainers().has(path));
+        try {
+          await Promise.all([
+            ad1.loadRootChildren(path),
+            ad1.loadAd1Info(path),
+            ad1.loadContainerStatus(path),  // Load segment status for incomplete container detection
+          ]);
+          log.debug(' AD1 loading complete - still expanded:', expandedContainers().has(path));
+        } finally {
+          setLoadingState(path, false);
+        }
       }
       return;
     }

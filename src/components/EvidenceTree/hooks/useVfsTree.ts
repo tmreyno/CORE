@@ -152,12 +152,15 @@ export function useVfsTree(): UseVfsTreeReturn {
       
       if (needsLoad) {
         setLoading(prev => new Set([...prev, nodeKey]));
-        await loadVfsChildren(containerPath, vfsPath);
-        setLoading(prev => {
-          const next = new Set(prev);
-          next.delete(nodeKey);
-          return next;
-        });
+        try {
+          await loadVfsChildren(containerPath, vfsPath);
+        } finally {
+          setLoading(prev => {
+            const next = new Set(prev);
+            next.delete(nodeKey);
+            return next;
+          });
+        }
       }
       
       expanded.add(nodeKey);

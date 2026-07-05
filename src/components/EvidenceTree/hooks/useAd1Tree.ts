@@ -328,18 +328,20 @@ export function useAd1Tree(): UseAd1TreeReturn {
       
       if (!childrenCache().has(nodeKey)) {
         setLoading(prev => new Set([...prev, nodeKey]));
-        
-        if (addr) {
-          await loadChildrenByAddr(containerPath, addr, entryPath);
-        } else {
-          await loadChildrenByPath(containerPath, entryPath);
+
+        try {
+          if (addr) {
+            await loadChildrenByAddr(containerPath, addr, entryPath);
+          } else {
+            await loadChildrenByPath(containerPath, entryPath);
+          }
+        } finally {
+          setLoading(prev => {
+            const next = new Set(prev);
+            next.delete(nodeKey);
+            return next;
+          });
         }
-        
-        setLoading(prev => {
-          const next = new Set(prev);
-          next.delete(nodeKey);
-          return next;
-        });
       }
     }
   };
