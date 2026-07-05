@@ -590,9 +590,9 @@ describe("ContainerEntryViewer", () => {
   });
 
   describe("preview extraction flow", () => {
-    it("extracts container entry to temp for AD1 files", async () => {
+    it("uses source-backed preview for AD1 files without temp extraction", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "container_extract_entry_to_temp") return "/tmp/extracted.pdf";
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -611,16 +611,20 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(mockInvoke).toHaveBeenCalledWith("container_extract_entry_to_temp", expect.objectContaining({
-        containerPath: "/evidence/container.ad1",
-        entryPath: "files/report.pdf",
-      }));
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_get_binary_info_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "files/report.pdf",
+          containerType: "ad1",
+        }),
+      });
       dispose();
     });
 
-    it("extracts archive entry with archive flag", async () => {
+    it("uses source-backed preview for archive entries without temp extraction", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "container_extract_entry_to_temp") return "/tmp/archived.xlsx";
+        if (cmd === "spreadsheet_info_source") return { sheets: [] };
         return null;
       });
 
@@ -637,10 +641,14 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(mockInvoke).toHaveBeenCalledWith("container_extract_entry_to_temp", expect.objectContaining({
-        containerPath: "/evidence/archive.zip",
-        isArchiveEntry: true,
-      }));
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_detect_type_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/archive.zip",
+          entryPath: "data.xlsx",
+          containerType: "zip",
+        }),
+      });
       dispose();
     });
 
@@ -696,9 +704,9 @@ describe("ContainerEntryViewer", () => {
       dispose();
     });
 
-    it("passes dataAddr to extract command when available", async () => {
+    it("passes dataAddr to source-backed preview commands when available", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "container_extract_entry_to_temp") return "/tmp/entry.bin";
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -717,9 +725,14 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(mockInvoke).toHaveBeenCalledWith("container_extract_entry_to_temp", expect.objectContaining({
-        dataAddr: 0x1000,
-      }));
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_get_binary_info_source", {
+        source: expect.objectContaining({
+          dataAddr: 0x1000,
+          containerType: "ad1",
+          entryPath: "files/entry.pdf",
+        }),
+      });
       dispose();
     });
 
@@ -742,9 +755,15 @@ describe("ContainerEntryViewer", () => {
   });
 
   describe("preview loading state", () => {
-    it("shows extracting spinner during preview extraction", async () => {
-      // Use a promise that never resolves to keep loading state
-      mockInvoke.mockReturnValue(new Promise(() => {}));
+    it("does not show temp extraction spinner for source-backed image preview", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
+        }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
+        return null;
+      });
 
       const entry = makeEntry({ name: "photo.jpg", isArchiveEntry: true });
       const { container, dispose } = renderComponent(() =>
@@ -753,13 +772,21 @@ describe("ContainerEntryViewer", () => {
 
       await tick(100);
 
-      expect(container.textContent).toContain("Extracting file...");
+      expect(container.textContent).not.toContain("Extracting file...");
       expect(container.textContent).toContain("photo.jpg");
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
 
-    it("shows Loading text on Preview button during extraction", async () => {
-      mockInvoke.mockReturnValue(new Promise(() => {}));
+    it("keeps preview controls enabled for source-backed image preview", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
+        }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
+        return null;
+      });
 
       const entry = makeEntry({ name: "photo.jpg", isArchiveEntry: true });
       const onChange = vi.fn();
@@ -772,18 +799,19 @@ describe("ContainerEntryViewer", () => {
       const loadingBtn = Array.from(container.querySelectorAll("button")).find(
         b => b.textContent?.includes("Loading...")
       );
-      expect(loadingBtn).toBeDefined();
-      expect(loadingBtn?.disabled).toBe(true);
+      expect(loadingBtn).toBeUndefined();
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
   });
 
   describe("preview error state", () => {
-    it("displays error message when extraction fails", async () => {
+    it("does not surface temp extraction errors for source-backed preview", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {
           throw new Error("Permission denied: /tmp/extract");
         }
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -794,16 +822,18 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(container.textContent).toContain("Preview unavailable");
-      expect(container.textContent).toContain("Permission denied: /tmp/extract");
+      expect(container.textContent).not.toContain("Preview unavailable");
+      expect(container.textContent).not.toContain("Permission denied: /tmp/extract");
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
 
-    it("handles string error from extraction", async () => {
+    it("skips string extraction errors for source-backed preview", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {
           throw "Container is corrupted";
         }
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -814,8 +844,9 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(container.textContent).toContain("Preview unavailable");
-      expect(container.textContent).toContain("Container is corrupted");
+      expect(container.textContent).not.toContain("Preview unavailable");
+      expect(container.textContent).not.toContain("Container is corrupted");
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
   });
@@ -1445,9 +1476,11 @@ describe("ContainerEntryViewer", () => {
 
     it("clears stale preview loading when the selected entry changes", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "container_extract_entry_to_temp") {
-          return new Promise(() => {});
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
         }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
         return null;
       });
 
@@ -1460,7 +1493,8 @@ describe("ContainerEntryViewer", () => {
       ));
 
       await tick(50);
-      expect(container.textContent).toContain("Extracting file");
+      expect(container.textContent).toContain("photo.jpg");
+      expect(container.textContent).not.toContain("Extracting file");
 
       setViewMode("hex");
       setEntry(makeEntry({ name: "notes.bin", entryPath: "/files/notes.bin" }));

@@ -233,6 +233,14 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       if (isDiskFile) {
         log.debug("Using disk file path directly:", props.entry.entryPath);
         filePath = props.entry.entryPath;
+      } else if (entrySource()) {
+        log.debug("Using source-backed preview without temp extraction:", props.entry.entryPath, {
+          containerPath: props.entry.containerPath,
+          isVfsEntry: props.entry.isVfsEntry,
+          isArchiveEntry: props.entry.isArchiveEntry,
+          size: props.entry.size,
+        });
+        filePath = props.entry.entryPath;
       } else {
         log.debug("Extracting for preview:", props.entry.entryPath, {
           containerPath: props.entry.containerPath,
