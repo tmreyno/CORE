@@ -606,6 +606,10 @@ use super::email::{
 };
 
 const EMAIL_SOURCE_MAX_BYTES: u64 = 50 * 1024 * 1024;
+const MSG_SOURCE_CACHE_MAX_ENTRIES: usize = 16;
+
+static MSG_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Parse an EML email file and return structured email info
 #[command]
@@ -670,7 +674,8 @@ pub async fn email_parse_msg(path: String) -> Result<EmailInfo, String> {
 pub async fn email_parse_msg_source(source: HashSourceInput) -> Result<EmailInfo, String> {
     tokio::task::spawn_blocking(move || {
         let byte_source = open_hash_source(&source)?;
-        let source_id = byte_source.source_ref().display_id();
+        let source_ref = byte_source.source_ref();
+        let source_id = source_ref.display_id();
         let size = byte_source.len().map_err(|e| e.to_string())?;
         if size > EMAIL_SOURCE_MAX_BYTES {
             return Err(format!(
@@ -679,25 +684,76 @@ pub async fn email_parse_msg_source(source: HashSourceInput) -> Result<EmailInfo
             ));
         }
 
-        let mut temp = tempfile::Builder::new()
-            .prefix("core-ffx-msg-")
-            .suffix(".msg")
-            .tempfile()
-            .map_err(|e| format!("Failed to create temporary MSG copy: {}", e))?;
-        copy_evidence_source_to_writer(byte_source.as_ref(), size, "MSG", &mut temp)?;
-        temp.flush()
-            .map_err(|e| format!("Failed to flush temporary MSG copy: {}", e))?;
-        temp.as_file()
-            .sync_all()
-            .map_err(|e| format!("Failed to sync temporary MSG copy: {}", e))?;
+        if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+            let mut info = parse_msg(path).map_err(|e| e.to_string())?;
+            info.path = source_id;
+            info.size = size;
+            return Ok(info);
+        }
 
-        let mut info = parse_msg(temp.path()).map_err(|e| e.to_string())?;
+        let cache_path =
+            cached_msg_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+        let mut info = parse_msg(&cache_path).map_err(|e| e.to_string())?;
         info.path = source_id;
         info.size = size;
         Ok(info)
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn cached_msg_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = materialized_source_cache_key(source_ref, size);
+    if let Some(path) = materialized_source_cache_get(&MSG_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-msg-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create MSG source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.msg"));
+
+    if cache_path.exists() {
+        materialized_source_cache_insert(
+            &MSG_SOURCE_CACHE,
+            MSG_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
+    let mut temp = tempfile::Builder::new()
+        .prefix("core-ffx-msg-")
+        .suffix(".msg")
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary MSG copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "MSG", &mut temp)?;
+    temp.flush()
+        .map_err(|e| format!("Failed to flush temporary MSG copy: {e}"))?;
+    temp.as_file()
+        .sync_all()
+        .map_err(|e| format!("Failed to sync temporary MSG copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist MSG source cache copy: {}", e.error))?;
+
+    materialized_source_cache_insert(
+        &MSG_SOURCE_CACHE,
+        MSG_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached MSG evidence source for viewer parsing"
+    );
+    Ok(cache_path)
 }
 
 // =============================================================================
@@ -1648,6 +1704,42 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn msg_source_materialization_cache_reuses_evidence_copy() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let source_ref = EvidenceSourceRef::VfsEntry {
+            container_path: format!("/cases/mail-{nonce}.E01"),
+            entry_path: "/Users/alice/message.msg".to_string(),
+            container_type: Some("e01".to_string()),
+        };
+        let source = ChunkedByteSource {
+            source_ref: source_ref.clone(),
+            data: b"msg-bytes".to_vec(),
+            max_chunk: 3,
+        };
+
+        let first = cached_msg_source_path(
+            &source,
+            &source_ref,
+            &source_ref.display_id(),
+            source.len().unwrap(),
+        )
+        .unwrap();
+        let second = cached_msg_source_path(
+            &source,
+            &source_ref,
+            &source_ref.display_id(),
+            source.len().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(std::fs::read(first).unwrap(), b"msg-bytes");
     }
 
     #[test]
