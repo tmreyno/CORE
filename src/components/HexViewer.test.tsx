@@ -185,6 +185,41 @@ describe("HexViewer", () => {
     });
   });
 
+  describe("Large source navigation", () => {
+    it("loads a bounded window when navigating beyond the backend chunk limit", async () => {
+      let navigateTo: ((offset: number, size?: number) => void) | undefined;
+      mockReadBytesFromSource
+        .mockResolvedValueOnce({
+          bytes: createMockBytes(64),
+          totalSize: 128 * 1024 * 1024,
+        })
+        .mockResolvedValueOnce({
+          bytes: createMockBytes(32768),
+          totalSize: 128 * 1024 * 1024,
+        });
+
+      renderComponent(() => (
+        <HexViewer
+          file={mockDiskFile}
+          onNavigatorReady={(navigator) => {
+            navigateTo = navigator;
+          }}
+        />
+      ));
+      await tick();
+
+      navigateTo?.(32 * 1024 * 1024, 16);
+      await tick();
+
+      expect(mockReadBytesFromSource).toHaveBeenLastCalledWith(
+        mockDiskFile,
+        undefined,
+        32 * 1024 * 1024,
+        32768,
+      );
+    });
+  });
+
   describe("Loading and error states", () => {
     it("shows loading state initially", () => {
       mockReadBytesFromSource.mockReturnValue(new Promise(() => {}));

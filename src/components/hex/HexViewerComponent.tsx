@@ -37,7 +37,7 @@ export function HexViewer(props: HexViewerProps) {
       <HexToolbar
         fileType={hex.fileType()}
         fileSize={hex.totalFileSize()}
-        loadedBytes={hex.loadedUpTo()}
+        loadedBytes={hex.loadedBytes().length}
         loadProgress={hex.loadProgress()}
         loading={hex.loading()}
         loadingMore={hex.loadingMore()}
@@ -119,7 +119,7 @@ export function HexViewer(props: HexViewerProps) {
           <Show
             when={
               !hex.loadingMore() &&
-              hex.loadedUpTo() >= hex.maxLoadedBytes() &&
+              hex.loadedBytes().length >= hex.maxLoadedBytes() &&
               hex.totalFileSize() > hex.maxLoadedBytes()
             }
           >

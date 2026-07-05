@@ -44,6 +44,7 @@ import { isTauri } from "../../utils/platform";
 const log = logger.scope("HexViewer");
 const ANALYSIS_SAMPLE_BYTES = 64 * 1024;
 const ANALYSIS_ENTROPY_WINDOW_BYTES = 4096;
+const MAX_HEX_SOURCE_READ_SIZE = 16 * 1024 * 1024;
 
 export interface UseHexDataOptions {
   file: () => DiscoveredFile | null | undefined;
@@ -132,6 +133,7 @@ export function useHexData(opts: UseHexDataOptions) {
   // ── State signals ──
   const [loadedBytes, setLoadedBytes] = createSignal<number[]>([]);
   const [totalFileSize, setTotalFileSize] = createSignal(0);
+  const [loadedBaseOffset, setLoadedBaseOffset] = createSignal(0);
   const [loadedUpTo, setLoadedUpTo] = createSignal(0);
   const [metadata, setMetadata] = createSignal<ParsedMetadata | null>(null);
   const [fileType, setFileType] = createSignal<FileTypeInfo | null>(null);
@@ -158,10 +160,14 @@ export function useHexData(opts: UseHexDataOptions) {
   const hasRegions = createMemo(() => metadataRegions().length > 0);
   const loadProgress = createMemo(() => {
     const total = totalFileSize();
-    return total === 0 ? 0 : Math.round((loadedUpTo() / total) * 100);
+    return total === 0
+      ? 0
+      : Math.round((loadedBytes().length / total) * 100);
   });
   const canLoadMore = createMemo(
-    () => loadedUpTo() < totalFileSize() && loadedUpTo() < maxLoadedBytes(),
+    () =>
+      loadedUpTo() < totalFileSize() &&
+      loadedBytes().length < maxLoadedBytes(),
   );
 
   // ── Data loading ──
@@ -170,6 +176,7 @@ export function useHexData(opts: UseHexDataOptions) {
     setLoading(true);
     setError(null);
     setLoadedBytes([]);
+    setLoadedBaseOffset(0);
     setLoadedUpTo(0);
 
     const file = opts.file();
@@ -223,16 +230,18 @@ export function useHexData(opts: UseHexDataOptions) {
     if (loadingMore() || loading()) return;
     const generation = byteLoadGeneration;
     const currentLoaded = loadedUpTo();
+    const bufferedBytes = loadedBytes().length;
     const total = totalFileSize();
     const maxBytes = getMaxLoadedBytes();
-    if (currentLoaded >= total || currentLoaded >= maxBytes) return;
+    if (currentLoaded >= total || bufferedBytes >= maxBytes) return;
 
     setLoadingMore(true);
     try {
       const sizeToLoad = Math.min(
         LOAD_MORE_SIZE,
         total - currentLoaded,
-        maxBytes - currentLoaded,
+        maxBytes - bufferedBytes,
+        MAX_HEX_SOURCE_READ_SIZE,
       );
       const result = await readBytesFromSource(
         opts.file() ?? null,
@@ -265,7 +274,9 @@ export function useHexData(opts: UseHexDataOptions) {
 
   const scrollToOffset = (offset: number) => {
     if (!scrollContainerRef) return;
-    const lineNumber = Math.floor(offset / BYTES_PER_LINE);
+    if (typeof scrollContainerRef.scrollTo !== "function") return;
+    const relativeOffset = Math.max(0, offset - loadedBaseOffset());
+    const lineNumber = Math.floor(relativeOffset / BYTES_PER_LINE);
     const lineHeight = 20;
     const headerHeight = 28;
     const scrollPosition = lineNumber * lineHeight + headerHeight;
@@ -275,30 +286,59 @@ export function useHexData(opts: UseHexDataOptions) {
     });
   };
 
+  const isOffsetBuffered = (offset: number) =>
+    offset >= loadedBaseOffset() && offset < loadedUpTo();
+
+  const loadWindowAtOffset = async (
+    offset: number,
+    requestedSize = LOAD_MORE_SIZE,
+    generation = byteLoadGeneration,
+  ) => {
+    const total = totalFileSize();
+    if (total <= 0) return false;
+
+    const windowStart = Math.max(
+      0,
+      Math.floor(offset / BYTES_PER_LINE) * BYTES_PER_LINE,
+    );
+    const sizeToLoad = Math.min(
+      Math.max(LOAD_MORE_SIZE, requestedSize),
+      total - windowStart,
+      getMaxLoadedBytes(),
+      MAX_HEX_SOURCE_READ_SIZE,
+    );
+    if (sizeToLoad <= 0) return false;
+
+    setLoadingMore(true);
+    try {
+      const result = await readBytesFromSource(
+        opts.file() ?? null,
+        opts.entry(),
+        windowStart,
+        sizeToLoad,
+      );
+      if (generation !== byteLoadGeneration) return false;
+      setLoadedBaseOffset(windowStart);
+      setLoadedBytes(result.bytes);
+      setLoadedUpTo(windowStart + result.bytes.length);
+      return true;
+    } finally {
+      if (generation === byteLoadGeneration) {
+        setLoadingMore(false);
+      }
+    }
+  };
+
   const navigateToOffset = async (offset: number, size?: number) => {
     if (typeof offset !== "number" || isNaN(offset) || offset < 0) return;
     const generation = byteLoadGeneration;
     setNavigatedRange({ offset, size: size ?? 4 });
-    if (offset >= loadedUpTo()) {
-      const targetOffset = Math.min(offset + LOAD_MORE_SIZE, totalFileSize());
-      setLoadingMore(true);
+    if (!isOffsetBuffered(offset)) {
       try {
-        const result = await readBytesFromSource(
-          opts.file() ?? null,
-          opts.entry(),
-          0,
-          targetOffset,
-        );
-        if (generation !== byteLoadGeneration) return;
-        setLoadedBytes(result.bytes);
-        setLoadedUpTo(result.bytes.length);
+        await loadWindowAtOffset(offset, size, generation);
       } catch (e) {
         if (generation !== byteLoadGeneration) return;
         log.error("Failed to navigate to offset:", e);
-      } finally {
-        if (generation === byteLoadGeneration) {
-          setLoadingMore(false);
-        }
       }
     }
     setTimeout(() => scrollToOffset(offset), 100);
@@ -324,27 +364,13 @@ export function useHexData(opts: UseHexDataOptions) {
     }
 
     setNavigatedRange({ offset, size: 4 });
-    if (offset >= loadedUpTo()) {
-      const targetOffset = Math.min(offset + LOAD_MORE_SIZE, totalFileSize());
-      setLoadingMore(true);
+    if (!isOffsetBuffered(offset)) {
       try {
-        const result = await readBytesFromSource(
-          opts.file() ?? null,
-          opts.entry(),
-          0,
-          targetOffset,
-        );
-        if (generation !== byteLoadGeneration) return;
-        setLoadedBytes(result.bytes);
-        setLoadedUpTo(result.bytes.length);
+        await loadWindowAtOffset(offset, 4, generation);
       } catch (e) {
         if (generation !== byteLoadGeneration) return;
         setError(`Failed to navigate: ${e}`);
         return;
-      } finally {
-        if (generation === byteLoadGeneration) {
-          setLoadingMore(false);
-        }
       }
     }
 
@@ -363,29 +389,16 @@ export function useHexData(opts: UseHexDataOptions) {
       offset: region.start,
       size: region.end - region.start,
     });
-    if (region.start >= loadedUpTo()) {
-      const targetOffset = Math.min(
-        region.end + LOAD_MORE_SIZE,
-        totalFileSize(),
-      );
-      setLoadingMore(true);
+    if (!isOffsetBuffered(region.start)) {
       try {
-        const result = await readBytesFromSource(
-          opts.file() ?? null,
-          opts.entry(),
-          0,
-          targetOffset,
+        await loadWindowAtOffset(
+          region.start,
+          region.end - region.start,
+          generation,
         );
-        if (generation !== byteLoadGeneration) return;
-        setLoadedBytes(result.bytes);
-        setLoadedUpTo(result.bytes.length);
       } catch (err) {
         if (generation !== byteLoadGeneration) return;
         log.error("Failed to load region:", err);
-      } finally {
-        if (generation === byteLoadGeneration) {
-          setLoadingMore(false);
-        }
       }
     }
     setTimeout(() => scrollToOffset(region.start), 100);
@@ -406,9 +419,10 @@ export function useHexData(opts: UseHexDataOptions) {
         region: HeaderRegion | null;
       }[];
     }[] = [];
+    const baseOffset = loadedBaseOffset();
     for (let i = 0; i < bytes.length; i += BYTES_PER_LINE) {
       const lineBytes = bytes.slice(i, i + BYTES_PER_LINE);
-      const lineOffset = i;
+      const lineOffset = baseOffset + i;
       lines.push({
         offset: lineOffset,
         bytes: lineBytes.map((byte, j) => {
@@ -557,6 +571,7 @@ export function useHexData(opts: UseHexDataOptions) {
         if (!key) return;
         setLoadedBytes([]);
         setError(null);
+        setLoadedBaseOffset(0);
         setLoadedUpTo(0);
         setTotalFileSize(0);
         setNavigatedRange(null);
