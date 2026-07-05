@@ -213,7 +213,7 @@ describe("buildEvidenceSourceInput", () => {
       containerPath: "/case/disk.E01",
       nestedArchivePath: "Users/alice/archive.zip",
       entryPath: "docs/report.txt",
-      containerType: "zip",
+      containerType: "e01",
       size: 128,
     });
   });
@@ -234,7 +234,7 @@ describe("buildEvidenceSourceInput", () => {
       containerPath: "/case/mobile-data.tar",
       nestedArchivePath: "payload.zip",
       entryPath: "system/build.prop",
-      containerType: "zip",
+      containerType: "tar",
       size: 128,
     });
   });

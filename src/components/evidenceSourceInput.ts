@@ -18,15 +18,12 @@ export function buildEvidenceSourceInput(
       const delimiterIndex = entry.entryPath.indexOf("::");
       const nestedArchivePath = entry.entryPath.slice(0, delimiterIndex);
       const nestedEntryPath = entry.entryPath.slice(delimiterIndex + 2);
+      const outerContainerType = inferNestedOuterContainerType(entry);
       return {
         containerPath: entry.containerPath,
         nestedArchivePath,
         entryPath: nestedEntryPath,
-        containerType:
-          extensionOrDefault(
-            nestedArchivePath,
-            normalizeEntryContainerType(entry.containerType, nestedArchivePath) ?? "archive",
-          ),
+        containerType: outerContainerType,
         size: entry.size,
         dataAddr: entry.dataAddr,
         itemAddr: entry.itemAddr,
@@ -71,6 +68,23 @@ function inferEntryContainerType(entry: SelectedEntry): string {
   return "ad1";
 }
 
+function inferNestedOuterContainerType(entry: SelectedEntry): string {
+  const pathType = extensionOrDefault(entry.containerPath, "");
+  if (pathType) {
+    if (pathType === "ex01") return "ex01";
+    if (pathType === "e01" || pathType === "lx01" || pathType === "l01") return pathType;
+    if (pathType === "ad1") return "ad1";
+    if (pathType === "raw" || pathType === "dd" || pathType === "img") return "raw";
+    if (pathType.startsWith("tar")) return pathType;
+    if (isKnownArchiveExtension(pathType)) return pathType;
+  }
+
+  const explicitType = normalizeEntryContainerType(entry.containerType, entry.containerPath);
+  if (explicitType && explicitType !== "vfs" && explicitType !== "lazy") return explicitType;
+  if (entry.isVfsEntry) return inferVfsContainerType(entry.containerPath);
+  return "archive";
+}
+
 function normalizeEntryContainerType(containerType: string | undefined, containerPath: string): string | undefined {
   const explicitType = containerType?.trim().toLowerCase();
   if (!explicitType) return undefined;
@@ -101,4 +115,19 @@ function extensionOrDefault(path: string, fallback: string): string {
   const extension = name.slice(dot + 1).toLowerCase();
   if (/^\d+$/.test(extension)) return fallback;
   return extension;
+}
+
+function isKnownArchiveExtension(extension: string): boolean {
+  return [
+    "zip",
+    "7z",
+    "rar",
+    "tar",
+    "gz",
+    "bz2",
+    "xz",
+    "zst",
+    "lz4",
+    "tgz",
+  ].includes(extension);
 }
