@@ -5171,10 +5171,7 @@ async fn enrich_sqlite_artifact_metadata(
 fn is_sqlite_artifact(artifact: &NormalizedArtifact) -> bool {
     artifact.category == "database"
         || artifact.mime_type.as_deref() == Some("application/x-sqlite3")
-        || matches!(
-            artifact.extension.as_deref(),
-            Some("db" | "sqlite" | "sqlite3" | "sqlitedb")
-        )
+        || artifact_extension_matches(artifact, &["db", "sqlite", "sqlite3", "sqlitedb"])
 }
 
 async fn enrich_image_artifact_metadata(
@@ -5216,29 +5213,12 @@ fn is_image_artifact(artifact: &NormalizedArtifact) -> bool {
             .mime_type
             .as_deref()
             .is_some_and(|mime| mime.starts_with("image/"))
-        || matches!(
-            artifact.extension.as_deref(),
-            Some(
-                "jpg"
-                    | "jpeg"
-                    | "png"
-                    | "gif"
-                    | "webp"
-                    | "bmp"
-                    | "tif"
-                    | "tiff"
-                    | "ico"
-                    | "heic"
-                    | "heif"
-                    | "avif"
-                    | "raw"
-                    | "cr2"
-                    | "nef"
-                    | "arw"
-                    | "dng"
-                    | "orf"
-                    | "rw2"
-            )
+        || artifact_extension_matches(
+            artifact,
+            &[
+                "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "ico", "heic", "heif",
+                "avif", "raw", "cr2", "nef", "arw", "dng", "orf", "rw2",
+            ],
         )
 }
 
@@ -5449,22 +5429,21 @@ fn is_binary_artifact(artifact: &NormalizedArtifact) -> bool {
             .mime_type
             .as_deref()
             .is_some_and(|mime| mime.contains("executable") || mime.contains("mach-binary"))
-        || matches!(
-            artifact.extension.as_deref(),
-            Some(
-                "sys"
-                    | "drv"
-                    | "ko"
-                    | "exe"
-                    | "dll"
-                    | "ocx"
-                    | "efi"
-                    | "elf"
-                    | "so"
-                    | "dylib"
-                    | "kext",
-            )
+        || artifact_extension_matches(
+            artifact,
+            &[
+                "sys", "drv", "ko", "exe", "dll", "ocx", "efi", "elf", "so", "dylib", "kext",
+            ],
         )
+}
+
+fn artifact_extension_matches(artifact: &NormalizedArtifact, extensions: &[&str]) -> bool {
+    let Some(extension) = artifact.extension.as_deref() else {
+        return false;
+    };
+    extensions
+        .iter()
+        .any(|candidate| extension.eq_ignore_ascii_case(candidate))
 }
 
 fn binary_artifact_metadata_from_source(
@@ -6999,6 +6978,9 @@ mod tests {
 
         assert!(is_image_artifact(&artifact));
 
+        artifact.extension = Some("TIF".to_string());
+        assert!(is_image_artifact(&artifact));
+
         artifact.extension = None;
         artifact.mime_type = Some("image/png".to_string());
         assert!(is_image_artifact(&artifact));
@@ -7010,7 +6992,7 @@ mod tests {
 
     #[test]
     fn is_binary_artifact_matches_driver_extension_even_when_magic_is_unknown() {
-        for extension in ["sys", "ko", "kext"] {
+        for extension in ["sys", "SYS", "ko", "KO", "kext"] {
             let name = format!("example.{extension}");
             let path = format!("/case/{name}");
             let artifact = NormalizedArtifact {
@@ -7031,6 +7013,29 @@ mod tests {
 
             assert!(is_binary_artifact(&artifact), "{extension}");
         }
+    }
+
+    #[test]
+    fn is_sqlite_artifact_matches_uppercase_database_extensions() {
+        let artifact = NormalizedArtifact {
+            id: "artifact_db".to_string(),
+            source_ref: EvidenceSourceRef::LocalFile {
+                path: "/case/state.DB".to_string(),
+            },
+            source_id: "/case/state.DB".to_string(),
+            name: "state.DB".to_string(),
+            extension: Some("DB".to_string()),
+            size: 1024,
+            mime_type: None,
+            type_description: "Unknown".to_string(),
+            category: "unknown".to_string(),
+            confidence: "low".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: BTreeMap::new(),
+        };
+
+        assert!(is_sqlite_artifact(&artifact));
     }
 
     #[test]
