@@ -32,11 +32,16 @@ export interface UseBinaryDataReturn {
   setShowExports: (v: boolean) => void;
   showSections: Accessor<boolean>;
   setShowSections: (v: boolean) => void;
+  showStrings: Accessor<boolean>;
+  setShowStrings: (v: boolean) => void;
   importFilter: Accessor<string>;
   setImportFilter: (v: string) => void;
+  stringFilter: Accessor<string>;
+  setStringFilter: (v: string) => void;
   filename: Accessor<string>;
   badge: Accessor<{ label: string; color: string } | null>;
   filteredImports: Accessor<ImportInfo[]>;
+  filteredStrings: Accessor<string[]>;
   totalImportFunctions: Accessor<number>;
   loadBinary: () => Promise<void>;
 }
@@ -48,7 +53,9 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
   const [showImports, setShowImports] = createSignal(true);
   const [showExports, setShowExports] = createSignal(false);
   const [showSections, setShowSections] = createSignal(true);
+  const [showStrings, setShowStrings] = createSignal(true);
   const [importFilter, setImportFilter] = createSignal("");
+  const [stringFilter, setStringFilter] = createSignal("");
 
   const loadBinary = async () => {
     setLoading(true);
@@ -100,6 +107,14 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     return data.imports.reduce((sum, imp) => sum + imp.function_count, 0);
   });
 
+  const filteredStrings = createMemo(() => {
+    const data = info();
+    if (!data) return [];
+    const query = stringFilter().toLowerCase();
+    if (!query) return data.strings;
+    return data.strings.filter((value) => value.toLowerCase().includes(query));
+  });
+
   // Emit metadata section when binary info loads
   createEffect(() => {
     const data = info();
@@ -116,6 +131,7 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
         0,
       ),
       exportCount: data.exports.length,
+      stringCount: data.strings.length,
       isStripped: data.is_stripped,
       isDynamic: !data.is_stripped,
       subsystem: data.pe_subsystem || undefined,
@@ -141,11 +157,16 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     setShowExports,
     showSections,
     setShowSections,
+    showStrings,
+    setShowStrings,
     importFilter,
     setImportFilter,
+    stringFilter,
+    setStringFilter,
     filename,
     badge,
     filteredImports,
+    filteredStrings,
     totalImportFunctions,
     loadBinary,
   };

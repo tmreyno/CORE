@@ -26,6 +26,7 @@ import { BinaryOverview } from "./BinaryOverview";
 import { SectionsPanel } from "./SectionsPanel";
 import { ImportsPanel } from "./ImportsPanel";
 import { ExportsPanel } from "./ExportsPanel";
+import { StringsPanel } from "./StringsPanel";
 
 export function BinaryViewer(props: BinaryViewerProps) {
   const bv = useBinaryData(props);
@@ -105,6 +106,14 @@ export function BinaryViewer(props: BinaryViewerProps) {
                     exports={data().exports}
                     open={bv.showExports}
                     onToggle={() => bv.setShowExports(!bv.showExports())}
+                  />
+                  <StringsPanel
+                    strings={data().strings}
+                    open={bv.showStrings}
+                    onToggle={() => bv.setShowStrings(!bv.showStrings())}
+                    filteredStrings={bv.filteredStrings}
+                    stringFilter={bv.stringFilter}
+                    setStringFilter={bv.setStringFilter}
                   />
                 </div>
               )}

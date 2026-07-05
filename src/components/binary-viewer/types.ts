@@ -40,6 +40,7 @@ export interface BinaryInfo {
   imports: ImportInfo[];
   exports: ExportInfo[];
   sections: SectionInfo[];
+  strings: string[];
   file_size: number;
   // PE-specific
   pe_timestamp: number | null;

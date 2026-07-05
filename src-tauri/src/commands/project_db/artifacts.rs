@@ -2395,6 +2395,10 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
         "binary.sectionCount".to_string(),
         info.sections.len().to_string(),
     );
+    metadata.insert(
+        "binary.stringCount".to_string(),
+        info.strings.len().to_string(),
+    );
     if let Some(entry_point) = info.entry_point {
         metadata.insert(
             "binary.entryPoint".to_string(),
@@ -2427,6 +2431,15 @@ fn binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, Str
             .map(|section| section.name.clone())
             .collect();
         insert_joined_metadata(&mut metadata, "binary.sections", &sections);
+    }
+    if !info.strings.is_empty() {
+        let strings: Vec<String> = info
+            .strings
+            .iter()
+            .take(MAX_SYSTEM_IDENTITY_LIST_ITEMS)
+            .cloned()
+            .collect();
+        insert_joined_metadata(&mut metadata, "binary.strings", &strings);
     }
 
     metadata.insert(
@@ -2959,6 +2972,10 @@ mod tests {
                 raw_size: 0x2000,
                 characteristics: "0x60000020".to_string(),
             }],
+            strings: vec![
+                "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt".to_string(),
+                "\\Device\\ContosoFilter".to_string(),
+            ],
             file_size: 4096,
             pe_timestamp: Some(1_717_260_000),
             pe_checksum: Some(0x1234abcd),
@@ -3006,6 +3023,16 @@ mod tests {
         assert_eq!(
             metadata.get("binary.exports").map(String::as_str),
             Some("DriverEntry")
+        );
+        assert_eq!(
+            metadata.get("binary.stringCount").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("binary.strings").map(String::as_str),
+            Some(
+                "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt; \\Device\\ContosoFilter"
+            )
         );
         assert_eq!(
             metadata.get("pe.version.CompanyName").map(String::as_str),

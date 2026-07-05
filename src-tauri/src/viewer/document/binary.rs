@@ -5,7 +5,7 @@
 
 use goblin::Object;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Take};
 use std::path::Path;
@@ -18,6 +18,9 @@ const MAX_BINARY_IMPORT_LIBRARIES: usize = 512;
 const MAX_BINARY_IMPORT_FUNCTIONS_PER_LIBRARY: usize = 2048;
 const MAX_BINARY_EXPORTS: usize = 4096;
 const MAX_BINARY_SECTIONS: usize = 2048;
+const MAX_BINARY_STRINGS: usize = 2048;
+const MIN_BINARY_STRING_CHARS: usize = 4;
+const MAX_BINARY_STRING_CHARS: usize = 256;
 const MAX_PE_VERSION_INFO_FIELDS: usize = 32;
 const MAX_PE_VERSION_INFO_VALUE_CHARS: usize = 512;
 
@@ -135,6 +138,7 @@ pub struct BinaryInfo {
     pub imports: Vec<ImportInfo>,
     pub exports: Vec<ExportInfo>,
     pub sections: Vec<SectionInfo>,
+    pub strings: Vec<String>,
     pub file_size: u64,
     // PE specific
     pub pe_timestamp: Option<u32>,
@@ -169,13 +173,14 @@ pub fn analyze_binary_bytes(
     let source_id = source_id.into();
     ensure_binary_analysis_size(data.len() as u64)?;
     let file_size = data.len() as u64;
+    let strings = extract_binary_strings(data);
     let obj = Object::parse(data)
         .map_err(|e| DocumentError::Parse(format!("Failed to parse binary: {}", e)))?;
 
     match obj {
-        Object::PE(pe) => analyze_pe(pe, &source_id, data, file_size),
-        Object::Elf(elf) => analyze_elf(elf, &source_id, file_size),
-        Object::Mach(mach) => analyze_mach(mach, &source_id, data, file_size),
+        Object::PE(pe) => analyze_pe(pe, &source_id, data, file_size, strings),
+        Object::Elf(elf) => analyze_elf(elf, &source_id, file_size, strings),
+        Object::Mach(mach) => analyze_mach(mach, &source_id, data, file_size, strings),
         _ => Err(DocumentError::UnsupportedFormat(
             "Not a recognized binary format".to_string(),
         )),
@@ -187,6 +192,7 @@ fn analyze_pe(
     source_id: &str,
     data: &[u8],
     file_size: u64,
+    strings: Vec<String>,
 ) -> DocumentResult<BinaryInfo> {
     let is_64bit = pe.is_64;
     let format = if is_64bit {
@@ -283,6 +289,7 @@ fn analyze_pe(
         imports,
         exports,
         sections,
+        strings,
         file_size,
         pe_timestamp: timestamp,
         pe_checksum: checksum,
@@ -303,6 +310,7 @@ fn analyze_elf(
     elf: goblin::elf::Elf,
     source_id: &str,
     file_size: u64,
+    strings: Vec<String>,
 ) -> DocumentResult<BinaryInfo> {
     let is_64bit = elf.is_64;
     let format = if is_64bit {
@@ -385,6 +393,7 @@ fn analyze_elf(
         imports,
         exports,
         sections,
+        strings,
         file_size,
         pe_timestamp: None,
         pe_checksum: None,
@@ -406,9 +415,12 @@ fn analyze_mach(
     source_id: &str,
     data: &[u8],
     file_size: u64,
+    strings: Vec<String>,
 ) -> DocumentResult<BinaryInfo> {
     match mach {
-        goblin::mach::Mach::Binary(macho) => analyze_single_mach(macho, source_id, file_size),
+        goblin::mach::Mach::Binary(macho) => {
+            analyze_single_mach(macho, source_id, file_size, strings)
+        }
         goblin::mach::Mach::Fat(fat) => {
             let narches = fat.narches;
 
@@ -418,7 +430,7 @@ fn analyze_mach(
                     if let Ok(Object::Mach(goblin::mach::Mach::Binary(inner))) =
                         Object::parse(slice)
                     {
-                        let mut info = analyze_single_mach(inner, source_id, file_size)?;
+                        let mut info = analyze_single_mach(inner, source_id, file_size, strings)?;
                         info.format = BinaryFormat::MachOFat;
                         info.architecture = format!(
                             "{} (Universal, {} architectures)",
@@ -444,6 +456,7 @@ fn analyze_mach(
                 imports: Vec::new(),
                 exports: Vec::new(),
                 sections: Vec::new(),
+                strings,
                 file_size,
                 pe_timestamp: None,
                 pe_checksum: None,
@@ -779,10 +792,122 @@ fn looks_like_version_resource_value(value: &str) -> bool {
         && value.chars().any(|ch| ch.is_ascii_alphanumeric())
 }
 
+fn extract_binary_strings(data: &[u8]) -> Vec<String> {
+    let mut strings = Vec::new();
+    let mut seen = HashSet::new();
+    collect_ascii_strings(data, &mut strings, &mut seen);
+    if strings.len() < MAX_BINARY_STRINGS {
+        collect_utf16le_strings(data, &mut strings, &mut seen);
+    }
+    strings
+}
+
+fn collect_ascii_strings(data: &[u8], strings: &mut Vec<String>, seen: &mut HashSet<String>) {
+    let mut start: Option<usize> = None;
+
+    for (index, byte) in data.iter().enumerate() {
+        if is_printable_ascii_byte(*byte) {
+            start.get_or_insert(index);
+            continue;
+        }
+
+        if let Some(run_start) = start.take() {
+            push_ascii_run(data, run_start, index, strings, seen);
+            if strings.len() >= MAX_BINARY_STRINGS {
+                return;
+            }
+        }
+    }
+
+    if let Some(run_start) = start {
+        push_ascii_run(data, run_start, data.len(), strings, seen);
+    }
+}
+
+fn push_ascii_run(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    strings: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) {
+    let run_len = end.saturating_sub(start);
+    if run_len < MIN_BINARY_STRING_CHARS {
+        return;
+    }
+    let value: String = data[start..end]
+        .iter()
+        .take(MAX_BINARY_STRING_CHARS)
+        .map(|byte| *byte as char)
+        .collect();
+    push_limited_string(strings, seen, value);
+}
+
+fn collect_utf16le_strings(data: &[u8], strings: &mut Vec<String>, seen: &mut HashSet<String>) {
+    let mut offset = 0usize;
+
+    while offset + 1 < data.len() && strings.len() < MAX_BINARY_STRINGS {
+        if offset > 0 && data[offset - 1] != 0 {
+            offset += 1;
+            continue;
+        }
+
+        let mut cursor = offset;
+        let mut units = Vec::new();
+
+        while cursor + 1 < data.len() {
+            let unit = u16::from_le_bytes([data[cursor], data[cursor + 1]]);
+            if !is_printable_utf16_unit(unit) {
+                break;
+            }
+            if units.len() < MAX_BINARY_STRING_CHARS {
+                units.push(unit);
+            }
+            cursor += 2;
+        }
+
+        if units.len() >= MIN_BINARY_STRING_CHARS {
+            if let Ok(value) = String::from_utf16(&units) {
+                push_limited_string(strings, seen, value);
+            }
+            offset = cursor.saturating_add(2);
+        } else {
+            offset += 1;
+        }
+    }
+}
+
+fn is_printable_ascii_byte(byte: u8) -> bool {
+    matches!(byte, 0x20..=0x7e)
+}
+
+fn is_printable_utf16_unit(unit: u16) -> bool {
+    matches!(unit, 0x20..=0x7e)
+}
+
+fn push_limited_string(strings: &mut Vec<String>, seen: &mut HashSet<String>, value: String) {
+    if strings.len() >= MAX_BINARY_STRINGS {
+        return;
+    }
+
+    let trimmed = value.trim();
+    if trimmed.chars().count() < MIN_BINARY_STRING_CHARS
+        || !trimmed.chars().any(|ch| ch.is_alphanumeric())
+    {
+        return;
+    }
+
+    let normalized: String = trimmed.chars().take(MAX_BINARY_STRING_CHARS).collect();
+    if seen.insert(normalized.clone()) {
+        strings.push(normalized);
+    }
+}
+
 fn analyze_single_mach(
     macho: goblin::mach::MachO,
     source_id: &str,
     file_size: u64,
+    strings: Vec<String>,
 ) -> DocumentResult<BinaryInfo> {
     // Check if 64-bit by looking at magic number
     let is_64bit = matches!(macho.header.magic, 0xFEEDFACF | 0xCFFAEDFE);
@@ -876,6 +1001,7 @@ fn analyze_single_mach(
         imports,
         exports,
         sections,
+        strings,
         file_size,
         pe_timestamp: None,
         pe_checksum: None,
@@ -1181,6 +1307,44 @@ mod tests {
     }
 
     #[test]
+    fn extract_binary_strings_reads_ascii_and_utf16le_values() {
+        let mut data = Vec::new();
+        data.extend_from_slice(
+            b"\0\0\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt\0",
+        );
+        append_utf16le_nul_terminated(&mut data, "\\Device\\ContosoFilter");
+        data.extend_from_slice(b"\0\0https://drivers.example.test/update\0");
+
+        let strings = extract_binary_strings(&data);
+
+        assert!(strings.contains(
+            &"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt".to_string()
+        ));
+        assert!(strings.contains(&"\\Device\\ContosoFilter".to_string()));
+        assert!(strings.contains(&"https://drivers.example.test/update".to_string()));
+    }
+
+    #[test]
+    fn extract_binary_strings_deduplicates_and_limits_values() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RepeatedDriverString\0RepeatedDriverString\0");
+        for index in 0..(MAX_BINARY_STRINGS + 25) {
+            data.extend_from_slice(format!("UniqueDriverString{index:04}\0").as_bytes());
+        }
+
+        let strings = extract_binary_strings(&data);
+
+        assert_eq!(
+            strings
+                .iter()
+                .filter(|value| value.as_str() == "RepeatedDriverString")
+                .count(),
+            1
+        );
+        assert_eq!(strings.len(), MAX_BINARY_STRINGS);
+    }
+
+    #[test]
     fn detect_binary_format_bytes_identifies_pe64_from_prefix() {
         let data = minimal_pe_header(0x20b);
 
@@ -1241,6 +1405,7 @@ mod tests {
         assert!(info.is_64bit);
         assert_eq!(info.entry_point, Some(0x400000));
         assert_eq!(info.file_size, data.len() as u64);
+        assert!(info.strings.is_empty());
     }
 
     fn minimal_pe_header(optional_magic: u16) -> Vec<u8> {

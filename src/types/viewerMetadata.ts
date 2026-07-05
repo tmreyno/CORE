@@ -144,6 +144,7 @@ export interface BinaryMetadataSection {
   sectionCount?: number;
   importCount?: number;
   exportCount?: number;
+  stringCount?: number;
   isStripped?: boolean;
   isDynamic?: boolean;
   compiler?: string;

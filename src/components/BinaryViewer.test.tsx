@@ -86,6 +86,11 @@ const mockPeData = {
     { name: "DllMain", ordinal: 1, address: 4096 },
     { name: "PluginInit", ordinal: 2, address: 4200 },
   ],
+  strings: [
+    "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt",
+    "\\Device\\ContosoFilter",
+    "https://drivers.example.test/update",
+  ],
 };
 
 // Mock ELF binary data
@@ -119,6 +124,7 @@ const mockElfData = {
   ],
   imports: [],
   exports: [],
+  strings: ["/etc/os-release", "/usr/lib/systemd/system"],
 };
 
 // Mock Mach-O data
@@ -144,6 +150,7 @@ const mockMachoData = {
   sections: [],
   imports: [],
   exports: [],
+  strings: ["/System/Library/Extensions/Example.kext"],
 };
 
 describe("BinaryViewer", () => {
@@ -245,6 +252,21 @@ describe("BinaryViewer", () => {
       // Exports section exists with count (collapsed by default)
       expect(container.textContent).toContain("Exports");
       expect(container.textContent).toContain("2");
+    });
+
+    it("renders embedded strings for driver investigation", async () => {
+      mockInvoke.mockResolvedValueOnce(mockPeData);
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path="/tmp/program.exe" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Strings");
+      expect(container.textContent).toContain(
+        "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt",
+      );
+      expect(container.textContent).toContain("\\Device\\ContosoFilter");
     });
 
     it("shows security indicators", async () => {
