@@ -411,6 +411,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
 fn is_linux_network_identity_source(source_id: &str) -> bool {
     let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
     source_id.ends_with("/etc/network/interfaces")
+        || source_id.ends_with("/etc/resolv.conf")
+        || source_id.ends_with("/etc/hosts")
+        || source_id.ends_with("/windows/system32/drivers/etc/hosts")
+        || source_id.contains("/etc/networkmanager/system-connections/")
         || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
         || (source_id.contains("/etc/netplan/")
             && (source_id.ends_with(".yaml") || source_id.ends_with(".yml")))
@@ -846,6 +850,12 @@ struct LinuxNetworkMetadata {
     gateways: Vec<String>,
     dns_servers: Vec<String>,
     methods: Vec<String>,
+    search_domains: Vec<String>,
+    host_aliases: Vec<String>,
+    connection_ids: Vec<String>,
+    connection_uuids: Vec<String>,
+    mac_addresses: Vec<String>,
+    wifi_ssids: Vec<String>,
 }
 
 fn parse_linux_network_config_metadata(source_id: &str, text: &str) -> BTreeMap<String, String> {
@@ -853,9 +863,20 @@ fn parse_linux_network_config_metadata(source_id: &str, text: &str) -> BTreeMap<
     let config_type = if source_id.ends_with("/etc/network/interfaces") {
         parse_debian_interfaces_metadata(text, &mut values);
         "debian-interfaces"
+    } else if source_id.ends_with("/etc/resolv.conf") {
+        parse_resolv_conf_metadata(text, &mut values);
+        "resolver"
+    } else if source_id.ends_with("/etc/hosts")
+        || source_id.ends_with("/windows/system32/drivers/etc/hosts")
+    {
+        parse_hosts_metadata(text, &mut values);
+        "hosts"
     } else if source_id.contains("/etc/sysconfig/network-scripts/ifcfg-") {
         parse_ifcfg_metadata(source_id, text, &mut values);
         "ifcfg"
+    } else if source_id.contains("/etc/networkmanager/system-connections/") {
+        parse_network_manager_metadata(text, &mut values);
+        "networkmanager"
     } else {
         parse_netplan_metadata(text, &mut values);
         "netplan"
@@ -875,6 +896,24 @@ fn parse_linux_network_config_metadata(source_id: &str, text: &str) -> BTreeMap<
     insert_joined_metadata(&mut metadata, "system.gateways", &values.gateways);
     insert_joined_metadata(&mut metadata, "system.dnsServers", &values.dns_servers);
     insert_joined_metadata(&mut metadata, "system.networkMethods", &values.methods);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.dnsSearchDomains",
+        &values.search_domains,
+    );
+    insert_joined_metadata(&mut metadata, "system.hostAliases", &values.host_aliases);
+    insert_joined_metadata(
+        &mut metadata,
+        "system.connectionIds",
+        &values.connection_ids,
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.connectionUuids",
+        &values.connection_uuids,
+    );
+    insert_joined_metadata(&mut metadata, "system.macAddresses", &values.mac_addresses);
+    insert_joined_metadata(&mut metadata, "system.wifiSsids", &values.wifi_ssids);
     metadata
 }
 
@@ -963,6 +1002,158 @@ fn parse_ifcfg_metadata(source_id: &str, text: &str, values: &mut LinuxNetworkMe
     if let (Some(interface), Some(method)) = (interface.as_deref(), pairs.get("BOOTPROTO")) {
         push_unique_limited(&mut values.methods, format!("{interface}:inet:{method}"));
     }
+}
+
+fn parse_resolv_conf_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
+    for raw_line in text.lines() {
+        let line = trim_network_config_line(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts.as_slice() {
+            ["nameserver", server, ..] => {
+                push_unique_limited(&mut values.dns_servers, (*server).to_string());
+            }
+            ["domain", domain, ..] => {
+                push_unique_limited(&mut values.search_domains, (*domain).to_string());
+            }
+            ["search", domains @ ..] => {
+                for domain in domains {
+                    push_unique_limited(&mut values.search_domains, (*domain).to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn parse_hosts_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
+    for raw_line in text.lines() {
+        let line = trim_network_config_line(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        let Some((address, aliases)) = parts.split_first() else {
+            continue;
+        };
+        if aliases.is_empty() {
+            continue;
+        }
+        let alias_list = aliases.join(",");
+        push_unique_limited(
+            &mut values.host_aliases,
+            truncate_metadata_value(
+                &format!("{address}={alias_list}"),
+                MAX_SYSTEM_MOUNT_DESCRIPTION_CHARS,
+            ),
+        );
+    }
+}
+
+fn parse_network_manager_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
+    let mut section = "";
+    let mut connection_type: Option<String> = None;
+    let mut interface: Option<String> = None;
+
+    for raw_line in text.lines() {
+        let line = trim_network_config_line(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line.trim_start_matches('[').trim_end_matches(']');
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        if value.is_empty() {
+            continue;
+        }
+
+        match (section, key) {
+            ("connection", "id") => {
+                push_unique_limited(&mut values.connection_ids, value.to_string());
+            }
+            ("connection", "uuid") => {
+                push_unique_limited(&mut values.connection_uuids, value.to_string());
+            }
+            ("connection", "type") => {
+                connection_type = Some(value.to_string());
+            }
+            ("connection", "interface-name") => {
+                interface = Some(value.to_string());
+                push_unique_limited(&mut values.interfaces, value.to_string());
+            }
+            ("wifi", "ssid") => {
+                push_unique_limited(&mut values.wifi_ssids, value.to_string());
+            }
+            ("wifi", "mac-address") | ("ethernet", "mac-address") => {
+                push_unique_limited(&mut values.mac_addresses, value.to_string());
+            }
+            ("ipv4" | "ipv6", "method") => {
+                let interface = interface.as_deref().unwrap_or("unknown");
+                let family = if section == "ipv6" { "inet6" } else { "inet" };
+                push_unique_limited(&mut values.methods, format!("{interface}:{family}:{value}"));
+            }
+            ("ipv4" | "ipv6", "addresses") | ("ipv4" | "ipv6", "address1") => {
+                collect_network_manager_addresses(value, values);
+            }
+            ("ipv4" | "ipv6", "gateway") => {
+                push_unique_limited(&mut values.gateways, value.to_string());
+            }
+            ("ipv4" | "ipv6", "dns") => {
+                for server in split_network_manager_list(value) {
+                    push_unique_limited(&mut values.dns_servers, server);
+                }
+            }
+            ("ipv4" | "ipv6", "dns-search") => {
+                for domain in split_network_manager_list(value) {
+                    push_unique_limited(&mut values.search_domains, domain);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if values.interfaces.is_empty() {
+        if let Some(connection_type) = connection_type {
+            push_unique_limited(&mut values.interfaces, connection_type);
+        }
+    }
+}
+
+fn collect_network_manager_addresses(value: &str, values: &mut LinuxNetworkMetadata) {
+    for address in value.split(';') {
+        let address = address.trim();
+        if address.is_empty() {
+            continue;
+        }
+        let mut parts = address
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty());
+        if let Some(ip) = parts.next() {
+            push_unique_limited(&mut values.addresses, ip.to_string());
+        }
+        if let Some(gateway) = parts.next() {
+            push_unique_limited(&mut values.gateways, gateway.to_string());
+        }
+    }
+}
+
+fn split_network_manager_list(value: &str) -> Vec<String> {
+    value
+        .split([';', ',', ' '])
+        .filter_map(|part| {
+            let part = part.trim();
+            (!part.is_empty()).then(|| truncate_metadata_value(part, 120))
+        })
+        .collect()
 }
 
 fn parse_netplan_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
@@ -2187,6 +2378,112 @@ DNS2=149.112.112.112
     }
 
     #[test]
+    fn system_identity_metadata_extracts_resolver_config() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/resolv.conf",
+            br#"# generated by NetworkManager
+search corp.example.com lab.example.com
+nameserver 10.10.0.2
+nameserver 1.1.1.1
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("resolver")
+        );
+        assert_eq!(
+            metadata.get("system.dnsServers").map(String::as_str),
+            Some("10.10.0.2; 1.1.1.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsSearchDomains").map(String::as_str),
+            Some("corp.example.com; lab.example.com")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_hosts_aliases() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/hosts",
+            br#"127.0.0.1 localhost
+10.10.0.25 workstation01 workstation01.corp.example.com
+::1 localhost ip6-localhost
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("hosts")
+        );
+        let aliases = metadata
+            .get("system.hostAliases")
+            .expect("host aliases are captured");
+        assert!(aliases.contains("127.0.0.1=localhost"));
+        assert!(aliases.contains("10.10.0.25=workstation01,workstation01.corp.example.com"));
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_network_manager_profile() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/NetworkManager/system-connections/Corp WiFi.nmconnection",
+            br#"[connection]
+id=Corp WiFi
+uuid=11111111-2222-3333-4444-555555555555
+type=wifi
+interface-name=wlp2s0
+
+[wifi]
+ssid=CorpNet
+mac-address=aa:bb:cc:dd:ee:ff
+
+[ipv4]
+method=manual
+address1=192.168.50.25/24,192.168.50.1
+dns=10.10.0.2;1.1.1.1;
+dns-search=corp.example.com;
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("networkmanager")
+        );
+        assert_eq!(
+            metadata.get("system.connectionIds").map(String::as_str),
+            Some("Corp WiFi")
+        );
+        assert_eq!(
+            metadata.get("system.connectionUuids").map(String::as_str),
+            Some("11111111-2222-3333-4444-555555555555")
+        );
+        assert_eq!(
+            metadata.get("system.networkInterfaces").map(String::as_str),
+            Some("wlp2s0")
+        );
+        assert_eq!(
+            metadata.get("system.wifiSsids").map(String::as_str),
+            Some("CorpNet")
+        );
+        assert_eq!(
+            metadata.get("system.ipv4Addresses").map(String::as_str),
+            Some("192.168.50.25/24")
+        );
+        assert_eq!(
+            metadata.get("system.gateways").map(String::as_str),
+            Some("192.168.50.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsServers").map(String::as_str),
+            Some("10.10.0.2; 1.1.1.1")
+        );
+        assert_eq!(
+            metadata.get("system.networkMethods").map(String::as_str),
+            Some("wlp2s0:inet:manual")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_system_version_plist() {
         let metadata = system_identity_metadata_from_bytes(
             "/System/Library/CoreServices/SystemVersion.plist",
@@ -2380,6 +2677,11 @@ DNS2=149.112.112.112
         assert!(is_system_identity_source("/etc/fstab"));
         assert!(is_system_identity_source("/etc/mtab"));
         assert!(is_system_identity_source("/etc/network/interfaces"));
+        assert!(is_system_identity_source("/etc/resolv.conf"));
+        assert!(is_system_identity_source("/etc/hosts"));
+        assert!(is_system_identity_source(
+            "/etc/NetworkManager/system-connections/Corp WiFi.nmconnection"
+        ));
         assert!(is_system_identity_source(
             "/etc/sysconfig/network-scripts/ifcfg-ens192"
         ));
