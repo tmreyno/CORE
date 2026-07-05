@@ -538,6 +538,43 @@ fn classify_pe_driver(
     if imports_library(imports, "wdf01000.sys") || imports_function(imports, "WdfDriverCreate") {
         indicators.push("KMDF driver framework APIs".to_string());
     }
+    if imports_library(imports, "storport.sys")
+        || imports_library(imports, "scsiport.sys")
+        || imports_library(imports, "classpnp.sys")
+        || imports_function(imports, "StorPortInitialize")
+        || imports_function(imports, "ScsiPortInitialize")
+    {
+        indicators.push("storage driver APIs".to_string());
+    }
+    if imports_function_prefix(imports, "FsRtl")
+        || imports_function(imports, "IoRegisterFileSystem")
+    {
+        indicators.push("file-system driver APIs".to_string());
+    }
+    if imports_function(imports, "PsSetCreateProcessNotifyRoutine")
+        || imports_function(imports, "PsSetCreateThreadNotifyRoutine")
+        || imports_function(imports, "PsSetLoadImageNotifyRoutine")
+        || imports_function(imports, "ObRegisterCallbacks")
+        || imports_function(imports, "CmRegisterCallback")
+    {
+        indicators.push("security callback driver APIs".to_string());
+    }
+    if imports_library(imports, "usbd.sys")
+        || imports_library(imports, "usbport.sys")
+        || imports_function(imports, "WdfUsbTargetDeviceCreate")
+    {
+        indicators.push("USB driver APIs".to_string());
+    }
+    if imports_library(imports, "hidclass.sys") || imports_function_prefix(imports, "HidP_") {
+        indicators.push("HID driver APIs".to_string());
+    }
+    if imports_library(imports, "dxgkrnl.sys")
+        || imports_library(imports, "dxgmms1.sys")
+        || imports_library(imports, "dxgmms2.sys")
+        || imports_function_prefix(imports, "Dxgk")
+    {
+        indicators.push("display driver APIs".to_string());
+    }
 
     indicators.sort();
     indicators.dedup();
@@ -551,15 +588,68 @@ fn classify_pe_driver(
         || imports_library(imports, "ndis.sys")
         || imports_library(imports, "wdf01000.sys")
         || imports_function(imports, "FltRegisterFilter")
-        || imports_function(imports, "WdfDriverCreate");
+        || imports_function(imports, "WdfDriverCreate")
+        || imports_library(imports, "storport.sys")
+        || imports_library(imports, "scsiport.sys")
+        || imports_library(imports, "classpnp.sys")
+        || imports_function(imports, "StorPortInitialize")
+        || imports_function(imports, "ScsiPortInitialize")
+        || imports_function_prefix(imports, "FsRtl")
+        || imports_function(imports, "IoRegisterFileSystem")
+        || imports_function(imports, "PsSetCreateProcessNotifyRoutine")
+        || imports_function(imports, "PsSetCreateThreadNotifyRoutine")
+        || imports_function(imports, "PsSetLoadImageNotifyRoutine")
+        || imports_function(imports, "ObRegisterCallbacks")
+        || imports_function(imports, "CmRegisterCallback")
+        || imports_library(imports, "usbd.sys")
+        || imports_library(imports, "usbport.sys")
+        || imports_function(imports, "WdfUsbTargetDeviceCreate")
+        || imports_library(imports, "hidclass.sys")
+        || imports_function_prefix(imports, "HidP_")
+        || imports_library(imports, "dxgkrnl.sys")
+        || imports_library(imports, "dxgmms1.sys")
+        || imports_library(imports, "dxgmms2.sys")
+        || imports_function_prefix(imports, "Dxgk");
     let driver_type = if !is_driver {
         None
     } else if imports_library(imports, "fltmgr.sys")
         || imports_function(imports, "FltRegisterFilter")
     {
         Some("File system minifilter driver".to_string())
+    } else if imports_library(imports, "storport.sys")
+        || imports_library(imports, "scsiport.sys")
+        || imports_library(imports, "classpnp.sys")
+        || imports_function(imports, "StorPortInitialize")
+        || imports_function(imports, "ScsiPortInitialize")
+    {
+        Some("Storage driver".to_string())
     } else if imports_library(imports, "ndis.sys") || imports_function(imports, "NdisRegister") {
         Some("Network driver".to_string())
+    } else if imports_function(imports, "PsSetCreateProcessNotifyRoutine")
+        || imports_function(imports, "PsSetCreateThreadNotifyRoutine")
+        || imports_function(imports, "PsSetLoadImageNotifyRoutine")
+        || imports_function(imports, "ObRegisterCallbacks")
+        || imports_function(imports, "CmRegisterCallback")
+    {
+        Some("Security callback driver".to_string())
+    } else if imports_library(imports, "usbd.sys")
+        || imports_library(imports, "usbport.sys")
+        || imports_function(imports, "WdfUsbTargetDeviceCreate")
+    {
+        Some("USB driver".to_string())
+    } else if imports_library(imports, "hidclass.sys") || imports_function_prefix(imports, "HidP_")
+    {
+        Some("HID driver".to_string())
+    } else if imports_library(imports, "dxgkrnl.sys")
+        || imports_library(imports, "dxgmms1.sys")
+        || imports_library(imports, "dxgmms2.sys")
+        || imports_function_prefix(imports, "Dxgk")
+    {
+        Some("Display driver".to_string())
+    } else if imports_function_prefix(imports, "FsRtl")
+        || imports_function(imports, "IoRegisterFileSystem")
+    {
+        Some("File system driver".to_string())
     } else if imports_library(imports, "wdf01000.sys")
         || imports_function(imports, "WdfDriverCreate")
     {
@@ -583,6 +673,16 @@ fn imports_function(imports: &[ImportInfo], function: &str) -> bool {
             .functions
             .iter()
             .any(|candidate| candidate.eq_ignore_ascii_case(function))
+    })
+}
+
+fn imports_function_prefix(imports: &[ImportInfo], prefix: &str) -> bool {
+    imports.iter().any(|import| {
+        import.functions.iter().any(|candidate| {
+            candidate
+                .get(..prefix.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+        })
     })
 }
 
@@ -953,6 +1053,87 @@ mod tests {
             Some("File system minifilter driver")
         );
         assert!(indicators.contains(&"file-system filter driver APIs".to_string()));
+    }
+
+    #[test]
+    fn classify_pe_driver_identifies_storage_driver() {
+        let imports = vec![ImportInfo {
+            library: "storport.sys".to_string(),
+            functions: vec!["StorPortInitialize".to_string()],
+            function_count: 1,
+        }];
+
+        let (is_driver, driver_type, indicators) = classify_pe_driver(
+            "C:\\Windows\\System32\\drivers\\storflt.sys",
+            Some("Native"),
+            &imports,
+            &[],
+        );
+
+        assert!(is_driver);
+        assert_eq!(driver_type.as_deref(), Some("Storage driver"));
+        assert!(indicators.contains(&"storage driver APIs".to_string()));
+    }
+
+    #[test]
+    fn classify_pe_driver_identifies_security_callback_driver() {
+        let imports = vec![ImportInfo {
+            library: "ntoskrnl.exe".to_string(),
+            functions: vec![
+                "PsSetCreateProcessNotifyRoutine".to_string(),
+                "ObRegisterCallbacks".to_string(),
+            ],
+            function_count: 2,
+        }];
+
+        let (is_driver, driver_type, indicators) = classify_pe_driver(
+            "C:\\Windows\\System32\\drivers\\watcher.sys",
+            Some("Native"),
+            &imports,
+            &[],
+        );
+
+        assert!(is_driver);
+        assert_eq!(driver_type.as_deref(), Some("Security callback driver"));
+        assert!(indicators.contains(&"security callback driver APIs".to_string()));
+    }
+
+    #[test]
+    fn classify_pe_driver_identifies_usb_hid_and_display_drivers() {
+        let usb_imports = vec![ImportInfo {
+            library: "usbd.sys".to_string(),
+            functions: vec!["WdfUsbTargetDeviceCreate".to_string()],
+            function_count: 1,
+        }];
+        let hid_imports = vec![ImportInfo {
+            library: "hidclass.sys".to_string(),
+            functions: vec!["HidP_GetCaps".to_string()],
+            function_count: 1,
+        }];
+        let display_imports = vec![ImportInfo {
+            library: "dxgkrnl.sys".to_string(),
+            functions: vec!["DxgkInitialize".to_string()],
+            function_count: 1,
+        }];
+
+        assert_eq!(
+            classify_pe_driver("usb.sys", Some("Native"), &usb_imports, &[])
+                .1
+                .as_deref(),
+            Some("USB driver")
+        );
+        assert_eq!(
+            classify_pe_driver("hid.sys", Some("Native"), &hid_imports, &[])
+                .1
+                .as_deref(),
+            Some("HID driver")
+        );
+        assert_eq!(
+            classify_pe_driver("display.sys", Some("Native"), &display_imports, &[])
+                .1
+                .as_deref(),
+            Some("Display driver")
+        );
     }
 
     #[test]
