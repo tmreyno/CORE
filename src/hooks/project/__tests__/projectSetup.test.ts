@@ -72,7 +72,7 @@ describe("createDocumentEntry", () => {
 });
 
 describe("handleOpenDirectory", () => {
-  it("does not open the native directory picker outside Tauri", async () => {
+  it("opens the setup wizard without a native directory picker outside Tauri", async () => {
     const params = {
       setPendingProjectRoot: vi.fn(),
       setShowProjectWizard: vi.fn(),
@@ -86,11 +86,11 @@ describe("handleOpenDirectory", () => {
     await handleOpenDirectory(params);
 
     expect(mockOpen).not.toHaveBeenCalled();
-    expect(params.setPendingProjectRoot).not.toHaveBeenCalled();
-    expect(params.setShowProjectWizard).not.toHaveBeenCalled();
+    expect(params.setPendingProjectRoot).toHaveBeenCalledWith(null);
+    expect(params.setShowProjectWizard).toHaveBeenCalledWith(true);
     expect(params.toast.info).toHaveBeenCalledWith(
-      "Desktop App Required",
-      expect.stringContaining("Directory project setup is available in the desktop app"),
+      "Browser Preview",
+      expect.stringContaining("New Project opens in preview mode"),
     );
   });
 });

@@ -73,9 +73,11 @@ export async function handleOpenDirectory(params: HandleOpenDirectoryParams) {
 
   if (!isTauri) {
     toast.info(
-      "Desktop App Required",
-      "Directory project setup is available in the desktop app. In browser preview, use Open Project to load a .cffx file.",
+      "Browser Preview",
+      "New Project opens in preview mode. Folder scanning and saving are available in the desktop app.",
     );
+    setPendingProjectRoot(null);
+    setShowProjectWizard(true);
     return;
   }
 
