@@ -472,6 +472,8 @@ const MAX_CONTENT_SIZE: usize = 256 * 1024;
 const MAX_CONTENT_SOURCE_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_DOCX_XML_SCAN_BYTES: u64 = MAX_CONTENT_SIZE as u64;
 const MAX_INDEX_BINARY_ANALYSIS_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_INDEX_METADATA_LIST_ITEMS: usize = 32;
+const MAX_INDEX_METADATA_VALUE_CHARS: usize = 180;
 const MAX_SEARCH_CRAWL_DEPTH: usize = 128;
 const MAX_SEARCH_CRAWLED_ENTRIES: usize = 250_000;
 
@@ -774,7 +776,187 @@ fn index_binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<Strin
     for (key, value) in &info.pe_version_info {
         metadata.insert(format!("pe.version.{key}"), value.clone());
     }
+    if info.pe_is_driver {
+        insert_index_pe_driver_string_metadata(&mut metadata, &info.strings);
+    }
     metadata
+}
+
+fn insert_index_pe_driver_string_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    strings: &[String],
+) {
+    let mut service_names = Vec::new();
+    let mut device_names = Vec::new();
+    let mut dos_device_names = Vec::new();
+    let mut registry_paths = Vec::new();
+    let mut pdb_paths = Vec::new();
+    let mut urls = Vec::new();
+    let mut guids = Vec::new();
+    let mut indexed_strings = Vec::new();
+
+    for value in strings {
+        push_index_unique_limited(
+            &mut indexed_strings,
+            truncate_index_metadata_value(value, MAX_INDEX_METADATA_VALUE_CHARS),
+        );
+        if let Some(service_name) = extract_index_windows_driver_service_name(value) {
+            push_index_unique_limited(&mut service_names, service_name);
+        }
+        if let Some(device_name) = extract_index_windows_object_name(value, "\\device\\") {
+            push_index_unique_limited(&mut device_names, device_name);
+        }
+        if let Some(dos_device_name) = extract_index_windows_object_name(value, "\\dosdevices\\") {
+            push_index_unique_limited(&mut dos_device_names, dos_device_name);
+        }
+        if let Some(registry_path) = extract_index_windows_driver_registry_path(value) {
+            push_index_unique_limited(&mut registry_paths, registry_path);
+        }
+        if let Some(pdb_path) = extract_index_windows_driver_pdb_path(value) {
+            push_index_unique_limited(&mut pdb_paths, pdb_path);
+        }
+        if let Some(url) = extract_index_embedded_url(value) {
+            push_index_unique_limited(&mut urls, url);
+        }
+        if let Some(guid) = extract_index_braced_guid(value) {
+            push_index_unique_limited(&mut guids, guid);
+        }
+    }
+
+    insert_index_joined_metadata(metadata, "binary.strings", &indexed_strings);
+    insert_index_joined_metadata(metadata, "pe.driverServiceNames", &service_names);
+    insert_index_joined_metadata(metadata, "pe.driverDeviceNames", &device_names);
+    insert_index_joined_metadata(metadata, "pe.driverDosDeviceNames", &dos_device_names);
+    insert_index_joined_metadata(metadata, "pe.driverRegistryPaths", &registry_paths);
+    insert_index_joined_metadata(metadata, "pe.driverPdbPaths", &pdb_paths);
+    insert_index_joined_metadata(metadata, "pe.driverUrls", &urls);
+    insert_index_joined_metadata(metadata, "pe.driverGuids", &guids);
+}
+
+fn extract_index_windows_driver_service_name(value: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    for marker in [
+        "\\currentcontrolset\\services\\",
+        "\\controlset001\\services\\",
+        "\\controlset002\\services\\",
+        "\\controlset003\\services\\",
+    ] {
+        if let Some(name) = extract_index_after_marker(&normalized, marker) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn extract_index_windows_object_name(value: &str, marker: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    extract_index_after_marker(&normalized, marker)
+}
+
+fn extract_index_after_marker(value: &str, marker: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find(marker)?.checked_add(marker.len())?;
+    let rest = value.get(start..)?;
+    let end = rest
+        .find(|ch: char| ch == '\\' || ch == '/' || ch.is_whitespace() || ch == '\0')
+        .unwrap_or(rest.len());
+    let candidate = rest.get(..end)?.trim_matches(['"', '\'']);
+    (!candidate.is_empty()).then(|| truncate_index_metadata_value(candidate, 120))
+}
+
+fn extract_index_windows_driver_registry_path(value: &str) -> Option<String> {
+    extract_index_segment_starting_with(value, "\\registry\\machine\\")
+        .or_else(|| {
+            extract_index_segment_starting_with(value, "system\\currentcontrolset\\services\\")
+        })
+        .or_else(|| extract_index_segment_starting_with(value, "system\\controlset001\\services\\"))
+        .map(|value| value.replace('/', "\\"))
+}
+
+fn extract_index_segment_starting_with(value: &str, marker: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    let lower = normalized.to_ascii_lowercase();
+    let start = lower.find(marker)?;
+    let rest = normalized.get(start..)?;
+    let end = rest
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ';' | ')' | ']'))
+        .unwrap_or(rest.len());
+    let candidate = rest
+        .get(..end)?
+        .trim_matches(['\0', '"', '\'', ':', '.', '\\']);
+    (!candidate.is_empty()).then(|| truncate_index_metadata_value(candidate, 180))
+}
+
+fn extract_index_windows_driver_pdb_path(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let end = lower.find(".pdb")?.checked_add(4)?;
+    let prefix = value.get(..end)?;
+    let start = prefix
+        .rfind(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\''))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let candidate = prefix.get(start..)?.trim_matches(['\0', '"', '\'']);
+    if candidate.len() < 5 || !(candidate.contains('\\') || candidate.contains('/')) {
+        return None;
+    }
+    Some(truncate_index_metadata_value(candidate, 180))
+}
+
+fn extract_index_embedded_url(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find("https://").or_else(|| lower.find("http://"))?;
+    let raw = value.get(start..)?;
+    let end = raw
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | '<' | '>' | ')' | ']'))
+        .unwrap_or(raw.len());
+    let candidate = raw.get(..end)?.trim_end_matches(['.', ',', ';']);
+    Some(truncate_index_metadata_value(candidate, 180)).filter(|value| value.contains("://"))
+}
+
+fn extract_index_braced_guid(value: &str) -> Option<String> {
+    let start = value.find('{')?;
+    let end = value.get(start..)?.find('}')?.checked_add(start + 1)?;
+    let candidate = value.get(start..end)?;
+    is_index_braced_guid(candidate).then(|| candidate.to_ascii_uppercase())
+}
+
+fn is_index_braced_guid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 38 || bytes.first() != Some(&b'{') || bytes.last() != Some(&b'}') {
+        return false;
+    }
+    for (index, byte) in bytes.iter().enumerate().skip(1).take(36) {
+        match index {
+            9 | 14 | 19 | 24 => {
+                if *byte != b'-' {
+                    return false;
+                }
+            }
+            _ => {
+                if !byte.is_ascii_hexdigit() {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn push_index_unique_limited(values: &mut Vec<String>, value: String) {
+    if values.len() >= MAX_INDEX_METADATA_LIST_ITEMS || value.is_empty() {
+        return;
+    }
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn truncate_index_metadata_value(value: &str, max_chars: usize) -> String {
+    let value = value.trim();
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    value.chars().take(max_chars).collect()
 }
 
 fn index_binary_format_name(format: &BinaryFormat) -> &'static str {
@@ -1713,7 +1895,16 @@ mod tests {
                 ],
                 entropy: Some(6.125),
             }],
-            strings: vec![],
+            strings: vec![
+                "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt".to_string(),
+                "\\Registry\\Machine\\System\\ControlSet001\\Services\\legacyflt\\Parameters"
+                    .to_string(),
+                "\\Device\\ContosoFilter".to_string(),
+                "\\DosDevices\\ContosoFilter".to_string(),
+                r"C:\agent\_work\drivers\contosoflt\objfre\amd64\contosoflt.pdb".to_string(),
+                "https://drivers.example.test/support".to_string(),
+                "{12345678-9abc-def0-1234-56789abcdef0}".to_string(),
+            ],
             file_size: 4096,
             pe_timestamp: Some(1_717_260_000),
             pe_checksum: Some(0x1234abcd),
@@ -1786,6 +1977,18 @@ mod tests {
             .contains("pe.driverIndicators:driver file extension; file-system filter driver APIs"));
         assert!(content.contains("pe.version.CompanyName:Contoso Driver Labs"));
         assert!(content.contains("pe.version.OriginalFilename:contosoflt.sys"));
+        assert!(content.contains(
+            "binary.strings:\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt"
+        ));
+        assert!(content.contains("pe.driverServiceNames:contosoflt; legacyflt"));
+        assert!(content.contains("pe.driverDeviceNames:ContosoFilter"));
+        assert!(content.contains("pe.driverDosDeviceNames:ContosoFilter"));
+        assert!(content.contains("pe.driverRegistryPaths:Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt; Registry\\Machine\\System\\ControlSet001\\Services\\legacyflt\\Parameters"));
+        assert!(content.contains(
+            r"pe.driverPdbPaths:C:\agent\_work\drivers\contosoflt\objfre\amd64\contosoflt.pdb"
+        ));
+        assert!(content.contains("pe.driverUrls:https://drivers.example.test/support"));
+        assert!(content.contains("pe.driverGuids:{12345678-9ABC-DEF0-1234-56789ABCDEF0}"));
     }
 
     #[test]
