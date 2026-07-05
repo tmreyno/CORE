@@ -35,7 +35,24 @@ const MAX_TIFF_IFD_ENTRIES: usize = 1024;
 const MAX_TIFF_RATIONAL_VALUES: usize = 16;
 const MAX_IMAGE_METADATA_PIXELS: u64 = 100_000_000;
 const MAX_METADATA_VALUE_CHARS: usize = 4096;
+const MAX_PE_VERSION_INFO_FIELDS: usize = 32;
+const MAX_PE_VERSION_INFO_VALUE_CHARS: usize = 512;
 const TRUNCATED_METADATA_SUFFIX: &str = "... [truncated]";
+
+const PE_VERSION_INFO_KEYS: &[&str] = &[
+    "CompanyName",
+    "FileDescription",
+    "FileVersion",
+    "InternalName",
+    "OriginalFilename",
+    "ProductName",
+    "ProductVersion",
+    "LegalCopyright",
+    "LegalTrademarks",
+    "PrivateBuild",
+    "SpecialBuild",
+    "Comments",
+];
 
 /// Options for bounded artifact extraction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -446,6 +463,7 @@ fn header_metadata(
     metadata.extend(registry_hive_metadata(header));
     metadata.extend(email_metadata(header, extension, category));
     metadata.extend(plist_metadata(header, extension));
+    metadata.extend(pe_driver_metadata(header, extension));
 
     if category == "image" || matches!(extension, Some("jpg" | "jpeg" | "png" | "gif" | "bmp")) {
         if let Some(dimensions) = image_dimensions(header) {
@@ -490,7 +508,180 @@ fn is_image_extension(extension: Option<&str>) -> bool {
 }
 
 fn is_structured_metadata_extension(extension: Option<&str>) -> bool {
-    matches!(extension, Some("eml" | "mbox" | "plist"))
+    matches!(extension, Some("eml" | "mbox" | "plist" | "sys" | "drv"))
+}
+
+fn pe_driver_metadata(header: &[u8], extension: Option<&str>) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    if !looks_like_pe(header) {
+        return metadata;
+    }
+
+    metadata.insert("pe.format".to_string(), "portable-executable".to_string());
+    let is_driver_extension = matches!(extension, Some("sys" | "drv"));
+    let driver_indicators = pe_driver_indicators(header, is_driver_extension);
+    if !driver_indicators.is_empty() {
+        metadata.insert("pe.isDriver".to_string(), "true".to_string());
+        metadata.insert(
+            "pe.driverIndicators".to_string(),
+            driver_indicators.join("; "),
+        );
+        metadata.insert(
+            "pe.driverType".to_string(),
+            pe_driver_type_from_indicators(&driver_indicators).to_string(),
+        );
+    }
+
+    for (key, value) in pe_version_info_strings(header) {
+        metadata.insert(format!("pe.version.{key}"), value);
+    }
+
+    metadata
+}
+
+fn looks_like_pe(header: &[u8]) -> bool {
+    if header.len() < 0x40 || header.get(0..2) != Some(&b"MZ"[..]) {
+        return false;
+    }
+    let Ok(pe_offset) = usize::try_from(read_le_u32(header, 0x3c)) else {
+        return false;
+    };
+    if pe_offset == 0 {
+        return false;
+    }
+    header.get(pe_offset..pe_offset.saturating_add(4)) == Some(&b"PE\0\0"[..])
+}
+
+fn pe_driver_indicators(header: &[u8], has_driver_extension: bool) -> Vec<String> {
+    let text = String::from_utf8_lossy(header).to_ascii_lowercase();
+    let mut indicators = Vec::new();
+    if has_driver_extension {
+        indicators.push("driver file extension".to_string());
+    }
+
+    for (needle, label) in [
+        ("fltmgr.sys", "file-system filter driver APIs"),
+        ("fltregisterfilter", "file-system filter driver APIs"),
+        ("ntoskrnl.exe", "Windows kernel import library"),
+        ("driverentry", "kernel DriverEntry export/string"),
+        ("storport.sys", "storage driver APIs"),
+        ("ndis.sys", "network driver APIs"),
+        ("wdfldr.sys", "KMDF driver framework APIs"),
+        ("wdfdrivercreate", "KMDF driver framework APIs"),
+        ("usbport.sys", "USB driver APIs"),
+        ("hidparse.sys", "HID driver APIs"),
+        ("dxgkrnl.sys", "display driver APIs"),
+    ] {
+        if text.contains(needle) && !indicators.iter().any(|existing| existing == label) {
+            indicators.push(label.to_string());
+        }
+    }
+
+    indicators
+}
+
+fn pe_driver_type_from_indicators(indicators: &[String]) -> &'static str {
+    if indicators
+        .iter()
+        .any(|indicator| indicator == "file-system filter driver APIs")
+    {
+        "File system minifilter driver"
+    } else if indicators
+        .iter()
+        .any(|indicator| indicator == "storage driver APIs")
+    {
+        "Storage driver"
+    } else if indicators
+        .iter()
+        .any(|indicator| indicator == "network driver APIs")
+    {
+        "Network driver"
+    } else if indicators
+        .iter()
+        .any(|indicator| indicator == "USB driver APIs")
+    {
+        "USB driver"
+    } else if indicators
+        .iter()
+        .any(|indicator| indicator == "HID driver APIs")
+    {
+        "HID driver"
+    } else if indicators
+        .iter()
+        .any(|indicator| indicator == "display driver APIs")
+    {
+        "Display driver"
+    } else if indicators
+        .iter()
+        .any(|indicator| indicator == "KMDF driver framework APIs")
+    {
+        "Kernel-Mode Driver Framework driver"
+    } else {
+        "Windows kernel driver"
+    }
+}
+
+fn pe_version_info_strings(header: &[u8]) -> BTreeMap<String, String> {
+    let mut version_info = BTreeMap::new();
+    for key in PE_VERSION_INFO_KEYS {
+        if version_info.len() >= MAX_PE_VERSION_INFO_FIELDS {
+            break;
+        }
+        if let Some(value) = find_utf16le_version_value(header, key) {
+            version_info.insert((*key).to_string(), value);
+        }
+    }
+    version_info
+}
+
+fn find_utf16le_version_value(data: &[u8], key: &str) -> Option<String> {
+    let key_utf16: Vec<u8> = key.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    data.windows(key_utf16.len())
+        .position(|window| window == key_utf16.as_slice())
+        .and_then(|index| {
+            let value_start = index + key_utf16.len();
+            let search_end = data.len().min(value_start.saturating_add(1024));
+            let mut cursor = value_start;
+            while cursor + 1 < search_end {
+                if data[cursor] != 0 || data[cursor + 1] != 0 {
+                    break;
+                }
+                cursor += 2;
+            }
+            read_utf16le_string(data, cursor, search_end)
+        })
+        .filter(|value| looks_like_version_resource_value(value))
+}
+
+fn read_utf16le_string(data: &[u8], start: usize, end: usize) -> Option<String> {
+    let mut units = Vec::new();
+    let mut cursor = start;
+    while cursor + 1 < end {
+        let unit = u16::from_le_bytes([data[cursor], data[cursor + 1]]);
+        if unit == 0 {
+            break;
+        }
+        units.push(unit);
+        if units.len() >= MAX_PE_VERSION_INFO_VALUE_CHARS {
+            break;
+        }
+        cursor += 2;
+    }
+
+    if units.is_empty() {
+        return None;
+    }
+    String::from_utf16(&units)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn looks_like_version_resource_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().any(|ch| ch.is_ascii_alphanumeric())
+        && !trimmed.chars().any(char::is_control)
 }
 
 fn system_info_metadata(
@@ -2370,6 +2561,31 @@ mod tests {
         (values.len() as u32, offset)
     }
 
+    fn make_minimal_pe_driver_header() -> Vec<u8> {
+        let pe_offset = 0x80usize;
+        let mut bytes = vec![0u8; pe_offset + 0x100];
+        bytes[0..2].copy_from_slice(b"MZ");
+        bytes[0x3c..0x40].copy_from_slice(&(pe_offset as u32).to_le_bytes());
+        bytes[pe_offset..pe_offset + 4].copy_from_slice(b"PE\0\0");
+        bytes.extend_from_slice(b"ntoskrnl.exe\0FltRegisterFilter\0DriverEntry\0");
+        append_utf16le_version_pair(&mut bytes, "CompanyName", "Contoso Driver Labs");
+        append_utf16le_version_pair(&mut bytes, "FileDescription", "Contoso File Filter");
+        append_utf16le_version_pair(&mut bytes, "FileVersion", "1.2.3.4");
+        append_utf16le_version_pair(&mut bytes, "OriginalFilename", "contosoflt.sys");
+        bytes
+    }
+
+    fn append_utf16le_version_pair(bytes: &mut Vec<u8>, key: &str, value: &str) {
+        for unit in key.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        for unit in value.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0, 0]);
+    }
+
     fn write_ifd_at(bytes: &mut [u8], offset: usize, entries: &[TestTiffEntry]) {
         bytes[offset..offset + 2].copy_from_slice(&(entries.len() as u16).to_le_bytes());
         for (index, entry) in entries.iter().enumerate() {
@@ -3597,6 +3813,48 @@ MemFree:         1024000 kB
         assert_eq!(
             artifact.metadata.get("extension").map(String::as_str),
             Some("sys")
+        );
+    }
+
+    #[test]
+    fn sys_driver_artifact_extracts_pe_driver_identity_metadata() {
+        let bytes = make_minimal_pe_driver_header();
+        let file = write_temp_file(".sys", &bytes);
+        let source = LocalFileByteSource::new(file.path());
+
+        let artifact =
+            extract_normalized_artifact(&source, ArtifactExtractionOptions::default()).unwrap();
+
+        assert_eq!(artifact.category, "system");
+        assert_eq!(
+            artifact.metadata.get("pe.format").map(String::as_str),
+            Some("portable-executable")
+        );
+        assert_eq!(
+            artifact.metadata.get("pe.isDriver").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            artifact.metadata.get("pe.driverType").map(String::as_str),
+            Some("File system minifilter driver")
+        );
+        assert!(artifact
+            .metadata
+            .get("pe.driverIndicators")
+            .is_some_and(|value| value.contains("file-system filter driver APIs")));
+        assert_eq!(
+            artifact
+                .metadata
+                .get("pe.version.CompanyName")
+                .map(String::as_str),
+            Some("Contoso Driver Labs")
+        );
+        assert_eq!(
+            artifact
+                .metadata
+                .get("pe.version.OriginalFilename")
+                .map(String::as_str),
+            Some("contosoflt.sys")
         );
     }
 
