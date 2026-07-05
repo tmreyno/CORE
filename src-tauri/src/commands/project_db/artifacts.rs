@@ -380,6 +380,10 @@ fn is_system_identity_source(source_id: &str) -> bool {
         return true;
     }
 
+    if is_linux_network_identity_source(&source_id) {
+        return true;
+    }
+
     matches!(
         source_id.rsplit('/').next(),
         Some(
@@ -402,6 +406,14 @@ fn is_system_identity_source(source_id: &str) -> bool {
                 | "bios_vendor"
         )
     )
+}
+
+fn is_linux_network_identity_source(source_id: &str) -> bool {
+    let source_id = source_id.replace('\\', "/").to_ascii_lowercase();
+    source_id.ends_with("/etc/network/interfaces")
+        || source_id.contains("/etc/sysconfig/network-scripts/ifcfg-")
+        || (source_id.contains("/etc/netplan/")
+            && (source_id.ends_with(".yaml") || source_id.ends_with(".yml")))
 }
 
 fn system_identity_metadata_from_source(
@@ -666,6 +678,9 @@ fn system_identity_metadata_from_bytes(source_id: &str, data: &[u8]) -> BTreeMap
     let mut metadata = BTreeMap::new();
 
     metadata.insert("system.identitySource".to_string(), normalized);
+    if is_linux_network_identity_source(&lower) {
+        metadata.extend(parse_linux_network_config_metadata(&lower, &text));
+    }
 
     match file_name {
         "os-release" | "lsb-release" => {
@@ -822,6 +837,269 @@ fn decode_mount_field(value: &str) -> String {
         .replace("\\011", "\t")
         .replace("\\012", "\n")
         .replace("\\134", "\\")
+}
+
+#[derive(Default)]
+struct LinuxNetworkMetadata {
+    interfaces: Vec<String>,
+    addresses: Vec<String>,
+    gateways: Vec<String>,
+    dns_servers: Vec<String>,
+    methods: Vec<String>,
+}
+
+fn parse_linux_network_config_metadata(source_id: &str, text: &str) -> BTreeMap<String, String> {
+    let mut values = LinuxNetworkMetadata::default();
+    let config_type = if source_id.ends_with("/etc/network/interfaces") {
+        parse_debian_interfaces_metadata(text, &mut values);
+        "debian-interfaces"
+    } else if source_id.contains("/etc/sysconfig/network-scripts/ifcfg-") {
+        parse_ifcfg_metadata(source_id, text, &mut values);
+        "ifcfg"
+    } else {
+        parse_netplan_metadata(text, &mut values);
+        "netplan"
+    };
+
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "system.networkConfigType".to_string(),
+        config_type.to_string(),
+    );
+    insert_joined_metadata(
+        &mut metadata,
+        "system.networkInterfaces",
+        &values.interfaces,
+    );
+    insert_joined_metadata(&mut metadata, "system.ipv4Addresses", &values.addresses);
+    insert_joined_metadata(&mut metadata, "system.gateways", &values.gateways);
+    insert_joined_metadata(&mut metadata, "system.dnsServers", &values.dns_servers);
+    insert_joined_metadata(&mut metadata, "system.networkMethods", &values.methods);
+    metadata
+}
+
+fn parse_debian_interfaces_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
+    let mut current_interface: Option<String> = None;
+    for raw_line in text.lines() {
+        let line = trim_network_config_line(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts.as_slice() {
+            ["auto" | "allow-hotplug", interfaces @ ..] => {
+                for interface in interfaces {
+                    push_unique_limited(&mut values.interfaces, (*interface).to_string());
+                }
+            }
+            ["iface", interface, family, method, ..] => {
+                current_interface = Some((*interface).to_string());
+                push_unique_limited(&mut values.interfaces, (*interface).to_string());
+                if *family == "inet" || *family == "inet6" {
+                    push_unique_limited(
+                        &mut values.methods,
+                        format!("{interface}:{family}:{method}"),
+                    );
+                }
+            }
+            ["address", address, ..] => {
+                push_unique_limited(&mut values.addresses, (*address).to_string());
+            }
+            ["gateway", gateway, ..] => {
+                push_unique_limited(&mut values.gateways, (*gateway).to_string());
+            }
+            ["dns-nameservers", servers @ ..] => {
+                for server in servers {
+                    push_unique_limited(&mut values.dns_servers, (*server).to_string());
+                }
+            }
+            ["hwaddress", "ether", mac, ..] => {
+                if let Some(interface) = &current_interface {
+                    push_unique_limited(&mut values.interfaces, format!("{interface} ({mac})"));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn parse_ifcfg_metadata(source_id: &str, text: &str, values: &mut LinuxNetworkMetadata) {
+    let pairs = parse_key_value_lines(text);
+    let interface = pairs
+        .get("DEVICE")
+        .or_else(|| pairs.get("NAME"))
+        .cloned()
+        .or_else(|| {
+            source_id
+                .rsplit('/')
+                .next()
+                .and_then(|name| name.strip_prefix("ifcfg-"))
+                .map(ToString::to_string)
+        });
+
+    if let Some(interface) = &interface {
+        push_unique_limited(&mut values.interfaces, interface.clone());
+    }
+    if let Some(address) = pairs.get("IPADDR") {
+        let address = pairs
+            .get("PREFIX")
+            .map(|prefix| format!("{address}/{prefix}"))
+            .or_else(|| {
+                pairs
+                    .get("NETMASK")
+                    .map(|netmask| format!("{address}/{netmask}"))
+            })
+            .unwrap_or_else(|| address.clone());
+        push_unique_limited(&mut values.addresses, address);
+    }
+    if let Some(gateway) = pairs.get("GATEWAY") {
+        push_unique_limited(&mut values.gateways, gateway.clone());
+    }
+    for key in ["DNS1", "DNS2", "DNS3"] {
+        if let Some(server) = pairs.get(key) {
+            push_unique_limited(&mut values.dns_servers, server.clone());
+        }
+    }
+    if let (Some(interface), Some(method)) = (interface.as_deref(), pairs.get("BOOTPROTO")) {
+        push_unique_limited(&mut values.methods, format!("{interface}:inet:{method}"));
+    }
+}
+
+fn parse_netplan_metadata(text: &str, values: &mut LinuxNetworkMetadata) {
+    let mut current_interface: Option<String> = None;
+    let mut in_nameservers = false;
+    let mut pending_address_list = false;
+    let mut pending_dns_list = false;
+
+    for raw_line in text.lines() {
+        let line = trim_network_config_line(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if trimmed.ends_with(':') {
+            let key = trimmed.trim_end_matches(':').trim().trim_matches('"');
+            if key == "nameservers" {
+                in_nameservers = true;
+            } else {
+                in_nameservers = false;
+                pending_dns_list = false;
+            }
+            if is_netplan_interface_key(key) {
+                current_interface = Some(key.to_string());
+                push_unique_limited(&mut values.interfaces, key.to_string());
+            }
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("- ") {
+            if pending_dns_list || in_nameservers {
+                for server in split_config_values(value) {
+                    push_unique_limited(&mut values.dns_servers, server);
+                }
+            } else if pending_address_list {
+                for address in split_config_values(value) {
+                    push_unique_limited(&mut values.addresses, address);
+                }
+            }
+            continue;
+        }
+
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        pending_address_list = false;
+        pending_dns_list = false;
+
+        match key {
+            "addresses" if in_nameservers => {
+                if value.is_empty() {
+                    pending_dns_list = true;
+                } else {
+                    for server in split_config_values(value) {
+                        push_unique_limited(&mut values.dns_servers, server);
+                    }
+                }
+            }
+            "addresses" => {
+                if value.is_empty() {
+                    pending_address_list = true;
+                } else {
+                    for address in split_config_values(value) {
+                        push_unique_limited(&mut values.addresses, address);
+                    }
+                }
+            }
+            "gateway4" | "gateway6" => {
+                for gateway in split_config_values(value) {
+                    push_unique_limited(&mut values.gateways, gateway);
+                }
+            }
+            "dhcp4" | "dhcp6" => {
+                if value.eq_ignore_ascii_case("true") {
+                    let interface = current_interface.as_deref().unwrap_or("unknown");
+                    let family = if key == "dhcp6" { "inet6" } else { "inet" };
+                    push_unique_limited(&mut values.methods, format!("{interface}:{family}:dhcp"));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn trim_network_config_line(line: &str) -> &str {
+    line.split_once('#')
+        .map_or(line, |(before, _)| before)
+        .trim()
+}
+
+fn is_netplan_interface_key(key: &str) -> bool {
+    !matches!(
+        key,
+        "network"
+            | "version"
+            | "renderer"
+            | "ethernets"
+            | "wifis"
+            | "bridges"
+            | "bonds"
+            | "vlans"
+            | "addresses"
+            | "nameservers"
+            | "routes"
+            | "gateway4"
+            | "gateway6"
+            | "dhcp4"
+            | "dhcp6"
+            | "optional"
+            | "match"
+            | "set-name"
+    )
+}
+
+fn split_config_values(value: &str) -> Vec<String> {
+    value
+        .trim()
+        .trim_matches('[')
+        .trim_matches(']')
+        .split([',', ' '])
+        .filter_map(|part| {
+            let part = part.trim().trim_matches('"').trim_matches('\'');
+            (!part.is_empty()).then(|| truncate_metadata_value(part, 120))
+        })
+        .collect()
+}
+
+fn insert_joined_metadata(metadata: &mut BTreeMap<String, String>, key: &str, values: &[String]) {
+    if values.is_empty() {
+        return;
+    }
+    metadata.insert(
+        key.to_string(),
+        truncate_metadata_value(&values.join("; "), MAX_ARTIFACT_METADATA_VALUE_CHARS),
+    );
 }
 
 fn parse_key_value_lines(text: &str) -> BTreeMap<String, String> {
@@ -1792,6 +2070,123 @@ tmpfs /run tmpfs rw,nosuid,nodev 0 0
     }
 
     #[test]
+    fn system_identity_metadata_extracts_debian_network_interfaces() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/network/interfaces",
+            br#"# primary interface
+auto lo eth0
+iface lo inet loopback
+iface eth0 inet static
+    address 192.168.10.5/24
+    gateway 192.168.10.1
+    dns-nameservers 1.1.1.1 8.8.8.8
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.identityStatus").map(String::as_str),
+            Some("parsed")
+        );
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("debian-interfaces")
+        );
+        assert!(metadata
+            .get("system.networkInterfaces")
+            .is_some_and(|value| value.contains("eth0")));
+        assert_eq!(
+            metadata.get("system.ipv4Addresses").map(String::as_str),
+            Some("192.168.10.5/24")
+        );
+        assert_eq!(
+            metadata.get("system.gateways").map(String::as_str),
+            Some("192.168.10.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsServers").map(String::as_str),
+            Some("1.1.1.1; 8.8.8.8")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_ifcfg_network_config() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/sysconfig/network-scripts/ifcfg-ens192",
+            br#"DEVICE=ens192
+BOOTPROTO=static
+IPADDR=10.0.0.20
+PREFIX=24
+GATEWAY=10.0.0.1
+DNS1=9.9.9.9
+DNS2=149.112.112.112
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("ifcfg")
+        );
+        assert_eq!(
+            metadata.get("system.networkInterfaces").map(String::as_str),
+            Some("ens192")
+        );
+        assert_eq!(
+            metadata.get("system.ipv4Addresses").map(String::as_str),
+            Some("10.0.0.20/24")
+        );
+        assert_eq!(
+            metadata.get("system.gateways").map(String::as_str),
+            Some("10.0.0.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsServers").map(String::as_str),
+            Some("9.9.9.9; 149.112.112.112")
+        );
+        assert_eq!(
+            metadata.get("system.networkMethods").map(String::as_str),
+            Some("ens192:inet:static")
+        );
+    }
+
+    #[test]
+    fn system_identity_metadata_extracts_netplan_network_config() {
+        let metadata = system_identity_metadata_from_bytes(
+            "/image/etc/netplan/01-netcfg.yaml",
+            br#"network:
+  version: 2
+  ethernets:
+    ens18:
+      dhcp4: false
+      addresses: [172.16.1.5/24]
+      gateway4: 172.16.1.1
+      nameservers:
+        addresses: [1.1.1.1, 8.8.4.4]
+"#,
+        );
+
+        assert_eq!(
+            metadata.get("system.networkConfigType").map(String::as_str),
+            Some("netplan")
+        );
+        assert_eq!(
+            metadata.get("system.networkInterfaces").map(String::as_str),
+            Some("ens18")
+        );
+        assert_eq!(
+            metadata.get("system.ipv4Addresses").map(String::as_str),
+            Some("172.16.1.5/24")
+        );
+        assert_eq!(
+            metadata.get("system.gateways").map(String::as_str),
+            Some("172.16.1.1")
+        );
+        assert_eq!(
+            metadata.get("system.dnsServers").map(String::as_str),
+            Some("1.1.1.1; 8.8.4.4")
+        );
+    }
+
+    #[test]
     fn system_identity_metadata_extracts_macos_system_version_plist() {
         let metadata = system_identity_metadata_from_bytes(
             "/System/Library/CoreServices/SystemVersion.plist",
@@ -1984,6 +2379,11 @@ tmpfs /run tmpfs rw,nosuid,nodev 0 0
         assert!(is_system_identity_source("/etc/timezone"));
         assert!(is_system_identity_source("/etc/fstab"));
         assert!(is_system_identity_source("/etc/mtab"));
+        assert!(is_system_identity_source("/etc/network/interfaces"));
+        assert!(is_system_identity_source(
+            "/etc/sysconfig/network-scripts/ifcfg-ens192"
+        ));
+        assert!(is_system_identity_source("/etc/netplan/01-netcfg.yaml"));
         assert!(is_system_identity_source("/sys/class/dmi/id/product_uuid"));
         assert!(is_system_identity_source(
             "/System/Library/CoreServices/SystemVersion.plist"
