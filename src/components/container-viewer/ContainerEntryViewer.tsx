@@ -415,6 +415,17 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     setViewerSection(null);
   });
 
+  const setViewerSectionForEntry = (
+    expectedEntryKey: string,
+    section: ViewerMetadataSection | null,
+  ) => {
+    if (expectedEntryKey !== entryKey()) {
+      log.debug("Ignoring stale viewer metadata:", expectedEntryKey);
+      return;
+    }
+    setViewerSection(section);
+  };
+
   // Emit viewer metadata to parent for right panel display
   createEffect(() => {
     const entry = props.entry;
@@ -552,6 +563,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           {/* Preview Mode */}
           <Show when={effectiveMode() === "preview" && guardedPreviewPath() && !previewLoading()}>
             {(() => {
+              const viewerEntryKey = entryKey();
               const path = guardedPreviewPath()!;
               const detected = detectedFormat();
               log.debug("Rendering preview:", {
@@ -570,26 +582,27 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
                 detectedFormat: detected?.format,
                 detectedViewer: detected?.viewerType,
               });
-              return null;
+              return (
+                <ViewerSwitch
+                  entry={props.entry}
+                  previewPath={path}
+                  detectedFormat={detectedFormat}
+                  onMetadata={(section) => setViewerSectionForEntry(viewerEntryKey, section)}
+                  fileIsPdf={fileIsPdf}
+                  fileIsImage={fileIsImage}
+                  fileIsSpreadsheet={fileIsSpreadsheet}
+                  fileIsOffice={fileIsOffice}
+                  fileIsEmail={fileIsEmail}
+                  fileIsPst={fileIsPst}
+                  fileIsPlist={fileIsPlist}
+                  fileIsBinary={fileIsBinary}
+                  fileIsRegistry={fileIsRegistry}
+                  fileIsDatabase={fileIsDatabase}
+                  fileIsDetectedText={fileIsDetectedText}
+                  fileIsDocument={fileIsDocument}
+                />
+              );
             })()}
-            <ViewerSwitch
-              entry={props.entry}
-              previewPath={guardedPreviewPath()!}
-              detectedFormat={detectedFormat}
-              onMetadata={setViewerSection}
-              fileIsPdf={fileIsPdf}
-              fileIsImage={fileIsImage}
-              fileIsSpreadsheet={fileIsSpreadsheet}
-              fileIsOffice={fileIsOffice}
-              fileIsEmail={fileIsEmail}
-              fileIsPst={fileIsPst}
-              fileIsPlist={fileIsPlist}
-              fileIsBinary={fileIsBinary}
-              fileIsRegistry={fileIsRegistry}
-              fileIsDatabase={fileIsDatabase}
-              fileIsDetectedText={fileIsDetectedText}
-              fileIsDocument={fileIsDocument}
-            />
           </Show>
 
           {/* Hex View */}

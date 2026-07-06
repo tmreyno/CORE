@@ -1431,6 +1431,91 @@ describe("ContainerEntryViewer", () => {
       expect(lastCall.viewerType).toBe("Spreadsheet");
       dispose();
     });
+
+    it("ignores stale preview metadata after switching entries", async () => {
+      let resolveRead:
+        | ((value: { success: boolean; content: any; error: string | null }) => void)
+        | undefined;
+      let resolveMetadata:
+        | ((value: { success: boolean; metadata: any; error: string | null }) => void)
+        | undefined;
+
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "document_read_source") {
+          return new Promise((resolve) => {
+            resolveRead = resolve;
+          });
+        }
+        if (cmd === "document_get_metadata_source") {
+          return new Promise((resolve) => {
+            resolveMetadata = resolve;
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      const onMetadata = vi.fn();
+      const [entry, setEntry] = createSignal(
+        makeEntry({
+          name: "slow.docx",
+          entryPath: "/files/slow.docx",
+        }),
+      );
+      const [viewMode, setViewMode] = createSignal<"auto" | "hex">("auto");
+
+      const { dispose } = renderComponent(() => (
+        <ContainerEntryViewer
+          entry={entry()}
+          viewMode={viewMode()}
+          onMetadata={onMetadata}
+        />
+      ));
+
+      await tick(100);
+      setViewMode("hex");
+      setEntry(makeEntry({ name: "current.bin", entryPath: "/files/current.bin" }));
+      await tick(100);
+
+      resolveRead?.({
+        success: true,
+        content: {
+          format: "docx",
+          title: "Old Document",
+          author: "Previous",
+          page_count: 1,
+          file_size: 1024,
+          text: "old",
+          html: "<p>old</p>",
+        },
+        error: null,
+      });
+      resolveMetadata?.({
+        success: true,
+        metadata: {
+          format: "docx",
+          title: "Old Document",
+          author: "Previous",
+          subject: null,
+          keywords: [],
+          page_count: 1,
+          file_size: 1024,
+          created: null,
+          modified: null,
+          producer: null,
+          creator: null,
+          encrypted: false,
+          word_count: 1,
+        },
+        error: null,
+      });
+      await tick(100);
+
+      const lastCall = onMetadata.mock.calls[onMetadata.mock.calls.length - 1][0];
+      expect(lastCall.fileInfo.name).toBe("current.bin");
+      expect(lastCall.viewerType).toBe("Hex");
+      expect(lastCall.sections).toEqual([]);
+      dispose();
+    });
   });
 
   describe("close preview", () => {
