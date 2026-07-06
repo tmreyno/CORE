@@ -4,6 +4,17 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.114] - 2026-07-06
+
+### Fixed
+- Release publishing now ships the corrected engine, viewer, artifact, and update-note fixes under `0.1.114` because GitHub immutable release state prevented safely reusing the deleted `v0.1.113` tag.
+- Manual release publishing no longer checks out a not-yet-created release tag before generating `latest.json`; it checks out the workflow commit and targets that commit when the draft release is created.
+- Updater manifest generation now uses a valid macOS architecture regex so manifest creation can discover the aarch64 updater bundle without failing in Python.
+
+### Changed
+- Update availability now shows bundled `0.1.112`, `0.1.113`, and `0.1.114` release review notes directly in the app.
+- Version metadata, lockfiles, README badge, Tauri config, and changelog links are aligned to `0.1.114`.
+
 ## [0.1.113] - 2026-07-06
 
 ### Fixed
@@ -1326,8 +1337,9 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.113...HEAD
-[0.1.113]: https://github.com/tmreyno/CORE/compare/v0.1.112...v0.1.113
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.114...HEAD
+[0.1.114]: https://github.com/tmreyno/CORE/compare/v0.1.112...v0.1.114
+[0.1.113]: https://github.com/tmreyno/CORE/compare/v0.1.112...fd121a25
 [0.1.112]: https://github.com/tmreyno/CORE/compare/v0.1.111...v0.1.112
 [0.1.111]: https://github.com/tmreyno/CORE/compare/v0.1.110...v0.1.111
 [0.1.110]: https://github.com/tmreyno/CORE/compare/v0.1.109...v0.1.110

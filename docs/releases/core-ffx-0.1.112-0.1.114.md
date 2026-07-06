@@ -1,6 +1,21 @@
-# CORE-FFX Update Review: 0.1.112 to 0.1.113
+# CORE-FFX Update Review: 0.1.112 to 0.1.114
 
 This review is bundled with CORE-FFX so the in-app update dialog can show release details directly when a new version is available.
+
+<!-- release-note:start 0.1.114 -->
+## CORE-FFX 0.1.114
+
+### Release Publishing Recovery
+- **Published update version:** The corrected release is published as `0.1.114` because GitHub would not safely republish the deleted `v0.1.113` immutable release tag.
+- **No extra runtime change:** Version `0.1.114` carries the `0.1.113` engine, viewer, project-open, artifact, and update-note fixes in a clean distributable build.
+- **Manual release safety:** Manual release publishing now checks out the workflow commit instead of a not-yet-created release tag before generating updater metadata.
+- **Release target alignment:** Draft releases now target the workflow commit when they are created so the eventual published tag points at the intended source revision.
+- **Manifest generation:** The macOS architecture detector in `latest.json` generation now uses a valid regex and correctly maps the aarch64 updater bundle.
+
+### Update Experience
+- **Bundled notes:** Update availability now shows the `0.1.112`, `0.1.113`, and `0.1.114` review notes directly in CORE-FFX.
+- **Version alignment:** `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, the root `Cargo.lock`, README badge, changelog references, and release documentation are aligned to `0.1.114`.
+<!-- release-note:end 0.1.114 -->
 
 <!-- release-note:start 0.1.113 -->
 ## CORE-FFX 0.1.113
