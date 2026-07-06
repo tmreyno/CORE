@@ -6,8 +6,16 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [0.1.115] - 2026-07-06
 
+### Fixed
+- AD1 range reads now skip declared chunks before the requested range, fixing later-range hashing, hex review, and extraction failures in AD1 evidence.
+- Hashing now supports evidence byte sources that return partial chunks without treating valid short reads as failed evidence reads.
+- EWF and raw entry reads now reuse bounded VFS handles across viewers, hashing, artifact extraction, and reporting to reduce repeated image opens and freeze risk.
+- `.cffx` sibling evidence paths now round-trip as valid `../...` paths, and project load keeps already-loaded state when only saved UI restore/post-load setup reports a warning.
+- Restored evidence tabs are normalized to current resolved file paths and evidence/entry tab selection keeps active evidence context synchronized.
+
 ### Changed
-- Nightly release build (patch bump)
+- Recent project rows now support keyboard activation.
+- Update availability notes now include the `0.1.115` engine and project-restore release review directly in the app.
 
 ## [0.1.114] - 2026-07-06
 

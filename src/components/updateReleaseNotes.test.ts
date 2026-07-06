@@ -11,13 +11,17 @@ import {
 } from "./updateReleaseNotes";
 
 describe("update release notes", () => {
-  it("shows 0.1.112 through 0.1.114 when updating from an older version", () => {
-    const notes = getBundledUpdateReleaseNotes("0.1.114", "0.1.111");
+  it("shows 0.1.112 through 0.1.115 when updating from an older version", () => {
+    const notes = getBundledUpdateReleaseNotes("0.1.115", "0.1.111");
 
     expect(notes).toContain("CORE-FFX Update Review");
+    expect(notes).toContain("CORE-FFX 0.1.115");
     expect(notes).toContain("CORE-FFX 0.1.114");
     expect(notes).toContain("CORE-FFX 0.1.113");
     expect(notes).toContain("CORE-FFX 0.1.112");
+    expect(notes.indexOf("CORE-FFX 0.1.115")).toBeLessThan(
+      notes.indexOf("CORE-FFX 0.1.114")
+    );
     expect(notes.indexOf("CORE-FFX 0.1.114")).toBeLessThan(
       notes.indexOf("CORE-FFX 0.1.113")
     );
@@ -36,7 +40,7 @@ describe("update release notes", () => {
 
   it("keeps unknown future release bodies unchanged", () => {
     expect(
-      mergeUpdateReleaseNotes("Remote release body", "0.1.115", "0.1.114")
+      mergeUpdateReleaseNotes("Remote release body", "0.1.116", "0.1.115")
     ).toBe("Remote release body");
   });
 
@@ -51,22 +55,23 @@ describe("update release notes", () => {
   it("appends remote manifest notes after bundled notes", () => {
     const notes = mergeUpdateReleaseNotes(
       "Remote signing and asset notes.",
-      "0.1.114",
-      "0.1.113"
+      "0.1.115",
+      "0.1.114"
     );
 
-    expect(notes).toContain("CORE-FFX 0.1.114");
+    expect(notes).toContain("CORE-FFX 0.1.115");
+    expect(notes).toContain("AD1 range reads");
     expect(notes).toContain("### Release Manifest Notes");
     expect(notes).toContain("Remote signing and asset notes.");
   });
 
   it("does not duplicate matching remote notes", () => {
     const remoteNotes = [
-      "## CORE-FFX 0.1.114",
+      "## CORE-FFX 0.1.115",
       "- **Release Publishing Recovery:** Existing note.",
     ].join("\n");
 
-    expect(mergeUpdateReleaseNotes(remoteNotes, "0.1.114", "0.1.113")).toBe(
+    expect(mergeUpdateReleaseNotes(remoteNotes, "0.1.115", "0.1.114")).toBe(
       remoteNotes
     );
   });

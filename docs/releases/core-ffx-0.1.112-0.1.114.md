@@ -1,6 +1,28 @@
-# CORE-FFX Update Review: 0.1.112 to 0.1.114
+# CORE-FFX Update Review: 0.1.112 to 0.1.115
 
 This review is bundled with CORE-FFX so the in-app update dialog can show release details directly when a new version is available.
+
+<!-- release-note:start 0.1.115 -->
+## CORE-FFX 0.1.115
+
+### Evidence Loading And Project Restore
+- **AD1 range reads:** AD1 file reads now skip earlier declared chunks before reading a later requested range. This fixes incorrect failures when hashing, hex-viewing, or extracting later content from AD1 evidence.
+- **Partial source hashing:** Hashing now continues through evidence byte sources that return smaller chunks than requested, while still rejecting true premature end-of-file conditions.
+- **EWF and raw source reuse:** EWF and raw entry readers now reuse bounded virtual filesystem handles for repeated viewer, hashing, artifact extraction, and reporting reads. This reduces repeated image opens and lowers freeze risk when switching between evidence views.
+- **Sibling evidence paths:** `.cffx` projects with evidence stored beside the project directory now round-trip paths as `../...` instead of invalid `./...` paths.
+- **Post-load warnings:** Project load now keeps successfully loaded state when only saved UI restore or post-load setup fails, showing a warning instead of a false load failure.
+
+### Viewer And UI Reliability
+- **Evidence tab syncing:** Selecting evidence or entry tabs now keeps the active evidence context synchronized so the detail panel, tree, hashing, and viewer actions target the selected evidence.
+- **Restored tab IDs:** Saved evidence, document, and processed tabs are normalized to current resolved paths, preventing stale IDs from creating duplicate or non-working tabs after a project is opened.
+- **Recent projects keyboard access:** Recent project rows now support keyboard activation with Enter and Space.
+
+### Validation
+- **Seed project checks:** The project loader was checked against `/Users/terryreynolds/Cases/1827-1001/26-000.cffx` and `/Users/terryreynolds/Cases/1827-1001/1827-1001_Case_With_Data_.cffx`.
+- **Local gates:** TypeScript checks, frontend regression tests, production frontend build, Rust formatting, focused Rust tests, and focused clippy checks passed.
+- **GitHub gates:** PR #24 passed frontend tests, Rust backend tests on Ubuntu/macOS/Windows, performance regression checks, and application builds on Ubuntu/macOS/Windows.
+- **Published updater build:** `0.1.115` is published with macOS, Windows, and Linux installer/updater artifacts plus `latest.json`.
+<!-- release-note:end 0.1.115 -->
 
 <!-- release-note:start 0.1.114 -->
 ## CORE-FFX 0.1.114
