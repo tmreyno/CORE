@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { mockInvoke } from "../__tests__/setup";
 import type { DbNormalizedArtifact } from "../api/commands";
@@ -99,6 +100,80 @@ describe("SystemIdentitySummaryPanel desktop mode", () => {
     expect(
       mockInvoke.mock.calls.some(([cmd]) => cmd === "project_db_list_artifacts_by_category"),
     ).toBe(false);
+    dispose();
+  });
+
+  it("ignores stale artifact results after selected evidence changes", async () => {
+    const secondFile: DiscoveredFile = {
+      ...activeFile,
+      path: "/evidence/second.E01",
+      filename: "second.E01",
+    };
+    let resolveFirst:
+      | ((value: DbNormalizedArtifact[]) => void)
+      | undefined;
+
+    mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "project_db_list_artifacts_for_evidence") {
+        if (args?.evidenceFileId === activeFile.path) {
+          return new Promise((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        if (args?.evidenceFileId === secondFile.path) {
+          return Promise.resolve([
+            artifact({
+              id: "artifact-2",
+              evidenceFileId: secondFile.path,
+              sourceId: `e01:${secondFile.path}:/etc/os-release`,
+              sourceRefJson: JSON.stringify({
+                kind: "vfsEntry",
+                containerPath: secondFile.path,
+                entryPath: "/etc/os-release",
+                containerType: "e01",
+              }),
+              metadataJson: JSON.stringify({
+                "system.osName": "Second OS",
+                "system.machineId": "second-machine-id",
+              }),
+            }),
+          ]);
+        }
+      }
+      if (cmd === "project_db_list_artifacts_by_category") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    const [file, setFile] = createSignal(activeFile);
+    const { container, dispose } = renderComponent(() => (
+      <ToastProvider>
+        <SystemIdentitySummaryPanel
+          activeFile={file}
+          hasProject={() => true}
+        />
+      </ToastProvider>
+    ));
+
+    await tick();
+    setFile(secondFile);
+    await tick();
+    await tick();
+
+    resolveFirst?.([
+      artifact({
+        metadataJson: JSON.stringify({
+          "system.machineGuid": "stale-machine-guid",
+          "system.osName": "Stale OS",
+        }),
+      }),
+    ]);
+    await tick();
+    await tick();
+
+    expect(container.textContent).toContain("Second OS");
+    expect(container.textContent).toContain("second-machine-id");
+    expect(container.textContent).not.toContain("stale-machine-guid");
+    expect(container.textContent).not.toContain("Stale OS");
     dispose();
   });
 });

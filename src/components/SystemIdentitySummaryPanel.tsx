@@ -40,8 +40,10 @@ export function SystemIdentitySummaryPanel(props: SystemIdentitySummaryPanelProp
   const [records, setRecords] = createSignal<DbNormalizedArtifact[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  let loadGeneration = 0;
 
   const loadData = async () => {
+    const generation = ++loadGeneration;
     const activePath = props.activeFile()?.path ?? "";
     if (!props.hasProject() || !activePath || !isTauri) {
       setRecords([]);
@@ -54,6 +56,7 @@ export function SystemIdentitySummaryPanel(props: SystemIdentitySummaryPanelProp
     setError(null);
     try {
       const evidenceRecords = await commands.artifact.listForEvidence(activePath);
+      if (generation !== loadGeneration) return;
       const matchingEvidenceRecords = evidenceRecords.filter(
         (record) =>
           record.category === "systeminfo" && artifactMatchesEvidence(record, activePath),
@@ -65,14 +68,17 @@ export function SystemIdentitySummaryPanel(props: SystemIdentitySummaryPanelProp
       }
 
       const legacySystemRecords = await commands.artifact.listByCategory("systeminfo", 10000);
+      if (generation !== loadGeneration) return;
       setRecords(
         legacySystemRecords.filter((record) => artifactMatchesEvidence(record, activePath)),
       );
     } catch (err) {
+      if (generation !== loadGeneration) return;
       log.warn("Failed to load system identity artifacts:", err);
       setRecords([]);
       setError("System identity data is unavailable.");
     } finally {
+      if (generation !== loadGeneration) return;
       setLoading(false);
     }
   };
