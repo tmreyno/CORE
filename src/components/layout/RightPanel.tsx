@@ -71,6 +71,12 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
   /** Whether the active tab is an evidence collection */
   const isCollectionTab = () => props.activeTabType?.() === "collection";
 
+  const shouldShowEvidenceSummaries = () =>
+    props.currentViewMode() !== "export" &&
+    !isCollectionTab() &&
+    props.hasProject?.() &&
+    props.activeFile();
+
   return (
     <Show when={!props.collapsed()}>
       <aside class="right-panel" style={{ width: `${props.width()}px` }}>
@@ -131,6 +137,12 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
 
         {/* Viewer Metadata (for entry/document tabs with ContainerEntryViewer) */}
         <Show when={isViewerTab() && props.viewerMetadata?.() && props.currentViewMode() !== "export"}>
+          <Show when={shouldShowEvidenceSummaries()}>
+            <SystemIdentitySummaryPanel
+              activeFile={props.activeFile}
+              hasProject={props.hasProject!}
+            />
+          </Show>
           <ViewerMetadataPanel metadata={props.viewerMetadata!()!} />
         </Show>
         
@@ -142,7 +154,7 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
           !isCollectionTab()
         }>
           {/* Evidence Collection Summary (when a container is selected and project is loaded) */}
-          <Show when={props.hasProject?.() && props.activeFile()}>
+          <Show when={shouldShowEvidenceSummaries()}>
             <SystemIdentitySummaryPanel
               activeFile={props.activeFile}
               hasProject={props.hasProject!}
