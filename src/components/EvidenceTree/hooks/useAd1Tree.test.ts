@@ -89,6 +89,32 @@ describe("useAd1Tree", () => {
     dispose();
   });
 
+  it("does not reload cached children during AD1 expand all", async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === "container_get_root_children_v2") {
+        return Promise.resolve([
+          entry("Windows", { path: "/Windows", is_dir: true, item_addr: 42 }),
+        ]);
+      }
+      if (command === "container_get_children_at_addr_v2") {
+        return Promise.resolve([]);
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
+    const { hook, dispose } = withHook(useAd1Tree);
+
+    await hook.loadRootChildren("/case/source.AD1");
+    await hook.expandAllAd1Dirs("/case/source.AD1", new Set(), () => undefined);
+    await hook.expandAllAd1Dirs("/case/source.AD1", new Set(), () => undefined);
+
+    const childLoadCalls = mockInvoke.mock.calls.filter(
+      ([command]) => command === "container_get_children_at_addr_v2",
+    );
+    expect(childLoadCalls).toHaveLength(1);
+    expect(hook.childrenCache().has("/case/source.AD1::addr:42")).toBe(true);
+    dispose();
+  });
+
   it("collects system identity entries from AD1 child loads", async () => {
     const systemHive = entry("SYSTEM", {
       path: "/Windows/System32/config/SYSTEM",

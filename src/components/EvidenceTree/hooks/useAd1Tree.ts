@@ -433,8 +433,7 @@ export function useAd1Tree(): UseAd1TreeReturn {
         
         // Load children if not cached
         if (addr !== undefined && addr !== null) {
-          const cacheKey = `${containerPath}::${addr}`;
-          if (!childrenCache().has(cacheKey)) {
+          if (!childrenCache().has(nodeKey)) {
             await loadChildrenByAddr(containerPath, addr, entry.path);
           }
         }

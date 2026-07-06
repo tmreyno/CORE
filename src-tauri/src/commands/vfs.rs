@@ -627,6 +627,7 @@ pub async fn vfs_clear_pool() -> Result<usize, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn checked_vfs_read_size_clamps_to_remaining_file_bytes() {
@@ -690,5 +691,100 @@ mod tests {
         let json = serde_json::to_value(&partition).unwrap();
 
         assert!(json.get("rootPath").is_none());
+    }
+
+    #[test]
+    #[ignore = "set CORE_FFX_SEED_VFS_IMAGE_PATHS to one or more local E01/raw image paths"]
+    fn test_vfs_seed_images_from_env() {
+        let paths = std::env::var_os("CORE_FFX_SEED_VFS_IMAGE_PATHS")
+            .expect("CORE_FFX_SEED_VFS_IMAGE_PATHS must be set for this ignored smoke test");
+
+        for path in std::env::split_paths(&paths) {
+            smoke_seed_vfs_image(&path);
+        }
+    }
+
+    fn smoke_seed_vfs_image(path: &Path) {
+        let path_str = path
+            .to_str()
+            .unwrap_or_else(|| panic!("seed VFS image path is not UTF-8: {}", path.display()));
+
+        if ewf::is_ewf(path_str).unwrap_or(false) {
+            let vfs = ewf::vfs::EwfVfs::open(path_str)
+                .unwrap_or_else(|err| panic!("failed to open seed EWF image {path_str}: {err:?}"));
+            assert_seed_vfs_lists_and_reads(&vfs, path_str);
+        } else if raw::is_raw(path_str).unwrap_or(false) {
+            let vfs = raw::vfs::RawVfs::open_with_physical_fallback(path_str)
+                .unwrap_or_else(|err| panic!("failed to open seed raw image {path_str}: {err:?}"));
+            assert_seed_vfs_lists_and_reads(&vfs, path_str);
+        } else {
+            panic!("unsupported seed VFS image type: {path_str}");
+        }
+    }
+
+    fn assert_seed_vfs_lists_and_reads(vfs: &dyn VirtualFileSystem, label: &str) {
+        let root_entries = vfs
+            .readdir("/")
+            .unwrap_or_else(|err| panic!("failed to list VFS root for {label}: {err:?}"));
+        assert!(
+            !root_entries.is_empty(),
+            "seed VFS root listing is empty for {label}"
+        );
+
+        let (file_path, read_size) = find_first_seed_vfs_file(vfs, "/", 0)
+            .unwrap_or_else(|| panic!("no readable file found in seed VFS image {label}"));
+        let data = vfs
+            .read(&file_path, 0, read_size)
+            .unwrap_or_else(|err| panic!("failed to read {file_path} in {label}: {err:?}"));
+
+        assert_eq!(
+            data.len(),
+            read_size,
+            "seed VFS read returned incomplete data for {file_path} in {label}"
+        );
+    }
+
+    fn find_first_seed_vfs_file(
+        vfs: &dyn VirtualFileSystem,
+        dir_path: &str,
+        depth: usize,
+    ) -> Option<(String, usize)> {
+        if depth > 4 {
+            return None;
+        }
+
+        let mut entries = vfs.readdir(dir_path).ok()?;
+        entries.sort_by(|a, b| {
+            b.is_directory
+                .cmp(&a.is_directory)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+
+        for entry in entries.iter().filter(|entry| !entry.is_directory) {
+            let file_path = join_seed_vfs_path(dir_path, &entry.name);
+            let attr = vfs.getattr(&file_path).ok()?;
+            if attr.size == 0 {
+                continue;
+            }
+            let read_size = usize::try_from(attr.size.min(4096)).ok()?;
+            return Some((file_path, read_size));
+        }
+
+        for entry in entries.iter().filter(|entry| entry.is_directory) {
+            let child_path = join_seed_vfs_path(dir_path, &entry.name);
+            if let Some(found) = find_first_seed_vfs_file(vfs, &child_path, depth + 1) {
+                return Some(found);
+            }
+        }
+
+        None
+    }
+
+    fn join_seed_vfs_path(parent: &str, name: &str) -> String {
+        if parent == "/" {
+            format!("/{name}")
+        } else {
+            format!("{parent}/{name}")
+        }
     }
 }
