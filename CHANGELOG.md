@@ -11,6 +11,8 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 - Hex viewer navigation now loads bounded windows for deep offsets in large evidence sources instead of requesting oversized start-of-file reads.
 - Direct driver entry viewing now persists `.sys`, `.drv`, and `.ko` entries through the binary artifact collector.
 - macOS boot plist, kernel extension `Info.plist`, and non-`/private` dsLocal identity artifacts are now collected by the evidence tree classifier.
+- Release packaging now keeps `src-tauri/tauri.conf.json` aligned to `0.1.113` so generated installer and updater artifact names match the release version.
+- macOS release uploads now read the aarch64 target bundle directory so the DMG, app updater archive, and signature are attached to the GitHub release.
 
 ### Changed
 - System identity collection includes additional Linux network configuration sources and driver/system identity artifacts discovered during AD1/VFS tree loads.

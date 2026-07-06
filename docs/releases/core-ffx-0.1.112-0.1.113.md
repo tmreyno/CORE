@@ -19,6 +19,8 @@ This review is bundled with CORE-FFX so the in-app update dialog can show releas
 ### Update Experience
 - **In-app release review:** The update availability dialog now shows this bundled `0.1.112` and `0.1.113` review directly in CORE-FFX, so users can read what changed before installing without opening the release website.
 - **Version-aware notes:** Users updating from `0.1.111` or older see both `0.1.112` and `0.1.113`; users already on `0.1.112` see the `0.1.113` changes.
+- **Release manifest notes:** The release workflow now uses this bundled review for the GitHub release body and `latest.json` updater notes so older installed apps can display the full update details.
+- **Installer version alignment:** `src-tauri/tauri.conf.json` is aligned to `0.1.113`, and macOS release uploads now read the aarch64 bundle output path so installer and updater artifacts match the published version.
 
 ### Artifact And System Identity Engines
 - **Driver artifacts:** Windows `.sys` and `.drv` files, plus Linux `.ko` kernel modules, are now collected as binary driver artifacts from loaded evidence trees. Directly viewed driver entries are also persisted through the binary artifact collector.

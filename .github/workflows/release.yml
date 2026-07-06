@@ -38,18 +38,59 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Extract changelog
+      - name: Extract release notes
         id: changelog
         run: |
           TAG="${{ steps.get_tag.outputs.tag }}"
           VERSION="${TAG#v}"
-          # Try to extract section from CHANGELOG.md for this version
-          if [ -f CHANGELOG.md ]; then
-            NOTES=$(awk "/^## \[?${VERSION}\]?/,/^## \[?[0-9]/" CHANGELOG.md | head -n -1 | tail -n +2)
-          fi
-          if [ -z "$NOTES" ]; then
-            NOTES="Release ${TAG} of CORE-FFX — Forensic File Explorer"
-          fi
+          export TAG VERSION
+          NOTES=$(python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          tag = os.environ["TAG"]
+          version = os.environ["VERSION"]
+
+          def strip_release_markers(text: str) -> str:
+            return re.sub(r"<!-- release-note:(?:start|end) [^>]+ -->\n?", "", text).strip()
+
+          def bundled_release_notes() -> str:
+            release_dir = Path("docs/releases")
+            if not release_dir.exists():
+              return ""
+            for path in sorted(release_dir.glob("*.md")):
+              text = path.read_text(encoding="utf-8")
+              if f"release-note:start {version}" in text:
+                return strip_release_markers(text)
+            return ""
+
+          def changelog_notes() -> str:
+            path = Path("CHANGELOG.md")
+            if not path.exists():
+              return ""
+            lines = path.read_text(encoding="utf-8").splitlines()
+            heading = re.compile(rf"^## \[{re.escape(version)}\]")
+            next_heading = re.compile(r"^## \[\d+\.\d+\.\d+\]")
+            captured = []
+            in_section = False
+            for line in lines:
+              if not in_section and heading.match(line):
+                in_section = True
+                continue
+              if in_section and next_heading.match(line):
+                break
+              if in_section:
+                captured.append(line)
+            return "\n".join(captured).strip()
+
+          print(
+            bundled_release_notes()
+            or changelog_notes()
+            or f"Release {tag} of CORE-FFX — Forensic File Explorer"
+          )
+          PY
+          )
           echo "notes<<EOF" >> "$GITHUB_OUTPUT"
           echo "$NOTES" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -346,12 +387,12 @@ jobs:
       - name: List build artifacts
         run: |
           echo "=== DMG ==="
-          find target/release/bundle/dmg -type f 2>/dev/null || echo "No DMG found"
+          find target/aarch64-apple-darwin/release/bundle/dmg -type f 2>/dev/null || echo "No DMG found"
           echo "=== App ==="
-          find target/release/bundle/macos -type f -name "*.app" 2>/dev/null || echo "No .app found"
+          find target/aarch64-apple-darwin/release/bundle/macos -type f -name "*.app" 2>/dev/null || echo "No .app found"
           echo "=== Updater artifacts ==="
-          find target/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
-          ls -lhR target/release/bundle/ 2>/dev/null | head -50
+          find target/aarch64-apple-darwin/release/bundle -name "*.tar.gz" -o -name "*.sig" 2>/dev/null || echo "No updater artifacts"
+          ls -lhR target/aarch64-apple-darwin/release/bundle/ 2>/dev/null | head -50
 
       - name: Upload macOS DMG
         uses: softprops/action-gh-release@v2
@@ -359,9 +400,9 @@ jobs:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           draft: true
           files: |
-            target/release/bundle/dmg/*.dmg
-            target/release/bundle/macos/*.tar.gz
-            target/release/bundle/macos/*.sig
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
+            target/aarch64-apple-darwin/release/bundle/macos/*.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -878,6 +919,7 @@ jobs:
           sparse-checkout: |
             CHANGELOG.md
             README.md
+            docs/releases/*.md
           sparse-checkout-cone-mode: false
 
       - name: Download release artifacts for manifest
@@ -910,14 +952,54 @@ jobs:
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          # Extract release notes from CHANGELOG.md
-          NOTES=""
-          if [ -f CHANGELOG.md ]; then
-            NOTES=$(awk "/^## \[?${VERSION}\]?/,/^## \[?[0-9]/" CHANGELOG.md | head -n -1 | tail -n +2)
-          fi
-          if [ -z "$NOTES" ]; then
-            NOTES="Release ${TAG} of CORE-FFX"
-          fi
+          export TAG VERSION
+          NOTES=$(python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          tag = os.environ["TAG"]
+          version = os.environ["VERSION"]
+
+          def strip_release_markers(text: str) -> str:
+            return re.sub(r"<!-- release-note:(?:start|end) [^>]+ -->\n?", "", text).strip()
+
+          def bundled_release_notes() -> str:
+            release_dir = Path("docs/releases")
+            if not release_dir.exists():
+              return ""
+            for path in sorted(release_dir.glob("*.md")):
+              text = path.read_text(encoding="utf-8")
+              if f"release-note:start {version}" in text:
+                return strip_release_markers(text)
+            return ""
+
+          def changelog_notes() -> str:
+            path = Path("CHANGELOG.md")
+            if not path.exists():
+              return ""
+            lines = path.read_text(encoding="utf-8").splitlines()
+            heading = re.compile(rf"^## \[{re.escape(version)}\]")
+            next_heading = re.compile(r"^## \[\d+\.\d+\.\d+\]")
+            captured = []
+            in_section = False
+            for line in lines:
+              if not in_section and heading.match(line):
+                in_section = True
+                continue
+              if in_section and next_heading.match(line):
+                break
+              if in_section:
+                captured.append(line)
+            return "\n".join(captured).strip()
+
+          print(
+            bundled_release_notes()
+            or changelog_notes()
+            or f"Release {tag} of CORE-FFX"
+          )
+          PY
+          )
 
           export TAG VERSION REPO BASE_URL PUB_DATE NOTES
           python3 - <<'PY'
