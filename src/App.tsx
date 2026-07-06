@@ -852,9 +852,19 @@ function App() {
   // Loading-wrapped versions of slow project operations
   let projectLoadInProgress = false;
   let projectSetupInProgress = false;
+  const projectActionBusy = () => projectLoadInProgress || projectSetupInProgress;
+  const notifyProjectActionBusy = () => {
+    toast.info(
+      "Project Action In Progress",
+      "Finish or cancel the current project action before starting another.",
+    );
+  };
 
   const handleLoadProject = async (path?: string) => {
-    if (projectLoadInProgress) return;
+    if (projectActionBusy()) {
+      notifyProjectActionBusy();
+      return;
+    }
     projectLoadInProgress = true;
     try {
       if (!path) {
@@ -910,7 +920,10 @@ function App() {
   const handleSaveProjectAs = () =>
     globalLoading.run("Saving project…", () => _handleSaveProjectAs());
   const handleProjectSetupComplete = async (locations: import("./components").ProjectLocations) => {
-    if (projectSetupInProgress) return;
+    if (projectActionBusy()) {
+      notifyProjectActionBusy();
+      return;
+    }
     projectSetupInProgress = true;
     try {
       const canProceed = await closeCurrentProject("new-project");
@@ -921,6 +934,11 @@ function App() {
     }
   };
   const handleNewProject = () => {
+    if (projectActionBusy()) {
+      notifyProjectActionBusy();
+      return;
+    }
+
     if (isAcquireEdition()) {
       setShowAcquireSessionDialog(true);
       return;
