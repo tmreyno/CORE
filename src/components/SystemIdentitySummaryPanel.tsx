@@ -85,8 +85,10 @@ export function SystemIdentitySummaryPanel(props: SystemIdentitySummaryPanelProp
     }
   };
 
-  createEffect(on(() => props.hasProject(), loadData));
-  createEffect(on(() => props.activeFile()?.path, loadData));
+  createEffect(on(
+    () => [props.hasProject(), props.activeFile()?.path ?? ""] as const,
+    loadData,
+  ));
   onCleanup(
     listenForArtifactsUpdated((detail) => {
       const activePath = props.activeFile()?.path ?? "";

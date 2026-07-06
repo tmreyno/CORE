@@ -184,7 +184,7 @@ describe("SystemIdentitySummaryPanel desktop mode", () => {
       if (cmd === "project_db_list_artifacts_for_evidence") {
         calls += 1;
         if (args?.evidenceFileId !== activeFile.path) return [];
-        return calls <= 2
+        return calls <= 1
           ? []
           : [
               artifact({
@@ -218,7 +218,7 @@ describe("SystemIdentitySummaryPanel desktop mode", () => {
     });
     await tick();
     await tick();
-    expect(calls).toBe(2);
+    expect(calls).toBe(1);
 
     notifyArtifactsUpdated({
       evidenceFileId: activeFile.path,
@@ -227,7 +227,7 @@ describe("SystemIdentitySummaryPanel desktop mode", () => {
     await tick();
     await tick();
 
-    expect(calls).toBe(3);
+    expect(calls).toBe(2);
     expect(container.textContent).toContain("Refreshed OS");
     expect(container.textContent).toContain("refreshed-machine-id");
     dispose();
