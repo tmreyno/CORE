@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import bundledUpdateReview from "../../docs/releases/core-ffx-0.1.112-0.1.114.md?raw";
+import bundledUpdateReview from "../../docs/releases/core-ffx-0.1.112-0.1.116.md?raw";
 
 const releaseOrder = [
   "0.1.112",
