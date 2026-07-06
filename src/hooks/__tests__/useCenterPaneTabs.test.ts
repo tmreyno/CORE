@@ -438,6 +438,56 @@ describe("useCenterPaneTabs", () => {
       expect(state.tabs()).toHaveLength(1);
     });
 
+    it("restores info mode when closing an active entry tab back to evidence", () => {
+      const file = makeFile({ path: "/case.e01", filename: "case.e01" });
+      const entry = makeEntry({
+        containerPath: "/case.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+
+      state.openEvidenceFile(file);
+      state.openContainerEntry(entry);
+      expect(state.viewMode()).toBe("document");
+
+      state.closeTab("entry:/case.e01::/Windows/System32/config/SYSTEM");
+
+      expect(state.activeTabId()).toBe("evidence:/case.e01");
+      expect(state.viewMode()).toBe("info");
+    });
+
+    it("restores document mode when closing back to another entry tab", () => {
+      const firstEntry = makeEntry({
+        containerPath: "/first.e01",
+        entryPath: "/Users/alice/NTUSER.DAT",
+        name: "NTUSER.DAT",
+      });
+      const secondEntry = makeEntry({
+        containerPath: "/second.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+
+      state.openContainerEntry(firstEntry);
+      state.openContainerEntry(secondEntry);
+      expect(state.viewMode()).toBe("document");
+
+      state.closeTab("entry:/second.e01::/Windows/System32/config/SYSTEM");
+
+      expect(state.activeTabId()).toBe("entry:/first.e01::/Users/alice/NTUSER.DAT");
+      expect(state.viewMode()).toBe("document");
+    });
+
+    it("resets to info mode when closing all tabs", () => {
+      state.openExportTab();
+      expect(state.viewMode()).toBe("export");
+
+      state.closeAllTabs();
+
+      expect(state.activeTabId()).toBeNull();
+      expect(state.viewMode()).toBe("info");
+    });
+
     it("is a no-op for unknown tab ID", () => {
       state.openEvidenceFile(makeFile());
       state.closeTab("nonexistent");

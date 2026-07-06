@@ -87,6 +87,17 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
   const generateTabId = (type: CenterTabType, path: string) => `${type}:${path}`;
   const generateEntryTabId = (entry: SelectedEntry) =>
     generateTabId("entry", `${entry.containerPath}::${entry.entryPath}`);
+  const viewModeForTab = (tab: CenterTab): CenterPaneViewMode => {
+    switch (tab.type) {
+      case "entry":
+      case "document":
+        return "document";
+      case "export":
+        return "export";
+      default:
+        return "info";
+    }
+  };
 
   // Open an evidence file as a tab
   const openEvidenceFile = (file: DiscoveredFile) => {
@@ -380,9 +391,12 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       if (activeTabId() === tabId) {
         if (newTabs.length > 0) {
           const newIndex = Math.min(tabIndex, newTabs.length - 1);
-          setActiveTabId(newTabs[newIndex].id);
+          const newActiveTab = newTabs[newIndex];
+          setActiveTabId(newActiveTab.id);
+          setViewMode(viewModeForTab(newActiveTab));
         } else {
           setActiveTabId(null);
+          setViewMode("info");
         }
       }
     });
@@ -395,6 +409,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
     batch(() => {
       setTabs([]);
       setActiveTabId(null);
+      setViewMode("info");
     });
   };
 
