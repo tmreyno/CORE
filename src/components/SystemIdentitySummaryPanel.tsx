@@ -10,6 +10,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  onCleanup,
   on,
   type Accessor,
 } from "solid-js";
@@ -22,6 +23,7 @@ import {
 } from "../utils/systemIdentitySummary";
 import { isTauri } from "../utils/platform";
 import { logger } from "../utils/logger";
+import { listenForArtifactsUpdated } from "../utils/artifactEvents";
 import { useToast } from "./Toast";
 import {
   HiOutlineClipboardDocument,
@@ -85,6 +87,15 @@ export function SystemIdentitySummaryPanel(props: SystemIdentitySummaryPanelProp
 
   createEffect(on(() => props.hasProject(), loadData));
   createEffect(on(() => props.activeFile()?.path, loadData));
+  onCleanup(
+    listenForArtifactsUpdated((detail) => {
+      const activePath = props.activeFile()?.path ?? "";
+      if (!props.hasProject() || !activePath) return;
+      if (detail.category && detail.category !== "systeminfo") return;
+      if (detail.evidenceFileId !== activePath) return;
+      void loadData();
+    }),
+  );
 
   const summary = createMemo(() => buildSystemIdentitySummary(records()));
   const hasData = createMemo(() => summary().recordCount > 0 && summary().groups.length > 0);

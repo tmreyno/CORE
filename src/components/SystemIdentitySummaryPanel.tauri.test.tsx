@@ -10,6 +10,7 @@ import { render } from "solid-js/web";
 import { mockInvoke } from "../__tests__/setup";
 import type { DbNormalizedArtifact } from "../api/commands";
 import type { DiscoveredFile } from "../types";
+import { notifyArtifactsUpdated } from "../utils/artifactEvents";
 import { ToastProvider } from "./Toast";
 
 vi.mock("../utils/platform", async (importOriginal) => ({
@@ -174,6 +175,61 @@ describe("SystemIdentitySummaryPanel desktop mode", () => {
     expect(container.textContent).toContain("second-machine-id");
     expect(container.textContent).not.toContain("stale-machine-guid");
     expect(container.textContent).not.toContain("Stale OS");
+    dispose();
+  });
+
+  it("reloads when system identity artifacts update for the active evidence", async () => {
+    let calls = 0;
+    mockInvoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "project_db_list_artifacts_for_evidence") {
+        calls += 1;
+        if (args?.evidenceFileId !== activeFile.path) return [];
+        return calls <= 2
+          ? []
+          : [
+              artifact({
+                metadataJson: JSON.stringify({
+                  "system.osName": "Refreshed OS",
+                  "system.machineId": "refreshed-machine-id",
+                }),
+              }),
+            ];
+      }
+      if (cmd === "project_db_list_artifacts_by_category") return [];
+      return null;
+    });
+
+    const { container, dispose } = renderComponent(() => (
+      <ToastProvider>
+        <SystemIdentitySummaryPanel
+          activeFile={() => activeFile}
+          hasProject={() => true}
+        />
+      </ToastProvider>
+    ));
+
+    await tick();
+    await tick();
+    expect(container.textContent).toContain("No system identity artifacts found");
+
+    notifyArtifactsUpdated({
+      evidenceFileId: "/evidence/other.E01",
+      category: "systeminfo",
+    });
+    await tick();
+    await tick();
+    expect(calls).toBe(2);
+
+    notifyArtifactsUpdated({
+      evidenceFileId: activeFile.path,
+      category: "systeminfo",
+    });
+    await tick();
+    await tick();
+
+    expect(calls).toBe(3);
+    expect(container.textContent).toContain("Refreshed OS");
+    expect(container.textContent).toContain("refreshed-machine-id");
     dispose();
   });
 });

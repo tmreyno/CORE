@@ -9,6 +9,7 @@ import { commands } from "../api/commands";
 import type { TreeEntry, VfsEntry } from "../types";
 import type { SelectedEntry } from "./EvidenceTree/types";
 import { buildEvidenceSourceInput } from "./evidenceSourceInput";
+import { notifyArtifactsUpdated } from "../utils/artifactEvents";
 
 const SYSTEM_IDENTITY_COLLECTION_CHUNK_SIZE = 128;
 const BINARY_ARTIFACT_COLLECTION_CHUNK_SIZE = 128;
@@ -39,11 +40,17 @@ export async function collectSystemIdentityEntries(
     inFlightSystemIdentitySources,
     SYSTEM_IDENTITY_COLLECTION_CHUNK_SIZE,
     async (chunk) => {
-      await commands.artifact.collectSystemIdentitySources({
+      const result = await commands.artifact.collectSystemIdentitySources({
         sources: chunk,
         evidenceFileId: containerPath,
         extractor,
       });
+      if (result.inserted > 0) {
+        notifyArtifactsUpdated({
+          evidenceFileId: containerPath,
+          category: "systeminfo",
+        });
+      }
     },
   );
 }

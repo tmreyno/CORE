@@ -48,6 +48,7 @@ import {
   isLikelyBinaryArtifactEntry,
 } from "../systemIdentitySources";
 import { isTauri } from "../../utils/platform";
+import { notifyArtifactsUpdated } from "../../utils/artifactEvents";
 
 const log = logger.scope("ContainerEntryViewer");
 const BROWSER_ENTRY_VIEW_MESSAGE =
@@ -203,11 +204,17 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         if (!(await commands.projectDb.isOpen())) return;
         const systemIdentitySource = buildSystemIdentitySourceInput(props.entry);
         if (systemIdentitySource) {
-          await commands.artifact.collectSystemIdentitySources({
+          const result = await commands.artifact.collectSystemIdentitySources({
             sources: [systemIdentitySource],
             evidenceFileId: props.entry.containerPath,
             extractor: "container-entry-viewer-system-identity",
           });
+          if (result.inserted > 0) {
+            notifyArtifactsUpdated({
+              evidenceFileId: props.entry.containerPath,
+              category: "systeminfo",
+            });
+          }
         } else if (isLikelyBinaryArtifactEntry(props.entry)) {
           await commands.artifact.collectBinaryArtifactSources({
             sources: [source],
