@@ -50,6 +50,9 @@ function artifact(overrides: Partial<DbNormalizedArtifact> = {}): DbNormalizedAr
       "system.macAddresses": "00:11:22:33:44:55",
       "system.networkProfiles": "LabNet (private)",
       "system.driverServices": "volmgr; disk",
+      "system.setupComputerNames": "DESKTOP-CASE01",
+      "system.firewallDroppedCount": "14",
+      "system.identityStatus": "parsed",
     }),
     extractedAt: "2026-07-06T10:00:00Z",
     extractor: "test-system-identity",
@@ -88,12 +91,16 @@ describe("system identity summary", () => {
       "Users and Groups",
       "Storage and Volumes",
       "Network",
+      "Additional System Details",
       "Source Files",
     ]);
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Serial Number: ABC1234");
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Hardware IDs: ABCDEF01-2345-6789-ABCD-EF0123456789");
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Machine GUID: 6f2d5a21-24e0-47cc-b9b2-7dc8c763f9c3");
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Network Profiles: LabNet (private)");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Setup Computer Names: DESKTOP-CASE01");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Firewall Dropped Count: 14");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).not.toContain("Identity Status: parsed");
   });
 
   it("builds report markdown from raw artifact records", () => {
@@ -106,6 +113,8 @@ describe("system identity summary", () => {
     expect(markdown).toContain("| OS Build Number | 22631 | 1 |");
     expect(markdown).toContain("| Volume GUIDs | Volume{11111111-2222-3333-4444-555555555555} | 1 |");
     expect(markdown).toContain("| Driver Services | volmgr; disk | 1 |");
+    expect(markdown).toContain("### Additional System Details");
+    expect(markdown).toContain("| Setup Computer Names | DESKTOP-CASE01 | 1 |");
     expect(markdown).toContain("### Users and Groups");
   });
 });

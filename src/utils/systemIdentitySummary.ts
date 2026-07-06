@@ -42,6 +42,7 @@ const GROUPS: GroupDefinition[] = [
   { id: "users", title: "Users and Groups" },
   { id: "storage", title: "Storage and Volumes" },
   { id: "network", title: "Network" },
+  { id: "additional", title: "Additional System Details" },
   { id: "sources", title: "Source Files" },
 ];
 
@@ -287,6 +288,9 @@ export function buildSystemIdentitySummary(
       const sourceFields = buildSourceFields(identityRecords);
       fields.push(...sourceFields);
     }
+    if (group.id === "additional") {
+      fields.push(...buildAdditionalSystemFields(identityRecords));
+    }
 
     if (fields.length > 0) {
       groups.push({ ...group, fields });
@@ -298,6 +302,65 @@ export function buildSystemIdentitySummary(
     sourceCount: sourceIds.size,
     groups,
   };
+}
+
+function buildAdditionalSystemFields(records: DbNormalizedArtifact[]): SystemIdentityField[] {
+  const groupedValues = new Map<string, Map<string, Set<string>>>();
+
+  for (const record of records) {
+    const metadata = parseArtifactMetadata(record);
+    for (const [key, value] of Object.entries(metadata)) {
+      if (!isAdditionalSystemMetadataKey(key) || !value.trim()) continue;
+      const valuesBySource = groupedValues.get(key) ?? new Map<string, Set<string>>();
+      const values = valuesBySource.get(value) ?? new Set<string>();
+      values.add(record.sourceId);
+      valuesBySource.set(value, values);
+      groupedValues.set(key, valuesBySource);
+    }
+  }
+
+  return [...groupedValues.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, valuesBySource]) => ({
+      key,
+      label: labelFromMetadataKey(key),
+      value: [...valuesBySource.keys()].join("; "),
+      sourceCount: new Set([...valuesBySource.values()].flatMap((sources) => [...sources])).size,
+    }));
+}
+
+function isAdditionalSystemMetadataKey(key: string): boolean {
+  if (!key.startsWith("system.")) return false;
+  if (FIELD_BY_KEY.has(key)) return false;
+  const tail = key.slice("system.".length);
+  if (!tail) return false;
+  return ![
+    "identityStatus",
+    "identityError",
+    "identitySource",
+    "identityHive",
+    "machineIdSource",
+    "hardwareInventorySource",
+  ].includes(tail);
+}
+
+function labelFromMetadataKey(key: string): string {
+  const tail = key.slice("system.".length);
+  const words = tail
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_\-.]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return key;
+  return words.map((word) => {
+    const lower = word.toLowerCase();
+    if (["id", "ids", "ip", "ipv4", "ipv6", "dns", "dhcp", "os", "cpu", "uuid", "guid", "bios", "sku", "url", "sid", "sids"].includes(lower)) {
+      return word.toUpperCase();
+    }
+    if (lower === "wifi") return "Wi-Fi";
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  }).join(" ");
 }
 
 export function formatSystemIdentitySummaryForClipboard(summary: SystemIdentitySummary): string {
