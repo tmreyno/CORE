@@ -960,10 +960,25 @@ impl Session {
         let mut output = Vec::with_capacity(output_len);
         let chunk_count = addresses.len().saturating_sub(1);
         let mut decompressed_pos = 0u64;
+        let declared_chunk_size = u64::from(self.logical_header.zlib_chunk_size);
 
         for index in 0..chunk_count {
-            if decompressed_pos >= range_end {
+            let chunk_start = if declared_chunk_size > 0 {
+                declared_ad1_chunk_start(index, declared_chunk_size)?
+            } else {
+                decompressed_pos
+            };
+
+            if chunk_start >= range_end {
                 break;
+            }
+
+            if declared_chunk_size > 0 {
+                let declared_chunk_end = declared_ad1_chunk_end(chunk_start, declared_chunk_size)?;
+                if declared_chunk_end <= range_start {
+                    decompressed_pos = declared_chunk_end;
+                    continue;
+                }
             }
 
             let start = addresses[index];
@@ -974,16 +989,15 @@ impl Session {
             }
             let compressed = self.read_bytes(start, compressed_len)?;
             let max_needed =
-                usize::try_from(range_end.saturating_sub(decompressed_pos)).map_err(|_| {
+                usize::try_from(range_end.saturating_sub(chunk_start)).map_err(|_| {
                     ContainerError::ParseError("AD1 range chunk prefix is too large".to_string())
                 })?;
             let chunk = Self::read_zlib_chunk_prefix(&compressed, max_needed)?;
 
-            let chunk_start = decompressed_pos;
             let chunk_len = u64::try_from(chunk.len()).map_err(|_| {
                 ContainerError::ParseError("AD1 decompressed chunk is too large".to_string())
             })?;
-            let chunk_end = decompressed_pos.checked_add(chunk_len).ok_or_else(|| {
+            let chunk_end = chunk_start.checked_add(chunk_len).ok_or_else(|| {
                 ContainerError::ParseError("AD1 decompressed range offset overflow".to_string())
             })?;
             Self::append_overlapping_chunk_range(
@@ -994,7 +1008,11 @@ impl Session {
                 range_start,
                 range_end,
             )?;
-            decompressed_pos = chunk_end;
+            decompressed_pos = if declared_chunk_size > 0 {
+                declared_ad1_chunk_end(chunk_start, declared_chunk_size)?
+            } else {
+                chunk_end
+            };
         }
 
         if output.len() < output_len {
@@ -1285,6 +1303,21 @@ impl Session {
     }
 }
 
+fn declared_ad1_chunk_start(index: usize, chunk_size: u64) -> Result<u64, ContainerError> {
+    let index = u64::try_from(index).map_err(|_| {
+        ContainerError::ParseError("AD1 chunk index is larger than memory limits".to_string())
+    })?;
+    index
+        .checked_mul(chunk_size)
+        .ok_or_else(|| ContainerError::ParseError("AD1 declared chunk offset overflow".to_string()))
+}
+
+fn declared_ad1_chunk_end(chunk_start: u64, chunk_size: u64) -> Result<u64, ContainerError> {
+    chunk_start
+        .checked_add(chunk_size)
+        .ok_or_else(|| ContainerError::ParseError("AD1 declared chunk end overflow".to_string()))
+}
+
 fn checked_ad1_offset(offset: u64, field_offset: u64) -> Option<u64> {
     offset.checked_add(field_offset)
 }
@@ -1329,6 +1362,7 @@ fn checked_ad1_item_output_path(
 mod tests {
     use super::*;
     use flate2::{write::ZlibEncoder, Compression};
+    use std::collections::{HashMap, VecDeque};
     use std::io::Write;
     use tempfile::TempDir;
 
@@ -1350,6 +1384,42 @@ mod tests {
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(data).unwrap();
         encoder.finish().unwrap()
+    }
+
+    fn write_u64_le(buf: &mut [u8], offset: usize, value: u64) {
+        buf[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn test_session_for_logical_data(path: &std::path::Path, logical_len: u64) -> Session {
+        Session {
+            segment_header: SegmentHeader {
+                signature: [0; 16],
+                segment_index: 1,
+                segment_number: 1,
+                fragments_size: 1,
+                header_size: AD1_LOGICAL_MARGIN as u32,
+            },
+            logical_header: LogicalHeader {
+                signature: [0; 16],
+                image_version: 4,
+                zlib_chunk_size: 4,
+                logical_metadata_addr: 0,
+                first_item_addr: 0,
+                data_source_name_length: 0,
+                ad_signature: [0; 4],
+                data_source_name_addr: 0,
+                attrguid_footer_addr: 0,
+                locsguid_footer_addr: 0,
+                data_source_name: String::new(),
+            },
+            files: vec![Some(File::open(path).unwrap())],
+            file_sizes: vec![logical_len],
+            item_counter: 0,
+            root_items: Vec::new(),
+            cache: HashMap::with_capacity(CACHE_SIZE),
+            cache_order: VecDeque::with_capacity(CACHE_SIZE),
+            missing_segments: Vec::new(),
+        }
     }
 
     #[test]
@@ -1589,5 +1659,59 @@ mod tests {
         Session::append_overlapping_chunk_range(&mut output, b"abcdef", 0, 6, 10, 12).unwrap();
 
         assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_read_file_data_range_skips_declared_chunks_before_range() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("range.ad1");
+        let table_addr = 32usize;
+        let first_addr = 128usize;
+        let invalid_chunk = b"bad!";
+        let valid_chunk = zlib_bytes(b"cccc");
+        let second_addr = first_addr + invalid_chunk.len();
+        let third_addr = second_addr + invalid_chunk.len();
+        let end_addr = third_addr + valid_chunk.len();
+        let mut logical = vec![0u8; end_addr];
+
+        write_u64_le(&mut logical, table_addr, 3);
+        write_u64_le(&mut logical, table_addr + 8, first_addr as u64);
+        write_u64_le(&mut logical, table_addr + 16, second_addr as u64);
+        write_u64_le(&mut logical, table_addr + 24, third_addr as u64);
+        write_u64_le(&mut logical, table_addr + 32, end_addr as u64);
+        logical[first_addr..second_addr].copy_from_slice(invalid_chunk);
+        logical[second_addr..third_addr].copy_from_slice(invalid_chunk);
+        logical[third_addr..end_addr].copy_from_slice(&valid_chunk);
+
+        let mut physical = vec![0u8; AD1_LOGICAL_MARGIN as usize];
+        physical.extend_from_slice(&logical);
+        std::fs::write(&path, physical).unwrap();
+
+        let mut session = test_session_for_logical_data(&path, logical.len() as u64);
+        let item = Item {
+            id: 1,
+            name: "late-range.bin".to_string(),
+            item_type: 0,
+            decompressed_size: 12,
+            zlib_metadata_addr: table_addr as u64,
+            metadata: Vec::new(),
+            children: Vec::new(),
+        };
+
+        let data = session.read_file_data_range(&item, 8, 4).unwrap();
+
+        assert_eq!(data, b"cccc");
+    }
+
+    #[test]
+    fn test_declared_ad1_chunk_bounds_use_header_chunk_size() {
+        assert_eq!(declared_ad1_chunk_start(3, 65_536).unwrap(), 196_608);
+        assert_eq!(declared_ad1_chunk_end(196_608, 65_536).unwrap(), 262_144);
+    }
+
+    #[test]
+    fn test_declared_ad1_chunk_bounds_reject_overflow() {
+        assert!(declared_ad1_chunk_start(usize::MAX, u64::MAX).is_err());
+        assert!(declared_ad1_chunk_end(u64::MAX, 1).is_err());
     }
 }

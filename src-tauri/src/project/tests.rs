@@ -203,4 +203,38 @@ mod project_tests {
         let err = read_project_json_with_limit(&path, "test project").unwrap_err();
         assert!(err.contains("Failed to decode test project as UTF-8"));
     }
+
+    #[test]
+    fn local_project_files_from_env_load() {
+        let Ok(paths) = std::env::var("CORE_FFX_PROJECT_LOAD_CHECKS") else {
+            return;
+        };
+        let paths: Vec<_> = paths
+            .split(';')
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .collect();
+        assert!(
+            !paths.is_empty(),
+            "CORE_FFX_PROJECT_LOAD_CHECKS was set but no paths were provided"
+        );
+
+        for path in paths {
+            let result = load_project(path);
+            assert!(result.success, "failed to load {path}: {:?}", result.error);
+            let project = result.project.expect("successful load returns project");
+            assert!(
+                std::path::Path::new(&project.root_path).is_absolute(),
+                "project root should resolve absolute for {path}: {}",
+                project.root_path
+            );
+            for tab in &project.tabs {
+                assert!(
+                    std::path::Path::new(&tab.file_path).is_absolute(),
+                    "tab path should resolve absolute for {path}: {}",
+                    tab.file_path
+                );
+            }
+        }
+    }
 }
