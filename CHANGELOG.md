@@ -14,6 +14,7 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ### Changed
 - System identity collection includes additional Linux network configuration sources and driver/system identity artifacts discovered during AD1/VFS tree loads.
+- Update availability now shows bundled `0.1.112` and `0.1.113` release review notes directly in the app instead of requiring users to open the release website.
 
 ## [0.1.112] - 2026-04-16
 

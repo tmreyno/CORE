@@ -151,7 +151,7 @@ components/
 |-- Transition.tsx             # Animation transitions
 |-- TreePanel.tsx              # UFED associated file tree
 |-- TypeFilterBar.tsx          # Evidence type filter bar
-|-- UpdateModal.tsx            # Thin CORE-FFX wrapper over the shared updater modal in @core-suite/components/updater
+|-- UpdateModal.tsx            # CORE-FFX updater wrapper with bundled in-app release notes
 |-- VirtualList.tsx            # Virtualized list for large datasets
 |-- index.ts                    # Barrel exports
 ```
@@ -292,7 +292,7 @@ components/
 
 ### Updates
 
-- `UpdateModal` - Thin CORE-FFX config wrapper over the shared updater modal and hook from `@core-suite/components/updater`
+- `UpdateModal` - CORE-FFX config wrapper over the shared updater modal and hook, with bundled release notes from `docs/releases`
 
 ### Help
 
