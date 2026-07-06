@@ -10,6 +10,7 @@ import { SimpleActivityPanel } from "../SimpleActivityPanel";
 import { ViewerMetadataPanel } from "../ViewerMetadataPanel";
 import { LinkedDataPanel } from "../LinkedDataPanel";
 import { EvidenceCollectionSummaryPanel } from "../EvidenceCollectionSummaryPanel";
+import { SystemIdentitySummaryPanel } from "../SystemIdentitySummaryPanel";
 import type { LinkedDataNode } from "../LinkedDataTree";
 import type { ParsedMetadata, TabViewMode, SelectedEntry } from "../index";
 import type { ContainerInfo, DiscoveredFile } from "../../types";
@@ -142,6 +143,10 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
         }>
           {/* Evidence Collection Summary (when a container is selected and project is loaded) */}
           <Show when={props.hasProject?.() && props.activeFile()}>
+            <SystemIdentitySummaryPanel
+              activeFile={props.activeFile}
+              hasProject={props.hasProject!}
+            />
             <EvidenceCollectionSummaryPanel
               activeFile={props.activeFile}
               hasProject={props.hasProject!}

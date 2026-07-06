@@ -365,6 +365,7 @@ describe("system identity source helpers", () => {
             itemAddr: undefined,
           },
         ],
+        evidenceFileId: "/case/disk.E01",
         extractor: "test-extractor",
       },
     });
@@ -438,6 +439,7 @@ describe("system identity source helpers", () => {
             itemAddr: undefined,
           },
         ],
+        evidenceFileId: "/case/disk.E01",
         extractor: "test-binary-extractor",
       },
     });

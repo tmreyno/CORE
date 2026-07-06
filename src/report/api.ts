@@ -19,6 +19,7 @@ import type {
 } from "../api/commands";
 import { formatBytes } from "../utils";
 import { isTauri } from "../utils/platform";
+import { buildSystemIdentityReportMarkdown } from "../utils/systemIdentitySummary";
 
 export interface ProjectDbReportAppendix {
   appendix_id: string;
@@ -404,6 +405,17 @@ export function buildProjectDbEvidenceAppendices(
         startIndex + appendices.length,
         "Normalized Artifact Summary",
         artifactContent,
+      ),
+    );
+  }
+
+  const systemIdentityContent = buildSystemIdentityReportMarkdown(evidence.artifacts);
+  if (systemIdentityContent) {
+    appendices.push(
+      makeAppendix(
+        startIndex + appendices.length,
+        "System Identity Summary",
+        systemIdentityContent,
       ),
     );
   }

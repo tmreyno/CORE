@@ -41,6 +41,7 @@ export async function collectSystemIdentityEntries(
     async (chunk) => {
       await commands.artifact.collectSystemIdentitySources({
         sources: chunk,
+        evidenceFileId: containerPath,
         extractor,
       });
     },
@@ -66,6 +67,7 @@ export async function collectBinaryArtifactEntries(
     async (chunk) => {
       await commands.artifact.collectBinaryArtifactSources({
         sources: chunk,
+        evidenceFileId: containerPath,
         extractor,
       });
     },
