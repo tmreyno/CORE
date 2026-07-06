@@ -1032,7 +1032,7 @@ jobs:
                       return ["darwin-aarch64", "darwin-x86_64"]
                   if "aarch64" in name or "arm64" in name:
                       platforms.append("darwin-aarch64")
-                  if re.search(r"(^|[_-])(x64|x86_64|amd64)([_\\-.]|$)", name):
+                  if re.search(r"(^|[_-])(x64|x86_64|amd64)([_.-]|$)", name):
                       platforms.append("darwin-x86_64")
               return list(dict.fromkeys(platforms))
 
