@@ -11,14 +11,18 @@ import {
 } from "./updateReleaseNotes";
 
 describe("update release notes", () => {
-  it("shows 0.1.112 through 0.1.115 when updating from an older version", () => {
-    const notes = getBundledUpdateReleaseNotes("0.1.115", "0.1.111");
+  it("shows 0.1.112 through 0.1.116 when updating from an older version", () => {
+    const notes = getBundledUpdateReleaseNotes("0.1.116", "0.1.111");
 
     expect(notes).toContain("CORE-FFX Update Review");
+    expect(notes).toContain("CORE-FFX 0.1.116");
     expect(notes).toContain("CORE-FFX 0.1.115");
     expect(notes).toContain("CORE-FFX 0.1.114");
     expect(notes).toContain("CORE-FFX 0.1.113");
     expect(notes).toContain("CORE-FFX 0.1.112");
+    expect(notes.indexOf("CORE-FFX 0.1.116")).toBeLessThan(
+      notes.indexOf("CORE-FFX 0.1.115")
+    );
     expect(notes.indexOf("CORE-FFX 0.1.115")).toBeLessThan(
       notes.indexOf("CORE-FFX 0.1.114")
     );
@@ -40,7 +44,7 @@ describe("update release notes", () => {
 
   it("keeps unknown future release bodies unchanged", () => {
     expect(
-      mergeUpdateReleaseNotes("Remote release body", "0.1.116", "0.1.115")
+      mergeUpdateReleaseNotes("Remote release body", "0.1.117", "0.1.116")
     ).toBe("Remote release body");
   });
 

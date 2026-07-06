@@ -4,6 +4,16 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.116] - 2026-07-06
+
+### Fixed
+- Updater release notes now include the full bundled release review instead of the generic nightly-build line.
+- `0.1.116` supersedes `0.1.115` because GitHub immutable release assets prevented replacing the already-published `0.1.115` `latest.json` manifest.
+
+### Changed
+- The evidence-loading, AD1 range-read, partial hashing, EWF/raw VFS reuse, project restore, and tab-sync fixes from `0.1.115` remain included in this published updater build.
+- Bundled update-note selection now recognizes `0.1.116` for future in-app update dialogs.
+
 ## [0.1.115] - 2026-07-06
 
 ### Fixed
@@ -1350,7 +1360,8 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.115...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.116...HEAD
+[0.1.116]: https://github.com/tmreyno/CORE/compare/v0.1.115...v0.1.116
 [0.1.115]: https://github.com/tmreyno/CORE/compare/v0.1.114...v0.1.115
 [0.1.114]: https://github.com/tmreyno/CORE/compare/v0.1.112...v0.1.114
 [0.1.113]: https://github.com/tmreyno/CORE/compare/v0.1.112...fd121a25

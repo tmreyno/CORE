@@ -1,6 +1,16 @@
-# CORE-FFX Update Review: 0.1.112 to 0.1.115
+# CORE-FFX Update Review: 0.1.112 to 0.1.116
 
 This review is bundled with CORE-FFX so the in-app update dialog can show release details directly when a new version is available.
+
+<!-- release-note:start 0.1.116 -->
+## CORE-FFX 0.1.116
+
+### Updater Notes Repair
+- **Readable update dialog:** The updater manifest now carries the full bundled release review instead of the generic nightly-build line, so users can read the app, engine, project-open, and validation changes directly in CORE-FFX before installing.
+- **Immutable release recovery:** This patch supersedes `0.1.115` because GitHub immutable release assets prevented replacing the already-published `latest.json` file for `0.1.115`.
+- **Same engine payload:** The evidence-loading, AD1 range-read, partial hashing, EWF/raw VFS reuse, project restore, and tab-sync fixes from `0.1.115` remain included.
+- **Future bundled notes:** CORE-FFX now recognizes `0.1.116` in its bundled update-note selector so future update dialogs can include this repair note when appropriate.
+<!-- release-note:end 0.1.116 -->
 
 <!-- release-note:start 0.1.115 -->
 ## CORE-FFX 0.1.115
