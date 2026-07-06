@@ -53,8 +53,21 @@ export function SystemIdentitySummaryPanel(props: SystemIdentitySummaryPanelProp
     setLoading(true);
     setError(null);
     try {
-      const systemRecords = await commands.artifact.listByCategory("systeminfo", 1000);
-      setRecords(systemRecords.filter((record) => artifactMatchesEvidence(record, activePath)));
+      const evidenceRecords = await commands.artifact.listForEvidence(activePath);
+      const matchingEvidenceRecords = evidenceRecords.filter(
+        (record) =>
+          record.category === "systeminfo" && artifactMatchesEvidence(record, activePath),
+      );
+
+      if (matchingEvidenceRecords.length > 0) {
+        setRecords(matchingEvidenceRecords);
+        return;
+      }
+
+      const legacySystemRecords = await commands.artifact.listByCategory("systeminfo", 10000);
+      setRecords(
+        legacySystemRecords.filter((record) => artifactMatchesEvidence(record, activePath)),
+      );
     } catch (err) {
       log.warn("Failed to load system identity artifacts:", err);
       setRecords([]);
