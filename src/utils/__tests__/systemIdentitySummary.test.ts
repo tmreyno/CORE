@@ -37,11 +37,19 @@ function artifact(overrides: Partial<DbNormalizedArtifact> = {}): DbNormalizedAr
       "system.manufacturer": "Dell Inc.",
       "system.model": "Precision 5680",
       "system.serialNumber": "ABC1234",
+      "system.baseboardVersion": "A01",
+      "system.hardwareIds": "ABCDEF01-2345-6789-ABCD-EF0123456789",
       "system.activeComputerName": "DESKTOP-CASE01",
       "system.osName": "Windows 11 Pro",
+      "system.osBuildNumber": "22631",
+      "system.machineGuid": "6f2d5a21-24e0-47cc-b9b2-7dc8c763f9c3",
       "system.localUsers": "terry; admin",
+      "system.profileNames": "terry; service",
       "system.driveLetters": "C:; D:",
+      "system.volumeGuids": "Volume{11111111-2222-3333-4444-555555555555}",
       "system.macAddresses": "00:11:22:33:44:55",
+      "system.networkProfiles": "LabNet (private)",
+      "system.driverServices": "volmgr; disk",
     }),
     extractedAt: "2026-07-06T10:00:00Z",
     extractor: "test-system-identity",
@@ -83,6 +91,9 @@ describe("system identity summary", () => {
       "Source Files",
     ]);
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Serial Number: ABC1234");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Hardware IDs: ABCDEF01-2345-6789-ABCD-EF0123456789");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Machine GUID: 6f2d5a21-24e0-47cc-b9b2-7dc8c763f9c3");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Network Profiles: LabNet (private)");
   });
 
   it("builds report markdown from raw artifact records", () => {
@@ -91,6 +102,10 @@ describe("system identity summary", () => {
     expect(markdown).toContain("System identity extraction found 1 artifact");
     expect(markdown).toContain("### Device and BIOS");
     expect(markdown).toContain("| Serial Number | ABC1234 | 1 |");
+    expect(markdown).toContain("| Baseboard Version | A01 | 1 |");
+    expect(markdown).toContain("| OS Build Number | 22631 | 1 |");
+    expect(markdown).toContain("| Volume GUIDs | Volume{11111111-2222-3333-4444-555555555555} | 1 |");
+    expect(markdown).toContain("| Driver Services | volmgr; disk | 1 |");
     expect(markdown).toContain("### Users and Groups");
   });
 });
