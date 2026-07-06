@@ -42,6 +42,17 @@ const waitForInvoke = async (command: string, timeoutMs = 1500) => {
     await tick(25);
   }
 };
+const waitForButtonText = async (container: HTMLElement, text: string, timeoutMs = 1500) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const button = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes(text),
+    );
+    if (button) return button as HTMLButtonElement;
+    await tick(25);
+  }
+  return undefined;
+};
 
 // Base entry factory
 function makeEntry(overrides: Partial<SelectedEntry> = {}): SelectedEntry {
@@ -1691,6 +1702,42 @@ describe("ContainerEntryViewer", () => {
 
       expect(container.textContent).not.toContain("Extracting file");
       expect(container.textContent).toContain("notes.bin");
+      dispose();
+    });
+
+    it("auto preview reopens after a preview is closed", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
+        }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "photo.jpg",
+        entryPath: "/files/photo.jpg",
+        isArchiveEntry: true,
+      });
+      const [viewMode, setViewMode] = createSignal<"auto" | "hex">("auto");
+      const { container, dispose } = renderComponent(() => (
+        <ContainerEntryViewer
+          entry={entry}
+          viewMode={viewMode()}
+          onViewModeChange={(mode) => setViewMode(mode === "hex" ? "hex" : "auto")}
+        />
+      ));
+
+      const closeButton = await waitForButtonText(container, "Close");
+      expect(closeButton).toBeDefined();
+
+      closeButton!.click();
+      await tick(50);
+      expect(await waitForButtonText(container, "Preview")).toBeDefined();
+
+      setViewMode("auto");
+      expect(await waitForButtonText(container, "Close")).toBeDefined();
       dispose();
     });
 

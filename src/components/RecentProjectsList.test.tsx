@@ -65,4 +65,43 @@ describe("RecentProjectsList", () => {
     expect(onOpenProject).toHaveBeenCalledWith("/cases/full.cffx");
     dispose();
   });
+
+  it("opens recent projects with keyboard activation", () => {
+    localStorage.setItem(
+      "ffx-recent-projects",
+      JSON.stringify([
+        {
+          path: "/cases/keyboard.cffx",
+          name: "Keyboard Project",
+          lastOpened: "2026-07-04T10:00:00.000Z",
+        },
+      ]),
+    );
+    const onOpenProject = vi.fn();
+
+    const { container, dispose } = renderComponent(() => (
+      <RecentProjectsList onOpenProject={onOpenProject} />
+    ));
+
+    const projectRow = container.querySelector(
+      '[role="button"][title="/cases/keyboard.cffx"]',
+    ) as HTMLElement | null;
+    expect(projectRow).not.toBeNull();
+    expect(projectRow!.tabIndex).toBe(0);
+
+    projectRow!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    projectRow!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    projectRow!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+
+    expect(onOpenProject).toHaveBeenCalledTimes(2);
+    expect(onOpenProject).toHaveBeenNthCalledWith(1, "/cases/keyboard.cffx");
+    expect(onOpenProject).toHaveBeenNthCalledWith(2, "/cases/keyboard.cffx");
+    dispose();
+  });
 });

@@ -85,6 +85,8 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
 
   // Helper to generate tab ID
   const generateTabId = (type: CenterTabType, path: string) => `${type}:${path}`;
+  const generateEntryTabId = (entry: SelectedEntry) =>
+    generateTabId("entry", `${entry.containerPath}::${entry.entryPath}`);
 
   // Open an evidence file as a tab
   const openEvidenceFile = (file: DiscoveredFile) => {
@@ -95,10 +97,26 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       setRecentlyClosed(new Set<string>());
     }
     
-    // Check if tab already exists
-    const existing = tabs().find(t => t.id === tabId);
+    // Check if tab already exists. Older project saves could restore an
+    // evidence tab with a stale ID, so match by resolved evidence path too.
+    const existing = tabs().find(
+      t => t.id === tabId || (t.type === "evidence" && t.file?.path === file.path),
+    );
     if (existing) {
       batch(() => {
+        if (existing.id !== tabId || existing.file !== file) {
+          setTabs(prev => prev.map(t =>
+            t === existing
+              ? {
+                  ...t,
+                  id: tabId,
+                  title: file.filename,
+                  subtitle: file.container_type,
+                  file,
+                }
+              : t,
+          ));
+        }
         setActiveTabId(tabId);
         setViewMode("info");
       });
@@ -163,7 +181,7 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
   const openContainerEntry = (entry: SelectedEntry) => {
     if (entry.isDir) return; // Don't open directories as tabs
     
-    const tabId = generateTabId("entry", entry.entryPath);
+    const tabId = generateEntryTabId(entry);
     
     // Clear recently closed when opening any item
     if (recentlyClosed().size > 0) {

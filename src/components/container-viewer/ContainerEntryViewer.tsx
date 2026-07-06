@@ -226,7 +226,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
   const handlePreview = async () => {
     if (props.entry.isDir) return;
-    if (previewPath()) return;
+    if (guardedPreviewPath()) return;
+    if (previewPath()) {
+      previewPathEntryKey = "";
+      setPreviewPath(null);
+    }
 
     const capturedKey = `${props.entry.containerPath}::${props.entry.entryPath}`;
     setPreviewLoading(true);
@@ -296,13 +300,17 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       }
     } finally {
       if (capturedKey === entryKey()) {
+        isHandlingPreview = false;
         setPreviewLoading(false);
       }
     }
   };
 
   const closePreview = () => {
+    isHandlingPreview = false;
+    previewPathEntryKey = "";
     setPreviewPath(null);
+    setPreviewLoading(false);
     setPreviewError(null);
     setDetectedFormat(null);
     props.onViewModeChange?.("hex");

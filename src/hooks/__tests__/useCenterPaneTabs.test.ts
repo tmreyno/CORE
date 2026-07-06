@@ -178,6 +178,31 @@ describe("useCenterPaneTabs", () => {
       expect(state.tabs()).toHaveLength(2);
     });
 
+    it("reactivates and canonicalizes restored evidence tabs with stale IDs", () => {
+      const file = makeFile({ path: "/current/case.e01", filename: "case.e01" });
+
+      state.setTabs([
+        {
+          id: "evidence:/old-root/case.e01",
+          type: "evidence",
+          title: "old case.e01",
+          file,
+          closable: true,
+        },
+      ]);
+      state.setActiveTabId("evidence:/old-root/case.e01");
+
+      state.openEvidenceFile(file);
+
+      expect(state.tabs()).toHaveLength(1);
+      expect(state.tabs()[0]).toMatchObject({
+        id: "evidence:/current/case.e01",
+        title: "case.e01",
+        file,
+      });
+      expect(state.activeTabId()).toBe("evidence:/current/case.e01");
+    });
+
     it("allows re-opening a recently closed tab", () => {
       const file = makeFile();
       state.openEvidenceFile(file);
@@ -231,7 +256,7 @@ describe("useCenterPaneTabs", () => {
 
       expect(state.tabs()).toHaveLength(1);
       const tab = state.tabs()[0];
-      expect(tab.id).toBe("entry:/evidence/case.e01/file.txt");
+      expect(tab.id).toBe("entry:/evidence/case.e01::/evidence/case.e01/file.txt");
       expect(tab.type).toBe("entry");
       expect(tab.title).toBe("file.txt");
       expect(tab.entry).toBe(entry);
@@ -252,6 +277,29 @@ describe("useCenterPaneTabs", () => {
       const entry = makeEntry({ containerPath: "/evidence/disk.e01" });
       state.openContainerEntry(entry);
       expect(state.tabs()[0].subtitle).toBe("disk.e01");
+    });
+
+    it("keeps matching internal paths from different containers as separate tabs", () => {
+      const firstEntry = makeEntry({
+        containerPath: "/evidence/first.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+      const secondEntry = makeEntry({
+        containerPath: "/evidence/second.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+
+      state.openContainerEntry(firstEntry);
+      state.openContainerEntry(secondEntry);
+
+      expect(state.tabs()).toHaveLength(2);
+      expect(state.tabs().map(tab => tab.id)).toEqual([
+        "entry:/evidence/first.e01::/Windows/System32/config/SYSTEM",
+        "entry:/evidence/second.e01::/Windows/System32/config/SYSTEM",
+      ]);
+      expect(state.activeTab()?.entry?.containerPath).toBe("/evidence/second.e01");
     });
   });
 

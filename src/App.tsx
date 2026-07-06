@@ -1213,6 +1213,11 @@ function App() {
   ));
 
   // Shared DetailPanel props builder — avoids duplicating ~25 props across tab and fallback views
+  const activeCenterEvidenceFile = createMemo(() => {
+    const tab = centerPaneTabs.activeTab();
+    return tab?.type === "evidence" ? tab.file ?? null : null;
+  });
+
   const sharedDetailPanelProps = (activeFile: DiscoveredFile) => ({
     activeFile,
     fileInfoMap: fileManager.fileInfoMap,
@@ -1765,6 +1770,14 @@ function App() {
               if (tab && (tab.type === "entry" || tab.type === "document")) {
                 setEntryContentViewMode("auto");
               }
+              if (tab?.type === "evidence" && tab.file) {
+                fileManager.setActiveFile(tab.file);
+              } else if (tab?.type === "entry" && tab.entry) {
+                const parentFile = fileManager
+                  .discoveredFiles()
+                  .find((file) => file.path === tab.entry?.containerPath);
+                if (parentFile) fileManager.setActiveFile(parentFile);
+              }
               centerPaneTabs.setActiveTabId(tabId);
             }}
             onTabClose={centerPaneTabs.closeTab}
@@ -1782,8 +1795,10 @@ function App() {
               {(tab) => (
                 <>
                   {/* Evidence file tabs - show DetailPanel (handles all view modes internally) */}
-                  <Show when={tab().type === "evidence" && tab().file}>
-                    <DetailPanel {...sharedDetailPanelProps(tab().file!)} />
+                  <Show keyed when={activeCenterEvidenceFile()}>
+                    {(activeEvidenceFile) => (
+                      <DetailPanel {...sharedDetailPanelProps(activeEvidenceFile)} />
+                    )}
                   </Show>
                   
                   {/* Case document tabs - show ContainerEntryViewer using stored entry */}

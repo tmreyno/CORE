@@ -6,16 +6,106 @@
 
 //! Evidence byte-source adapters for container entries.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::{ad1, archive, ewf, raw, ufed};
+use ffx_common::vfs::VirtualFileSystem;
 use ffx_common::{
     bounded_read_size, EvidenceByteSource, EvidenceSourceError, EvidenceSourceRef,
     EvidenceSourceResult, VfsEntryByteSource,
 };
+
+const BYTE_SOURCE_VFS_CACHE_MAX_ENTRIES: usize = 32;
+
+struct CachedVfsHandle {
+    handle: Arc<dyn VirtualFileSystem>,
+    last_access: u64,
+}
+
+static BYTE_SOURCE_VFS_CACHE: LazyLock<RwLock<HashMap<String, CachedVfsHandle>>> =
+    LazyLock::new(|| RwLock::new(HashMap::with_capacity(16)));
+static BYTE_SOURCE_VFS_ACCESS_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn next_vfs_cache_access() -> u64 {
+    BYTE_SOURCE_VFS_ACCESS_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+fn cached_vfs_key(kind: &str, container_path: &str) -> String {
+    format!("{}:{}", kind.trim().to_lowercase(), container_path)
+}
+
+fn cached_vfs_handle(key: &str) -> Option<Arc<dyn VirtualFileSystem>> {
+    let mut cache = BYTE_SOURCE_VFS_CACHE.write().ok()?;
+    let entry = cache.get_mut(key)?;
+    entry.last_access = next_vfs_cache_access();
+    Some(Arc::clone(&entry.handle))
+}
+
+fn cache_vfs_handle<V>(key: String, vfs: V) -> Arc<dyn VirtualFileSystem>
+where
+    V: VirtualFileSystem + 'static,
+{
+    let handle: Arc<dyn VirtualFileSystem> = Arc::new(vfs);
+    if let Ok(mut cache) = BYTE_SOURCE_VFS_CACHE.write() {
+        if cache.len() >= BYTE_SOURCE_VFS_CACHE_MAX_ENTRIES {
+            if let Some(lru_key) = cache
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_access)
+                .map(|(key, _)| key.clone())
+            {
+                cache.remove(&lru_key);
+            }
+        }
+        cache.insert(
+            key,
+            CachedVfsHandle {
+                handle: Arc::clone(&handle),
+                last_access: next_vfs_cache_access(),
+            },
+        );
+    }
+    handle
+}
+
+fn open_cached_ewf_vfs(
+    container_path: &str,
+    entry_path: &str,
+    container_type: &str,
+) -> EvidenceSourceResult<Arc<dyn VirtualFileSystem>> {
+    let key = cached_vfs_key("ewf", container_path);
+    if let Some(handle) = cached_vfs_handle(&key) {
+        return Ok(handle);
+    }
+
+    let vfs = ewf::vfs::EwfVfs::open(container_path).map_err(|e| {
+        source_error(
+            container_path,
+            entry_path,
+            container_type,
+            format!("EWF VFS open failed: {e:?}"),
+        )
+    })?;
+    Ok(cache_vfs_handle(key, vfs))
+}
+
+fn open_cached_raw_vfs(
+    container_path: &str,
+    entry_path: &str,
+    container_type: &str,
+) -> EvidenceSourceResult<Arc<dyn VirtualFileSystem>> {
+    let key = cached_vfs_key("raw", container_path);
+    if let Some(handle) = cached_vfs_handle(&key) {
+        return Ok(handle);
+    }
+
+    let vfs = open_raw_vfs_for_entry(container_path, entry_path, container_type)?;
+    Ok(cache_vfs_handle(key, vfs))
+}
 
 /// Open a readable byte source for a container entry.
 ///
@@ -99,16 +189,9 @@ pub fn open_container_entry_source_with_options(
     }
 
     if is_ewf_type(&kind) {
-        let vfs = ewf::vfs::EwfVfs::open(&container_path).map_err(|e| {
-            source_error(
-                &container_path,
-                &entry_path,
-                &container_type,
-                format!("EWF VFS open failed: {e:?}"),
-            )
-        })?;
+        let vfs = open_cached_ewf_vfs(&container_path, &entry_path, &container_type)?;
         return Ok(Box::new(VfsEntryByteSource::new(
-            Arc::new(vfs),
+            vfs,
             container_path,
             entry_path,
             Some(container_type),
@@ -116,9 +199,9 @@ pub fn open_container_entry_source_with_options(
     }
 
     if is_raw_type(&kind) {
-        let vfs = open_raw_vfs_for_entry(&container_path, &entry_path, &container_type)?;
+        let vfs = open_cached_raw_vfs(&container_path, &entry_path, &container_type)?;
         return Ok(Box::new(VfsEntryByteSource::new(
-            Arc::new(vfs),
+            vfs,
             container_path,
             entry_path,
             Some(container_type),
@@ -584,6 +667,10 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    fn cached_byte_source_vfs_key_count(key: &str) -> usize {
+        usize::from(BYTE_SOURCE_VFS_CACHE.read().unwrap().contains_key(key))
+    }
+
     #[test]
     fn ad1_source_ref_identifies_container_entry() {
         let source = Ad1EntryByteSource::new(
@@ -719,6 +806,34 @@ mod tests {
                 container_type: Some("raw".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn raw_entry_sources_reuse_cached_vfs_handle() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let container_path = temp_dir.path().join("disk.img");
+        std::fs::write(&container_path, b"abcdef").unwrap();
+        let cache_key = cached_vfs_key("raw", &container_path.to_string_lossy());
+
+        let first = open_container_entry_source(
+            container_path.to_string_lossy().to_string(),
+            "/disk.raw",
+            "raw",
+            None,
+        )
+        .unwrap();
+        assert_eq!(first.read_range(0, 1).unwrap(), b"a");
+        assert_eq!(cached_byte_source_vfs_key_count(&cache_key), 1);
+
+        let second = open_container_entry_source(
+            container_path.to_string_lossy().to_string(),
+            "/disk.raw",
+            "raw",
+            None,
+        )
+        .unwrap();
+        assert_eq!(second.read_range(1, 1).unwrap(), b"b");
+        assert_eq!(cached_byte_source_vfs_key_count(&cache_key), 1);
     }
 
     #[test]

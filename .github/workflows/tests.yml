@@ -269,25 +269,92 @@ jobs:
           key: vcpkg-win-x64-static-compress-libs-v2
           restore-keys: vcpkg-win-x64-static-compress-
 
-      - name: Install system dependencies (Windows)
+      - name: Check for pre-built native libraries (Windows)
         if: runner.os == 'Windows'
+        id: windows_prebuilt
+        run: |
+          $archivePrebuilt = "patches\libarchive2-sys\prebuilt\windows-x64-msvc\archive.lib"
+          $sevenzipPrebuilt = "sevenzip-ffi\prebuilt\windows-x64-msvc\7z_ffi.lib"
+          $libewfPrebuilt = "libewf-ffi\prebuilt\windows-x64-msvc\ewf.lib"
+          $allGood = $true
+
+          if (Test-Path $archivePrebuilt) {
+            Write-Host "Pre-built archive.lib found"
+            echo "has_archive=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "No pre-built archive.lib; will build libarchive from source"
+            echo "has_archive=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if (Test-Path $sevenzipPrebuilt) {
+            Write-Host "Pre-built 7z_ffi.lib found"
+            echo "has_sevenzip=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::error::Pre-built 7z_ffi.lib not found at $sevenzipPrebuilt"
+            $allGood = $false
+            echo "has_sevenzip=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if (Test-Path $libewfPrebuilt) {
+            Write-Host "Pre-built ewf.lib found"
+            echo "has_libewf=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::error::Pre-built ewf.lib not found at $libewfPrebuilt"
+            $allGood = $false
+            echo "has_libewf=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if (-not $allGood) { exit 1 }
+        shell: pwsh
+
+      - name: Install system dependencies (Windows fallback)
+        if: runner.os == 'Windows' && steps.windows_prebuilt.outputs.has_archive != 'true'
         run: |
           if (-Not (Test-Path "C:\vcpkg\vcpkg.exe")) {
             git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
             C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
           }
-          C:\vcpkg\vcpkg.exe install `
-            zlib:x64-windows-static `
-            bzip2:x64-windows-static `
-            liblzma:x64-windows-static `
-            zstd:x64-windows-static `
-            lz4:x64-windows-static
 
-          $archiveRoot = "C:\vcpkg\installed\x64-windows-static"
+          C:\vcpkg\vcpkg.exe install zlib:x64-windows-static bzip2:x64-windows-static liblzma:x64-windows-static zstd:x64-windows-static lz4:x64-windows-static
+
+          $vcpkgRoot = "C:\vcpkg\installed\x64-windows-static"
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKG_INSTALLATION_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$archiveRoot\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "VCPKGRS_DYNAMIC=0" >> $env:GITHUB_ENV
+          echo "LIBARCHIVE_LIB_DIR=$vcpkgRoot\lib" >> $env:GITHUB_ENV
+          echo "LIBARCHIVE_INCLUDE_DIR=$vcpkgRoot\include" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$vcpkgRoot\lib\pkgconfig" >> $env:GITHUB_ENV
           echo "LIBCLANG_PATH=C:\LLVM\bin" >> $env:GITHUB_ENV
+
+          if (Test-Path "$vcpkgRoot\lib\archive.lib") {
+            Remove-Item "$vcpkgRoot\lib\archive.lib" -Force
+          }
+          if (Test-Path "$vcpkgRoot\lib\archive_static.lib") {
+            Remove-Item "$vcpkgRoot\lib\archive_static.lib" -Force
+          }
+        shell: pwsh
+
+      - name: Set LIBCLANG_PATH (Windows prebuilt)
+        if: runner.os == 'Windows' && steps.windows_prebuilt.outputs.has_archive == 'true'
+        run: echo "LIBCLANG_PATH=C:\LLVM\bin" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Set up pre-built libewf (Windows)
+        if: runner.os == 'Windows' && steps.windows_prebuilt.outputs.has_libewf == 'true'
+        run: |
+          $prebuiltDir = "$env:GITHUB_WORKSPACE\libewf-ffi\prebuilt\windows-x64-msvc"
+          echo "LIBEWF_DIR=$prebuiltDir" >> $env:GITHUB_ENV
+          Write-Host "LIBEWF_DIR set to $prebuiltDir"
+        shell: pwsh
+
+      - name: Verify sevenzip-ffi library (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (-Not (Test-Path "sevenzip-ffi\prebuilt\windows-x64-msvc\7z_ffi.lib")) {
+            Write-Host "::error::Pre-built 7z_ffi.lib not found"
+            exit 1
+          }
+          Write-Host "Pre-built 7z_ffi.lib found"
         shell: pwsh
 
       - name: Cache cargo build

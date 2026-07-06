@@ -4,6 +4,47 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+### Fixed
+- Evidence tree system-identity and binary-artifact collection now batches and deduplicates large source sets so expanded driver/system directories stay under backend request limits.
+- AD1 expand-all now reuses cached child entries by item-address cache key, avoiding repeated child reloads during repeated expansion.
+
+### Tests
+- Added ignored local smoke tests for supplied seed `.cffx` projects and E01/raw VFS images so project loading and forensic image browsing can be rechecked against real case data.
+
+## [0.1.116] - 2026-07-06
+
+### Fixed
+- Updater release notes now include the full bundled release review instead of the generic nightly-build line.
+- `0.1.116` supersedes `0.1.115` because GitHub immutable release assets prevented replacing the already-published `0.1.115` `latest.json` manifest.
+
+### Changed
+- The evidence-loading, AD1 range-read, partial hashing, EWF/raw VFS reuse, project restore, and tab-sync fixes from `0.1.115` remain included in this published updater build.
+- Bundled update-note selection now recognizes `0.1.116` for future in-app update dialogs.
+
+## [0.1.115] - 2026-07-06
+
+### Fixed
+- AD1 range reads now skip declared chunks before the requested range, fixing later-range hashing, hex review, and extraction failures in AD1 evidence.
+- Hashing now supports evidence byte sources that return partial chunks without treating valid short reads as failed evidence reads.
+- EWF and raw entry reads now reuse bounded VFS handles across viewers, hashing, artifact extraction, and reporting to reduce repeated image opens and freeze risk.
+- `.cffx` sibling evidence paths now round-trip as valid `../...` paths, and project load keeps already-loaded state when only saved UI restore/post-load setup reports a warning.
+- Restored evidence tabs are normalized to current resolved file paths and evidence/entry tab selection keeps active evidence context synchronized.
+
+### Changed
+- Recent project rows now support keyboard activation.
+- Update availability notes now include the `0.1.115` engine and project-restore release review directly in the app.
+
+## [0.1.114] - 2026-07-06
+
+### Fixed
+- Release publishing now ships the corrected engine, viewer, artifact, and update-note fixes under `0.1.114` because GitHub immutable release state prevented safely reusing the deleted `v0.1.113` tag.
+- Manual release publishing no longer checks out a not-yet-created release tag before generating `latest.json`; it checks out the workflow commit and targets that commit when the draft release is created.
+- Updater manifest generation now uses a valid macOS architecture regex so manifest creation can discover the aarch64 updater bundle without failing in Python.
+
+### Changed
+- Update availability now shows bundled `0.1.112`, `0.1.113`, and `0.1.114` release review notes directly in the app.
+- Version metadata, lockfiles, README badge, Tauri config, and changelog links are aligned to `0.1.114`.
+
 ## [0.1.113] - 2026-07-06
 
 ### Fixed
@@ -11,6 +52,8 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 - Hex viewer navigation now loads bounded windows for deep offsets in large evidence sources instead of requesting oversized start-of-file reads.
 - Direct driver entry viewing now persists `.sys`, `.drv`, and `.ko` entries through the binary artifact collector.
 - macOS boot plist, kernel extension `Info.plist`, and non-`/private` dsLocal identity artifacts are now collected by the evidence tree classifier.
+- Release packaging now keeps `src-tauri/tauri.conf.json` aligned to `0.1.113` so generated installer and updater artifact names match the release version.
+- macOS release uploads now read the aarch64 target bundle directory so the DMG, app updater archive, and signature are attached to the GitHub release.
 
 ### Changed
 - System identity collection includes additional Linux network configuration sources and driver/system identity artifacts discovered during AD1/VFS tree loads.
@@ -1324,8 +1367,11 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.113...HEAD
-[0.1.113]: https://github.com/tmreyno/CORE/compare/v0.1.112...v0.1.113
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.116...HEAD
+[0.1.116]: https://github.com/tmreyno/CORE/compare/v0.1.115...v0.1.116
+[0.1.115]: https://github.com/tmreyno/CORE/compare/v0.1.114...v0.1.115
+[0.1.114]: https://github.com/tmreyno/CORE/compare/v0.1.112...v0.1.114
+[0.1.113]: https://github.com/tmreyno/CORE/compare/v0.1.112...fd121a25
 [0.1.112]: https://github.com/tmreyno/CORE/compare/v0.1.111...v0.1.112
 [0.1.111]: https://github.com/tmreyno/CORE/compare/v0.1.110...v0.1.111
 [0.1.110]: https://github.com/tmreyno/CORE/compare/v0.1.109...v0.1.110
