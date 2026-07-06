@@ -70,6 +70,25 @@ describe("system identity source helpers", () => {
     ).toBe(true);
   });
 
+  it("classifies Windows setup and sysprep logs", () => {
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "setupact.log",
+          entryPath: "/Windows/Panther/setupact.log",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "setuperr.log",
+          entryPath: "/Windows/System32/Sysprep/Panther/setuperr.log",
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("classifies Linux DMI, account, and network identity sources", () => {
     expect(
       isLikelySystemIdentityEntry(

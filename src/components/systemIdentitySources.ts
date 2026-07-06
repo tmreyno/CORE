@@ -202,7 +202,9 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
     path.endsWith("/windows/panther/setupact.log") ||
     path.endsWith("/windows/panther/setuperr.log") ||
     path.endsWith("/windows/inf/setupapi.dev.log") ||
-    path.endsWith("/windows/inf/setupapi.app.log")
+    path.endsWith("/windows/inf/setupapi.app.log") ||
+    path.includes("/windows/system32/sysprep/panther/setupact.log") ||
+    path.includes("/windows/system32/sysprep/panther/setuperr.log")
   ) {
     return true;
   }
