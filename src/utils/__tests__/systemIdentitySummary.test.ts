@@ -44,6 +44,10 @@ function artifact(overrides: Partial<DbNormalizedArtifact> = {}): DbNormalizedAr
       "system.osBuildNumber": "22631",
       "system.machineGuid": "6f2d5a21-24e0-47cc-b9b2-7dc8c763f9c3",
       "system.localUsers": "terry; admin",
+      "system.securityHivePresent": "true",
+      "system.securityAccountSidCount": "3",
+      "system.lsaSecretCount": "2",
+      "system.lsaSecretsPresent": "true",
       "system.profileNames": "terry; service",
       "system.driveLetters": "C:; D:",
       "system.volumeGuids": "Volume{11111111-2222-3333-4444-555555555555}",
@@ -98,6 +102,8 @@ describe("system identity summary", () => {
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Hardware IDs: ABCDEF01-2345-6789-ABCD-EF0123456789");
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Machine GUID: 6f2d5a21-24e0-47cc-b9b2-7dc8c763f9c3");
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Network Profiles: LabNet (private)");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Security Hive Present: true");
+    expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("LSA Secret Count: 2");
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Setup Computer Names: DESKTOP-CASE01");
     expect(formatSystemIdentitySummaryForClipboard(summary)).toContain("Firewall Dropped Count: 14");
     expect(formatSystemIdentitySummaryForClipboard(summary)).not.toContain("Identity Status: parsed");
@@ -113,6 +119,8 @@ describe("system identity summary", () => {
     expect(markdown).toContain("| OS Build Number | 22631 | 1 |");
     expect(markdown).toContain("| Volume GUIDs | Volume{11111111-2222-3333-4444-555555555555} | 1 |");
     expect(markdown).toContain("| Driver Services | volmgr; disk | 1 |");
+    expect(markdown).toContain("| Security Account SID Count | 3 | 1 |");
+    expect(markdown).toContain("| LSA Secrets Present | true | 1 |");
     expect(markdown).toContain("### Additional System Details");
     expect(markdown).toContain("| Setup Computer Names | DESKTOP-CASE01 | 1 |");
     expect(markdown).toContain("### Users and Groups");
