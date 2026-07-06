@@ -205,16 +205,19 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         if (systemIdentitySource) {
           await commands.artifact.collectSystemIdentitySources({
             sources: [systemIdentitySource],
+            evidenceFileId: props.entry.containerPath,
             extractor: "container-entry-viewer-system-identity",
           });
         } else if (isLikelyBinaryArtifactEntry(props.entry)) {
           await commands.artifact.collectBinaryArtifactSources({
             sources: [source],
+            evidenceFileId: props.entry.containerPath,
             extractor: "container-entry-viewer-binary-artifact",
           });
         } else {
           await commands.artifact.extractSourceAndInsert({
             source,
+            evidenceFileId: props.entry.containerPath,
             extractor: "container-entry-viewer",
           });
         }

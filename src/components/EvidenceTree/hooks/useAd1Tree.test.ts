@@ -147,6 +147,7 @@ describe("useAd1Tree", () => {
             itemAddr: 456,
           },
         ],
+        evidenceFileId: "/case/source.AD1",
         extractor: "evidence-tree-system-identity",
       },
     });
@@ -185,6 +186,7 @@ describe("useAd1Tree", () => {
             itemAddr: 333,
           },
         ],
+        evidenceFileId: "/case/source.AD1",
         extractor: "evidence-tree-binary-artifact",
       },
     });

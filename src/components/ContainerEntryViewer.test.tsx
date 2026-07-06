@@ -274,6 +274,7 @@ describe("ContainerEntryViewer", () => {
             containerType: "ad1",
             size: 1024,
           },
+          evidenceFileId: "/evidence/container.ad1",
           extractor: "container-entry-viewer",
         },
       });
@@ -320,6 +321,7 @@ describe("ContainerEntryViewer", () => {
               size: 1024,
             },
           ],
+          evidenceFileId: "/evidence/container.ad1",
           extractor: "container-entry-viewer-system-identity",
         },
       });
@@ -366,6 +368,7 @@ describe("ContainerEntryViewer", () => {
               size: 1024,
             },
           ],
+          evidenceFileId: "/evidence/container.ad1",
           extractor: "container-entry-viewer-binary-artifact",
         },
       });
