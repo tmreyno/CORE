@@ -924,9 +924,11 @@ fn is_windows_registry_identity_source(source_id: &str) -> bool {
     source_id.ends_with("/windows/system32/config/system")
         || source_id.ends_with("/windows/system32/config/software")
         || source_id.ends_with("/windows/system32/config/sam")
+        || source_id.ends_with("/windows/system32/config/security")
         || source_id.ends_with("/config/system")
         || source_id.ends_with("/config/software")
         || source_id.ends_with("/config/sam")
+        || source_id.ends_with("/config/security")
 }
 
 fn registry_identity_metadata_from_byte_source(
@@ -1016,6 +1018,8 @@ fn registry_identity_cache_suffix(source_id: &str) -> &'static str {
         ".software.hive"
     } else if lower.ends_with("sam") {
         ".sam.hive"
+    } else if lower.ends_with("security") {
+        ".security.hive"
     } else {
         ".system.hive"
     }
@@ -1030,6 +1034,8 @@ fn registry_identity_metadata_from_hive_path(
         registry_software_identity_metadata(hive_path)
     } else if lower.ends_with("sam") {
         registry_sam_identity_metadata(hive_path)
+    } else if lower.ends_with("security") {
+        registry_security_identity_metadata(hive_path)
     } else {
         registry_system_identity_metadata(hive_path)
     }
@@ -1215,6 +1221,48 @@ fn registry_sam_account_metadata_from_names(
             .cloned()
             .collect();
         insert_joined_metadata(&mut metadata, "system.adminGroups", &admin_groups);
+    }
+
+    metadata
+}
+
+fn registry_security_identity_metadata(
+    hive_path: &Path,
+) -> Result<BTreeMap<String, String>, String> {
+    let hive_path = hive_path.to_path_buf();
+    let mut parser = ParserBuilder::from_path(hive_path)
+        .build()
+        .map_err(|e| format!("Failed to open SECURITY registry hive: {e}"))?;
+    let account_sids = registry_subkey_names(&mut parser, "Policy\\Accounts");
+    let secret_names = registry_subkey_names(&mut parser, "Policy\\Secrets");
+
+    Ok(finalize_registry_identity_metadata(
+        registry_security_metadata_from_names(account_sids, secret_names),
+        "windows.security",
+    ))
+}
+
+fn registry_security_metadata_from_names(
+    account_sids: Vec<String>,
+    secret_names: Vec<String>,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("system.securityHivePresent".to_string(), "true".to_string());
+
+    if !account_sids.is_empty() {
+        metadata.insert(
+            "system.securityAccountSidCount".to_string(),
+            account_sids.len().to_string(),
+        );
+        insert_joined_metadata(&mut metadata, "system.securityAccountSids", &account_sids);
+    }
+
+    if !secret_names.is_empty() {
+        metadata.insert(
+            "system.lsaSecretCount".to_string(),
+            secret_names.len().to_string(),
+        );
+        metadata.insert("system.lsaSecretsPresent".to_string(), "true".to_string());
     }
 
     metadata
@@ -9742,6 +9790,9 @@ COMMIT
         assert!(is_windows_registry_identity_source(
             "ad1:/Windows/System32/config/SAM"
         ));
+        assert!(is_windows_registry_identity_source(
+            "ad1:/Windows/System32/config/SECURITY"
+        ));
         assert!(!is_windows_registry_identity_source(
             "ad1:/Users/test/NTUSER.DAT"
         ));
@@ -9796,6 +9847,49 @@ COMMIT
         assert!(!metadata
             .keys()
             .any(|key| key.to_ascii_lowercase().contains("hash")));
+    }
+
+    #[test]
+    fn windows_security_metadata_summarizes_without_secret_values() {
+        let metadata = registry_security_metadata_from_names(
+            vec![
+                "S-1-5-18".to_string(),
+                "S-1-5-19".to_string(),
+                "S-1-5-20".to_string(),
+            ],
+            vec!["NL$KM".to_string(), "DefaultPassword".to_string()],
+        );
+
+        assert_eq!(
+            metadata
+                .get("system.securityHivePresent")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            metadata
+                .get("system.securityAccountSidCount")
+                .map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            metadata
+                .get("system.securityAccountSids")
+                .map(String::as_str),
+            Some("S-1-5-18; S-1-5-19; S-1-5-20")
+        );
+        assert_eq!(
+            metadata.get("system.lsaSecretCount").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get("system.lsaSecretsPresent").map(String::as_str),
+            Some("true")
+        );
+        assert!(!metadata.values().any(|value| value.contains("NL$KM")));
+        assert!(!metadata
+            .values()
+            .any(|value| value.contains("DefaultPassword")));
     }
 
     #[test]

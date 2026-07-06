@@ -68,6 +68,14 @@ describe("system identity source helpers", () => {
         }),
       ),
     ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "SECURITY",
+          entryPath: "/Windows/System32/config/SECURITY",
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("classifies Windows setup and sysprep logs", () => {

@@ -130,9 +130,11 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
     path.endsWith("/windows/system32/config/system") ||
     path.endsWith("/windows/system32/config/software") ||
     path.endsWith("/windows/system32/config/sam") ||
+    path.endsWith("/windows/system32/config/security") ||
     path.endsWith("/config/system") ||
     path.endsWith("/config/software") ||
-    path.endsWith("/config/sam")
+    path.endsWith("/config/sam") ||
+    path.endsWith("/config/security")
   ) {
     return true;
   }
