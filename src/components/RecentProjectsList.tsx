@@ -114,6 +114,12 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
     props.onOpenProject(path);
   };
 
+  const handleProjectKeyDown = (path: string, e: KeyboardEvent) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    handleOpenProject(path);
+  };
+
   return (
     <div class={`${props.class || ''}`}>
       <Show when={projects().length > 0} fallback={
@@ -149,11 +155,14 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
             {(project) => (
               <div
                 class={`group flex items-center gap-3 rounded-lg transition-all duration-150 cursor-pointer ${
-                  props.compact 
-                    ? 'px-2 py-1.5 hover:bg-bg-hover' 
+                  props.compact
+                    ? 'px-2 py-1.5 hover:bg-bg-hover'
                     : 'p-3 bg-bg-secondary/50 hover:bg-bg-hover border border-border/30 hover:border-border/60'
                 }`}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleOpenProject(project.path)}
+                onKeyDown={(e) => handleProjectKeyDown(project.path, e)}
                 onMouseEnter={() => setHoveredProject(project.path)}
                 onMouseLeave={() => setHoveredProject(null)}
                 title={project.path}

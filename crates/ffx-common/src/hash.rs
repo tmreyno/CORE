@@ -928,6 +928,33 @@ mod tests {
         }
     }
 
+    struct ChunkedByteSource {
+        data: Vec<u8>,
+        max_chunk: usize,
+    }
+
+    impl EvidenceByteSource for ChunkedByteSource {
+        fn source_ref(&self) -> EvidenceSourceRef {
+            EvidenceSourceRef::LocalFile {
+                path: "chunked-hash-source.bin".to_string(),
+            }
+        }
+
+        fn len(&self) -> EvidenceSourceResult<u64> {
+            Ok(self.data.len() as u64)
+        }
+
+        fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            if start >= self.data.len() {
+                return Ok(Vec::new());
+            }
+            let read_size = size.min(self.max_chunk);
+            let end = start.saturating_add(read_size).min(self.data.len());
+            Ok(self.data[start..end].to_vec())
+        }
+    }
+
     #[test]
     fn test_algorithm_parsing() {
         assert_eq!("md5".parse::<HashAlgorithm>().unwrap(), HashAlgorithm::Md5);
@@ -1006,6 +1033,25 @@ mod tests {
 
         assert!(updates.contains(&(0, 8)));
         assert!(updates.contains(&(8, 8)));
+    }
+
+    #[test]
+    fn test_hash_byte_source_accepts_partial_chunks() {
+        let data = b"chunked evidence source hashing data that spans several small reads".to_vec();
+        let source = ChunkedByteSource {
+            data: data.clone(),
+            max_chunk: 7,
+        };
+        let mut updates = Vec::new();
+
+        let hash = hash_byte_source_with_progress(&source, "sha256", |current, total| {
+            updates.push((current, total));
+        })
+        .unwrap();
+
+        assert_eq!(hash, compute_hash(&data, HashAlgorithm::Sha256));
+        assert!(updates.contains(&(0, data.len() as u64)));
+        assert!(updates.contains(&(data.len() as u64, data.len() as u64)));
     }
 
     #[test]

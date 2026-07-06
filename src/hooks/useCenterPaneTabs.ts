@@ -95,10 +95,26 @@ export function useCenterPaneTabs(): CenterPaneTabsState {
       setRecentlyClosed(new Set<string>());
     }
     
-    // Check if tab already exists
-    const existing = tabs().find(t => t.id === tabId);
+    // Check if tab already exists. Older project saves could restore an
+    // evidence tab with a stale ID, so match by resolved evidence path too.
+    const existing = tabs().find(
+      t => t.id === tabId || (t.type === "evidence" && t.file?.path === file.path),
+    );
     if (existing) {
       batch(() => {
+        if (existing.id !== tabId || existing.file !== file) {
+          setTabs(prev => prev.map(t =>
+            t === existing
+              ? {
+                  ...t,
+                  id: tabId,
+                  title: file.filename,
+                  subtitle: file.container_type,
+                  file,
+                }
+              : t,
+          ));
+        }
         setActiveTabId(tabId);
         setViewMode("info");
       });

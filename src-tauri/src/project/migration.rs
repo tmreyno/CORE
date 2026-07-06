@@ -34,7 +34,11 @@ pub(crate) fn to_relative_path(absolute_path: &str, project_dir: &Path) -> Strin
         // Try relative to parent directory (for sibling folders)
         if let Ok(relative) = path.strip_prefix(parent) {
             let relative_str = relative.to_string_lossy().replace('\\', "/");
-            format!("./{}", relative_str)
+            if relative_str.is_empty() {
+                "..".to_string()
+            } else {
+                format!("../{}", relative_str)
+            }
         } else {
             // Can't make relative, keep absolute
             absolute_path.to_string()
@@ -677,4 +681,96 @@ pub(crate) fn migrate_project(project: &mut FFXProject) {
 
     // Future migrations would go here:
     // if old_version < 3 { ... }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project::{CachedDiscoveredFile, EvidenceCache, ProjectLocations};
+
+    #[test]
+    fn relative_sibling_paths_round_trip_from_project_directory() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_dir = temp.path().join("case");
+        let evidence_dir = temp.path().join("1.Evidence");
+        let evidence_path = evidence_dir.join("drive.E01");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::create_dir_all(&evidence_dir).unwrap();
+        std::fs::write(&evidence_path, b"e01").unwrap();
+
+        let relative = to_relative_path(&evidence_path.to_string_lossy(), &project_dir);
+        assert_eq!(relative, "../1.Evidence/drive.E01");
+
+        let absolute = to_absolute_path(&relative, &project_dir);
+        assert_eq!(Path::new(&absolute), evidence_path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn project_sibling_evidence_paths_survive_save_load_conversion() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_dir = temp.path().join("case");
+        let evidence_dir = temp.path().join("1.Evidence");
+        let evidence_path = evidence_dir.join("drive.E01");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::create_dir_all(&evidence_dir).unwrap();
+        std::fs::write(&evidence_path, b"e01").unwrap();
+
+        let evidence = evidence_path.to_string_lossy().to_string();
+        let mut project = FFXProject::new(&project_dir.to_string_lossy());
+        project.root_path = project_dir.to_string_lossy().to_string();
+        project.locations = Some(ProjectLocations {
+            project_root: project_dir.to_string_lossy().to_string(),
+            evidence_path: evidence_dir.to_string_lossy().to_string(),
+            processed_db_path: project_dir
+                .join("2.Processed.Database")
+                .to_string_lossy()
+                .to_string(),
+            case_documents_path: Some(
+                project_dir
+                    .join("4.Case.Documents")
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+            exports_path: None,
+            auto_discovered: true,
+            configured_at: "2026-07-06T00:00:00Z".to_string(),
+            evidence_file_count: Some(1),
+            processed_db_count: Some(0),
+            load_stored_hashes: true,
+        });
+        project.evidence_cache = Some(EvidenceCache {
+            discovered_files: vec![CachedDiscoveredFile {
+                path: evidence.clone(),
+                filename: "drive.E01".to_string(),
+                container_type: "EnCase (E01)".to_string(),
+                size: 3,
+                segment_count: 1,
+                created: None,
+                modified: None,
+            }],
+            cached_at: "2026-07-06T00:00:00Z".to_string(),
+            valid: true,
+            ..EvidenceCache::default()
+        });
+
+        make_paths_relative(&mut project, &project_dir);
+        assert_eq!(
+            project.evidence_cache.as_ref().unwrap().discovered_files[0].path,
+            "../1.Evidence/drive.E01"
+        );
+        assert_eq!(
+            project.locations.as_ref().unwrap().evidence_path,
+            "../1.Evidence"
+        );
+
+        make_paths_absolute(&mut project, &project_dir);
+        assert_eq!(
+            Path::new(&project.evidence_cache.as_ref().unwrap().discovered_files[0].path),
+            evidence_path.canonicalize().unwrap()
+        );
+        assert_eq!(
+            Path::new(&project.locations.as_ref().unwrap().evidence_path),
+            evidence_dir.canonicalize().unwrap()
+        );
+    }
 }

@@ -1027,6 +1027,19 @@ export function createProjectIO(
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
+      const currentProject = signals.project();
+
+      if (currentProject) {
+        log.warn(
+          `loadProject: post-load setup reported a non-fatal error - ${errorMsg}`,
+        );
+        setters.setError(null);
+        return {
+          project: currentProject,
+          warnings: [`Post-load setup warning: ${errorMsg}`],
+        };
+      }
+
       setters.setError(errorMsg);
       return { project: null, error: errorMsg };
     } finally {

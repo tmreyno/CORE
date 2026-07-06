@@ -102,7 +102,7 @@ export function restoreCenterTabs(
         const matchedFile = discoveredFiles.find((f) => f.path === savedTab.file_path);
         if (matchedFile) {
           restoredTabs.push({
-            id: savedTab.id || `evidence:${savedTab.file_path}`,
+            id: `evidence:${matchedFile.path}`,
             type: "evidence",
             title: savedTab.name,
             subtitle: savedTab.container_type,
@@ -126,7 +126,7 @@ export function restoreCenterTabs(
             } as unknown as CaseDocument),
           );
           restoredTabs.push({
-            id: savedTab.id || `document:${docPath}`,
+            id: `document:${docPath}`,
             type: "document",
             title: savedTab.name,
             documentPath: docPath,
@@ -162,7 +162,7 @@ export function restoreCenterTabs(
         );
         if (matchedDb) {
           restoredTabs.push({
-            id: savedTab.id || `processed:${savedTab.processed_db_path}`,
+            id: `processed:${matchedDb.path}`,
             type: "processed",
             title: savedTab.name,
             subtitle: savedTab.processed_db_type,
@@ -206,7 +206,7 @@ export function restoreCenterTabs(
           );
           if (matchedFile) {
             restoredTabs.push({
-              id: savedTab.id || `evidence:${savedTab.file_path}`,
+              id: `evidence:${matchedFile.path}`,
               type: "evidence",
               title: savedTab.name,
               subtitle: savedTab.container_type,
@@ -384,6 +384,8 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     projectPath,
   } = params;
 
+  let loadedProjectName: string | null = null;
+
   try {
     // Save current scanDir so we can restore it if the user cancels.
     const previousScanDir = fileManager.scanDir();
@@ -414,6 +416,18 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
         );
       }
       if (result.error && result.error !== "Open cancelled") {
+        const currentProject = projectManager.project?.();
+        if (currentProject) {
+          log.warn(
+            "Project manager has loaded state despite load warning:",
+            result.error,
+          );
+          toast.warning(
+            "Project Loaded With Warnings",
+            `Opened: ${currentProject.name}. Some post-load setup could not be completed: ${result.error}`,
+          );
+          return;
+        }
         toast.error("Load Failed", result.error);
       }
       return;
@@ -427,6 +441,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     }
 
     const project = result.project;
+    loadedProjectName = project.name;
 
     // ===========================================================================
     // STEP 1: Set scan directory
@@ -767,7 +782,21 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
 
     toast.success("Project Loaded", `Opened: ${project.name}`);
   } catch (err) {
+    const currentProjectName = projectManager.project?.()?.name ?? null;
+    const warningProjectName = loadedProjectName ?? currentProjectName;
+
+    if (warningProjectName) {
+      const detail = err instanceof Error ? err.message : String(err);
+      log.warn("Project restored with warnings:", err);
+      toast.warning(
+        "Project Loaded With Warnings",
+        `Opened: ${warningProjectName}. Some saved UI state could not be restored: ${detail}`,
+      );
+      return;
+    }
+
     log.error("Load project error:", err);
-    toast.error("Load Failed", "Could not load the project");
+    const detail = err instanceof Error ? err.message : String(err);
+    toast.error("Load Failed", `Could not load the project: ${detail}`);
   }
 }

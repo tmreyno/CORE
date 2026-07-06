@@ -208,6 +208,28 @@ describe("projectLoader", () => {
     });
   });
 
+  it("normalizes restored evidence tab IDs to the resolved discovered file path", () => {
+    const resolvedFile = makeFile({
+      path: "/Users/terryreynolds/Cases/1827-1001/1.Evidence/4Dell Latitude CPi/4Dell Latitude CPi.E01",
+    });
+    const tabs: ProjectTab[] = [
+      {
+        id: "evidence:/Users/terryreynolds/Old Case Root/1.Evidence/4Dell Latitude CPi/4Dell Latitude CPi.E01",
+        type: "evidence",
+        file_path: resolvedFile.path,
+        name: "4Dell Latitude CPi.E01",
+        container_type: "EnCase (E01)",
+        order: 0,
+      },
+    ];
+
+    const restored = restoreCenterTabs(tabs, [resolvedFile], [], []);
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].id).toBe(`evidence:${resolvedFile.path}`);
+    expect(restored[0].file).toBe(resolvedFile);
+  });
+
   it("shows browser file picker and cancel feedback when Open Project has no selection", async () => {
     const setScanDir = vi.fn();
     const toast = {
@@ -254,6 +276,109 @@ describe("projectLoader", () => {
     expect(toast.info).toHaveBeenCalledWith(
       "Open Cancelled",
       "No project file was selected. Use Open Project and choose a .cffx file.",
+    );
+  });
+
+  it("reports a warning when project state loaded but post-load setup reports an error", async () => {
+    const loadedProject = {
+      name: "26-000",
+      root_path: "/Users/terryreynolds/Cases/1827-1001/1.Evidence",
+      tabs: [],
+      hash_history: { files: {} },
+    };
+    const toast = {
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    };
+
+    await handleLoadProject({
+      fileManager: {
+        scanDir: () => "",
+        setScanDir: vi.fn(),
+      },
+      hashManager: {},
+      projectManager: {
+        project: () => loadedProject,
+        loadProject: vi.fn().mockResolvedValue({
+          project: null,
+          error: "Post-load setup warning: audit storage unavailable",
+        }),
+      },
+      processedDbManager: {},
+      setLeftWidth: vi.fn(),
+      setRightWidth: vi.fn(),
+      setLeftCollapsed: vi.fn(),
+      setRightCollapsed: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setCurrentViewMode: vi.fn(),
+      setEntryContentViewMode: vi.fn(),
+      setCaseDocumentsPath: vi.fn(),
+      setTreeExpansionState: vi.fn(),
+      setSelectedContainerEntry: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setCaseDocuments: vi.fn(),
+      setCenterTabs: vi.fn(),
+      setActiveTabId: vi.fn(),
+      setCenterViewMode: vi.fn(),
+      toast,
+    } as any);
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Project Loaded With Warnings",
+      expect.stringContaining("26-000"),
+    );
+  });
+
+  it("reports thrown post-load failures as warnings when project state is already loaded", async () => {
+    const loadedProject = {
+      name: "26-000",
+      root_path: "/Users/terryreynolds/Cases/1827-1001/1.Evidence",
+      tabs: [],
+      hash_history: { files: {} },
+    };
+    const toast = {
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    };
+
+    await handleLoadProject({
+      fileManager: {
+        scanDir: () => "",
+        setScanDir: vi.fn(),
+      },
+      hashManager: {},
+      projectManager: {
+        project: () => loadedProject,
+        loadProject: vi.fn().mockRejectedValue(new Error("audit storage unavailable")),
+      },
+      processedDbManager: {},
+      setLeftWidth: vi.fn(),
+      setRightWidth: vi.fn(),
+      setLeftCollapsed: vi.fn(),
+      setRightCollapsed: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setCurrentViewMode: vi.fn(),
+      setEntryContentViewMode: vi.fn(),
+      setCaseDocumentsPath: vi.fn(),
+      setTreeExpansionState: vi.fn(),
+      setSelectedContainerEntry: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setCaseDocuments: vi.fn(),
+      setCenterTabs: vi.fn(),
+      setActiveTabId: vi.fn(),
+      setCenterViewMode: vi.fn(),
+      toast,
+    } as any);
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Project Loaded With Warnings",
+      expect.stringContaining("audit storage unavailable"),
     );
   });
 
@@ -627,5 +752,100 @@ describe("projectLoader", () => {
       `evidence:${secondFile.path}`,
     );
     expect(setActiveFile).toHaveBeenCalledWith(secondFile);
+  });
+
+  it("reports restore callback failures as warnings after the project has loaded", async () => {
+    const doc = makeCaseDoc();
+    const toast = {
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    };
+
+    await handleLoadProject({
+      fileManager: {
+        scanDir: () => "",
+        setScanDir: vi.fn(),
+        scanForFiles: vi.fn(),
+        restoreDiscoveredFiles: vi.fn(),
+        restoreFileInfoMap: vi.fn(),
+        setTypeFilter: vi.fn(),
+        setActiveFile: vi.fn(),
+        discoveredFiles: () => [],
+      },
+      hashManager: {
+        restoreFileHashMap: vi.fn(),
+        restoreHashHistory: vi.fn(),
+      },
+      projectManager: {
+        loadProject: vi.fn().mockResolvedValue({
+          project: {
+            name: "Seed Project",
+            root_path: "/cases/1827-1001/1.Evidence",
+            locations: {
+              evidence_path: "/cases/1827-1001/1.Evidence",
+            },
+            tabs: [
+              {
+                id: `document:${doc.path}`,
+                type: "document",
+                file_path: doc.path,
+                document_path: doc.path,
+                name: doc.filename,
+                order: 0,
+              },
+            ],
+            center_pane_state: {
+              active_tab_id: `document:${doc.path}`,
+              view_mode: "document",
+            },
+            hash_history: { files: {} },
+            evidence_cache: {
+              valid: true,
+              discovered_files: [],
+              file_info: {},
+              computed_hashes: {},
+            },
+            case_documents_cache: {
+              valid: true,
+              search_path: "/cases/1827-1001/4.Case.Documents",
+              documents: [doc],
+            },
+          },
+          warnings: [],
+        }),
+        updateLocations: vi.fn(),
+      },
+      processedDbManager: {
+        databases: () => [],
+        restoreFullState: vi.fn(),
+        restoreFromProject: vi.fn(),
+      },
+      setLeftWidth: vi.fn(),
+      setRightWidth: vi.fn(),
+      setLeftCollapsed: vi.fn(),
+      setRightCollapsed: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setCurrentViewMode: vi.fn(),
+      setEntryContentViewMode: vi.fn(),
+      setCaseDocumentsPath: vi.fn(),
+      setTreeExpansionState: vi.fn(),
+      setSelectedContainerEntry: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setCaseDocuments: vi.fn(),
+      setCenterTabs: vi.fn(() => {
+        throw new Error("saved tab restore failed");
+      }),
+      setActiveTabId: vi.fn(),
+      setCenterViewMode: vi.fn(),
+      toast,
+    } as any);
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Project Loaded With Warnings",
+      expect.stringContaining("saved tab restore failed"),
+    );
   });
 });

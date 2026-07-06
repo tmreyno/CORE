@@ -178,6 +178,31 @@ describe("useCenterPaneTabs", () => {
       expect(state.tabs()).toHaveLength(2);
     });
 
+    it("reactivates and canonicalizes restored evidence tabs with stale IDs", () => {
+      const file = makeFile({ path: "/current/case.e01", filename: "case.e01" });
+
+      state.setTabs([
+        {
+          id: "evidence:/old-root/case.e01",
+          type: "evidence",
+          title: "old case.e01",
+          file,
+          closable: true,
+        },
+      ]);
+      state.setActiveTabId("evidence:/old-root/case.e01");
+
+      state.openEvidenceFile(file);
+
+      expect(state.tabs()).toHaveLength(1);
+      expect(state.tabs()[0]).toMatchObject({
+        id: "evidence:/current/case.e01",
+        title: "case.e01",
+        file,
+      });
+      expect(state.activeTabId()).toBe("evidence:/current/case.e01");
+    });
+
     it("allows re-opening a recently closed tab", () => {
       const file = makeFile();
       state.openEvidenceFile(file);
