@@ -4,9 +4,9 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import bundledUpdateReview from "../../docs/releases/core-ffx-0.1.112-0.1.113.md?raw";
+import bundledUpdateReview from "../../docs/releases/core-ffx-0.1.112-0.1.114.md?raw";
 
-const releaseOrder = ["0.1.112", "0.1.113"] as const;
+const releaseOrder = ["0.1.112", "0.1.113", "0.1.114"] as const;
 type BundledReleaseVersion = (typeof releaseOrder)[number];
 
 const releaseSectionPattern =
@@ -62,9 +62,9 @@ function selectBundledVersions(
   }
 
   if (!normalizedCurrentVersion) {
-    return normalizedUpdateVersion === "0.1.113"
-      ? ["0.1.112", "0.1.113"]
-      : [normalizedUpdateVersion];
+    return releaseOrder.filter(
+      (version) => compareVersions(version, normalizedUpdateVersion) <= 0
+    );
   }
 
   return releaseOrder.filter(
