@@ -21,6 +21,7 @@
 #![allow(unused_imports)]
 
 use super::ewf_helpers::validate_snapshot_byte_count;
+use crate::common::csv_row;
 use rayon::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -64,10 +65,7 @@ fn copy_triage_file_snapshot(
     let mut buf = vec![0u8; TRIAGE_COPY_CHUNK_SIZE];
     let mut copied: u64 = 0;
 
-    loop {
-        let Some(to_read) = checked_triage_copy_read_len(file_size, copied)? else {
-            break;
-        };
+    while let Some(to_read) = checked_triage_copy_read_len(file_size, copied)? {
         let n = reader.read(&mut buf[..to_read])?;
         if n == 0 {
             validate_snapshot_byte_count("Triage copy", src_path, file_size, copied)
@@ -244,28 +242,69 @@ struct ArtifactDef {
 fn get_platform_artifacts(target_root: &Path) -> Vec<ArtifactDef> {
     let root = target_root.to_string_lossy();
 
+    match detect_target_platform(target_root) {
+        TargetPlatform::Windows => get_windows_artifacts(&root),
+        TargetPlatform::Macos => get_macos_artifacts(&root),
+        TargetPlatform::Linux => get_linux_artifacts(&root),
+        TargetPlatform::Host => get_host_platform_artifacts(&root),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TargetPlatform {
+    Windows,
+    Macos,
+    Linux,
+    Host,
+}
+
+fn detect_target_platform(target_root: &Path) -> TargetPlatform {
+    if target_root.join("Windows/System32/config/SYSTEM").exists()
+        || target_root
+            .join("Windows/System32/config/SOFTWARE")
+            .exists()
+    {
+        return TargetPlatform::Windows;
+    }
+    if target_root
+        .join("System/Library/CoreServices/SystemVersion.plist")
+        .exists()
+        || target_root
+            .join("Library/Preferences/SystemConfiguration")
+            .exists()
+    {
+        return TargetPlatform::Macos;
+    }
+    if target_root.join("etc/os-release").exists()
+        || target_root.join("etc/lsb-release").exists()
+        || target_root.join("sys/class/dmi/id").exists()
+    {
+        return TargetPlatform::Linux;
+    }
+
+    TargetPlatform::Host
+}
+
+fn get_host_platform_artifacts(root: &str) -> Vec<ArtifactDef> {
     #[cfg(target_os = "windows")]
     {
-        get_windows_artifacts(&root)
+        return get_windows_artifacts(root);
     }
 
     #[cfg(target_os = "macos")]
     {
-        get_macos_artifacts(&root)
+        return get_macos_artifacts(root);
     }
 
     #[cfg(target_os = "linux")]
     {
-        get_linux_artifacts(&root)
+        return get_linux_artifacts(root);
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        vec![]
-    }
+    #[allow(unreachable_code)]
+    Vec::new()
 }
 
-#[cfg(target_os = "windows")]
 fn get_windows_artifacts(root: &str) -> Vec<ArtifactDef> {
     let sys32 = format!("{root}/Windows/System32");
     let config = format!("{sys32}/config");
@@ -495,7 +534,6 @@ fn get_windows_artifacts(root: &str) -> Vec<ArtifactDef> {
     ]
 }
 
-#[cfg(target_os = "macos")]
 fn get_macos_artifacts(root: &str) -> Vec<ArtifactDef> {
     vec![
         // ── Credentials & Keys ──────────────────────────────────────
@@ -742,7 +780,6 @@ fn get_macos_artifacts(root: &str) -> Vec<ArtifactDef> {
     ]
 }
 
-#[cfg(target_os = "linux")]
 fn get_linux_artifacts(root: &str) -> Vec<ArtifactDef> {
     vec![
         // ── System Security ─────────────────────────────────────────
@@ -1615,7 +1652,7 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
     let mut file = std::fs::File::create(&manifest_path)
         .map_err(|e| format!("Cannot create manifest: {e}"))?;
 
-    writeln!(file, "relative_path,category,size_bytes,modified")
+    file.write_all(csv_row(&["relative_path", "category", "size_bytes", "modified"]).as_bytes())
         .map_err(|e| format!("Write header failed: {e}"))?;
 
     fn walk_dir(
@@ -1624,18 +1661,18 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
         out: &mut std::fs::File,
         depth: usize,
         rows_written: &mut usize,
-    ) {
+    ) -> Result<(), String> {
         if depth > TRIAGE_MAX_TRAVERSAL_DEPTH {
             warn!(
                 "Skipping triage manifest directory {}: maximum traversal depth {} exceeded",
                 dir.display(),
                 TRIAGE_MAX_TRAVERSAL_DEPTH
             );
-            return;
+            return Ok(());
         }
 
         let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
+            return Ok(());
         };
         for entry in entries.flatten() {
             if *rows_written >= TRIAGE_MAX_TRAVERSAL_FILES {
@@ -1643,12 +1680,12 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                     "Stopping triage manifest at {} files",
                     TRIAGE_MAX_TRAVERSAL_FILES
                 );
-                return;
+                return Ok(());
             }
 
             let path = entry.path();
             if path.is_dir() {
-                walk_dir(&path, base, out, depth + 1, rows_written);
+                walk_dir(&path, base, out, depth + 1, rows_written)?;
             } else if path.is_file() {
                 // Skip the manifest file itself
                 if path
@@ -1659,7 +1696,7 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                     continue;
                 }
                 let rel = path.strip_prefix(base).unwrap_or(&path);
-                let rel_str = rel.to_string_lossy().replace(',', ";"); // escape commas
+                let rel_str = rel.to_string_lossy();
                 let category = rel
                     .components()
                     .next()
@@ -1678,14 +1715,25 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                         Some(format!("{secs}"))
                     })
                     .unwrap_or_default();
-                let _ = writeln!(out, "{rel_str},{category},{size},{modified}");
+                let size = size.to_string();
+                out.write_all(
+                    csv_row(&[
+                        rel_str.as_ref(),
+                        category.as_str(),
+                        size.as_str(),
+                        &modified,
+                    ])
+                    .as_bytes(),
+                )
+                .map_err(|e| format!("Write manifest row failed for {}: {e}", path.display()))?;
                 *rows_written += 1;
             }
         }
+        Ok(())
     }
 
     let mut rows_written = 0usize;
-    walk_dir(output_dir, output_dir, &mut file, 0, &mut rows_written);
+    walk_dir(output_dir, output_dir, &mut file, 0, &mut rows_written)?;
     info!("Triage manifest written: {}", manifest_path.display());
     Ok(())
 }
@@ -2227,11 +2275,70 @@ fn redact_match(matched: &str) -> String {
 mod tests {
     use super::{
         checked_triage_copy_advance, checked_triage_copy_read_len, collect_dir_recursive,
-        copy_triage_file_snapshot, into_inner_recover, lock_mutex_recover, push_secret_finding,
-        push_triage_collection_file, write_triage_manifest, SecretFinding, TRIAGE_COPY_CHUNK_SIZE,
+        copy_triage_file_snapshot, detect_target_platform, get_platform_artifacts,
+        into_inner_recover, lock_mutex_recover, push_secret_finding, push_triage_collection_file,
+        write_triage_manifest, SecretFinding, TargetPlatform, TRIAGE_COPY_CHUNK_SIZE,
         TRIAGE_MAX_COLLECTION_FILES, TRIAGE_MAX_SECRET_FINDINGS, TRIAGE_MAX_TRAVERSAL_DEPTH,
     };
+    use std::path::Path;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn detects_windows_artifacts_from_target_root_on_any_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("Windows/System32/config");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("SYSTEM"), b"registry").unwrap();
+
+        assert_eq!(detect_target_platform(dir.path()), TargetPlatform::Windows);
+        let artifacts = get_platform_artifacts(dir.path());
+
+        assert!(artifacts.iter().any(|artifact| {
+            artifact.category == "systeminfo" && artifact.name == "Computer name & domain"
+        }));
+        assert!(artifacts.iter().any(|artifact| artifact.name == "SAM hive"));
+    }
+
+    #[test]
+    fn detects_macos_artifacts_from_target_root_on_any_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let system_version = dir
+            .path()
+            .join("System/Library/CoreServices/SystemVersion.plist");
+        std::fs::create_dir_all(system_version.parent().unwrap()).unwrap();
+        std::fs::write(&system_version, b"plist").unwrap();
+
+        assert_eq!(detect_target_platform(dir.path()), TargetPlatform::Macos);
+        let artifacts = get_platform_artifacts(dir.path());
+
+        assert!(
+            artifacts
+                .iter()
+                .any(|artifact| artifact.category == "systeminfo"
+                    && artifact.name == "System version")
+        );
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.name == "Hardware UUID & serial number"));
+    }
+
+    #[test]
+    fn detects_linux_artifacts_from_target_root_on_any_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let os_release = dir.path().join("etc/os-release");
+        std::fs::create_dir_all(os_release.parent().unwrap()).unwrap();
+        std::fs::write(&os_release, b"NAME=Linux").unwrap();
+
+        assert_eq!(detect_target_platform(dir.path()), TargetPlatform::Linux);
+        let artifacts = get_platform_artifacts(dir.path());
+
+        assert!(artifacts.iter().any(
+            |artifact| artifact.category == "systeminfo" && artifact.name == "OS release info"
+        ));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.name == "DMI/SMBIOS data"));
+    }
 
     #[test]
     fn lock_mutex_recover_reads_poisoned_mutex() {
@@ -2412,5 +2519,37 @@ mod tests {
         write_triage_manifest(dir.path()).unwrap();
         let manifest = std::fs::read_to_string(dir.path().join("triage_manifest.csv")).unwrap();
         assert_eq!(manifest.lines().count(), 1);
+    }
+
+    #[test]
+    fn write_triage_manifest_escapes_csv_fields_without_mutating_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let category = "category,one";
+        let file_name = "report,final.txt";
+        let category_dir = dir.path().join(category);
+        std::fs::create_dir(&category_dir).unwrap();
+        std::fs::write(category_dir.join(file_name), b"evidence").unwrap();
+
+        write_triage_manifest(dir.path()).unwrap();
+
+        let manifest = std::fs::read_to_string(dir.path().join("triage_manifest.csv")).unwrap();
+        let relative_path = Path::new(category)
+            .join(file_name)
+            .to_string_lossy()
+            .into_owned();
+        let expected_row_prefix = format!("\"{relative_path}\",\"{category}\",8,");
+
+        assert!(
+            manifest.starts_with("relative_path,category,size_bytes,modified\n"),
+            "manifest header was not canonical CSV: {manifest}"
+        );
+        assert!(
+            manifest.contains(&expected_row_prefix),
+            "manifest did not preserve and quote comma-containing fields: {manifest}"
+        );
+        assert!(
+            !manifest.contains("category;one"),
+            "manifest mutated commas instead of CSV-escaping fields: {manifest}"
+        );
     }
 }

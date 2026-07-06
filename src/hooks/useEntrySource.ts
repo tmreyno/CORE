@@ -21,12 +21,14 @@ import type { DiscoveredFile } from "../types";
 import type { SelectedEntry } from "../components/EvidenceTree/types";
 import { commands } from "../api/commands";
 import { buildEvidenceSourceInput } from "../components/evidenceSourceInput";
+import { isTauri } from "../utils/platform";
 
 /**
  * Result of reading bytes from a source
  */
 export interface ByteReadResult {
   bytes: number[];
+  bytesRead: number;
   totalSize: number;
 }
 
@@ -35,6 +37,7 @@ export interface ByteReadResult {
  */
 export interface TextReadResult {
   text: string;
+  bytesRead: number;
   totalSize: number;
 }
 
@@ -47,12 +50,17 @@ export async function readBytesFromSource(
   offset: number,
   size: number
 ): Promise<ByteReadResult> {
+  if (!isTauri) {
+    throw new Error("Evidence content viewing is available in the desktop app.");
+  }
+
   const source = buildEvidenceSourceInput(file, entry);
   if (!source) throw new Error("No file or entry provided");
 
   const chunk = await commands.viewer.readBinarySourceBase64Chunk(source, offset, size);
   return {
     bytes: base64ToBytes(chunk.data),
+    bytesRead: chunk.bytesRead,
     totalSize: chunk.totalSize,
   };
 }
@@ -66,10 +74,19 @@ export async function readTextFromSource(
   offset: number,
   maxChars: number
 ): Promise<TextReadResult> {
-  const { bytes, totalSize } = await readBytesFromSource(file, entry, offset, maxChars * 4);
-  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
-  const text = decoded.length > maxChars ? Array.from(decoded).slice(0, maxChars).join("") : decoded;
-  return { text, totalSize };
+  if (!isTauri) {
+    throw new Error("Evidence content viewing is available in the desktop app.");
+  }
+
+  const source = buildEvidenceSourceInput(file, entry);
+  if (!source) throw new Error("No file or entry provided");
+
+  const chunk = await commands.viewer.readTextSource(source, offset, maxChars);
+  return {
+    text: chunk.text,
+    bytesRead: chunk.bytesRead,
+    totalSize: chunk.totalSize,
+  };
 }
 
 /**
@@ -79,9 +96,21 @@ export function getSourceKey(
   file: DiscoveredFile | null | undefined,
   entry: SelectedEntry | undefined
 ): string | null {
-  if (entry) return `entry:${entry.containerPath}:${entry.entryPath}`;
-  if (file) return `file:${file.path}`;
-  return null;
+  const source = buildEvidenceSourceInput(file ?? null, entry);
+  if (!source) return null;
+
+  const parts = [
+    source.containerType ?? "",
+    source.path ?? "",
+    source.containerPath ?? "",
+    source.nestedArchivePath ?? "",
+    source.entryPath ?? "",
+    source.size ?? "",
+    source.dataAddr ?? "",
+    source.itemAddr ?? "",
+  ];
+
+  return `${entry ? "entry" : "file"}:${parts.map(encodeKeyPart).join(":")}`;
 }
 
 /**
@@ -103,4 +132,8 @@ function base64ToBytes(data: string): number[] {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+function encodeKeyPart(value: string | number): string {
+  return encodeURIComponent(String(value));
 }

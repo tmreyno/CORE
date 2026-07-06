@@ -5,18 +5,20 @@
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
+const sharedHooks = vi.hoisted(() => ({
+  useWindowTitle: vi.fn(),
+  setWindowTitle: vi.fn().mockResolvedValue(undefined),
+}));
 
-const mockSetTitle = vi.fn().mockResolvedValue(undefined);
+vi.mock("@core-suite/desktop-hooks", () => ({
+  useWindowTitle: sharedHooks.useWindowTitle,
+  setWindowTitle: sharedHooks.setWindowTitle,
+}));
 
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({
-    setTitle: mockSetTitle,
-  }),
+vi.mock("../../utils/platform", () => ({
+  isTauri: true,
 }));
 
 vi.mock("../../utils/logger", () => ({
@@ -32,163 +34,60 @@ vi.mock("../../utils/logger", () => ({
 
 import { useWindowTitle, setWindowTitle } from "../useWindowTitle";
 
-// ---------------------------------------------------------------------------
-// Setup
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
   vi.clearAllMocks();
+  sharedHooks.setWindowTitle.mockResolvedValue(undefined);
 });
-
-// ---------------------------------------------------------------------------
-// useWindowTitle hook
-// ---------------------------------------------------------------------------
 
 describe("useWindowTitle", () => {
-  it("sets title to APP_NAME when no project is open", async () => {
-    await createRoot(async (dispose) => {
-      const [projectName] = createSignal<string | null>(null);
-      const [modified] = createSignal(false);
+  it("passes project state accessors to the shared desktop hook", () => {
+    const [projectName] = createSignal<string | null>("My Case");
+    const [modified] = createSignal(false);
+    const [projectPath] = createSignal<string | null>("/cases/my-case.cffx");
 
-      useWindowTitle({ projectName, modified });
+    useWindowTitle({ projectName, modified, projectPath });
 
-      // Allow effect to run
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("CORE-FFX");
-      });
-      dispose();
-    });
+    expect(sharedHooks.useWindowTitle).toHaveBeenCalledTimes(1);
+    const [options, config] = sharedHooks.useWindowTitle.mock.calls[0];
+    expect(options.projectName).toBe(projectName);
+    expect(options.modified).toBe(modified);
+    expect(options.projectPath).toBe(projectPath);
+    expect(config).toEqual(
+      expect.objectContaining({
+        appName: "CORE-FFX",
+        log: expect.any(Object),
+      })
+    );
   });
 
-  it("sets title with project name when project is open", async () => {
-    await createRoot(async (dispose) => {
-      const [projectName] = createSignal<string | null>("My Case");
-      const [modified] = createSignal(false);
+  it("passes through missing optional projectPath", () => {
+    const [projectName] = createSignal<string | null>(null);
+    const [modified] = createSignal(true);
 
-      useWindowTitle({ projectName, modified });
+    useWindowTitle({ projectName, modified });
 
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("My Case - CORE-FFX");
-      });
-      dispose();
-    });
-  });
-
-  it("adds unsaved indicator when modified is true", async () => {
-    await createRoot(async (dispose) => {
-      const [projectName] = createSignal<string | null>("Evidence Review");
-      const [modified] = createSignal(true);
-
-      useWindowTitle({ projectName, modified });
-
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("● Evidence Review - CORE-FFX");
-      });
-      dispose();
-    });
-  });
-
-  it("does not add unsaved indicator when no project is open even if modified", async () => {
-    await createRoot(async (dispose) => {
-      const [projectName] = createSignal<string | null>(null);
-      const [modified] = createSignal(true);
-
-      useWindowTitle({ projectName, modified });
-
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("CORE-FFX");
-      });
-      dispose();
-    });
-  });
-
-  it("updates title reactively when project name changes", async () => {
-    await createRoot(async (dispose) => {
-      const [projectName, setProjectName] = createSignal<string | null>(null);
-      const [modified] = createSignal(false);
-
-      useWindowTitle({ projectName, modified });
-
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("CORE-FFX");
-      });
-
-      mockSetTitle.mockClear();
-      setProjectName("New Case");
-
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("New Case - CORE-FFX");
-      });
-      dispose();
-    });
-  });
-
-  it("updates title reactively when modified state changes", async () => {
-    await createRoot(async (dispose) => {
-      const [projectName] = createSignal<string | null>("Active Case");
-      const [modified, setModified] = createSignal(false);
-
-      useWindowTitle({ projectName, modified });
-
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("Active Case - CORE-FFX");
-      });
-
-      mockSetTitle.mockClear();
-      setModified(true);
-
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("● Active Case - CORE-FFX");
-      });
-      dispose();
-    });
-  });
-
-  it("accepts optional projectPath without affecting title", async () => {
-    await createRoot(async (dispose) => {
-      const [projectName] = createSignal<string | null>("Path Case");
-      const [modified] = createSignal(false);
-      const [projectPath] = createSignal<string | null>("/some/path/case.cffx");
-
-      useWindowTitle({ projectName, modified, projectPath });
-
-      await vi.waitFor(() => {
-        expect(mockSetTitle).toHaveBeenCalledWith("Path Case - CORE-FFX");
-      });
-      dispose();
-    });
-  });
-
-  it("handles setTitle failure gracefully", async () => {
-    mockSetTitle.mockRejectedValueOnce(new Error("window error"));
-
-    await createRoot(async (dispose) => {
-      const [projectName] = createSignal<string | null>("Failing");
-      const [modified] = createSignal(false);
-
-      // Should not throw
-      useWindowTitle({ projectName, modified });
-
-      // Give effect time to run and handle error
-      await new Promise((r) => setTimeout(r, 50));
-      dispose();
-    });
+    const [options] = sharedHooks.useWindowTitle.mock.calls[0];
+    expect(options.projectName).toBe(projectName);
+    expect(options.modified).toBe(modified);
+    expect(options.projectPath).toBeUndefined();
   });
 });
 
-// ---------------------------------------------------------------------------
-// setWindowTitle utility
-// ---------------------------------------------------------------------------
-
 describe("setWindowTitle", () => {
-  it("sets the window title directly", async () => {
+  it("delegates direct title updates to the shared desktop helper", async () => {
     await setWindowTitle("Custom Title");
-    expect(mockSetTitle).toHaveBeenCalledWith("Custom Title");
+
+    expect(sharedHooks.setWindowTitle).toHaveBeenCalledWith(
+      "Custom Title",
+      expect.objectContaining({
+        log: expect.any(Object),
+      })
+    );
   });
 
-  it("handles failure gracefully", async () => {
-    mockSetTitle.mockRejectedValueOnce(new Error("fail"));
-    // Should not throw
-    await setWindowTitle("Will Fail");
+  it("returns the shared helper promise", async () => {
+    sharedHooks.setWindowTitle.mockResolvedValueOnce(undefined);
+
+    await expect(setWindowTitle("Next Title")).resolves.toBeUndefined();
   });
 });

@@ -30,6 +30,7 @@ const log = logger.scope('DocumentViewer');
 import { DocumentToolbar } from "./document/DocumentToolbar";
 import { DocumentMetadataPanel } from "./document/DocumentMetadataPanel";
 import { getFormatIcon, performSearch, printDocument, downloadHtml } from "./document/documentHelpers";
+import { isTauri } from "../utils/platform";
 
 // ============================================================================
 // Types
@@ -150,6 +151,10 @@ export function DocumentViewer(props: DocumentViewerProps) {
     setSearchHighlights(0);
 
     try {
+      if (!isTauri) {
+        throw new Error("Document evidence viewing is available in the desktop app.");
+      }
+
       // Load content and metadata in parallel
       const [contentResult, metadataResult] = props.source
         ? await Promise.all([

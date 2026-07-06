@@ -7,6 +7,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { HiOutlineInformationCircle } from "../../icons";
 import type { Accessor } from "solid-js";
+import { ToolsBrowserDialogMessage, createToolsBrowserDialogGuard } from "./browserDialogGuard";
 
 interface ValidateTabProps {
   archivePath: Accessor<string>;
@@ -14,6 +15,8 @@ interface ValidateTabProps {
 }
 
 export function ValidateTab(props: ValidateTabProps) {
+  const browserDialog = createToolsBrowserDialogGuard();
+
   return (
     <div class="space-y-3">
       <div class="info-card">
@@ -25,6 +28,7 @@ export function ValidateTab(props: ValidateTabProps) {
           </div>
         </div>
       </div>
+      <ToolsBrowserDialogMessage message={browserDialog.message} />
       <div class="space-y-2">
         <label class="label">Archive File</label>
         <div class="flex gap-2">
@@ -36,6 +40,7 @@ export function ValidateTab(props: ValidateTabProps) {
             placeholder="Select archive to validate..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await open({ directory: false, multiple: false, filters: [{ name: "Archives", extensions: ["7z"] }] });
             if (selected) props.setArchivePath(selected as string);
           }}>

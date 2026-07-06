@@ -102,7 +102,7 @@ pub enum OutputFormat {
     Html,
     /// Markdown document
     Markdown,
-    /// Typst document (future support)
+    /// Typst document (feature-gated support)
     #[serde(rename = "typst")]
     Typst,
 }
@@ -316,6 +316,9 @@ mod tests {
         assert!(OutputFormat::Docx.is_supported());
         assert!(OutputFormat::Html.is_supported());
         assert!(OutputFormat::Markdown.is_supported());
+        #[cfg(feature = "typst-reports")]
+        assert!(OutputFormat::Typst.is_supported());
+        #[cfg(not(feature = "typst-reports"))]
         assert!(!OutputFormat::Typst.is_supported());
     }
 }

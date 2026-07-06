@@ -6,6 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types
@@ -60,6 +61,12 @@ export async function createRawImage(
   options: RawExportOptions,
   onProgress?: (progress: RawExportProgress) => void
 ): Promise<RawExportResult> {
+  if (!isTauri) {
+    void options;
+    void onProgress;
+    throw new Error("Raw image creation is available in the desktop app.");
+  }
+
   let unlisten: UnlistenFn | undefined;
 
   if (onProgress) {
@@ -86,6 +93,11 @@ export async function createRawImage(
 export async function cancelRawExport(
   outputPath: string
 ): Promise<boolean> {
+  if (!isTauri) {
+    void outputPath;
+    return false;
+  }
+
   return invoke<boolean>("raw_cancel_export", { outputPath });
 }
 

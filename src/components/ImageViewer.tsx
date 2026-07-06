@@ -7,10 +7,10 @@
 /**
  * ImageViewer - Simple image viewer that loads images via Tauri backend
  * 
- * Uses base64 encoding to bypass file:// protocol restrictions in Tauri 2
+ * Uses ranged backend reads and Blob URLs to bypass file:// protocol restrictions in Tauri 2
  */
 
-import { createSignal, createEffect, Show, createMemo } from "solid-js";
+import { createSignal, createEffect, Show, createMemo, onCleanup } from "solid-js";
 import { CoreSpinner } from "@core-suite/icons";
 import { getBasename } from "../utils/pathUtils";
 import { commands, type HashSourceInput } from "../api/commands";
@@ -21,6 +21,7 @@ import {
   HiOutlineArrowsPointingOut,
 } from "./icons";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("ImageViewer");
 
 // ============================================================================
@@ -74,6 +75,81 @@ const LIMITED_SUPPORT_EXTENSIONS = new Set([
   'heic', 'heif', 'tiff', 'tif',
   'raw', 'cr2', 'nef', 'arw', 'dng', 'orf', 'rw2',
 ]);
+const MAX_INLINE_IMAGE_BYTES = 100 * 1024 * 1024;
+const IMAGE_READ_CHUNK_SIZE = 3 * 1024 * 1024;
+
+interface BinaryInfo {
+  size: number;
+  maxInlineBytes?: number;
+}
+
+async function getImageBinaryInfo(path: string, source?: HashSourceInput | null): Promise<BinaryInfo> {
+  if (typeof source?.size === "number") {
+    return {
+      size: source.size,
+      maxInlineBytes: MAX_INLINE_IMAGE_BYTES,
+    };
+  }
+  return source
+    ? await commands.viewer.getBinaryInfoSource(source)
+    : await commands.viewer.getBinaryInfo(path);
+}
+
+async function readImageBlobUrl(
+  path: string,
+  source: HashSourceInput | null | undefined,
+  mimeType: string,
+): Promise<{ url: string; size: number }> {
+  const info = await getImageBinaryInfo(path, source);
+  if (!Number.isSafeInteger(info.size)) {
+    throw new Error(`Image is too large to load in this browser process: ${info.size} bytes`);
+  }
+
+  const maxInlineBytes = info.maxInlineBytes ?? MAX_INLINE_IMAGE_BYTES;
+  if (info.size > maxInlineBytes) {
+    throw new Error(
+      `Image is too large for inline preview: ${info.size} bytes > ${maxInlineBytes} bytes. Use hex or export the file for external viewing.`,
+    );
+  }
+
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  while (offset < info.size) {
+    const size = Math.min(IMAGE_READ_CHUNK_SIZE, info.size - offset);
+    const chunk = source
+      ? await commands.viewer.readBinarySourceBase64Chunk(source, offset, size)
+      : await commands.viewer.readBinaryBase64Chunk(path, offset, size);
+
+    if (chunk.offset !== offset) {
+      throw new Error(`Unexpected image chunk offset: expected ${offset}, received ${chunk.offset}`);
+    }
+    if (chunk.bytesRead === 0 && !chunk.eof) {
+      throw new Error(`Image read stalled at offset ${offset}`);
+    }
+
+    const bytes = base64ToBytes(chunk.data);
+    if (bytes.length !== chunk.bytesRead) {
+      throw new Error(`Image chunk size mismatch at offset ${offset}`);
+    }
+    chunks.push(bytes);
+    offset += chunk.bytesRead;
+    if (chunk.eof) break;
+  }
+
+  return {
+    url: URL.createObjectURL(new Blob(chunks, { type: mimeType })),
+    size: info.size,
+  };
+}
+
+function base64ToBytes(data: string): Uint8Array {
+  const binaryString = atob(data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
 
 // ============================================================================
 // Component
@@ -87,11 +163,34 @@ export function ImageViewer(props: ImageViewerProps) {
   const [naturalSize, setNaturalSize] = createSignal<{ width: number; height: number } | null>(null);
 
   let containerRef: HTMLDivElement | undefined;
+  let loadGeneration = 0;
+  let objectUrl: string | null = null;
+
+  const setImageObjectUrl = (url: string | null) => {
+    if (objectUrl && objectUrl !== url) {
+      URL.revokeObjectURL(objectUrl);
+    }
+    objectUrl = url;
+    setImageSrc(url);
+  };
+
+  const isCurrentImageEvent = (img: HTMLImageElement) => {
+    const currentSrc = imageSrc();
+    if (!currentSrc) return false;
+    const eventSrc = img.currentSrc || img.src;
+    return eventSrc === currentSrc;
+  };
+
+  onCleanup(() => {
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = null;
+    }
+  });
 
   // Memoized values to avoid recalculation
   const filename = createMemo(() => getBasename(props.path) || props.path);
   const extension = createMemo(() => props.path.split('.').pop()?.toLowerCase() || '');
-  const mimeType = createMemo(() => getMimeType(props.path));
   const hasLimitedSupport = createMemo(() => LIMITED_SUPPORT_EXTENSIONS.has(extension()));
   const zoomPercent = createMemo(() => Math.round(scale() * 100));
   const dimensionText = createMemo(() => {
@@ -105,20 +204,35 @@ export function ImageViewer(props: ImageViewerProps) {
 
   // Load image as base64
   const loadImage = async () => {
+    const generation = ++loadGeneration;
+    const requestedPath = props.path;
+    const requestedSource = props.source;
+    const requestedMimeType = getMimeType(requestedPath);
+
     setLoading(true);
     setError(null);
     setScale(1.0);
     setNaturalSize(null);
 
     try {
-      const base64Data = props.source
-        ? await commands.viewer.readBinarySourceBase64(props.source)
-        : await commands.viewer.readBinaryBase64(props.path);
-      setImageSrc(`data:${mimeType()};base64,${base64Data}`);
+      if (!isTauri) {
+        throw new Error("Image evidence viewing is available in the desktop app.");
+      }
+
+      const { url } = await readImageBlobUrl(requestedPath, requestedSource, requestedMimeType);
+
+      if (generation !== loadGeneration) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setImageObjectUrl(url);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to load image:", e);
       setError(e instanceof Error ? e.message : String(e));
+      setImageObjectUrl(null);
     } finally {
+      if (generation !== loadGeneration) return;
       setLoading(false);
     }
   };
@@ -249,9 +363,12 @@ export function ImageViewer(props: ImageViewerProps) {
               style={transformStyle()}
               onLoad={(e) => {
                 const img = e.currentTarget as HTMLImageElement;
+                if (!isCurrentImageEvent(img)) return;
                 setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
               }}
-              onError={() => {
+              onError={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                if (!isCurrentImageEvent(img)) return;
                 if (hasLimitedSupport()) {
                   setError(`This image format (.${extension()}) may not be supported by the built-in viewer. Try exporting and opening with an external application.`);
                 } else {

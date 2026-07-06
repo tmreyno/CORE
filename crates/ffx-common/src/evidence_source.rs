@@ -334,17 +334,46 @@ impl EvidenceByteSource for VfsEntryByteSource {
 
     fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
         let total_size = self.len()?;
-        let read_size = bounded_read_size(&self.source_ref, total_size, offset, size)?;
-        if read_size == 0 {
+        let target_size = bounded_read_size(&self.source_ref, total_size, offset, size)?;
+        if target_size == 0 {
             return Ok(Vec::new());
         }
 
-        self.vfs
-            .read(self.entry_path(), offset, read_size)
-            .map_err(|e| EvidenceSourceError::Vfs {
-                source_id: self.source_ref.display_id(),
-                message: e.to_string(),
-            })
+        let mut data = Vec::with_capacity(target_size);
+        let mut current_offset = offset;
+        let mut remaining = target_size as u64;
+
+        while remaining > 0 {
+            let read_size = remaining.min(READ_ALL_CHUNK_BYTES) as usize;
+            let chunk = self
+                .vfs
+                .read(self.entry_path(), current_offset, read_size)
+                .map_err(|e| EvidenceSourceError::Vfs {
+                    source_id: self.source_ref.display_id(),
+                    message: e.to_string(),
+                })?;
+            if chunk.len() > read_size {
+                return Err(EvidenceSourceError::OversizedRead {
+                    source_id: self.source_ref.display_id(),
+                    requested: read_size as u64,
+                    actual: chunk.len() as u64,
+                });
+            }
+            if chunk.is_empty() {
+                return Err(EvidenceSourceError::ShortRead {
+                    source_id: self.source_ref.display_id(),
+                    expected: target_size as u64,
+                    actual: data.len() as u64,
+                });
+            }
+
+            current_offset =
+                checked_read_offset_add(&self.source_ref, current_offset, chunk.len())?;
+            remaining -= chunk.len() as u64;
+            data.extend_from_slice(&chunk);
+        }
+
+        Ok(data)
     }
 }
 
@@ -462,6 +491,7 @@ pub fn bounded_read_size(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vfs::{DirEntry, FileAttr, VfsError};
     use std::io::Write;
 
     struct ShortReadSource {
@@ -591,6 +621,74 @@ mod tests {
         }
     }
 
+    struct ChunkedVfs {
+        data: Vec<u8>,
+        max_chunk: usize,
+        empty_at: Option<u64>,
+        oversized: bool,
+    }
+
+    impl ChunkedVfs {
+        fn new(data: &[u8], max_chunk: usize) -> Self {
+            Self {
+                data: data.to_vec(),
+                max_chunk,
+                empty_at: None,
+                oversized: false,
+            }
+        }
+
+        fn with_empty_at(mut self, offset: u64) -> Self {
+            self.empty_at = Some(offset);
+            self
+        }
+
+        fn oversized(data: &[u8]) -> Self {
+            Self {
+                data: data.to_vec(),
+                max_chunk: data.len(),
+                empty_at: None,
+                oversized: true,
+            }
+        }
+    }
+
+    impl VirtualFileSystem for ChunkedVfs {
+        fn getattr(&self, path: &str) -> Result<FileAttr, VfsError> {
+            if path != "/entry.bin" {
+                return Err(VfsError::NotFound(path.to_string()));
+            }
+            Ok(FileAttr::file(self.data.len() as u64))
+        }
+
+        fn readdir(&self, _path: &str) -> Result<Vec<DirEntry>, VfsError> {
+            Ok(Vec::new())
+        }
+
+        fn read(&self, path: &str, offset: u64, size: usize) -> Result<Vec<u8>, VfsError> {
+            if path != "/entry.bin" {
+                return Err(VfsError::NotFound(path.to_string()));
+            }
+            if self.empty_at == Some(offset) {
+                return Ok(Vec::new());
+            }
+
+            let start =
+                usize::try_from(offset).map_err(|_| VfsError::OutOfBounds { offset, size })?;
+            if start >= self.data.len() {
+                return Ok(Vec::new());
+            }
+            if self.oversized {
+                let end = start.saturating_add(size + 1).min(self.data.len());
+                return Ok(self.data[start..end].to_vec());
+            }
+
+            let read_size = size.min(self.max_chunk);
+            let end = start.saturating_add(read_size).min(self.data.len());
+            Ok(self.data[start..end].to_vec())
+        }
+    }
+
     #[test]
     fn local_file_source_reads_requested_range() {
         let dir = tempfile::tempdir().unwrap();
@@ -625,6 +723,62 @@ mod tests {
         let err = source.read_range(7, 1).unwrap_err();
 
         assert!(matches!(err, EvidenceSourceError::InvalidRange { .. }));
+    }
+
+    #[test]
+    fn vfs_entry_source_assembles_partial_chunks() {
+        let source = VfsEntryByteSource::new(
+            Arc::new(ChunkedVfs::new(b"0123456789", 2)),
+            "/cases/disk.E01",
+            "/entry.bin",
+            Some("e01".to_string()),
+        );
+
+        let data = source.read_range(2, 5).unwrap();
+
+        assert_eq!(data, b"23456");
+    }
+
+    #[test]
+    fn vfs_entry_source_rejects_empty_chunk_before_requested_range_complete() {
+        let source = VfsEntryByteSource::new(
+            Arc::new(ChunkedVfs::new(b"0123456789", 3).with_empty_at(5)),
+            "/cases/disk.E01",
+            "/entry.bin",
+            Some("e01".to_string()),
+        );
+
+        let err = source.read_range(2, 6).unwrap_err();
+
+        assert!(matches!(
+            err,
+            EvidenceSourceError::ShortRead {
+                source_id,
+                expected: 6,
+                actual: 3,
+            } if source_id == "/cases/disk.E01:/entry.bin"
+        ));
+    }
+
+    #[test]
+    fn vfs_entry_source_rejects_oversized_vfs_chunk() {
+        let source = VfsEntryByteSource::new(
+            Arc::new(ChunkedVfs::oversized(b"0123456789")),
+            "/cases/disk.E01",
+            "/entry.bin",
+            Some("e01".to_string()),
+        );
+
+        let err = source.read_range(0, 5).unwrap_err();
+
+        assert!(matches!(
+            err,
+            EvidenceSourceError::OversizedRead {
+                source_id,
+                requested: 5,
+                actual: 6,
+            } if source_id == "/cases/disk.E01:/entry.bin"
+        ));
     }
 
     #[test]

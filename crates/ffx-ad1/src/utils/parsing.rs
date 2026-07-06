@@ -498,10 +498,8 @@ fn parse_companion_field(
         }
 
         // Notes and description
-        "notes" | "description" | "comments" | "remarks" => {
-            if !value.is_empty() {
-                notes_lines.push(value.to_string());
-            }
+        "notes" | "description" | "comments" | "remarks" if !value.is_empty() => {
+            notes_lines.push(value.to_string());
         }
         _ => {}
     }

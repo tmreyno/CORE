@@ -21,6 +21,8 @@ import { listen } from "@tauri-apps/api/event";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { ContainerInfo, DiscoveredFile } from "../types";
+import type { HashSourceResult, ProjectDbEvidenceFile, ProjectDbHashSourceResult } from "../api/commands";
+import type { SelectedEntry } from "../components/EvidenceTree/types";
 import { normalizeError, formatBytes } from "../utils";
 import { logAuditAction } from "../utils/telemetry";
 import { getBasename } from "../utils/pathUtils";
@@ -31,8 +33,44 @@ import { logger } from "../utils/logger";
 import { generateId } from "../types/project";
 import { dbSync } from "./project/useProjectDbSync";
 import { buildLocalFileHashSourceFields } from "../utils/hashSourceIdentity";
+import { buildEvidenceSourceInput } from "../components/evidenceSourceInput";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("HashComputation");
+
+function evidenceFileRecordForHashTarget(
+  file: DiscoveredFile | null | undefined,
+  entry?: SelectedEntry,
+): ProjectDbEvidenceFile | undefined {
+  if (file) {
+    return {
+      id: file.path,
+      path: file.path,
+      filename: file.filename,
+      containerType: file.container_type,
+      totalSize: file.size,
+      segmentCount: file.segment_count ?? 1,
+      discoveredAt: new Date().toISOString(),
+      created: file.created ?? null,
+      modified: file.modified ?? null,
+    };
+  }
+
+  if (!entry) return undefined;
+
+  const containerPath = entry.isDiskFile ? entry.entryPath : entry.containerPath;
+  return {
+    id: containerPath,
+    path: containerPath,
+    filename: getBasename(containerPath) ?? containerPath,
+    containerType: entry.containerType ?? "container",
+    totalSize: entry.isDiskFile ? entry.size : 0,
+    segmentCount: 1,
+    discoveredAt: new Date().toISOString(),
+    created: null,
+    modified: null,
+  };
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -85,6 +123,13 @@ export interface HashBatchProgress {
   done: boolean;
 }
 
+interface HashSourceProgressEvent {
+  sourceId: string;
+  current: number;
+  total: number;
+  percent: number;
+}
+
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
 export function useHashComputation(deps: UseHashComputationDeps) {
@@ -123,6 +168,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
   /** Pause hash queue — jobs in progress continue, no new jobs start */
   const pauseHashQueue = async () => {
+    if (!isTauri) {
+      setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: true })));
+      return;
+    }
+
     try {
       await invoke("hash_queue_pause");
       setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: true })));
@@ -133,6 +183,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
   /** Resume hash queue — new jobs begin processing */
   const resumeHashQueue = async () => {
+    if (!isTauri) {
+      setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: false })));
+      return;
+    }
+
     try {
       await invoke("hash_queue_resume");
       setActiveBatches((prev) => prev.map((b) => ({ ...b, paused: false })));
@@ -156,6 +211,10 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     verifiedAgainst: string | undefined,
     comparisonSource: "stored" | "history" | undefined,
   ): Promise<void> => {
+    if (!isTauri) {
+      return;
+    }
+
     const hashRecordId = generateId();
     try {
       await invoke("project_db_insert_hash", {
@@ -261,14 +320,18 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
     // Check if confirmation is required
     if (getPreference("confirmBeforeHash")) {
-      log.debug("Showing confirmation dialog");
-      const confirmed = await ask(
-        `Compute hash for "${file.filename}" (${formatBytes(file.size)})?\n\nThis may take some time for large files.`,
-        { title: "Confirm Hash", kind: "info" },
-      );
-      if (!confirmed) {
-        log.debug("User cancelled hash operation");
-        return;
+      if (!isTauri) {
+        log.info("Skipping native hash confirmation outside Tauri runtime");
+      } else {
+        log.debug("Showing confirmation dialog");
+        const confirmed = await ask(
+          `Compute hash for "${file.filename}" (${formatBytes(file.size)})?\n\nThis may take some time for large files.`,
+          { title: "Confirm Hash", kind: "info" },
+        );
+        if (!confirmed) {
+          log.debug("User cancelled hash operation");
+          return;
+        }
       }
     }
 
@@ -277,12 +340,14 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     updateFileStatus(file.path, "hashing", 0);
 
     // Listen for progress events
-    const unlisten = await listen<{ path: string; percent: number }>("verify-progress", (e) => {
-      if (e.payload.path === file.path) {
-        console.warn(`[HASH-DIAG] verify-progress: path=${e.payload.path}, percent=${e.payload.percent}`);
-        updateFileStatus(file.path, "hashing", e.payload.percent);
-      }
-    });
+    const unlisten = isTauri
+      ? await listen<{ path: string; percent: number }>("verify-progress", (e) => {
+          if (e.payload.path === file.path) {
+            console.warn(`[HASH-DIAG] verify-progress: path=${e.payload.path}, percent=${e.payload.percent}`);
+            updateFileStatus(file.path, "hashing", e.payload.percent);
+          }
+        })
+      : () => {};
 
     try {
       // Get file extension for hash routing
@@ -347,6 +412,119 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     }
   };
 
+  // ── hashEntry ─────────────────────────────────────────────────────────
+
+  const hashEntry = async (
+    entry: SelectedEntry,
+    parentFile?: DiscoveredFile | null,
+  ): Promise<string | undefined> => {
+    if (entry.isDir) {
+      setError("Cannot hash a directory entry");
+      return;
+    }
+
+    const source = buildEvidenceSourceInput(parentFile ?? null, entry);
+    if (!source) {
+      setError("No hashable source selected");
+      return;
+    }
+
+    if (!isTauri && import.meta.env.MODE !== "test") {
+      setError("Source entry hashing is available in the desktop app.");
+      return;
+    }
+
+    if (getPreference("confirmBeforeHash")) {
+      if (!isTauri) {
+        log.info("Skipping native source-entry hash confirmation outside Tauri runtime");
+      } else {
+        const confirmed = await ask(
+          `Compute hash for "${entry.name}" (${formatBytes(entry.size)})?\n\nThis hashes the selected source entry, not just the parent container file.`,
+          { title: "Confirm Hash", kind: "info" },
+        );
+        if (!confirmed) return;
+      }
+    }
+
+    const algorithm = selectedHashAlgorithm();
+    const initialStatusKey = `${entry.containerPath}:${entry.entryPath}`;
+    updateFileStatus(initialStatusKey, "hashing", 0);
+    setWorking(`# Hashing ${entry.name || entry.entryPath}...`);
+
+    const unlisten = await listen<HashSourceProgressEvent>("hash-source-progress", (event) => {
+      updateFileStatus(event.payload.sourceId, "hashing", event.payload.percent);
+    });
+
+    try {
+      const evidenceFile = evidenceFileRecordForHashTarget(parentFile, entry);
+      const projectDbOpen = await invoke<boolean>("project_db_is_open").catch(() => false);
+      let hashResult: HashSourceResult;
+
+      if (projectDbOpen) {
+        const persisted = await invoke<ProjectDbHashSourceResult>(
+          "project_db_hash_source_and_insert",
+          {
+            request: {
+              source,
+              algorithm,
+              evidenceFile,
+              hashRecordSource: "computed",
+            },
+          },
+        );
+        hashResult = persisted.hashResult;
+      } else {
+        hashResult = await invoke<HashSourceResult>("hash_source", {
+          source,
+          algorithm,
+        });
+      }
+
+      const computedAt = new Date().toISOString();
+      const sourceId = hashResult.sourceId;
+      const hashMap = new Map(fileHashMap());
+      hashMap.set(sourceId, {
+        algorithm: hashResult.algorithm,
+        hash: hashResult.hash,
+        verified: null,
+        computedAt,
+      });
+      setFileHashMap(hashMap);
+
+      updateFileStatus(initialStatusKey, "hashed", 100);
+      updateFileStatus(sourceId, "hashed", 100);
+      setOk(`Hash computed: ${hashResult.algorithm} ${hashResult.hash.substring(0, 16)}...`);
+
+      logAuditAction("hash_computed", {
+        file: sourceId,
+        filename: entry.name || getBasename(entry.entryPath) || entry.entryPath,
+        algorithm: hashResult.algorithm,
+        hash: hashResult.hash,
+        verified: null,
+        sourceId,
+        sourceRef: hashResult.sourceRef,
+      });
+
+      if (getPreference("copyHashToClipboard")) {
+        try {
+          await navigator.clipboard.writeText(hashResult.hash);
+        } catch {
+          // Ignore clipboard failures
+        }
+      }
+
+      return hashResult.hash;
+    } catch (err) {
+      const errMsg = normalizeError(err);
+      log.warn(`Entry hash computation failed: ${errMsg}`);
+      updateFileStatus(initialStatusKey, "error", 0, errMsg);
+      setError(errMsg);
+      throw err;
+    } finally {
+      unlisten();
+    }
+  };
+
   // ── hashSelectedFiles ─────────────────────────────────────────────────
 
   const hashSelectedFiles = async (): Promise<void> => {
@@ -360,6 +538,11 @@ export function useHashComputation(deps: UseHashComputationDeps) {
     const files = discoveredFiles().filter((f) => selectedFiles().has(f.path));
     if (!files.length) {
       setError("No files selected");
+      return;
+    }
+
+    if (!isTauri) {
+      setError("Batch hashing is available in the desktop app.");
       return;
     }
 
@@ -651,6 +834,7 @@ export function useHashComputation(deps: UseHashComputationDeps) {
 
   return {
     hashSingleFile,
+    hashEntry,
     hashSelectedFiles,
     hashAllFiles,
     // Batch progress

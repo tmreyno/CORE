@@ -25,6 +25,7 @@ import { makeEventListener } from "@solid-primitives/event-listener";
 import { useWindowTitle, useCloseConfirmation } from "./index";
 import { logger } from "../utils/logger";
 import { isFullEdition } from "../utils/edition";
+import { isTauri } from "../utils/platform";
 import type { FileManager } from "./useFileManager";
 import type { useProject } from "./project";
 import type { buildSaveOptions } from "./project/projectHelpers";
@@ -122,7 +123,7 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
       activeWalCheckpointTimer = null;
     }
 
-    if (!hasProject) {
+    if (!hasProject || !isTauri) {
       return;
     }
 
@@ -143,7 +144,9 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
     log.info("App onMount triggered");
 
     // mark_startup_ready kept as no-op for forward compatibility
-    invoke("mark_startup_ready").catch(() => {});
+    if (isTauri) {
+      invoke("mark_startup_ready").catch(() => {});
+    }
 
     // System stats listener (non-blocking — stats arrive via 2s monitor events)
     const t1 = performance.now();
@@ -156,7 +159,7 @@ export function useAppLifecycle(deps: UseAppLifecycleDeps) {
 
     // Load workspace profiles (run in parallel) — only in full edition
     const t2 = performance.now();
-    if (isFullEdition()) {
+    if (isFullEdition() && isTauri) {
       await Promise.all([workspaceProfiles.listProfiles(), workspaceProfiles.getActiveProfile()]);
     }
     log.debug(`workspaceProfiles: ${(performance.now() - t2).toFixed(0)}ms`);

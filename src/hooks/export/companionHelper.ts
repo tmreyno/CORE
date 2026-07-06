@@ -18,6 +18,7 @@ import {
 import { formatBytes } from "../../api/archiveCreate";
 import { logger } from "../../utils/logger";
 import { APP_NAME, isAcquireEdition } from "../../utils/edition";
+import { isTauri } from "../../utils/platform";
 import { getBasename } from "../../utils/pathUtils";
 import { buildLocalFileHashSourceFields } from "../../utils/hashSourceIdentity";
 import { dbSync } from "../project/useProjectDbSync";
@@ -341,6 +342,10 @@ function writeCompanionSidecar(info: AcquisitionInfo): void {
 // ─── Acquisition log (.txt) ───────────────────────────────────────────────
 
 function writeAcquisitionLog(info: AcquisitionInfo): void {
+  if (!isTauri) {
+    return;
+  }
+
   const lines: string[] = [];
   const divider =
     "--------------------------------------------------------------";

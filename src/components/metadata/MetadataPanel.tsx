@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Show, createSignal, createMemo } from "solid-js";
+import { Show, createSignal, createMemo, createEffect } from "solid-js";
 import { CoreSpinner } from "@core-suite/icons";
 import type { MetadataField } from "../HexViewer";
 import { isE01Container } from "../EvidenceTree/containerDetection";
@@ -31,22 +31,36 @@ export function MetadataPanel(props: MetadataPanelProps) {
   const [enhancedEwfInfo, setEnhancedEwfInfo] = createSignal<EwfImageInfo | null>(null);
   const [enhancedEwfLoading, setEnhancedEwfLoading] = createSignal(false);
   const [enhancedEwfError, setEnhancedEwfError] = createSignal<string | null>(null);
+  let enhancedEwfGeneration = 0;
+
+  createEffect(() => {
+    void props.fileInfo?.path;
+    enhancedEwfGeneration++;
+    setEnhancedEwfInfo(null);
+    setEnhancedEwfLoading(false);
+    setEnhancedEwfError(null);
+  });
 
   const fetchEnhancedEwfInfo = async () => {
     const path = props.fileInfo?.path;
     if (!path) return;
 
+    const generation = ++enhancedEwfGeneration;
     setEnhancedEwfLoading(true);
     setEnhancedEwfError(null);
 
     try {
       const info = await readEwfImageInfo(path);
+      if (generation !== enhancedEwfGeneration) return;
       setEnhancedEwfInfo(info);
     } catch (e: unknown) {
+      if (generation !== enhancedEwfGeneration) return;
       const msg = e instanceof Error ? e.message : String(e);
       setEnhancedEwfError(msg);
     } finally {
-      setEnhancedEwfLoading(false);
+      if (generation === enhancedEwfGeneration) {
+        setEnhancedEwfLoading(false);
+      }
     }
   };
 

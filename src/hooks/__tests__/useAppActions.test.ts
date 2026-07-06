@@ -30,6 +30,10 @@ vi.mock("../../utils/accessibility", () => ({
   announce: vi.fn(),
 }));
 
+vi.mock("../../utils/platform", () => ({
+  isTauri: true,
+}));
+
 vi.mock("../../api/search", () => ({
   searchQuery: vi.fn(),
 }));
@@ -62,6 +66,10 @@ const mockFileManager = (files: DiscoveredFile[] = []) => {
     discoveredFiles: () => files,
     activeFile,
     setActiveFile,
+    selectAndViewFile: vi.fn(async (file: DiscoveredFile) => {
+      setActiveFile(file);
+      return true;
+    }),
     scanDir: () => "/evidence",
     selectedFiles,
     toggleFileSelection: vi.fn(),
@@ -82,6 +90,8 @@ const mockProjectManager = () => ({
   projectPath: () => "/case/project.cffx",
   autoSaveEnabled: () => false as boolean,
   setAutoSaveEnabled: vi.fn(),
+  startAutoSave: vi.fn(),
+  stopAutoSave: vi.fn(),
   modified: () => false as boolean,
   saveProject: vi.fn().mockResolvedValue({ success: true }),
   saveProjectAs: vi.fn().mockResolvedValue({ success: true }),
@@ -280,10 +290,15 @@ describe("createSearchHandlers", () => {
   });
 
   describe("handleSearchResultSelect", () => {
-    it("sets active file for top-level file results", () => {
+    it("opens top-level file results through the normal select-and-view path", async () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
-      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
+      const onOpenEvidenceFile = vi.fn();
+      const { handleSearchResultSelect } = createSearchHandlers({
+        fileManager: fm as any,
+        projectManager: mockProjectManager() as any,
+        onOpenEvidenceFile,
+      });
 
       handleSearchResultSelect({
         id: file.path,
@@ -294,14 +309,22 @@ describe("createSearchHandlers", () => {
         score: 100,
         matchType: "name",
       });
+      await Promise.resolve();
 
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
     });
 
-    it("sets active file to container for container results", () => {
+    it("opens the parent container for container results through the normal select-and-view path", async () => {
       const container = makeFile("/evidence/archive.zip");
       const fm = mockFileManager([container]);
-      const { handleSearchResultSelect } = createSearchHandlers({ fileManager: fm as any, projectManager: mockProjectManager() as any });
+      const onOpenEvidenceFile = vi.fn();
+      const { handleSearchResultSelect } = createSearchHandlers({
+        fileManager: fm as any,
+        projectManager: mockProjectManager() as any,
+        onOpenEvidenceFile,
+      });
 
       handleSearchResultSelect({
         id: "/evidence/archive.zip::/inner/file.txt",
@@ -313,7 +336,10 @@ describe("createSearchHandlers", () => {
         matchType: "name",
         containerPath: "/evidence/archive.zip",
       });
+      await Promise.resolve();
 
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(container);
+      expect(onOpenEvidenceFile).toHaveBeenCalledWith(container);
       expect(fm.activeFile()).toBe(container);
     });
 
@@ -334,6 +360,32 @@ describe("createSearchHandlers", () => {
 
       // Should not set active file
       expect(fm.activeFile()).toBeNull();
+    });
+
+    it("does not open evidence tab when search result selection is cancelled", async () => {
+      const file = makeFile("/evidence/large.e01");
+      const fm = mockFileManager([file]);
+      fm.selectAndViewFile.mockResolvedValueOnce(false);
+      const onOpenEvidenceFile = vi.fn();
+      const { handleSearchResultSelect } = createSearchHandlers({
+        fileManager: fm as any,
+        projectManager: mockProjectManager() as any,
+        onOpenEvidenceFile,
+      });
+
+      handleSearchResultSelect({
+        id: file.path,
+        path: file.path,
+        name: "large.e01",
+        size: 1024,
+        isDir: false,
+        score: 100,
+        matchType: "name",
+      });
+      await Promise.resolve();
+
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).not.toHaveBeenCalled();
     });
   });
 });
@@ -387,12 +439,13 @@ describe("createContextMenuBuilders", () => {
       expect(items.find((i) => i.id === "copy-name")).toBeDefined();
     });
 
-    it("open action sets active file", () => {
+    it("open action uses the normal select-and-view path", async () => {
       const file = makeFile("/evidence/disk.e01");
       const fm = mockFileManager([file]);
       const hm = mockHashManager();
       const pm = mockProjectManager();
       const toast = mockToast();
+      const onOpenEvidenceFile = vi.fn();
 
       const { getFileContextMenuItems } = createContextMenuBuilders({
         fileManager: fm as any,
@@ -400,11 +453,41 @@ describe("createContextMenuBuilders", () => {
         projectManager: pm as any,
         toast,
         buildSaveOptions: () => null,
+        onOpenEvidenceFile,
       });
 
       const items = getFileContextMenuItems(() => file);
       items.find((i) => i.id === "open")!.onSelect!();
+      await Promise.resolve();
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).toHaveBeenCalledWith(file);
       expect(fm.activeFile()).toBe(file);
+    });
+
+    it("open action does not open evidence tab when selection is cancelled", async () => {
+      const file = makeFile("/evidence/large.e01");
+      const fm = mockFileManager([file]);
+      fm.selectAndViewFile.mockResolvedValueOnce(false);
+      const hm = mockHashManager();
+      const pm = mockProjectManager();
+      const toast = mockToast();
+      const onOpenEvidenceFile = vi.fn();
+
+      const { getFileContextMenuItems } = createContextMenuBuilders({
+        fileManager: fm as any,
+        hashManager: hm as any,
+        projectManager: pm as any,
+        toast,
+        buildSaveOptions: () => null,
+        onOpenEvidenceFile,
+      });
+
+      const items = getFileContextMenuItems(() => file);
+      items.find((i) => i.id === "open")!.onSelect!();
+      await Promise.resolve();
+
+      expect(fm.selectAndViewFile).toHaveBeenCalledWith(file);
+      expect(onOpenEvidenceFile).not.toHaveBeenCalled();
     });
 
     it("hash action calls hashSingleFile", () => {
@@ -572,6 +655,30 @@ describe("createContextMenuBuilders", () => {
       const items = getSaveContextMenuItems();
       items.find((i) => i.id === "auto-save")!.onSelect!();
       expect(pm.setAutoSaveEnabled).toHaveBeenCalledWith(true);
+      expect(pm.startAutoSave).toHaveBeenCalledOnce();
+      expect(pm.stopAutoSave).not.toHaveBeenCalled();
+    });
+
+    it("auto-save toggle stops the timer when disabling", () => {
+      const fm = mockFileManager();
+      const hm = mockHashManager();
+      const pm = mockProjectManager();
+      (pm as any).autoSaveEnabled = () => true;
+      const toast = mockToast();
+
+      const { getSaveContextMenuItems } = createContextMenuBuilders({
+        fileManager: fm as any,
+        hashManager: hm as any,
+        projectManager: pm as any,
+        toast,
+        buildSaveOptions: () => null,
+      });
+
+      const items = getSaveContextMenuItems();
+      items.find((i) => i.id === "auto-save")!.onSelect!();
+      expect(pm.setAutoSaveEnabled).toHaveBeenCalledWith(false);
+      expect(pm.stopAutoSave).toHaveBeenCalledOnce();
+      expect(pm.startAutoSave).not.toHaveBeenCalled();
     });
   });
 });

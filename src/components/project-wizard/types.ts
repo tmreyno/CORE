@@ -45,4 +45,6 @@ export interface ProjectSetupWizardProps {
   onClose: () => void;
   /** Called when setup is complete with locations */
   onComplete: (locations: ProjectLocations) => void;
+  /** Browser-preview fallback for opening an existing .cffx project */
+  onOpenProject?: () => void;
 }

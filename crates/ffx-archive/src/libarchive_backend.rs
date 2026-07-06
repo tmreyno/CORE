@@ -351,6 +351,57 @@ impl LibarchiveHandler {
         )))
     }
 
+    /// Read a bounded byte range from a specific file entry.
+    pub fn read_entry_range(
+        &self,
+        entry_path: &str,
+        offset: u64,
+        size: usize,
+    ) -> Result<Vec<u8>, ContainerError> {
+        if size == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut archive = self.open_archive()?;
+
+        // Normalize the search path: forward slashes, strip leading/trailing slashes
+        let search_path = entry_path.replace('\\', "/");
+        let search_path = search_path.trim_start_matches('/').trim_end_matches('/');
+
+        while let Ok(Some(entry)) = archive.next_entry() {
+            let raw_path = entry.pathname().unwrap_or_default();
+            // Normalize archive path: forward slashes, strip leading/trailing slashes
+            let normalized_path = raw_path.replace('\\', "/");
+            let normalized_path = normalized_path
+                .trim_start_matches('/')
+                .trim_end_matches('/');
+
+            if normalized_path == search_path {
+                if entry.file_type() == FileType::Directory {
+                    return Err(ContainerError::from("Cannot read directory as file"));
+                }
+
+                let declared_size = checked_libarchive_entry_size(entry.size(), search_path)?;
+                if offset > declared_size {
+                    return Err(ContainerError::InvalidFormat(format!(
+                        "libarchive range offset is beyond EOF for {search_path}: offset {offset} > size {declared_size}"
+                    )));
+                }
+                if offset == declared_size {
+                    return Ok(Vec::new());
+                }
+
+                let end = offset.saturating_add(size as u64).min(declared_size);
+                return read_libarchive_entry_range_limited(&mut archive, offset, end, search_path);
+            }
+        }
+
+        Err(ContainerError::from(format!(
+            "Entry not found: {}",
+            entry_path
+        )))
+    }
+
     /// Check if the archive requires a password
     pub fn needs_password(&self) -> Result<bool, ContainerError> {
         // Try to open without password and check first entry
@@ -437,6 +488,17 @@ pub fn read_file(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, Contai
     handler.read_entry(entry_path)
 }
 
+/// Read a bounded byte range from a file in an archive.
+pub fn read_file_range(
+    archive_path: &str,
+    entry_path: &str,
+    offset: u64,
+    size: usize,
+) -> Result<Vec<u8>, ContainerError> {
+    let handler = LibarchiveHandler::new(archive_path);
+    handler.read_entry_range(entry_path, offset, size)
+}
+
 /// Read a file from an encrypted archive
 pub fn read_file_encrypted(
     archive_path: &str,
@@ -502,6 +564,53 @@ fn read_libarchive_entry_limited(
     Ok(data)
 }
 
+fn read_libarchive_entry_range_limited(
+    archive: &mut ReadArchive<'_>,
+    start: u64,
+    end: u64,
+    context: &str,
+) -> Result<Vec<u8>, ContainerError> {
+    let output_size = usize::try_from(end.saturating_sub(start)).map_err(|_| {
+        ContainerError::InvalidFormat(format!("libarchive entry range for {context} is too large"))
+    })?;
+    if output_size == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut output = Vec::with_capacity(output_size);
+    let mut total = 0u64;
+    let mut buffer = vec![0u8; LIBARCHIVE_READ_BUFFER_BYTES];
+
+    while total < end {
+        let bytes_read = archive
+            .read_data(&mut buffer)
+            .map_err(|e| ContainerError::from(format!("Failed to read entry data: {}", e)))?;
+        if bytes_read == 0 {
+            return Err(ContainerError::InvalidFormat(format!(
+                "libarchive entry data for {context} ended before requested range"
+            )));
+        }
+
+        let chunk_start = total;
+        total = add_libarchive_read_bytes(total, bytes_read)?;
+        if total > crate::MAX_NATIVE_ARCHIVE_ENTRY_BYTES {
+            return Err(ContainerError::InvalidFormat(format!(
+                "libarchive entry data for {} exceeds {} bytes",
+                context,
+                crate::MAX_NATIVE_ARCHIVE_ENTRY_BYTES
+            )));
+        }
+
+        if total > start {
+            let copy_start = start.saturating_sub(chunk_start) as usize;
+            let copy_end = end.min(total).saturating_sub(chunk_start) as usize;
+            output.extend_from_slice(&buffer[copy_start..copy_end]);
+        }
+    }
+
+    Ok(output)
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -509,6 +618,7 @@ fn read_libarchive_entry_limited(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
 
     /// Helper for testing extension-based format detection
     /// Note: detect_format() also validates the file can be opened by libarchive,
@@ -582,5 +692,59 @@ mod tests {
             .expect_err("overflowing libarchive read total should fail");
 
         assert!(err.to_string().contains("read size overflow"));
+    }
+
+    #[test]
+    fn test_read_file_range_reads_only_requested_tar_bytes() {
+        let tmp = tempfile::Builder::new().suffix(".tar").tempfile().unwrap();
+        let mut builder = tar::Builder::new(File::create(tmp.path()).unwrap());
+        let data = b"abcdefghijklmnopqrstuvwxyz";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "dir/file.txt", &data[..])
+            .unwrap();
+        builder.finish().unwrap();
+
+        let range = read_file_range(tmp.path().to_str().unwrap(), "dir/file.txt", 4, 6).unwrap();
+
+        assert_eq!(range, b"efghij");
+    }
+
+    #[test]
+    fn test_read_file_range_returns_empty_at_eof() {
+        let tmp = tempfile::Builder::new().suffix(".tar").tempfile().unwrap();
+        let mut builder = tar::Builder::new(File::create(tmp.path()).unwrap());
+        let data = b"abcdef";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "file.txt", &data[..])
+            .unwrap();
+        builder.finish().unwrap();
+
+        let range = read_file_range(tmp.path().to_str().unwrap(), "file.txt", 6, 8).unwrap();
+
+        assert!(range.is_empty());
+    }
+
+    #[test]
+    fn test_read_file_range_rejects_offset_past_eof() {
+        let tmp = tempfile::Builder::new().suffix(".tar").tempfile().unwrap();
+        let mut builder = tar::Builder::new(File::create(tmp.path()).unwrap());
+        let data = b"abcdef";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "file.txt", &data[..])
+            .unwrap();
+        builder.finish().unwrap();
+
+        let err = read_file_range(tmp.path().to_str().unwrap(), "file.txt", 7, 1).unwrap_err();
+
+        assert!(err.to_string().contains("range offset is beyond EOF"));
     }
 }

@@ -6,6 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types
@@ -48,6 +49,14 @@ export async function hashContainerSegments(
   hashCombined: boolean,
   hashIndividual: boolean,
 ): Promise<SegmentVerifyResult> {
+  if (!isTauri) {
+    void path;
+    void algorithm;
+    void hashCombined;
+    void hashIndividual;
+    throw new Error("Segment hashing is available in the desktop app.");
+  }
+
   return invoke<SegmentVerifyResult>("hash_container_segments", {
     path,
     algorithm,
@@ -59,6 +68,11 @@ export async function hashContainerSegments(
 export async function listenSegmentHashProgress(
   callback: (progress: SegmentHashProgress) => void,
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void callback;
+    return () => {};
+  }
+
   return listen<SegmentHashProgress>("segment-hash-progress", (event) => {
     callback(event.payload);
   });

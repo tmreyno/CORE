@@ -322,7 +322,7 @@ pub fn analyze_duplicates(
     }
 
     // Sort groups by wasted bytes (most wasteful first)
-    groups.sort_by(|a, b| b.wasted_bytes.cmp(&a.wasted_bytes));
+    groups.sort_by_key(|group| std::cmp::Reverse(group.wasted_bytes));
 
     let elapsed = start.elapsed().as_millis() as u64;
     let unique_files =
@@ -506,7 +506,7 @@ fn rebuild_duplicate_group(
 fn refresh_stats(results: &mut DedupResults) {
     results
         .groups
-        .sort_by(|a, b| b.wasted_bytes.cmp(&a.wasted_bytes));
+        .sort_by_key(|group| std::cmp::Reverse(group.wasted_bytes));
 
     let total_duplicate_files = results
         .groups

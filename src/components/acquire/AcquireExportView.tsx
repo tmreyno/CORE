@@ -39,6 +39,7 @@ import type { SystemStats } from "../../hooks";
 import type { DriveInfo } from "../../api/drives";
 import { logger } from "../../utils/logger";
 import AcquireProcessShell from "./AcquireProcessShell";
+import { isTauri } from "../../utils/platform";
 
 const ExportPanel = lazy(() =>
   import("../export-panel/ExportPanelComponent").then((m) => ({
@@ -80,6 +81,9 @@ const basename = (p: string): string => {
   return parts[parts.length - 1] || p;
 };
 
+const BROWSER_EXPORT_SOURCE_MESSAGE =
+  "Acquire source file and folder selection is available in the desktop app.";
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -103,6 +107,7 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
   const [pendingMode, setPendingMode] = createSignal<ExportMode | null>(null);
   const [selectedPaths, setSelectedPaths] = createSignal<Set<string>>(new Set());
   const [isDragOver, setIsDragOver] = createSignal(false);
+  const [sourceSelectionMessage, setSourceSelectionMessage] = createSignal("");
   let dragCounter = 0;
 
   // Add a source from the drive tree browser
@@ -126,6 +131,12 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
 
   // Add files via file dialog
   const handleAddFiles = async () => {
+    if (!isTauri) {
+      setSourceSelectionMessage(BROWSER_EXPORT_SOURCE_MESSAGE);
+      return;
+    }
+
+    setSourceSelectionMessage("");
     log.debug("Opening file dialog for source files");
     const result = await open({ multiple: true, title: "Select Files" });
     if (!result) return;
@@ -139,6 +150,12 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
 
   // Add folder via folder dialog
   const handleAddFolder = async () => {
+    if (!isTauri) {
+      setSourceSelectionMessage(BROWSER_EXPORT_SOURCE_MESSAGE);
+      return;
+    }
+
+    setSourceSelectionMessage("");
     const result = await open({ directory: true, title: "Select Folder" });
     if (!result) return;
     const p = result as string;
@@ -261,6 +278,12 @@ const AcquireExportView: Component<AcquireExportViewProps> = (props) => {
                 Folder
               </button>
             </div>
+
+            <Show when={sourceSelectionMessage()}>
+              <div class="px-3 py-2 border-b border-border/40 bg-warning/10 text-xs text-warning">
+                {sourceSelectionMessage()}
+              </div>
+            </Show>
 
             {/* Drive tree — fills available space */}
             <div

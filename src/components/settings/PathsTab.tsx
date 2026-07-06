@@ -4,13 +4,17 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { Component } from "solid-js";
+import { Component, Show, createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Slider } from "../ui";
 import { SettingGroup, SettingRow } from "../settings";
 import type { AppPreferences } from "../preferences";
+import { isTauri } from "../../utils/platform";
 import { logger } from "../../utils/logger";
 const log = logger.scope("PathsTab");
+
+const BROWSER_FOLDER_MESSAGE =
+  "Folder browsing is available in the desktop app. In browser preview, enter the path manually.";
 
 interface PathsSettingsProps {
   preferences: AppPreferences;
@@ -18,7 +22,14 @@ interface PathsSettingsProps {
 }
 
 export const PathsSettings: Component<PathsSettingsProps> = (props) => {
+  const [browseMessage, setBrowseMessage] = createSignal<string | null>(null);
+
   const handleBrowse = async (key: "defaultEvidencePath" | "defaultExportPath" | "tempFolderPath") => {
+    if (!isTauri) {
+      setBrowseMessage(BROWSER_FOLDER_MESSAGE);
+      return;
+    }
+
     try {
       const selected = await open({
         directory: true,
@@ -36,6 +47,14 @@ export const PathsSettings: Component<PathsSettingsProps> = (props) => {
   return (
     <>
       <SettingGroup title="Default Paths" description="Default folder locations">
+        <Show when={browseMessage()}>
+          {(message) => (
+            <div class="text-xs text-warning bg-warning/10 border border-warning/20 rounded px-2 py-1.5 mb-2">
+              {message()}
+            </div>
+          )}
+        </Show>
+
         <SettingRow label="Default Evidence Path" description="Where to look for evidence files">
           <div class="flex items-center gap-2">
             <input

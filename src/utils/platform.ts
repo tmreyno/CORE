@@ -62,8 +62,28 @@ export const isMobile = isIOS || isAndroid;
 /** Detect desktop (not mobile) */
 export const isDesktop = !isMobile;
 
+type TauriInternals = {
+  invoke?: unknown;
+  transformCallback?: unknown;
+};
+
+function getTauriInternals(): TauriInternals | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  return (window as Window & { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
+}
+
 /** Detect Tauri environment */
-export const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+export const isTauri = (() => {
+  const internals = getTauriInternals();
+
+  return (
+    typeof internals?.invoke === 'function' &&
+    typeof internals?.transformCallback === 'function'
+  );
+})();
 
 // =============================================================================
 // Platform Object (Alternative API)

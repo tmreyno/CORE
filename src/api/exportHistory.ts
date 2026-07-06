@@ -14,12 +14,18 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { DbExportRecord } from "../types/projectDb";
+import { isTauri } from "../utils/platform";
 
 /**
  * Get export records from the project database, most recent first.
  * @param limit Maximum number of records to return. Omit for all.
  */
 export async function getExportHistory(limit?: number): Promise<DbExportRecord[]> {
+  if (!isTauri) {
+    void limit;
+    return [];
+  }
+
   return invoke<DbExportRecord[]>("project_db_get_exports", { limit: limit ?? null });
 }
 
@@ -27,5 +33,10 @@ export async function getExportHistory(limit?: number): Promise<DbExportRecord[]
  * Delete a single export record by ID.
  */
 export async function deleteExportRecord(id: string): Promise<void> {
+  if (!isTauri) {
+    void id;
+    return;
+  }
+
   return invoke("project_db_delete_export", { id });
 }

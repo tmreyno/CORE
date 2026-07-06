@@ -15,6 +15,11 @@ import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { TreeEntry, Ad1ContainerSummary } from "../../../types";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
+import {
+  collectBinaryArtifactEntries,
+  collectSystemIdentityEntries,
+} from "../../systemIdentitySources";
 
 const log = logger.scope("Ad1Tree");
 
@@ -99,6 +104,8 @@ export function useAd1Tree(): UseAd1TreeReturn {
   const [metadataCache, setMetadataCache] = createSignal<Map<string, ItemMetadata>>(new Map());
   // Cache for container status (segment availability)
   const [containerStatusCache, setContainerStatusCache] = createSignal<Map<string, ContainerStatus>>(new Map());
+  const inFlightChildrenLoads = new Map<string, Promise<TreeEntry[]>>();
+  const inFlightMetadataLoads = new Map<string, Promise<ItemMetadata | null>>();
 
   // Load container status (segment availability)
   const loadContainerStatus = async (containerPath: string): Promise<ContainerStatus | null> => {
@@ -106,6 +113,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
     const cached = containerStatusCache().get(containerPath);
     if (cached) {
       return cached;
+    }
+    if (!isTauri) {
+      return null;
     }
 
     try {
@@ -140,6 +150,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (cached) {
       log.debug("loadAd1Info - returning cached info");
       return cached;
+    }
+    if (!isTauri) {
+      return null;
     }
 
     try {
@@ -200,8 +213,13 @@ export function useAd1Tree(): UseAd1TreeReturn {
       log.debug(`loadRootChildren - returning ${cached.length} cached children (${(performance.now() - startTime).toFixed(1)}ms)`);
       return cached;
     }
+    if (!isTauri) {
+      return [];
+    }
+    const inFlight = inFlightChildrenLoads.get(cacheKey);
+    if (inFlight) return inFlight;
     
-    try {
+    const loadPromise = (async () => {
       log.debug(`loadRootChildren - invoking container_get_root_children_v2...`);
       const invokeStart = performance.now();
       const children = await invoke<TreeEntry[]>("container_get_root_children_v2", {
@@ -222,9 +240,21 @@ export function useAd1Tree(): UseAd1TreeReturn {
         next.set(cacheKey, children);
         return next;
       });
+
+      void collectSystemIdentityEntries(containerPath, children, "ad1").catch((err) => {
+        log.warn("System identity collection failed for AD1 root children:", err);
+      });
+      void collectBinaryArtifactEntries(containerPath, children, "ad1").catch((err) => {
+        log.warn("Binary artifact collection failed for AD1 root children:", err);
+      });
       
       log.debug(`loadRootChildren - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
       return children;
+    })();
+
+    inFlightChildrenLoads.set(cacheKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       log.error("loadRootChildren FAILED:", errorMsg);
@@ -246,6 +276,8 @@ export function useAd1Tree(): UseAd1TreeReturn {
       });
       
       return [];
+    } finally {
+      inFlightChildrenLoads.delete(cacheKey);
     }
   };
 
@@ -255,8 +287,13 @@ export function useAd1Tree(): UseAd1TreeReturn {
     
     const cached = childrenCache().get(cacheKey);
     if (cached) return cached;
+    if (!isTauri) {
+      return [];
+    }
+    const inFlight = inFlightChildrenLoads.get(cacheKey);
+    if (inFlight) return inFlight;
     
-    try {
+    const loadPromise = (async () => {
       const children = await invoke<TreeEntry[]>("container_get_children_at_addr_v2", {
         containerPath,
         addr,
@@ -268,11 +305,25 @@ export function useAd1Tree(): UseAd1TreeReturn {
         next.set(cacheKey, children);
         return next;
       });
+
+      void collectSystemIdentityEntries(containerPath, children, "ad1").catch((err) => {
+        log.warn("System identity collection failed for AD1 child entries:", err);
+      });
+      void collectBinaryArtifactEntries(containerPath, children, "ad1").catch((err) => {
+        log.warn("Binary artifact collection failed for AD1 child entries:", err);
+      });
       
       return children;
+    })();
+
+    inFlightChildrenLoads.set(cacheKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error("Failed to load children at addr:", err);
       return [];
+    } finally {
+      inFlightChildrenLoads.delete(cacheKey);
     }
   };
 
@@ -315,18 +366,20 @@ export function useAd1Tree(): UseAd1TreeReturn {
       
       if (!childrenCache().has(nodeKey)) {
         setLoading(prev => new Set([...prev, nodeKey]));
-        
-        if (addr) {
-          await loadChildrenByAddr(containerPath, addr, entryPath);
-        } else {
-          await loadChildrenByPath(containerPath, entryPath);
+
+        try {
+          if (addr) {
+            await loadChildrenByAddr(containerPath, addr, entryPath);
+          } else {
+            await loadChildrenByPath(containerPath, entryPath);
+          }
+        } finally {
+          setLoading(prev => {
+            const next = new Set(prev);
+            next.delete(nodeKey);
+            return next;
+          });
         }
-        
-        setLoading(prev => {
-          const next = new Set(prev);
-          next.delete(nodeKey);
-          return next;
-        });
       }
     }
   };
@@ -423,8 +476,13 @@ export function useAd1Tree(): UseAd1TreeReturn {
     if (cached) {
       return cached;
     }
+    if (!isTauri) {
+      return null;
+    }
+    const inFlight = inFlightMetadataLoads.get(cacheKey);
+    if (inFlight) return inFlight;
 
-    try {
+    const loadPromise = (async () => {
       const metadata = await invoke<ItemMetadata>("container_get_item_metadata_v2", {
         containerPath,
         itemAddr,
@@ -438,9 +496,16 @@ export function useAd1Tree(): UseAd1TreeReturn {
       });
       
       return metadata;
+    })();
+
+    inFlightMetadataLoads.set(cacheKey, loadPromise);
+    try {
+      return await loadPromise;
     } catch (err) {
       log.error(`loadItemMetadata Failed for addr=${itemAddr}:`, err);
       return null;
+    } finally {
+      inFlightMetadataLoads.delete(cacheKey);
     }
   };
 
@@ -460,6 +525,9 @@ export function useAd1Tree(): UseAd1TreeReturn {
       return itemAddrs
         .map(addr => metadataCache().get(`${containerPath}::${addr}`))
         .filter((m): m is ItemMetadata => m !== undefined);
+    }
+    if (!isTauri) {
+      return [];
     }
 
     try {

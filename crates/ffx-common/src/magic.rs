@@ -324,7 +324,7 @@ static MAGIC_SIGNATURES: &[MagicSignature] = &[
         2,
         "application/x-dosexec",
         "Windows Executable",
-        &["exe", "dll", "sys"],
+        &["exe", "dll", "sys", "drv"],
         FileCategory::Executable,
     ),
     MagicSignature::new(

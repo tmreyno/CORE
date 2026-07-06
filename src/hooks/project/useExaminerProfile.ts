@@ -18,6 +18,7 @@ import { createSignal } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { dbSync } from "./useProjectDbSync";
 import type { FormValue } from "../../templates/types";
+import { isTauri } from "../../utils/platform";
 
 const UI_STATE_KEY = "examiner_profile";
 
@@ -44,6 +45,10 @@ const EMPTY_PROFILE: ExaminerProfile = {
  * Returns EMPTY_PROFILE if no profile is stored or if no project DB is open.
  */
 export async function loadExaminerProfile(): Promise<ExaminerProfile> {
+  if (!isTauri) {
+    return { ...EMPTY_PROFILE };
+  }
+
   try {
     const json = await invoke<string | null>("project_db_get_ui_state", { key: UI_STATE_KEY });
     if (json) {

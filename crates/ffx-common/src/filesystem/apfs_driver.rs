@@ -31,6 +31,8 @@ use crate::vfs::{normalize_path, DirEntry, FileAttr, VfsError};
 const APFS_CONTAINER_MAGIC: u32 = 0x4E585342; // 'NXSB' in little-endian
 /// APFS volume superblock magic 'APSB'
 const APFS_VOLUME_MAGIC: u32 = 0x41505342; // 'APSB' in little-endian
+/// Last fixed field read from the APFS container superblock before the volume OID table.
+const APFS_NX_SUPERBLOCK_FIXED_FIELDS_LEN: usize = 168;
 /// APFS object type mask
 const OBJ_TYPE_MASK: u32 = 0x0000FFFF;
 /// APFS object types
@@ -85,6 +87,27 @@ fn bounded_apfs_read_len(start: u64, end: u64) -> Result<usize, VfsError> {
         .ok_or_else(|| VfsError::Internal("APFS read range underflow".into()))?;
 
     usize::try_from(length).map_err(|_| VfsError::Internal("APFS read range too large".into()))
+}
+
+fn bounded_apfs_file_read(
+    file_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<Option<(u64, usize)>, VfsError> {
+    if offset > file_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
+    }
+
+    if offset == file_size || requested_size == 0 {
+        return Ok(None);
+    }
+
+    let read_end = clamp_read_end(offset, requested_size, file_size);
+    let total_to_read = bounded_apfs_read_len(offset, read_end)?;
+    Ok(Some((read_end, total_to_read)))
 }
 
 fn checked_apfs_extent_end(logical_offset: u64, extent_length: u64) -> Result<u64, VfsError> {
@@ -192,6 +215,21 @@ fn read_apfs_exact(
             buf.len()
         )));
     }
+    Ok(())
+}
+
+fn ensure_apfs_extent_read_available(
+    saw_data_extent: bool,
+    total_to_read: usize,
+    inode_id: u64,
+    extent_count: usize,
+) -> Result<(), VfsError> {
+    if !saw_data_extent && total_to_read > 0 {
+        return Err(VfsError::Internal(format!(
+            "No file extents found for inode {inode_id} (found {extent_count} extents total)"
+        )));
+    }
+
     Ok(())
 }
 
@@ -518,6 +556,12 @@ impl ApfsDriver {
         if block_size == 0 || block_size > 65536 {
             return Err(VfsError::IoError(format!(
                 "Invalid APFS block size: {}",
+                block_size
+            )));
+        }
+        if (block_size as usize) < APFS_NX_SUPERBLOCK_FIXED_FIELDS_LEN {
+            return Err(VfsError::IoError(format!(
+                "APFS container block size {} is too small for container superblock fields",
                 block_size
             )));
         }
@@ -1247,13 +1291,10 @@ impl FilesystemDriver for ApfsDriver {
         }
 
         let file_size = self.get_file_size(inode_id).unwrap_or(0);
-        if offset >= file_size {
+        let Some((read_end, total_to_read)) = bounded_apfs_file_read(file_size, offset, size)?
+        else {
             return Ok(Vec::new());
-        }
-
-        // Clamp read length to file boundary
-        let read_end = clamp_read_end(offset, size, file_size);
-        let total_to_read = bounded_apfs_read_len(offset, read_end)?;
+        };
 
         // Find file extents from catalog tree
         let root_block = self.read_block(self.volume.root_tree_oid)?;
@@ -1265,7 +1306,7 @@ impl FilesystemDriver for ApfsDriver {
 
         // Read data from extents, mapping logical offset to physical blocks
         let mut result = vec![0u8; total_to_read];
-        let mut bytes_filled = 0usize;
+        let mut saw_data_extent = false;
 
         for &(extent_logical_offset, extent_phys_block, extent_length) in &extents {
             let extent_end = checked_apfs_extent_end(extent_logical_offset, extent_length)?;
@@ -1338,21 +1379,12 @@ impl FilesystemDriver for ApfsDriver {
                 .checked_add(copy_len)
                 .ok_or_else(|| VfsError::Internal("APFS destination range overflow".into()))?;
             result[dest_offset..dest_end].copy_from_slice(&extent_buf[..copy_len]);
-            bytes_filled = bytes_filled
-                .checked_add(copy_len)
-                .ok_or_else(|| VfsError::Internal("APFS bytes filled overflow".into()))?;
+            saw_data_extent = true;
         }
 
         // If no extents matched, the file may be inline or sparse
-        if bytes_filled == 0 && total_to_read > 0 {
-            return Err(VfsError::Internal(format!(
-                "No file extents found for inode {} (found {} extents total)",
-                inode_id,
-                extents.len()
-            )));
-        }
+        ensure_apfs_extent_read_available(saw_data_extent, total_to_read, inode_id, extents.len())?;
 
-        result.truncate(std::cmp::min(total_to_read, bytes_filled));
         Ok(result)
     }
 }
@@ -1549,6 +1581,46 @@ mod tests {
     }
 
     #[test]
+    fn test_bounded_apfs_file_read_allows_exact_eof_and_zero_size() {
+        assert_eq!(bounded_apfs_file_read(128, 128, 16).unwrap(), None);
+        assert_eq!(bounded_apfs_file_read(128, 0, 0).unwrap(), None);
+    }
+
+    #[test]
+    fn test_bounded_apfs_file_read_rejects_offset_past_eof() {
+        let err = bounded_apfs_file_read(128, 129, 16).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 129,
+                size: 16
+            }
+        ));
+    }
+
+    #[test]
+    fn test_bounded_apfs_file_read_clamps_to_remaining() {
+        assert_eq!(
+            bounded_apfs_file_read(128, 120, 16).unwrap(),
+            Some((128, 8))
+        );
+    }
+
+    #[test]
+    fn test_ensure_apfs_extent_read_available_allows_sparse_tail() {
+        assert!(ensure_apfs_extent_read_available(true, 128, 42, 1).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_apfs_extent_read_available_rejects_missing_extents() {
+        let err = ensure_apfs_extent_read_available(false, 128, 42, 0)
+            .expect_err("APFS read without any matching data extent should fail");
+
+        assert!(matches!(err, VfsError::Internal(_)));
+        assert!(err.to_string().contains("inode 42"));
+    }
+
+    #[test]
     fn test_checked_apfs_extent_end_rejects_overflow() {
         let err = checked_apfs_extent_end(u64::MAX - 1, 8)
             .expect_err("APFS extent end overflow should be rejected");
@@ -1610,6 +1682,21 @@ mod tests {
 
         assert!(
             matches!(err, VfsError::IoError(message) if message.contains("block is truncated"))
+        );
+    }
+
+    #[test]
+    fn test_read_container_superblock_rejects_tiny_advertised_block_size() {
+        let mut data = vec![0u8; 64];
+        data[36..40].copy_from_slice(&64u32.to_le_bytes());
+        let device: Arc<dyn super::super::traits::SeekableBlockDevice> =
+            Arc::new(MockBlockDevice { data });
+
+        let err = ApfsDriver::read_container_superblock(&device, 0)
+            .expect_err("tiny APFS container block size should be rejected");
+
+        assert!(
+            matches!(err, VfsError::IoError(message) if message.contains("too small for container superblock fields"))
         );
     }
 

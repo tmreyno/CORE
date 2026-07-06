@@ -18,6 +18,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types
@@ -138,6 +139,12 @@ export async function createL01Image(
   options: L01ExportOptions,
   onProgress?: (progress: L01ExportProgress) => void,
 ): Promise<L01ExportResult> {
+  if (!isTauri) {
+    void options;
+    void onProgress;
+    throw new Error("L01 image creation is available in the desktop app.");
+  }
+
   let unlisten: UnlistenFn | undefined;
 
   try {
@@ -179,6 +186,11 @@ export async function createL01Image(
  * @returns true if the export was found and cancelled, false if not found
  */
 export async function cancelL01Export(outputPath: string): Promise<boolean> {
+  if (!isTauri) {
+    void outputPath;
+    return false;
+  }
+
   return invoke<boolean>("l01_cancel_export", { outputPath });
 }
 
@@ -196,6 +208,12 @@ export async function estimateL01Size(
   sourcePaths: string[],
   compression?: string,
 ): Promise<number> {
+  if (!isTauri) {
+    void sourcePaths;
+    void compression;
+    throw new Error("L01 size estimation is available in the desktop app.");
+  }
+
   return invoke<number>("l01_estimate_size", {
     sourcePaths,
     compression: compression ?? null,

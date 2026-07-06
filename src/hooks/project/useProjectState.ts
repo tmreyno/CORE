@@ -12,12 +12,17 @@ import { createSignal } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { FFXProject } from "../../types/project";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 import type { ProjectStateSignals, ProjectStateSetters } from "./types";
 
 const log = logger.scope("ProjectState");
 
 /** Get current username from environment */
 export async function getCurrentUsername(): Promise<string> {
+  if (!isTauri) {
+    return "unknown";
+  }
+
   try {
     const username = await invoke<string>("get_current_username");
     return username;
@@ -28,6 +33,10 @@ export async function getCurrentUsername(): Promise<string> {
 
 /** Get current app version */
 export async function getAppVersion(): Promise<string> {
+  if (!isTauri) {
+    return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "unknown";
+  }
+
   try {
     const version = await invoke<string>("get_app_version");
     return version;

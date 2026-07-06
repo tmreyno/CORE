@@ -6,6 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { CompanionFile } from "./companion";
+import { isTauri } from "../utils/platform";
 
 // --- Types matching src-tauri/src/commands/companion.rs ---
 
@@ -37,5 +38,11 @@ export interface ImportResult {
 export async function scanForAcquisitions(
   dirPath: string,
 ): Promise<DiscoveredAcquisition[]> {
+  if (!isTauri) {
+    throw new Error(
+      "Acquisition directory scanning is available in the desktop app.",
+    );
+  }
+
   return invoke<DiscoveredAcquisition[]>("scan_for_acquisitions", { dirPath });
 }

@@ -21,6 +21,7 @@ import { commands } from "../api/commands";
 import { announce } from "../utils/accessibility";
 import { logger } from "../utils/logger";
 import { getBasename } from "../utils/pathUtils";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("AppActions");
 
 const FTS_SOURCE_LABELS: Record<string, string> = {
@@ -69,8 +70,28 @@ export interface AppActionsDeps {
 // Search Handlers
 // =============================================================================
 
-export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 'projectManager'>) {
-  const { fileManager, projectManager } = deps;
+type EvidenceOpenDeps = {
+  onOpenEvidenceFile?: (file: DiscoveredFile) => void;
+};
+
+function openEvidenceAfterSelection(
+  selectAndViewFile: (file: DiscoveredFile) => Promise<boolean | void>,
+  file: DiscoveredFile,
+  onOpenEvidenceFile?: (file: DiscoveredFile) => void,
+) {
+  void selectAndViewFile(file)
+    .then(selected => {
+      if (selected !== false) {
+        onOpenEvidenceFile?.(file);
+      }
+    })
+    .catch(err => {
+      log.warn(`Failed to select ${file.filename || file.path}:`, err);
+    });
+}
+
+export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 'projectManager'> & EvidenceOpenDeps) {
+  const { fileManager, projectManager, onOpenEvidenceFile } = deps;
   
   /**
    * Search handler for SearchPanel — searches Tantivy index + FTS5 cross-entity.
@@ -146,7 +167,7 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
     }
 
     // Tier 2: FTS5 cross-entity search (bookmarks, notes, activity log, annotations, artifacts, analysis facts)
-    if (query.length >= 2 && projectManager.project()) {
+    if (isTauri && query.length >= 2 && projectManager.project()) {
       try {
         await commands.projectDb.rebuildFts().catch(() => {});
         const ftsResults = await commands.projectDb.searchFts(query, 30);
@@ -189,14 +210,14 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
       // Result is inside a container - find container and select entry
       const containerFile = fileManager.discoveredFiles().find(f => f.path === result.containerPath);
       if (containerFile) {
-        fileManager.setActiveFile(containerFile);
+        openEvidenceAfterSelection(fileManager.selectAndViewFile, containerFile, onOpenEvidenceFile);
         announce(`Found ${result.name} in ${getBasename(containerFile.path)}`);
       }
     } else {
       // Result is a top-level file
       const file = fileManager.discoveredFiles().find(f => f.path === result.path);
       if (file) {
-        fileManager.setActiveFile(file);
+        openEvidenceAfterSelection(fileManager.selectAndViewFile, file, onOpenEvidenceFile);
         announce(`Selected ${result.name}`);
       }
     }
@@ -209,8 +230,8 @@ export function createSearchHandlers(deps: Pick<AppActionsDeps, 'fileManager' | 
 // Context Menu Builders
 // =============================================================================
 
-export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManager' | 'hashManager' | 'projectManager' | 'toast' | 'buildSaveOptions'>) {
-  const { fileManager, hashManager, projectManager, toast, buildSaveOptions } = deps;
+export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManager' | 'hashManager' | 'projectManager' | 'toast' | 'buildSaveOptions'> & EvidenceOpenDeps) {
+  const { fileManager, hashManager, projectManager, toast, buildSaveOptions, onOpenEvidenceFile } = deps;
   
   /**
    * Get context menu items for a file.
@@ -220,7 +241,9 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
     if (!f) return [];
     
     return [
-      { id: "open", label: "Open", icon: "📂", onSelect: () => fileManager.setActiveFile(f) },
+      { id: "open", label: "Open", icon: "📂", onSelect: () => {
+        openEvidenceAfterSelection(fileManager.selectAndViewFile, f, onOpenEvidenceFile);
+      } },
       { id: "sep1", label: "", separator: true },
       { id: "hash", label: "Compute Hash", icon: "🔐", shortcut: "cmd+h", onSelect: () => hashManager.hashSingleFile(f) },
       { id: "sep2", label: "", separator: true },
@@ -271,10 +294,13 @@ export function createContextMenuBuilders(deps: Pick<AppActionsDeps, 'fileManage
         label: "Auto-save", 
         checked: projectManager.autoSaveEnabled(),
         onSelect: () => {
-          projectManager.setAutoSaveEnabled(!projectManager.autoSaveEnabled());
-          if (projectManager.autoSaveEnabled()) {
+          const enabled = !projectManager.autoSaveEnabled();
+          projectManager.setAutoSaveEnabled(enabled);
+          if (enabled) {
+            projectManager.startAutoSave();
             toast.success("Auto-save enabled", "Project will be saved automatically");
           } else {
+            projectManager.stopAutoSave();
             toast.info("Auto-save disabled");
           }
         }

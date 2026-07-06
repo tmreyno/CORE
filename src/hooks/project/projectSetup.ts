@@ -22,6 +22,7 @@ import { joinPath } from "../../utils/pathUtils";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isAcquireEdition } from "../../utils/edition";
+import { isTauri } from "../../utils/platform";
 import caseFolderTemplate from "../../templates/project/case-folder-template.json";
 import acquireFolderTemplate from "../../templates/project/acquire-folder-template.json";
 
@@ -69,6 +70,16 @@ export interface HandleOpenDirectoryParams {
  */
 export async function handleOpenDirectory(params: HandleOpenDirectoryParams) {
   const { setPendingProjectRoot, setShowProjectWizard, toast } = params;
+
+  if (!isTauri) {
+    toast.info(
+      "Browser Preview",
+      "New Project opens in preview mode. Folder scanning and saving are available in the desktop app.",
+    );
+    setPendingProjectRoot(null);
+    setShowProjectWizard(true);
+    return;
+  }
 
   try {
     const selected = await open({
@@ -144,6 +155,38 @@ export async function handleProjectSetupComplete(
     locations.caseNumber,
     locations.caseName,
   );
+
+  if (!isTauri) {
+    projectManager.updateLocations({
+      project_root: locations.projectRoot,
+      evidence_path: locations.evidencePath,
+      processed_db_path: locations.processedDbPath,
+      case_documents_path: locations.caseDocumentsPath,
+      exports_path: locations.exportsPath || undefined,
+      auto_discovered: true,
+      configured_at: new Date().toISOString(),
+      evidence_file_count: 0,
+      processed_db_count: locations.discoveredDatabases.length,
+      load_stored_hashes: locations.loadStoredHashes ?? true,
+    });
+    setCaseDocumentsPath(locations.caseDocumentsPath || locations.evidencePath);
+    projectManager.logActivity(
+      "project",
+      "setup",
+      `Browser preview project setup initialized: Evidence=${locations.evidencePath}, Processed=${locations.processedDbPath}, CaseDocs=${locations.caseDocumentsPath}`,
+    );
+    logInfo("Browser preview project setup initialized", {
+      source: "handleProjectSetupComplete",
+      context: { locations },
+    });
+    toast.info(
+      "Browser Preview",
+      "Folder creation, evidence scanning, saving, and project database setup are available in the desktop app.",
+    );
+    announce("Browser preview project initialized without desktop file-system setup.");
+    setPendingProjectRoot(null);
+    return;
+  }
 
   // Ensure standard forensic folder structure exists on disk.
   // create_folders_from_template is idempotent — it creates only missing dirs.

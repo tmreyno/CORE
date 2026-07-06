@@ -69,6 +69,8 @@ export interface HashSourceInput {
   nestedArchivePath?: string;
   containerType?: string;
   size?: number;
+  dataAddr?: number | null;
+  itemAddr?: number | null;
 }
 
 /** Source-aware hash result */
@@ -326,11 +328,69 @@ export interface ProjectDbExtractArtifactResult {
   record: DbNormalizedArtifact;
 }
 
+/** Request to collect known OS identity artifacts from mixed evidence sources */
+export interface ProjectDbCollectSystemIdentityRequest {
+  sources: HashSourceInput[];
+  options?: ArtifactExtractionOptions | null;
+  evidenceFileId?: string;
+  evidenceFile?: ProjectDbEvidenceFile;
+  extractor?: string;
+}
+
+/** Per-source extraction failure from system identity collection */
+export interface ProjectDbSystemIdentityCollectionError {
+  sourceId: string;
+  error: string;
+}
+
+/** Result from collecting known OS identity artifacts */
+export interface ProjectDbCollectSystemIdentityResult {
+  scanned: number;
+  matched: number;
+  inserted: number;
+  skipped: number;
+  records: DbNormalizedArtifact[];
+  errors: ProjectDbSystemIdentityCollectionError[];
+}
+
+/** Request to collect known driver/module binary artifacts from mixed evidence sources */
+export interface ProjectDbCollectBinaryArtifactsRequest {
+  sources: HashSourceInput[];
+  options?: ArtifactExtractionOptions | null;
+  evidenceFileId?: string;
+  evidenceFile?: ProjectDbEvidenceFile;
+  extractor?: string;
+}
+
+/** Per-source extraction failure from driver/module binary collection */
+export interface ProjectDbBinaryArtifactCollectionError {
+  sourceId: string;
+  error: string;
+}
+
+/** Result from collecting known driver/module binary artifacts */
+export interface ProjectDbCollectBinaryArtifactsResult {
+  scanned: number;
+  matched: number;
+  inserted: number;
+  skipped: number;
+  records: DbNormalizedArtifact[];
+  errors: ProjectDbBinaryArtifactCollectionError[];
+}
+
 /** Bounded byte/source analysis options for hex and data review */
 export interface SourceAnalysisOptions {
   offset?: number;
   length?: number;
   entropyWindowBytes?: number;
+}
+
+/** Binary source metadata used before choosing inline or ranged reads */
+export interface ViewerBinaryInfo {
+  path: string;
+  size: number;
+  maxInlineBytes: number;
+  supportsRangeReads: boolean;
 }
 
 /** Ranged binary chunk returned as base64 for source-backed viewers */
@@ -341,6 +401,16 @@ export interface ViewerBinaryBase64Chunk {
   totalSize: number;
   eof: boolean;
   data: string;
+}
+
+/** Ranged text chunk returned for source-backed viewers */
+export interface ViewerTextChunk {
+  path: string;
+  offset: number;
+  bytesRead: number;
+  totalSize: number;
+  eof: boolean;
+  text: string;
 }
 
 /** Detected source signature */
@@ -743,6 +813,34 @@ export const artifactCommands = {
         request,
       },
     ),
+
+  /**
+   * Extract and persist known Windows/Linux/macOS system identity artifacts
+   * from a batch of candidate evidence sources.
+   */
+  collectSystemIdentitySources: (
+    request: ProjectDbCollectSystemIdentityRequest,
+  ): Promise<ProjectDbCollectSystemIdentityResult> =>
+    invoke<ProjectDbCollectSystemIdentityResult>(
+      "project_db_collect_system_identity_sources",
+      {
+        request,
+      },
+    ),
+
+  /**
+   * Extract and persist known driver/module binary artifacts from a batch of
+   * candidate evidence sources.
+   */
+  collectBinaryArtifactSources: (
+    request: ProjectDbCollectBinaryArtifactsRequest,
+  ): Promise<ProjectDbCollectBinaryArtifactsResult> =>
+    invoke<ProjectDbCollectBinaryArtifactsResult>(
+      "project_db_collect_binary_artifact_sources",
+      {
+        request,
+      },
+    ),
 };
 
 // =============================================================================
@@ -867,11 +965,28 @@ export const viewerCommands = {
   ): Promise<SourceAnalysis> =>
     invoke<SourceAnalysis>("viewer_analyze_source", { source, options }),
 
+  getBinaryInfo: (path: string): Promise<ViewerBinaryInfo> =>
+    invoke<ViewerBinaryInfo>("viewer_get_binary_info", { path }),
+
+  getBinaryInfoSource: (source: HashSourceInput): Promise<ViewerBinaryInfo> =>
+    invoke<ViewerBinaryInfo>("viewer_get_binary_info_source", { source }),
+
   readBinaryBase64: (path: string): Promise<string> =>
     invoke<string>("viewer_read_binary_base64", { path }),
 
   readBinarySourceBase64: (source: HashSourceInput): Promise<string> =>
     invoke<string>("viewer_read_binary_source_base64", { source }),
+
+  readTextSource: (
+    source: HashSourceInput,
+    offset: number,
+    maxChars: number,
+  ): Promise<ViewerTextChunk> =>
+    invoke<ViewerTextChunk>("viewer_read_text_source", {
+      source,
+      offset,
+      maxChars,
+    }),
 
   readBinaryBase64Chunk: (
     path: string,

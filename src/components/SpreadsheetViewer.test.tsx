@@ -4,10 +4,16 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { save } from "@tauri-apps/plugin-dialog";
 import { SpreadsheetViewer } from "./SpreadsheetViewer";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -243,6 +249,27 @@ describe("SpreadsheetViewer", () => {
       expect(rowNums).toContain("2");
       expect(rowNums).toContain("3");
     });
+
+    it("opens the native CSV export dialog", async () => {
+      mockInvoke.mockResolvedValueOnce(mockSpreadsheetInfo);
+      mockInvoke.mockResolvedValueOnce(mockRows);
+      vi.mocked(save).mockResolvedValueOnce(null);
+
+      const { container } = renderComponent(() => (
+        <SpreadsheetViewer path="/evidence/data.xlsx" />
+      ));
+      await tick();
+
+      const exportButton = container.querySelector('button[title="Export as CSV"]') as HTMLButtonElement;
+      expect(exportButton).not.toBeNull();
+      exportButton.click();
+
+      expect(save).toHaveBeenCalledWith({
+        title: "Export Spreadsheet as CSV",
+        defaultPath: "Sheet1.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+    });
   });
 
   describe("multi-sheet navigation", () => {
@@ -337,6 +364,68 @@ describe("SpreadsheetViewer", () => {
 
       expect(container.textContent).toContain("Name");
       expect(container.textContent).toContain("Alice");
+    });
+
+    it("ignores stale spreadsheet info after the selected file changes", async () => {
+      let resolveSlowInfo: (value: typeof mockSpreadsheetInfo) => void = () => {};
+      const slowInfo = new Promise<typeof mockSpreadsheetInfo>((resolve) => {
+        resolveSlowInfo = resolve;
+      });
+      const currentInfo = {
+        ...mockSpreadsheetInfo,
+        path: "/evidence/current.xlsx",
+        sheets: [{ name: "Current", row_count: 2, col_count: 1 }],
+        total_sheets: 1,
+      };
+      const currentRows = [
+        [{ type: "String" as const, value: "Current Header" }],
+        [{ type: "String" as const, value: "Current Value" }],
+      ];
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "spreadsheet_info" && args?.path === "/evidence/slow.xlsx") {
+          return slowInfo;
+        }
+        if (command === "spreadsheet_info" && args?.path === "/evidence/current.xlsx") {
+          return Promise.resolve(currentInfo);
+        }
+        if (
+          command === "spreadsheet_read_sheet" &&
+          args?.path === "/evidence/current.xlsx"
+        ) {
+          return Promise.resolve(currentRows);
+        }
+        if (command === "spreadsheet_read_sheet" && args?.path === "/evidence/slow.xlsx") {
+          return Promise.resolve([
+            [{ type: "String" as const, value: "Stale Header" }],
+            [{ type: "String" as const, value: "Stale Value" }],
+          ]);
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
+
+      const [path, setPath] = createSignal("/evidence/slow.xlsx");
+      const { container } = renderComponent(() => <SpreadsheetViewer path={path()} />);
+      await tick();
+
+      setPath("/evidence/current.xlsx");
+      await tick();
+
+      expect(container.textContent).toContain("Current Header");
+      expect(container.textContent).toContain("Current Value");
+
+      resolveSlowInfo({
+        ...mockSpreadsheetInfo,
+        path: "/evidence/slow.xlsx",
+        sheets: [{ name: "Stale", row_count: 2, col_count: 1 }],
+        total_sheets: 1,
+      });
+      await tick();
+
+      expect(container.textContent).toContain("Current Header");
+      expect(container.textContent).toContain("Current Value");
+      expect(container.textContent).not.toContain("Stale Header");
+      expect(container.textContent).not.toContain("Stale Value");
     });
   });
 

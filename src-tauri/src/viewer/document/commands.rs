@@ -9,13 +9,19 @@
 //! This module exposes document functionality to the frontend via Tauri commands.
 
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use tauri::command;
 
 use crate::commands::hash::{open_hash_source, HashSourceInput};
 use crate::common::{
     read_all_with_limit, read_range_fully, EvidenceByteSource, EvidenceSourceReader,
+    EvidenceSourceRef,
 };
 
 use super::types::{DocumentContent, DocumentMetadata};
@@ -154,6 +160,7 @@ impl From<DocumentMetadata> for DocumentMetadataDto {
 // =============================================================================
 
 const MATERIALIZED_SOURCE_COPY_CHUNK_BYTES: usize = 1024 * 1024;
+const MATERIALIZED_SOURCE_CACHE_FINGERPRINT_BYTES: usize = 4096;
 const DOCUMENT_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 
 fn copy_evidence_source_to_writer(
@@ -271,21 +278,25 @@ fn document_content_from_source(source: HashSourceInput) -> Result<DocumentConte
 /// Read a document file and return its content
 #[command]
 pub async fn document_read(path: String) -> Result<DocumentResponse, String> {
-    let service = DocumentService::new();
-    let path = PathBuf::from(&path);
+    tokio::task::spawn_blocking(move || {
+        let service = DocumentService::new();
+        let path = PathBuf::from(&path);
 
-    match service.read(&path) {
-        Ok(content) => Ok(DocumentResponse {
-            success: true,
-            content: Some(content.into()),
-            error: None,
-        }),
-        Err(e) => Ok(DocumentResponse {
-            success: false,
-            content: None,
-            error: Some(e.to_string()),
-        }),
-    }
+        match service.read(&path) {
+            Ok(content) => Ok(DocumentResponse {
+                success: true,
+                content: Some(content.into()),
+                error: None,
+            }),
+            Err(e) => Ok(DocumentResponse {
+                success: false,
+                content: None,
+                error: Some(e.to_string()),
+            }),
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read a document from a local file or supported container entry.
@@ -310,21 +321,25 @@ pub async fn document_read_source(source: HashSourceInput) -> Result<DocumentRes
 /// Get document metadata
 #[command]
 pub async fn document_get_metadata(path: String) -> Result<MetadataResponse, String> {
-    let service = DocumentService::new();
-    let path = PathBuf::from(&path);
+    tokio::task::spawn_blocking(move || {
+        let service = DocumentService::new();
+        let path = PathBuf::from(&path);
 
-    match service.get_metadata(&path) {
-        Ok(metadata) => Ok(MetadataResponse {
-            success: true,
-            metadata: Some(metadata.into()),
-            error: None,
-        }),
-        Err(e) => Ok(MetadataResponse {
-            success: false,
-            metadata: None,
-            error: Some(e.to_string()),
-        }),
-    }
+        match service.get_metadata(&path) {
+            Ok(metadata) => Ok(MetadataResponse {
+                success: true,
+                metadata: Some(metadata.into()),
+                error: None,
+            }),
+            Err(e) => Ok(MetadataResponse {
+                success: false,
+                metadata: None,
+                error: Some(e.to_string()),
+            }),
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get document metadata from a local file or supported container entry.
@@ -392,6 +407,12 @@ fn refine_magic_format(magic_format: UniversalFormat, path_ref: &Path) -> Univer
         UniversalFormat::Zip | UniversalFormat::Doc => {
             UniversalFormat::from_path(path_ref).unwrap_or(magic_format)
         }
+        UniversalFormat::Exe => match UniversalFormat::from_path(path_ref) {
+            Some(format @ (UniversalFormat::Sys | UniversalFormat::Dll | UniversalFormat::Exe)) => {
+                format
+            }
+            _ => magic_format,
+        },
         UniversalFormat::RegistryHive => {
             // Registry transaction logs (.log, .log1, .log2, etc.) share the
             // "regf" magic signature with actual hives but have a different
@@ -475,10 +496,20 @@ fn read_local_header(path_ref: &Path, max_bytes: usize) -> std::io::Result<Vec<u
 /// Returns format info with recommended viewer type.
 #[command]
 pub async fn detect_content_format(path: String) -> Result<ContentDetectResponse, String> {
-    let path_ref = std::path::Path::new(&path);
-    let header = read_local_header(path_ref, 265).unwrap_or_default();
+    tokio::task::spawn_blocking(move || {
+        let path_ref = std::path::Path::new(&path);
+        let header = read_local_header(path_ref, 265).map_err(|e| {
+            format!(
+                "Failed to read local header for {}: {}",
+                path_ref.display(),
+                e
+            )
+        })?;
 
-    Ok(detect_content_format_from_header(path_ref, &header))
+        Ok(detect_content_format_from_header(path_ref, &header))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Detect file format from a local file or supported container entry.
@@ -510,7 +541,9 @@ const SPREADSHEET_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 /// Get spreadsheet metadata (sheets, format, etc.)
 #[command]
 pub async fn spreadsheet_info(path: String) -> Result<SpreadsheetInfo, String> {
-    read_spreadsheet_info(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || read_spreadsheet_info(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get spreadsheet metadata from a local file or supported container entry.
@@ -537,7 +570,11 @@ pub async fn spreadsheet_read_sheet(
 ) -> Result<Vec<Vec<CellValue>>, String> {
     let start = start_row.unwrap_or(0);
     let max = max_rows.unwrap_or(500);
-    read_sheet(&path, &sheet_name, start, max).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        read_sheet(&path, &sheet_name, start, max).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read a sheet from a local file or supported container entry.
@@ -570,11 +607,17 @@ use super::email::{
 };
 
 const EMAIL_SOURCE_MAX_BYTES: u64 = 50 * 1024 * 1024;
+const MSG_SOURCE_CACHE_MAX_ENTRIES: usize = 16;
+
+static MSG_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Parse an EML email file and return structured email info
 #[command]
 pub async fn email_parse_eml(path: String) -> Result<EmailInfo, String> {
-    parse_eml(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || parse_eml(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse an EML email from a local file or supported container entry.
@@ -597,7 +640,9 @@ pub async fn email_parse_mbox(
     path: String,
     max_messages: Option<usize>,
 ) -> Result<Vec<EmailInfo>, String> {
-    parse_mbox(&path, max_messages).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || parse_mbox(&path, max_messages).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse an MBOX mailbox from a local file or supported container entry.
@@ -620,7 +665,9 @@ pub async fn email_parse_mbox_source(
 /// Parse an Outlook .msg file and return structured email info
 #[command]
 pub async fn email_parse_msg(path: String) -> Result<EmailInfo, String> {
-    parse_msg(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || parse_msg(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Parse an Outlook .msg file from a local file or supported container entry.
@@ -628,7 +675,8 @@ pub async fn email_parse_msg(path: String) -> Result<EmailInfo, String> {
 pub async fn email_parse_msg_source(source: HashSourceInput) -> Result<EmailInfo, String> {
     tokio::task::spawn_blocking(move || {
         let byte_source = open_hash_source(&source)?;
-        let source_id = byte_source.source_ref().display_id();
+        let source_ref = byte_source.source_ref();
+        let source_id = source_ref.display_id();
         let size = byte_source.len().map_err(|e| e.to_string())?;
         if size > EMAIL_SOURCE_MAX_BYTES {
             return Err(format!(
@@ -637,25 +685,76 @@ pub async fn email_parse_msg_source(source: HashSourceInput) -> Result<EmailInfo
             ));
         }
 
-        let mut temp = tempfile::Builder::new()
-            .prefix("core-ffx-msg-")
-            .suffix(".msg")
-            .tempfile()
-            .map_err(|e| format!("Failed to create temporary MSG copy: {}", e))?;
-        copy_evidence_source_to_writer(byte_source.as_ref(), size, "MSG", &mut temp)?;
-        temp.flush()
-            .map_err(|e| format!("Failed to flush temporary MSG copy: {}", e))?;
-        temp.as_file()
-            .sync_all()
-            .map_err(|e| format!("Failed to sync temporary MSG copy: {}", e))?;
+        if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+            let mut info = parse_msg(path).map_err(|e| e.to_string())?;
+            info.path = source_id;
+            info.size = size;
+            return Ok(info);
+        }
 
-        let mut info = parse_msg(temp.path()).map_err(|e| e.to_string())?;
+        let cache_path =
+            cached_msg_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+        let mut info = parse_msg(&cache_path).map_err(|e| e.to_string())?;
         info.path = source_id;
         info.size = size;
         Ok(info)
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn cached_msg_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
+    if let Some(path) = materialized_source_cache_get(&MSG_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-msg-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create MSG source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.msg"));
+
+    if cache_path.exists() {
+        materialized_source_cache_insert(
+            &MSG_SOURCE_CACHE,
+            MSG_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
+    let mut temp = tempfile::Builder::new()
+        .prefix("core-ffx-msg-")
+        .suffix(".msg")
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary MSG copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "MSG", &mut temp)?;
+    temp.flush()
+        .map_err(|e| format!("Failed to flush temporary MSG copy: {e}"))?;
+    temp.as_file()
+        .sync_all()
+        .map_err(|e| format!("Failed to sync temporary MSG copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist MSG source cache copy: {}", e.error))?;
+
+    materialized_source_cache_insert(
+        &MSG_SOURCE_CACHE,
+        MSG_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached MSG evidence source for viewer parsing"
+    );
+    Ok(cache_path)
 }
 
 // =============================================================================
@@ -668,13 +767,18 @@ use super::pst::{
 };
 
 const PST_SOURCE_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const PST_SOURCE_CACHE_MAX_ENTRIES: usize = 4;
+
+static PST_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn with_pst_source<T>(
     source: HashSourceInput,
     operation: impl FnOnce(&Path, String) -> Result<T, String>,
 ) -> Result<T, String> {
     let byte_source = open_hash_source(&source)?;
-    let source_id = byte_source.source_ref().display_id();
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
     if size > PST_SOURCE_MAX_BYTES {
         return Err(format!(
@@ -683,19 +787,66 @@ fn with_pst_source<T>(
         ));
     }
 
+    if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+        return operation(Path::new(path), source_id);
+    }
+
+    let cached_path = cached_pst_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+    operation(&cached_path, source_id)
+}
+
+fn cached_pst_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
+    if let Some(path) = materialized_source_cache_get(&PST_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-pst-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create PST source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.pst"));
+
+    if cache_path.exists() {
+        materialized_source_cache_insert(
+            &PST_SOURCE_CACHE,
+            PST_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-pst-")
         .suffix(".pst")
-        .tempfile()
-        .map_err(|e| format!("Failed to create temporary PST copy: {}", e))?;
-    copy_evidence_source_to_writer(byte_source.as_ref(), size, "PST", &mut temp)?;
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary PST copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "PST", &mut temp)?;
     temp.flush()
-        .map_err(|e| format!("Failed to flush temporary PST copy: {}", e))?;
+        .map_err(|e| format!("Failed to flush temporary PST copy: {e}"))?;
     temp.as_file()
         .sync_all()
-        .map_err(|e| format!("Failed to sync temporary PST copy: {}", e))?;
+        .map_err(|e| format!("Failed to sync temporary PST copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist PST source cache copy: {}", e.error))?;
 
-    operation(temp.path(), source_id)
+    materialized_source_cache_insert(
+        &PST_SOURCE_CACHE,
+        PST_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached PST evidence source for viewer navigation"
+    );
+    Ok(cache_path)
 }
 
 /// List all folders in a PST/OST file
@@ -793,7 +944,9 @@ use super::plist_viewer::{
 /// Read and parse a plist file, returning flattened entries
 #[command]
 pub async fn plist_read(path: String) -> Result<PlistInfo, String> {
-    read_plist(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || read_plist(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read and parse a plist from a local file or supported container entry.
@@ -820,7 +973,9 @@ use super::exif::{ensure_exif_size_allowed, extract_exif, extract_exif_from_read
 /// Extract EXIF metadata from an image file
 #[command]
 pub async fn exif_extract(path: String) -> Result<ExifMetadata, String> {
-    extract_exif(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || extract_exif(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Extract EXIF metadata from a local file or supported container entry.
@@ -849,7 +1004,9 @@ const BINARY_ANALYSIS_MAX_BYTES: u64 = 512 * 1024 * 1024;
 /// Analyze a binary executable (PE/ELF/Mach-O)
 #[command]
 pub async fn binary_analyze(path: String) -> Result<BinaryInfo, String> {
-    analyze_binary(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || analyze_binary(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Analyze a binary executable from a local file or supported container entry.
@@ -876,13 +1033,18 @@ use super::registry_viewer::{
 };
 
 const REGISTRY_SOURCE_MAX_BYTES: u64 = 256 * 1024 * 1024;
+const REGISTRY_SOURCE_CACHE_MAX_ENTRIES: usize = 8;
+
+static REGISTRY_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn with_registry_source<T>(
     source: HashSourceInput,
     operation: impl FnOnce(&Path, String) -> Result<T, String>,
 ) -> Result<T, String> {
     let byte_source = open_hash_source(&source)?;
-    let source_id = byte_source.source_ref().display_id();
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
     if size > REGISTRY_SOURCE_MAX_BYTES {
         return Err(format!(
@@ -891,25 +1053,152 @@ fn with_registry_source<T>(
         ));
     }
 
+    if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+        return operation(Path::new(path), source_id);
+    }
+
+    let cached_path =
+        cached_registry_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+    operation(&cached_path, source_id)
+}
+
+fn cached_registry_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
+    if let Some(path) = materialized_source_cache_get(&REGISTRY_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-registry-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create registry source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.hive"));
+
+    if cache_path.exists() {
+        materialized_source_cache_insert(
+            &REGISTRY_SOURCE_CACHE,
+            REGISTRY_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-registry-")
         .suffix(".hive")
-        .tempfile()
-        .map_err(|e| format!("Failed to create temporary registry copy: {}", e))?;
-    copy_evidence_source_to_writer(byte_source.as_ref(), size, "registry", &mut temp)?;
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary registry copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "registry", &mut temp)?;
     temp.flush()
-        .map_err(|e| format!("Failed to flush temporary registry copy: {}", e))?;
+        .map_err(|e| format!("Failed to flush temporary registry copy: {e}"))?;
     temp.as_file()
         .sync_all()
-        .map_err(|e| format!("Failed to sync temporary registry copy: {}", e))?;
+        .map_err(|e| format!("Failed to sync temporary registry copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist registry source cache copy: {}", e.error))?;
 
-    operation(temp.path(), source_id)
+    materialized_source_cache_insert(
+        &REGISTRY_SOURCE_CACHE,
+        REGISTRY_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached registry evidence source for viewer navigation"
+    );
+    Ok(cache_path)
+}
+
+fn materialized_source_cache_get(
+    cache: &LazyLock<Mutex<HashMap<String, PathBuf>>>,
+    cache_key: &str,
+) -> Option<PathBuf> {
+    let mut cache = cache.lock().ok()?;
+    let path = cache.get(cache_key).cloned()?;
+    if path.exists() {
+        return Some(path);
+    }
+    cache.remove(cache_key);
+    None
+}
+
+fn materialized_source_cache_insert(
+    cache: &LazyLock<Mutex<HashMap<String, PathBuf>>>,
+    max_entries: usize,
+    cache_key: String,
+    cache_path: PathBuf,
+) {
+    let Ok(mut cache) = cache.lock() else {
+        return;
+    };
+    if cache.len() >= max_entries && !cache.contains_key(&cache_key) {
+        let remove_count = cache.len() - max_entries + 1;
+        let keys: Vec<String> = cache.keys().take(remove_count).cloned().collect();
+        for key in keys {
+            if let Some(path) = cache.remove(&key) {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+    cache.insert(cache_key, cache_path);
+}
+
+fn materialized_source_cache_key(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    size: u64,
+) -> Result<String, String> {
+    let mut hasher = DefaultHasher::new();
+    match serde_json::to_string(source_ref) {
+        Ok(value) => value.hash(&mut hasher),
+        Err(_) => source_ref.display_id().hash(&mut hasher),
+    }
+    size.hash(&mut hasher);
+
+    let fingerprint_size = usize::try_from(
+        size.min(MATERIALIZED_SOURCE_CACHE_FINGERPRINT_BYTES as u64),
+    )
+    .map_err(|_| {
+        format!(
+            "Materialized source fingerprint size does not fit this platform for {}",
+            source_ref.display_id()
+        )
+    })?;
+    if fingerprint_size > 0 {
+        let fingerprint = read_range_fully(byte_source, 0, fingerprint_size).map_err(|e| {
+            format!(
+                "Failed to fingerprint materialized source {}: {e}",
+                source_ref.display_id()
+            )
+        })?;
+        if fingerprint.len() > fingerprint_size {
+            return Err(format!(
+                "Materialized source {} returned {} fingerprint bytes for {} requested bytes",
+                source_ref.display_id(),
+                fingerprint.len(),
+                fingerprint_size
+            ));
+        }
+        fingerprint.len().hash(&mut hasher);
+        fingerprint.hash(&mut hasher);
+    }
+
+    Ok(format!("{:016x}", hasher.finish()))
 }
 
 /// Get overview information about a Windows Registry hive file
 #[command]
 pub async fn registry_get_info(path: String) -> Result<RegistryHiveInfo, String> {
-    get_hive_info(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || get_hive_info(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get overview information about a Windows Registry hive inside an evidence source.
@@ -932,7 +1221,11 @@ pub async fn registry_get_subkeys(
     hive_path: String,
     key_path: String,
 ) -> Result<RegistrySubkeysResponse, String> {
-    get_subkeys(&hive_path, &key_path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        get_subkeys(&hive_path, &key_path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get immediate subkeys from a registry hive inside an evidence source.
@@ -956,7 +1249,11 @@ pub async fn registry_get_key_info(
     hive_path: String,
     key_path: String,
 ) -> Result<RegistryKeyInfo, String> {
-    get_key_info(&hive_path, &key_path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        get_key_info(&hive_path, &key_path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get detailed key information from a registry hive inside an evidence source.
@@ -983,13 +1280,18 @@ use super::database_viewer::{
 };
 
 const DATABASE_SOURCE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const DATABASE_SOURCE_CACHE_MAX_ENTRIES: usize = 8;
+
+static DATABASE_SOURCE_CACHE: LazyLock<Mutex<HashMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn with_database_source<T>(
     source: HashSourceInput,
     operation: impl FnOnce(&Path, String) -> Result<T, String>,
 ) -> Result<T, String> {
     let byte_source = open_hash_source(&source)?;
-    let source_id = byte_source.source_ref().display_id();
+    let source_ref = byte_source.source_ref();
+    let source_id = source_ref.display_id();
     let size = byte_source.len().map_err(|e| e.to_string())?;
     if size > DATABASE_SOURCE_MAX_BYTES {
         return Err(format!(
@@ -998,25 +1300,75 @@ fn with_database_source<T>(
         ));
     }
 
+    if let EvidenceSourceRef::LocalFile { path } = &source_ref {
+        return operation(Path::new(path), source_id);
+    }
+
+    let cached_path =
+        cached_database_source_path(byte_source.as_ref(), &source_ref, &source_id, size)?;
+    operation(&cached_path, source_id)
+}
+
+fn cached_database_source_path(
+    byte_source: &dyn EvidenceByteSource,
+    source_ref: &EvidenceSourceRef,
+    source_id: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let cache_key = materialized_source_cache_key(byte_source, source_ref, size)?;
+    if let Some(path) = materialized_source_cache_get(&DATABASE_SOURCE_CACHE, &cache_key) {
+        return Ok(path);
+    }
+
+    let cache_dir = std::env::temp_dir().join("core-ffx-database-cache");
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create database source cache directory: {e}"))?;
+    let cache_path = cache_dir.join(format!("{cache_key}.sqlite"));
+
+    if cache_path.exists() {
+        materialized_source_cache_insert(
+            &DATABASE_SOURCE_CACHE,
+            DATABASE_SOURCE_CACHE_MAX_ENTRIES,
+            cache_key,
+            cache_path.clone(),
+        );
+        return Ok(cache_path);
+    }
+
     let mut temp = tempfile::Builder::new()
         .prefix("core-ffx-db-")
         .suffix(".sqlite")
-        .tempfile()
-        .map_err(|e| format!("Failed to create temporary database copy: {}", e))?;
-    copy_evidence_source_to_writer(byte_source.as_ref(), size, "database", &mut temp)?;
+        .tempfile_in(&cache_dir)
+        .map_err(|e| format!("Failed to create temporary database copy: {e}"))?;
+    copy_evidence_source_to_writer(byte_source, size, "database", &mut temp)?;
     temp.flush()
-        .map_err(|e| format!("Failed to flush temporary database copy: {}", e))?;
+        .map_err(|e| format!("Failed to flush temporary database copy: {e}"))?;
     temp.as_file()
         .sync_all()
-        .map_err(|e| format!("Failed to sync temporary database copy: {}", e))?;
+        .map_err(|e| format!("Failed to sync temporary database copy: {e}"))?;
+    temp.persist(&cache_path)
+        .map_err(|e| format!("Failed to persist database source cache copy: {}", e.error))?;
 
-    operation(temp.path(), source_id)
+    materialized_source_cache_insert(
+        &DATABASE_SOURCE_CACHE,
+        DATABASE_SOURCE_CACHE_MAX_ENTRIES,
+        cache_key,
+        cache_path.clone(),
+    );
+    tracing::debug!(
+        source_id,
+        path = %cache_path.display(),
+        "Cached database evidence source for viewer navigation"
+    );
+    Ok(cache_path)
 }
 
 /// Get overview information about a SQLite database
 #[command]
 pub async fn database_get_info(path: String) -> Result<DatabaseInfo, String> {
-    get_database_info(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || get_database_info(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get overview information about a SQLite database inside an evidence source.
@@ -1039,7 +1391,11 @@ pub async fn database_get_table_schema(
     db_path: String,
     table_name: String,
 ) -> Result<TableSchema, String> {
-    get_table_schema(&db_path, &table_name).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        get_table_schema(&db_path, &table_name).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Get schema for a table in a SQLite database inside an evidence source.
@@ -1065,7 +1421,11 @@ pub async fn database_query_table(
     page: usize,
     page_size: usize,
 ) -> Result<TableRows, String> {
-    query_table_rows(&db_path, &table_name, page, page_size).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        query_table_rows(&db_path, &table_name, page, page_size).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Query paginated rows from a table in a SQLite evidence source.
@@ -1098,7 +1458,9 @@ const OFFICE_SOURCE_MAX_BYTES: u64 = 100 * 1024 * 1024;
 /// Supports: DOCX, DOC, PPTX, PPT, ODT, ODP, RTF
 #[command]
 pub async fn office_read_document(path: String) -> Result<OfficeDocumentInfo, String> {
-    read_office_document(&path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || read_office_document(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Read an office document from a local file or supported container entry.
@@ -1224,9 +1586,32 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         (tmp, source)
+    }
+
+    fn minimal_elf64_header() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x7f, b'E', b'L', b'F']);
+        data.extend_from_slice(&[2, 1, 1, 0]);
+        data.extend_from_slice(&[0; 8]);
+        data.extend_from_slice(&2u16.to_le_bytes());
+        data.extend_from_slice(&0x3eu16.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&0x400000u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&64u16.to_le_bytes());
+        data.extend_from_slice(&56u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&64u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data
     }
 
     #[test]
@@ -1278,6 +1663,133 @@ mod tests {
     }
 
     #[test]
+    fn materialized_source_cache_key_changes_with_size_and_prefix_bytes() {
+        let source_ref = EvidenceSourceRef::VfsEntry {
+            container_path: "/cases/windows.E01".to_string(),
+            entry_path: "/Windows/System32/config/SYSTEM".to_string(),
+            container_type: Some("e01".to_string()),
+        };
+        let source_a = ChunkedByteSource {
+            source_ref: source_ref.clone(),
+            data: b"regf-system-a".to_vec(),
+            max_chunk: 4096,
+        };
+        let source_b = ChunkedByteSource {
+            source_ref: source_ref.clone(),
+            data: b"regf-system-b".to_vec(),
+            max_chunk: 4096,
+        };
+
+        assert_eq!(
+            materialized_source_cache_key(&source_a, &source_ref, source_a.len().unwrap()).unwrap(),
+            materialized_source_cache_key(&source_a, &source_ref, source_a.len().unwrap()).unwrap()
+        );
+        assert_ne!(
+            materialized_source_cache_key(&source_a, &source_ref, source_a.len().unwrap()).unwrap(),
+            materialized_source_cache_key(&source_b, &source_ref, source_b.len().unwrap()).unwrap()
+        );
+    }
+
+    #[test]
+    fn registry_source_uses_local_file_without_materializing_copy() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"regf").unwrap();
+        tmp.flush().unwrap();
+        let local_path = tmp.path().to_string_lossy().to_string();
+        let source = HashSourceInput {
+            path: Some(local_path.clone()),
+            container_path: None,
+            entry_path: None,
+            nested_archive_path: None,
+            container_type: Some("disk".to_string()),
+            size: Some(4),
+            data_addr: None,
+            item_addr: None,
+        };
+
+        with_registry_source(source, |path, source_id| {
+            assert_eq!(path, Path::new(&local_path));
+            assert_eq!(source_id, local_path);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn database_source_uses_local_file_without_materializing_copy() {
+        let (tmp, source) = create_sqlite_source();
+        let local_path = tmp.path().to_string_lossy().to_string();
+
+        with_database_source(source, |path, source_id| {
+            assert_eq!(path, Path::new(&local_path));
+            assert_eq!(source_id, local_path);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pst_source_uses_local_file_without_materializing_copy() {
+        let mut tmp = tempfile::Builder::new().suffix(".pst").tempfile().unwrap();
+        tmp.write_all(b"!BDN").unwrap();
+        tmp.flush().unwrap();
+        let local_path = tmp.path().to_string_lossy().to_string();
+        let source = HashSourceInput {
+            path: Some(local_path.clone()),
+            container_path: None,
+            entry_path: None,
+            nested_archive_path: None,
+            container_type: Some("disk".to_string()),
+            size: Some(4),
+            data_addr: None,
+            item_addr: None,
+        };
+
+        with_pst_source(source, |path, source_id| {
+            assert_eq!(path, Path::new(&local_path));
+            assert_eq!(source_id, local_path);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn msg_source_materialization_cache_reuses_evidence_copy() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let source_ref = EvidenceSourceRef::VfsEntry {
+            container_path: format!("/cases/mail-{nonce}.E01"),
+            entry_path: "/Users/alice/message.msg".to_string(),
+            container_type: Some("e01".to_string()),
+        };
+        let source = ChunkedByteSource {
+            source_ref: source_ref.clone(),
+            data: b"msg-bytes".to_vec(),
+            max_chunk: 3,
+        };
+
+        let first = cached_msg_source_path(
+            &source,
+            &source_ref,
+            &source_ref.display_id(),
+            source.len().unwrap(),
+        )
+        .unwrap();
+        let second = cached_msg_source_path(
+            &source,
+            &source_ref,
+            &source_ref.display_id(),
+            source.len().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(std::fs::read(first).unwrap(), b"msg-bytes");
+    }
+
+    #[test]
     fn checked_materialized_copy_advance_rejects_overflow() {
         let err =
             checked_materialized_copy_advance(u64::MAX, 1, "database", "source.db").unwrap_err();
@@ -1299,6 +1811,16 @@ mod tests {
         let detected = detect_content_format_from_header(Path::new("transaction.log1"), b"regf");
         assert_eq!(detected.format, "Binary");
         assert_eq!(detected.viewer_type, "Hex");
+        assert_eq!(detected.method, "magic");
+    }
+
+    #[test]
+    fn content_detection_refines_mz_magic_for_windows_drivers() {
+        let detected = detect_content_format_from_header(Path::new("netadapter.sys"), b"MZ\x90\0");
+        assert_eq!(detected.format, "Sys");
+        assert_eq!(detected.viewer_type, "Binary");
+        assert_eq!(detected.description, "Windows Driver");
+        assert_eq!(detected.mime_type, "application/x-windows-driver");
         assert_eq!(detected.method, "magic");
     }
 
@@ -1326,6 +1848,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("disk".to_string()),
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let detected = detect_content_format_source(source).await.unwrap();
@@ -1347,6 +1871,19 @@ mod tests {
         assert_eq!(detected.format, "Xlsx");
         assert_eq!(detected.viewer_type, "Spreadsheet");
         assert_eq!(detected.method, "magic");
+    }
+
+    #[tokio::test]
+    async fn detect_content_format_rejects_missing_local_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.pdf");
+
+        let err = detect_content_format(path.to_string_lossy().to_string())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("Failed to read local header"));
+        assert!(err.contains("missing.pdf"));
     }
 
     #[tokio::test]
@@ -1374,6 +1911,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn binary_analyze_reads_local_binary_on_blocking_worker() {
+        let mut tmp = tempfile::Builder::new().suffix(".elf").tempfile().unwrap();
+        tmp.write_all(&minimal_elf64_header()).unwrap();
+        tmp.flush().unwrap();
+
+        let info = binary_analyze(tmp.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            info.format,
+            super::super::binary::BinaryFormat::ELF64
+        ));
+        assert_eq!(info.architecture, "x86_64");
+        assert_eq!(info.entry_point, Some(0x400000));
+    }
+
+    #[tokio::test]
     async fn registry_source_command_reports_parse_error_for_non_hive_source() {
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         tmp.write_all(b"not a registry hive").unwrap();
@@ -1386,6 +1941,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let error = registry_get_info_source(source).await.unwrap_err();
@@ -1409,6 +1966,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let response = document_read_source(source.clone()).await.unwrap();
@@ -1438,6 +1997,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let error = pst_get_folders_source(source).await.unwrap_err();
@@ -1461,6 +2022,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: Some(std::fs::metadata(tmp.path()).unwrap().len()),
+            data_addr: None,
+            item_addr: None,
         };
 
         let error = email_parse_msg_source(source).await.unwrap_err();

@@ -60,6 +60,7 @@ export function createVfsSelectedEntry(containerPath: string, entry: VfsEntry): 
     size: entry.size,
     isDir: entry.isDir,
     isVfsEntry: true,
+    containerType: "vfs",
     // VFS entries don't have AD1-style addresses
     dataAddr: null,
     itemAddr: null,

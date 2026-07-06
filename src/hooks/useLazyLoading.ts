@@ -40,6 +40,7 @@
 import { createSignal, createEffect } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 import type { 
   LazyLoadConfig, 
   LazyTreeEntry, 
@@ -48,6 +49,8 @@ import type {
 } from "../types/lazy-loading";
 
 const log = logger.scope("LazyLoading");
+const BROWSER_LAZY_LOADING_MESSAGE =
+  "Evidence container lazy loading is available in the desktop app.";
 
 // =============================================================================
 // TYPES
@@ -136,9 +139,20 @@ export function useLazyLoading(
   const [rootOffset, setRootOffset] = createSignal(0);
   const [rootTotalCount, setRootTotalCount] = createSignal(0);
   const [hasMoreRoot, setHasMoreRoot] = createSignal(false);
+  let loadEpoch = 0;
 
   // === Computed ===
   const isLoading = () => isLoadingRoot() || isLoadingChildren().size > 0;
+  const isCurrentLoad = (epoch: number, path: string) =>
+    epoch === loadEpoch && containerPath() === path;
+
+  const setBrowserUnavailable = (): void => {
+    const unavailable = new Error(BROWSER_LAZY_LOADING_MESSAGE);
+    setError(unavailable);
+    setIsLoadingRoot(false);
+    setIsLoadingChildren(new Set<string>());
+    options.onError?.(unavailable);
+  };
 
   // === Actions ===
 
@@ -148,15 +162,23 @@ export function useLazyLoading(
   const loadSummary = async (): Promise<ContainerSummary | null> => {
     const path = containerPath();
     if (!path) return null;
+    const epoch = loadEpoch;
+    if (!isTauri) {
+      setSummary(null);
+      setBrowserUnavailable();
+      return null;
+    }
 
     try {
       setError(null);
       const result = await invoke<ContainerSummary>("lazy_get_container_summary", {
         containerPath: path,
       });
+      if (!isCurrentLoad(epoch, path)) return result;
       setSummary(result);
       return result;
     } catch (err) {
+      if (!isCurrentLoad(epoch, path)) return null;
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
@@ -174,6 +196,15 @@ export function useLazyLoading(
   ): Promise<LazyLoadResult | null> => {
     const path = containerPath();
     if (!path) return null;
+    const epoch = loadEpoch;
+    if (!isTauri) {
+      setRootChildren([]);
+      setRootOffset(0);
+      setRootTotalCount(0);
+      setHasMoreRoot(false);
+      setBrowserUnavailable();
+      return null;
+    }
 
     try {
       setError(null);
@@ -185,6 +216,7 @@ export function useLazyLoading(
         offset: offset ?? 0,
         limit: limit ?? config().batch_size,
       });
+      if (!isCurrentLoad(epoch, path)) return result;
 
       // Update state based on offset
       if (offset === 0 || offset === undefined) {
@@ -203,13 +235,16 @@ export function useLazyLoading(
       options.onLoadComplete?.(result);
       return result;
     } catch (err) {
+      if (!isCurrentLoad(epoch, path)) return null;
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
       log.error("loadRootChildren failed:", err);
       return null;
     } finally {
-      setIsLoadingRoot(false);
+      if (isCurrentLoad(epoch, path)) {
+        setIsLoadingRoot(false);
+      }
     }
   };
 
@@ -231,6 +266,11 @@ export function useLazyLoading(
   ): Promise<LazyLoadResult | null> => {
     const path = containerPath();
     if (!path) return null;
+    const epoch = loadEpoch;
+    if (!isTauri) {
+      setBrowserUnavailable();
+      return null;
+    }
 
     try {
       setError(null);
@@ -248,6 +288,7 @@ export function useLazyLoading(
         offset: offset ?? 0,
         limit: limit ?? config().batch_size,
       });
+      if (!isCurrentLoad(epoch, path)) return result;
 
       // Update cache
       setChildrenCache(prev => {
@@ -266,17 +307,20 @@ export function useLazyLoading(
       setConfig(result.config);
       return result;
     } catch (err) {
+      if (!isCurrentLoad(epoch, path)) return null;
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
       options.onError?.(error);
       log.error("loadChildren failed:", err);
       return null;
     } finally {
-      setIsLoadingChildren(prev => {
-        const next = new Set(prev);
-        next.delete(parentPath);
-        return next;
-      });
+      if (isCurrentLoad(epoch, path)) {
+        setIsLoadingChildren(prev => {
+          const next = new Set(prev);
+          next.delete(parentPath);
+          return next;
+        });
+      }
     }
   };
 
@@ -298,12 +342,15 @@ export function useLazyLoading(
    * Clear all caches
    */
   const clearCache = (): void => {
+    loadEpoch += 1;
     setRootChildren([]);
     setChildrenCache(new Map());
     setSummary(null);
     setRootOffset(0);
     setRootTotalCount(0);
     setHasMoreRoot(false);
+    setIsLoadingRoot(false);
+    setIsLoadingChildren(new Set<string>());
   };
 
   /**
@@ -312,6 +359,12 @@ export function useLazyLoading(
   const updateSettings = async (
     settings: Partial<LazyLoadConfig>
   ): Promise<LazyLoadConfig> => {
+    if (!isTauri) {
+      const next = { ...config(), ...settings };
+      setConfig(next);
+      return next;
+    }
+
     try {
       const result = await invoke<LazyLoadConfig>("lazy_update_settings", {
         batchSize: settings.batch_size,
@@ -330,6 +383,10 @@ export function useLazyLoading(
    * Refresh settings from backend
    */
   const refreshSettings = async (): Promise<LazyLoadConfig> => {
+    if (!isTauri) {
+      return config();
+    }
+
     try {
       const result = await invoke<LazyLoadConfig>("lazy_get_settings");
       setConfig(result);
@@ -400,6 +457,10 @@ export function useLazyLoading(
 export async function getContainerSummary(
   containerPath: string
 ): Promise<ContainerSummary> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<ContainerSummary>("lazy_get_container_summary", {
     containerPath,
   });
@@ -413,6 +474,10 @@ export async function getRootChildren(
   offset?: number,
   limit?: number
 ): Promise<LazyLoadResult> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadResult>("lazy_get_root_children", {
     containerPath,
     offset,
@@ -429,6 +494,10 @@ export async function getChildren(
   offset?: number,
   limit?: number
 ): Promise<LazyLoadResult> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadResult>("lazy_get_children", {
     containerPath,
     parentPath,
@@ -441,6 +510,10 @@ export async function getChildren(
  * Get current lazy loading settings
  */
 export async function getLazyLoadSettings(): Promise<LazyLoadConfig> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadConfig>("lazy_get_settings");
 }
 
@@ -454,6 +527,10 @@ export async function updateLazyLoadSettings(
     paginationThreshold: number;
   }>
 ): Promise<LazyLoadConfig> {
+  if (!isTauri) {
+    throw new Error(BROWSER_LAZY_LOADING_MESSAGE);
+  }
+
   return invoke<LazyLoadConfig>("lazy_update_settings", settings);
 }
 

@@ -9,6 +9,7 @@
 //! Crawls container file trees (AD1, L01, Archive, VFS/E01/Raw, UFED) and
 //! indexes filenames, metadata, and optionally extracted text content.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -23,6 +24,9 @@ use crate::common::{
 use crate::containers::open_container_entry_source;
 use crate::ewf;
 use crate::raw;
+use crate::viewer::document::binary::{
+    analyze_binary_bytes, BinaryFormat, BinaryInfo, LinuxModuleInfo,
+};
 
 use super::{classify_extension, is_text_eligible, SearchIndex};
 
@@ -268,8 +272,7 @@ fn crawl_vfs_ewf(container_path: &str) -> Result<Vec<CrawledEntry>, String> {
 }
 
 fn crawl_vfs_raw(container_path: &str) -> Result<Vec<CrawledEntry>, String> {
-    let vfs = raw::vfs::RawVfs::open_filesystem(container_path)
-        .or_else(|_| raw::vfs::RawVfs::open(container_path))
+    let vfs = raw::vfs::RawVfs::open_with_physical_fallback(container_path)
         .map_err(|e| format!("Failed to open raw VFS: {:?}", e))?;
 
     let mut entries = Vec::new();
@@ -469,6 +472,9 @@ const MAX_CONTENT_SIZE: usize = 256 * 1024;
 /// Maximum file size to read for expensive content extraction.
 const MAX_CONTENT_SOURCE_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_DOCX_XML_SCAN_BYTES: u64 = MAX_CONTENT_SIZE as u64;
+const MAX_INDEX_BINARY_ANALYSIS_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_INDEX_METADATA_LIST_ITEMS: usize = 32;
+const MAX_INDEX_METADATA_VALUE_CHARS: usize = 180;
 const MAX_SEARCH_CRAWL_DEPTH: usize = 128;
 const MAX_SEARCH_CRAWLED_ENTRIES: usize = 250_000;
 
@@ -493,13 +499,14 @@ fn extract_content_from_container(container_path: &str, entry: &CrawledEntry) ->
         }
     };
 
-    let artifact = match extract_index_artifact(source.as_ref()) {
+    let mut artifact = match extract_index_artifact(source.as_ref()) {
         Ok(artifact) => artifact,
         Err(e) => {
             debug!("Artifact extraction failed for {}: {}", entry.entry_path, e);
             return String::new();
         }
     };
+    enrich_index_binary_artifact_metadata(source.as_ref(), &mut artifact, entry);
 
     let mut content_parts = artifact_search_terms(&artifact);
 
@@ -558,6 +565,449 @@ fn extract_index_artifact(source: &dyn EvidenceByteSource) -> Result<NormalizedA
         },
     )
     .map_err(|e| e.to_string())
+}
+
+fn enrich_index_binary_artifact_metadata(
+    source: &dyn EvidenceByteSource,
+    artifact: &mut NormalizedArtifact,
+    entry: &CrawledEntry,
+) {
+    if !is_index_binary_artifact(artifact, entry) {
+        return;
+    }
+
+    let size = match source.len() {
+        Ok(size) => size,
+        Err(error) => {
+            debug!(
+                "Binary index size lookup failed for {}: {}",
+                entry.entry_path, error
+            );
+            return;
+        }
+    };
+    if size > MAX_INDEX_BINARY_ANALYSIS_BYTES {
+        artifact.metadata.insert(
+            "binary.indexAnalysisStatus".to_string(),
+            "skipped-oversize".to_string(),
+        );
+        return;
+    }
+    let Ok(read_len) = usize::try_from(size) else {
+        artifact.metadata.insert(
+            "binary.indexAnalysisStatus".to_string(),
+            "skipped-platform-size".to_string(),
+        );
+        return;
+    };
+    let data = match read_range_fully(source, 0, read_len) {
+        Ok(data) => data,
+        Err(error) => {
+            debug!(
+                "Binary index read failed for {}: {}",
+                entry.entry_path, error
+            );
+            return;
+        }
+    };
+    let info = match analyze_binary_bytes(source.source_ref().display_id(), &data) {
+        Ok(info) => info,
+        Err(error) => {
+            debug!(
+                "Binary index analysis failed for {}: {}",
+                entry.entry_path, error
+            );
+            return;
+        }
+    };
+
+    artifact
+        .metadata
+        .extend(index_binary_artifact_metadata_from_info(&info));
+    if info.pe_is_driver {
+        artifact.category = "system".to_string();
+        artifact.type_description = info
+            .pe_driver_type
+            .as_ref()
+            .map(|driver_type| format!("Windows {driver_type}"))
+            .unwrap_or_else(|| "Windows Driver Artifact".to_string());
+    }
+}
+
+fn is_index_binary_artifact(artifact: &NormalizedArtifact, entry: &CrawledEntry) -> bool {
+    artifact.category == "executable"
+        || artifact
+            .mime_type
+            .as_deref()
+            .is_some_and(|mime| mime.contains("executable") || mime.contains("mach-binary"))
+        || is_index_binary_extension(artifact.extension.as_deref())
+        || is_index_binary_extension(Some(entry.extension.as_str()))
+}
+
+fn is_index_binary_extension(extension: Option<&str>) -> bool {
+    let Some(extension) = extension else {
+        return false;
+    };
+    [
+        "sys", "drv", "ko", "exe", "dll", "ocx", "efi", "elf", "so", "dylib", "kext",
+    ]
+    .iter()
+    .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+}
+
+fn index_binary_artifact_metadata_from_info(info: &BinaryInfo) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "binary.indexAnalysisStatus".to_string(),
+        "parsed".to_string(),
+    );
+    metadata.insert(
+        "binary.format".to_string(),
+        index_binary_format_name(&info.format).to_string(),
+    );
+    metadata.insert("binary.architecture".to_string(), info.architecture.clone());
+    metadata.insert("binary.is64Bit".to_string(), info.is_64bit.to_string());
+    metadata.insert("binary.fileSize".to_string(), info.file_size.to_string());
+    metadata.insert(
+        "binary.importLibraryCount".to_string(),
+        info.imports.len().to_string(),
+    );
+    metadata.insert(
+        "binary.exportCount".to_string(),
+        info.exports.len().to_string(),
+    );
+    metadata.insert(
+        "binary.sectionCount".to_string(),
+        info.sections.len().to_string(),
+    );
+    metadata.insert(
+        "binary.stringCount".to_string(),
+        info.strings.len().to_string(),
+    );
+    if let Some(entry_point) = info.entry_point {
+        metadata.insert(
+            "binary.entryPoint".to_string(),
+            format!("0x{entry_point:x}"),
+        );
+    }
+    if !info.imports.is_empty() {
+        let libraries = info
+            .imports
+            .iter()
+            .take(32)
+            .map(|import| import.library.clone())
+            .collect::<Vec<_>>();
+        insert_index_joined_metadata(&mut metadata, "binary.importLibraries", &libraries);
+    }
+    if !info.exports.is_empty() {
+        let exports = info
+            .exports
+            .iter()
+            .take(32)
+            .map(|export| export.name.clone())
+            .collect::<Vec<_>>();
+        insert_index_joined_metadata(&mut metadata, "binary.exports", &exports);
+    }
+    if !info.sections.is_empty() {
+        let sections = info
+            .sections
+            .iter()
+            .take(32)
+            .map(|section| section.name.clone())
+            .collect::<Vec<_>>();
+        insert_index_joined_metadata(&mut metadata, "binary.sections", &sections);
+    }
+    if let Some(timestamp) = info.pe_timestamp {
+        metadata.insert("pe.timestamp".to_string(), timestamp.to_string());
+    }
+    if let Some(checksum) = info.pe_checksum {
+        metadata.insert("pe.checksum".to_string(), format!("0x{checksum:08x}"));
+    }
+    if let Some(subsystem) = &info.pe_subsystem {
+        metadata.insert("pe.subsystem".to_string(), subsystem.clone());
+    }
+    if let Some(version) = &info.pe_linker_version {
+        metadata.insert("pe.linkerVersion".to_string(), version.clone());
+    }
+    if let Some(version) = &info.pe_os_version {
+        metadata.insert("pe.osVersion".to_string(), version.clone());
+    }
+    if let Some(version) = &info.pe_image_version {
+        metadata.insert("pe.imageVersion".to_string(), version.clone());
+    }
+    if let Some(version) = &info.pe_subsystem_version {
+        metadata.insert("pe.subsystemVersion".to_string(), version.clone());
+    }
+    if let Some(image_base) = info.pe_image_base {
+        metadata.insert("pe.imageBase".to_string(), format!("0x{image_base:x}"));
+    }
+    if let Some(section_alignment) = info.pe_section_alignment {
+        metadata.insert(
+            "pe.sectionAlignment".to_string(),
+            section_alignment.to_string(),
+        );
+    }
+    if let Some(file_alignment) = info.pe_file_alignment {
+        metadata.insert("pe.fileAlignment".to_string(), file_alignment.to_string());
+    }
+    if let Some(size_of_image) = info.pe_size_of_image {
+        metadata.insert("pe.sizeOfImage".to_string(), size_of_image.to_string());
+    }
+    if let Some(size_of_headers) = info.pe_size_of_headers {
+        metadata.insert("pe.sizeOfHeaders".to_string(), size_of_headers.to_string());
+    }
+    if let Some(characteristics) = &info.pe_dll_characteristics {
+        metadata.insert("pe.dllCharacteristics".to_string(), characteristics.clone());
+    }
+    insert_index_joined_metadata(
+        &mut metadata,
+        "pe.dllCharacteristicsDetail",
+        &info.pe_dll_characteristics_detail,
+    );
+    if let Some(size) = info.pe_certificate_table_size {
+        metadata.insert("pe.certificateTableSize".to_string(), size.to_string());
+    }
+    metadata.insert("pe.isDriver".to_string(), info.pe_is_driver.to_string());
+    if let Some(driver_type) = &info.pe_driver_type {
+        metadata.insert("pe.driverType".to_string(), driver_type.clone());
+    }
+    insert_index_joined_metadata(
+        &mut metadata,
+        "pe.driverIndicators",
+        &info.pe_driver_indicators,
+    );
+    for (key, value) in &info.pe_version_info {
+        metadata.insert(format!("pe.version.{key}"), value.clone());
+    }
+    if info.pe_is_driver {
+        insert_index_pe_driver_string_metadata(&mut metadata, &info.strings);
+    }
+    if let Some(module) = info
+        .linux_module_info
+        .as_ref()
+        .filter(|module| module.detected)
+    {
+        insert_index_linux_module_metadata(&mut metadata, module);
+    }
+    metadata
+}
+
+fn insert_index_linux_module_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    module: &LinuxModuleInfo,
+) {
+    metadata.insert("linux.moduleDetected".to_string(), "true".to_string());
+    insert_index_joined_metadata(metadata, "linux.moduleNames", &module.names);
+    insert_index_joined_metadata(metadata, "linux.moduleVersions", &module.versions);
+    insert_index_joined_metadata(metadata, "linux.moduleVermagic", &module.vermagic);
+    insert_index_joined_metadata(metadata, "linux.moduleLicenses", &module.licenses);
+    insert_index_joined_metadata(metadata, "linux.moduleAuthors", &module.authors);
+    insert_index_joined_metadata(metadata, "linux.moduleDescriptions", &module.descriptions);
+    insert_index_joined_metadata(metadata, "linux.moduleAliases", &module.aliases);
+    insert_index_joined_metadata(metadata, "linux.moduleDependencies", &module.dependencies);
+    insert_index_joined_metadata(metadata, "linux.moduleFirmware", &module.firmware);
+    insert_index_joined_metadata(metadata, "linux.moduleSigners", &module.signers);
+    insert_index_joined_metadata(metadata, "linux.moduleSignatures", &module.signatures);
+}
+
+fn insert_index_pe_driver_string_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    strings: &[String],
+) {
+    let mut service_names = Vec::new();
+    let mut device_names = Vec::new();
+    let mut dos_device_names = Vec::new();
+    let mut registry_paths = Vec::new();
+    let mut pdb_paths = Vec::new();
+    let mut urls = Vec::new();
+    let mut guids = Vec::new();
+    let mut indexed_strings = Vec::new();
+
+    for value in strings {
+        push_index_unique_limited(
+            &mut indexed_strings,
+            truncate_index_metadata_value(value, MAX_INDEX_METADATA_VALUE_CHARS),
+        );
+        if let Some(service_name) = extract_index_windows_driver_service_name(value) {
+            push_index_unique_limited(&mut service_names, service_name);
+        }
+        if let Some(device_name) = extract_index_windows_object_name(value, "\\device\\") {
+            push_index_unique_limited(&mut device_names, device_name);
+        }
+        if let Some(dos_device_name) = extract_index_windows_object_name(value, "\\dosdevices\\") {
+            push_index_unique_limited(&mut dos_device_names, dos_device_name);
+        }
+        if let Some(registry_path) = extract_index_windows_driver_registry_path(value) {
+            push_index_unique_limited(&mut registry_paths, registry_path);
+        }
+        if let Some(pdb_path) = extract_index_windows_driver_pdb_path(value) {
+            push_index_unique_limited(&mut pdb_paths, pdb_path);
+        }
+        if let Some(url) = extract_index_embedded_url(value) {
+            push_index_unique_limited(&mut urls, url);
+        }
+        if let Some(guid) = extract_index_braced_guid(value) {
+            push_index_unique_limited(&mut guids, guid);
+        }
+    }
+
+    insert_index_joined_metadata(metadata, "binary.strings", &indexed_strings);
+    insert_index_joined_metadata(metadata, "pe.driverServiceNames", &service_names);
+    insert_index_joined_metadata(metadata, "pe.driverDeviceNames", &device_names);
+    insert_index_joined_metadata(metadata, "pe.driverDosDeviceNames", &dos_device_names);
+    insert_index_joined_metadata(metadata, "pe.driverRegistryPaths", &registry_paths);
+    insert_index_joined_metadata(metadata, "pe.driverPdbPaths", &pdb_paths);
+    insert_index_joined_metadata(metadata, "pe.driverUrls", &urls);
+    insert_index_joined_metadata(metadata, "pe.driverGuids", &guids);
+}
+
+fn extract_index_windows_driver_service_name(value: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    for marker in [
+        "\\currentcontrolset\\services\\",
+        "\\controlset001\\services\\",
+        "\\controlset002\\services\\",
+        "\\controlset003\\services\\",
+    ] {
+        if let Some(name) = extract_index_after_marker(&normalized, marker) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn extract_index_windows_object_name(value: &str, marker: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    extract_index_after_marker(&normalized, marker)
+}
+
+fn extract_index_after_marker(value: &str, marker: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find(marker)?.checked_add(marker.len())?;
+    let rest = value.get(start..)?;
+    let end = rest
+        .find(|ch: char| ch == '\\' || ch == '/' || ch.is_whitespace() || ch == '\0')
+        .unwrap_or(rest.len());
+    let candidate = rest.get(..end)?.trim_matches(['"', '\'']);
+    (!candidate.is_empty()).then(|| truncate_index_metadata_value(candidate, 120))
+}
+
+fn extract_index_windows_driver_registry_path(value: &str) -> Option<String> {
+    extract_index_segment_starting_with(value, "\\registry\\machine\\")
+        .or_else(|| {
+            extract_index_segment_starting_with(value, "system\\currentcontrolset\\services\\")
+        })
+        .or_else(|| extract_index_segment_starting_with(value, "system\\controlset001\\services\\"))
+        .map(|value| value.replace('/', "\\"))
+}
+
+fn extract_index_segment_starting_with(value: &str, marker: &str) -> Option<String> {
+    let normalized = value.replace('/', "\\");
+    let lower = normalized.to_ascii_lowercase();
+    let start = lower.find(marker)?;
+    let rest = normalized.get(start..)?;
+    let end = rest
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ';' | ')' | ']'))
+        .unwrap_or(rest.len());
+    let candidate = rest
+        .get(..end)?
+        .trim_matches(['\0', '"', '\'', ':', '.', '\\']);
+    (!candidate.is_empty()).then(|| truncate_index_metadata_value(candidate, 180))
+}
+
+fn extract_index_windows_driver_pdb_path(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let end = lower.find(".pdb")?.checked_add(4)?;
+    let prefix = value.get(..end)?;
+    let start = prefix
+        .rfind(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\''))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let candidate = prefix.get(start..)?.trim_matches(['\0', '"', '\'']);
+    if candidate.len() < 5 || !(candidate.contains('\\') || candidate.contains('/')) {
+        return None;
+    }
+    Some(truncate_index_metadata_value(candidate, 180))
+}
+
+fn extract_index_embedded_url(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find("https://").or_else(|| lower.find("http://"))?;
+    let raw = value.get(start..)?;
+    let end = raw
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | '<' | '>' | ')' | ']'))
+        .unwrap_or(raw.len());
+    let candidate = raw.get(..end)?.trim_end_matches(['.', ',', ';']);
+    Some(truncate_index_metadata_value(candidate, 180)).filter(|value| value.contains("://"))
+}
+
+fn extract_index_braced_guid(value: &str) -> Option<String> {
+    let start = value.find('{')?;
+    let end = value.get(start..)?.find('}')?.checked_add(start + 1)?;
+    let candidate = value.get(start..end)?;
+    is_index_braced_guid(candidate).then(|| candidate.to_ascii_uppercase())
+}
+
+fn is_index_braced_guid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 38 || bytes.first() != Some(&b'{') || bytes.last() != Some(&b'}') {
+        return false;
+    }
+    for (index, byte) in bytes.iter().enumerate().skip(1).take(36) {
+        match index {
+            9 | 14 | 19 | 24 => {
+                if *byte != b'-' {
+                    return false;
+                }
+            }
+            _ => {
+                if !byte.is_ascii_hexdigit() {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn push_index_unique_limited(values: &mut Vec<String>, value: String) {
+    if values.len() >= MAX_INDEX_METADATA_LIST_ITEMS || value.is_empty() {
+        return;
+    }
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn truncate_index_metadata_value(value: &str, max_chars: usize) -> String {
+    let value = value.trim();
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    value.chars().take(max_chars).collect()
+}
+
+fn index_binary_format_name(format: &BinaryFormat) -> &'static str {
+    match format {
+        BinaryFormat::PE32 => "PE32",
+        BinaryFormat::PE64 => "PE64",
+        BinaryFormat::ELF32 => "ELF32",
+        BinaryFormat::ELF64 => "ELF64",
+        BinaryFormat::MachO32 => "Mach-O 32",
+        BinaryFormat::MachO64 => "Mach-O 64",
+        BinaryFormat::MachOFat => "Universal Binary",
+        BinaryFormat::Unknown => "Unknown",
+    }
+}
+
+fn insert_index_joined_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    key: &str,
+    values: &[String],
+) {
+    if !values.is_empty() {
+        metadata.insert(key.to_string(), values.join("; "));
+    }
 }
 
 fn artifact_search_terms(artifact: &NormalizedArtifact) -> Vec<String> {
@@ -1133,6 +1583,43 @@ mod tests {
         assert_eq!(add_indexed_count(u64::MAX - 1, 8), u64::MAX);
     }
 
+    #[test]
+    fn index_binary_classifier_matches_uppercase_driver_extensions() {
+        let artifact = NormalizedArtifact {
+            id: "driver".to_string(),
+            source_ref: EvidenceSourceRef::LocalFile {
+                path: "/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            },
+            source_id: "/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            name: "CONTOSO.SYS".to_string(),
+            extension: Some("SYS".to_string()),
+            size: 4096,
+            mime_type: None,
+            type_description: "Unknown".to_string(),
+            category: "unknown".to_string(),
+            confidence: "low".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: BTreeMap::new(),
+        };
+        let entry = CrawledEntry {
+            doc_id: "case:/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            container_path: "/cases/windows.E01".to_string(),
+            container_type: "e01".to_string(),
+            entry_path: "/Windows/System32/drivers/CONTOSO.SYS".to_string(),
+            filename: "CONTOSO.SYS".to_string(),
+            extension: "SYS".to_string(),
+            size: 4096,
+            modified: 0,
+            is_dir: false,
+            category: "unknown".to_string(),
+            text_eligible: false,
+        };
+
+        assert!(is_index_binary_artifact(&artifact, &entry));
+        assert!(is_index_binary_extension(Some("KO")));
+    }
+
     fn disk_entry(path: &Path, category: &str, text_eligible: bool) -> CrawledEntry {
         let filename = path.file_name().unwrap().to_string_lossy().to_string();
         let extension = path
@@ -1436,6 +1923,289 @@ mod tests {
         assert!(content.contains("indicators.emails:admin@example.com"));
         assert!(content.contains("indicators.ipv4:192.168.1.10"));
         assert!(content.contains("indicators.urls:https://example.com/login"));
+    }
+
+    #[test]
+    fn linux_machine_info_artifact_metadata_is_searchable() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc_dir = dir.path().join("etc");
+        std::fs::create_dir(&etc_dir).unwrap();
+        let path = etc_dir.join("machine-info");
+        std::fs::write(
+            &path,
+            br#"PRETTY_HOSTNAME="Case Workstation"
+CHASSIS=desktop
+LOCATION="Lab 3"
+"#,
+        )
+        .unwrap();
+        let entry = disk_entry(&path, "config", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("Linux Machine Information"));
+        assert!(content.contains("system.prettyHostname:Case Workstation"));
+        assert!(content.contains("system.chassis:desktop"));
+        assert!(content.contains("system.location:Lab 3"));
+    }
+
+    #[test]
+    fn macos_preferences_identity_metadata_is_searchable() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefs_dir = dir
+            .path()
+            .join("Library")
+            .join("Preferences")
+            .join("SystemConfiguration");
+        std::fs::create_dir_all(&prefs_dir).unwrap();
+        let path = prefs_dir.join("preferences.plist");
+        std::fs::write(
+            &path,
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>System</key>
+  <dict>
+    <key>System</key>
+    <dict>
+      <key>ComputerName</key><string>Case MacBook</string>
+      <key>HostName</key><string>case-macbook.example.test</string>
+      <key>LocalHostName</key><string>Case-MacBook</string>
+    </dict>
+  </dict>
+</dict>
+</plist>
+"#,
+        )
+        .unwrap();
+        let entry = disk_entry(&path, "config", true);
+
+        let content = extract_content_from_container("disk", &entry);
+
+        assert!(content.contains("macOS System Identity"));
+        assert!(content.contains("system.computerName:Case MacBook"));
+        assert!(content.contains("system.hostname:case-macbook.example.test"));
+        assert!(content.contains("system.localHostname:Case-MacBook"));
+    }
+
+    #[test]
+    fn binary_index_metadata_flattens_driver_fields_for_search() {
+        let mut version_info = BTreeMap::new();
+        version_info.insert("CompanyName".to_string(), "Contoso Driver Labs".to_string());
+        version_info.insert("OriginalFilename".to_string(), "contosoflt.sys".to_string());
+
+        let info = BinaryInfo {
+            path: "case.ad1:/Windows/System32/drivers/contosoflt.sys".to_string(),
+            format: BinaryFormat::PE64,
+            architecture: "x86_64".to_string(),
+            is_64bit: true,
+            entry_point: Some(0x140001000),
+            imports: vec![crate::viewer::document::binary::ImportInfo {
+                library: "fltmgr.sys".to_string(),
+                functions: vec!["FltRegisterFilter".to_string()],
+                function_count: 1,
+            }],
+            exports: vec![crate::viewer::document::binary::ExportInfo {
+                name: "DriverEntry".to_string(),
+                ordinal: None,
+                address: 0x1000,
+            }],
+            sections: vec![crate::viewer::document::binary::SectionInfo {
+                name: ".text".to_string(),
+                virtual_address: 0x1000,
+                virtual_size: 0x2000,
+                raw_size: 0x2000,
+                characteristics: "0x60000020".to_string(),
+                characteristics_detail: vec![
+                    "contains-code".to_string(),
+                    "executable".to_string(),
+                    "readable".to_string(),
+                ],
+                entropy: Some(6.125),
+            }],
+            strings: vec![
+                "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt".to_string(),
+                "\\Registry\\Machine\\System\\ControlSet001\\Services\\legacyflt\\Parameters"
+                    .to_string(),
+                "\\Device\\ContosoFilter".to_string(),
+                "\\DosDevices\\ContosoFilter".to_string(),
+                r"C:\agent\_work\drivers\contosoflt\objfre\amd64\contosoflt.pdb".to_string(),
+                "https://drivers.example.test/support".to_string(),
+                "{12345678-9abc-def0-1234-56789abcdef0}".to_string(),
+            ],
+            file_size: 4096,
+            pe_timestamp: Some(1_717_260_000),
+            pe_checksum: Some(0x1234abcd),
+            pe_subsystem: Some("Native".to_string()),
+            pe_linker_version: Some("14.38".to_string()),
+            pe_os_version: Some("10.0".to_string()),
+            pe_image_version: Some("10.0".to_string()),
+            pe_subsystem_version: Some("10.0".to_string()),
+            pe_image_base: Some(0x140000000),
+            pe_section_alignment: Some(4096),
+            pe_file_alignment: Some(512),
+            pe_size_of_image: Some(32768),
+            pe_size_of_headers: Some(1024),
+            pe_dll_characteristics: Some("0x2140".to_string()),
+            pe_dll_characteristics_detail: vec![
+                "dynamic-base".to_string(),
+                "nx-compatible".to_string(),
+                "wdm-driver".to_string(),
+            ],
+            pe_certificate_table_size: Some(4096),
+            pe_is_driver: true,
+            pe_driver_type: Some("File system minifilter driver".to_string()),
+            pe_driver_indicators: vec![
+                "driver file extension".to_string(),
+                "file-system filter driver APIs".to_string(),
+            ],
+            pe_version_info: version_info,
+            macho_cpu_type: None,
+            macho_filetype: None,
+            linux_module_info: None,
+            has_debug_info: false,
+            is_stripped: true,
+            has_code_signing: true,
+        };
+
+        let artifact = NormalizedArtifact {
+            id: "driver".to_string(),
+            source_ref: crate::common::EvidenceSourceRef::LocalFile {
+                path: "/Windows/System32/drivers/contosoflt.sys".to_string(),
+            },
+            source_id: "/Windows/System32/drivers/contosoflt.sys".to_string(),
+            name: "contosoflt.sys".to_string(),
+            extension: Some("sys".to_string()),
+            size: info.file_size,
+            mime_type: None,
+            type_description: "Windows Driver Artifact".to_string(),
+            category: "system".to_string(),
+            confidence: "high".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: index_binary_artifact_metadata_from_info(&info),
+        };
+
+        let content = artifact_search_terms(&artifact).join("\n");
+
+        assert!(content.contains("binary.indexAnalysisStatus:parsed"));
+        assert!(content.contains("binary.format:PE64"));
+        assert!(content.contains("binary.importLibraries:fltmgr.sys"));
+        assert!(content.contains("binary.exports:DriverEntry"));
+        assert!(content.contains("binary.sections:.text"));
+        assert!(content.contains("pe.linkerVersion:14.38"));
+        assert!(content.contains("pe.imageBase:0x140000000"));
+        assert!(content.contains("pe.dllCharacteristics:0x2140"));
+        assert!(
+            content.contains("pe.dllCharacteristicsDetail:dynamic-base; nx-compatible; wdm-driver")
+        );
+        assert!(content.contains("pe.certificateTableSize:4096"));
+        assert!(content.contains("pe.isDriver:true"));
+        assert!(content.contains("pe.driverType:File system minifilter driver"));
+        assert!(content
+            .contains("pe.driverIndicators:driver file extension; file-system filter driver APIs"));
+        assert!(content.contains("pe.version.CompanyName:Contoso Driver Labs"));
+        assert!(content.contains("pe.version.OriginalFilename:contosoflt.sys"));
+        assert!(content.contains(
+            "binary.strings:\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt"
+        ));
+        assert!(content.contains("pe.driverServiceNames:contosoflt; legacyflt"));
+        assert!(content.contains("pe.driverDeviceNames:ContosoFilter"));
+        assert!(content.contains("pe.driverDosDeviceNames:ContosoFilter"));
+        assert!(content.contains("pe.driverRegistryPaths:Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt; Registry\\Machine\\System\\ControlSet001\\Services\\legacyflt\\Parameters"));
+        assert!(content.contains(
+            r"pe.driverPdbPaths:C:\agent\_work\drivers\contosoflt\objfre\amd64\contosoflt.pdb"
+        ));
+        assert!(content.contains("pe.driverUrls:https://drivers.example.test/support"));
+        assert!(content.contains("pe.driverGuids:{12345678-9ABC-DEF0-1234-56789ABCDEF0}"));
+    }
+
+    #[test]
+    fn binary_index_metadata_flattens_linux_module_fields_for_search() {
+        let info = BinaryInfo {
+            path: "case.e01:/lib/modules/6.8.0/kernel/drivers/net/coretap.ko".to_string(),
+            format: BinaryFormat::ELF64,
+            architecture: "x86_64".to_string(),
+            is_64bit: true,
+            entry_point: Some(0x400000),
+            imports: vec![],
+            exports: vec![],
+            sections: vec![],
+            strings: vec![],
+            file_size: 8192,
+            pe_timestamp: None,
+            pe_checksum: None,
+            pe_subsystem: None,
+            pe_linker_version: None,
+            pe_os_version: None,
+            pe_image_version: None,
+            pe_subsystem_version: None,
+            pe_image_base: None,
+            pe_section_alignment: None,
+            pe_file_alignment: None,
+            pe_size_of_image: None,
+            pe_size_of_headers: None,
+            pe_dll_characteristics: None,
+            pe_dll_characteristics_detail: vec![],
+            pe_certificate_table_size: None,
+            pe_is_driver: false,
+            pe_driver_type: None,
+            pe_driver_indicators: vec![],
+            pe_version_info: BTreeMap::new(),
+            macho_cpu_type: None,
+            macho_filetype: None,
+            linux_module_info: Some(crate::viewer::document::binary::LinuxModuleInfo {
+                detected: true,
+                names: vec!["coretap".to_string()],
+                versions: vec!["1.2.3".to_string()],
+                vermagic: vec!["6.8.0 SMP mod_unload".to_string()],
+                licenses: vec!["GPL".to_string()],
+                authors: vec!["CORE Lab".to_string()],
+                descriptions: vec!["CORE packet capture tap".to_string()],
+                aliases: vec!["pci:v00008086d*".to_string()],
+                dependencies: vec!["cfg80211".to_string(), "rfkill".to_string()],
+                firmware: vec!["coretap.bin".to_string()],
+                signers: vec!["CORE Lab".to_string()],
+                signatures: vec!["sig_hashalgo=sha256".to_string()],
+            }),
+            has_debug_info: false,
+            is_stripped: true,
+            has_code_signing: false,
+        };
+
+        let artifact = NormalizedArtifact {
+            id: "module".to_string(),
+            source_ref: crate::common::EvidenceSourceRef::LocalFile {
+                path: "/lib/modules/6.8.0/kernel/drivers/net/coretap.ko".to_string(),
+            },
+            source_id: "/lib/modules/6.8.0/kernel/drivers/net/coretap.ko".to_string(),
+            name: "coretap.ko".to_string(),
+            extension: Some("ko".to_string()),
+            size: info.file_size,
+            mime_type: None,
+            type_description: "Linux Kernel Module".to_string(),
+            category: "system".to_string(),
+            confidence: "high".to_string(),
+            is_text: false,
+            content_preview: None,
+            metadata: index_binary_artifact_metadata_from_info(&info),
+        };
+
+        let content = artifact_search_terms(&artifact).join("\n");
+
+        assert!(content.contains("linux.moduleDetected:true"));
+        assert!(content.contains("linux.moduleNames:coretap"));
+        assert!(content.contains("linux.moduleVersions:1.2.3"));
+        assert!(content.contains("linux.moduleVermagic:6.8.0 SMP mod_unload"));
+        assert!(content.contains("linux.moduleLicenses:GPL"));
+        assert!(content.contains("linux.moduleAuthors:CORE Lab"));
+        assert!(content.contains("linux.moduleDescriptions:CORE packet capture tap"));
+        assert!(content.contains("linux.moduleAliases:pci:v00008086d*"));
+        assert!(content.contains("linux.moduleDependencies:cfg80211; rfkill"));
+        assert!(content.contains("linux.moduleFirmware:coretap.bin"));
+        assert!(content.contains("linux.moduleSigners:CORE Lab"));
+        assert!(content.contains("linux.moduleSignatures:sig_hashalgo=sha256"));
     }
 
     #[test]

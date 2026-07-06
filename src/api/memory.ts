@@ -16,6 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types
@@ -80,6 +81,19 @@ export interface MemoryCaptureResult {
  * and what elevation is required.
  */
 export async function getMemoryCaptureInfo(): Promise<MemoryCaptureInfo> {
+  if (!isTauri) {
+    return {
+      totalMemoryBytes: 0,
+      availableMemoryBytes: 0,
+      platform: "browser",
+      captureSupported: false,
+      captureMethod: "unavailable",
+      requiresElevation: false,
+      elevationInstructions: "",
+      unsupportedReason: "Memory capture is available in the desktop app.",
+    };
+  }
+
   return invoke<MemoryCaptureInfo>("memory_capture_info");
 }
 
@@ -98,6 +112,12 @@ export async function captureMemory(
   outputPath: string,
   computeHashes: boolean
 ): Promise<MemoryCaptureResult> {
+  if (!isTauri) {
+    void outputPath;
+    void computeHashes;
+    throw new Error("Memory capture is available in the desktop app.");
+  }
+
   return invoke<MemoryCaptureResult>("memory_capture", {
     outputPath,
     computeHashes,
@@ -110,6 +130,10 @@ export async function captureMemory(
  * Sets the cancel flag; the capture loop will stop at the next chunk boundary.
  */
 export async function cancelMemoryCapture(): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke<void>("memory_capture_cancel");
 }
 
@@ -122,6 +146,11 @@ export async function cancelMemoryCapture(): Promise<void> {
 export async function listenMemoryCaptureProgress(
   callback: (progress: MemoryCaptureProgress) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void callback;
+    return () => {};
+  }
+
   return listen<MemoryCaptureProgress>(
     "memory-capture-progress",
     (event) => {

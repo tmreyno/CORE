@@ -13,6 +13,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../utils/platform";
 
 /** Result of probing macOS Full Disk Access status. */
 export interface FullDiskAccessStatus {
@@ -26,10 +27,22 @@ export interface FullDiskAccessStatus {
 
 /** Probe TCC-protected directories to determine FDA status. */
 export async function checkFullDiskAccess(): Promise<FullDiskAccessStatus> {
+  if (!isTauri) {
+    return {
+      hasFullDiskAccess: false,
+      message: "Full Disk Access checks are available in the desktop app.",
+      blockedPaths: [],
+    };
+  }
+
   return invoke<FullDiskAccessStatus>("check_full_disk_access");
 }
 
 /** Open macOS System Settings → Privacy & Security → Full Disk Access. */
 export async function openFullDiskAccessSettings(): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke<void>("open_full_disk_access_settings");
 }

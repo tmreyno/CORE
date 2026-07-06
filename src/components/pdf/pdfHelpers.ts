@@ -26,6 +26,7 @@ export async function loadPdfDocument(
 
 interface BinaryInfo {
   size: number;
+  maxInlineBytes?: number;
 }
 
 interface BinaryBase64Chunk {
@@ -37,6 +38,7 @@ interface BinaryBase64Chunk {
 }
 
 const PDF_READ_CHUNK_SIZE = 4 * 1024 * 1024;
+const DEFAULT_MAX_INLINE_PDF_BYTES = 100 * 1024 * 1024;
 
 async function readBinaryFileChunked(
   path: string,
@@ -47,6 +49,12 @@ async function readBinaryFileChunked(
     : await invoke<BinaryInfo>("viewer_get_binary_info", { path });
   if (!Number.isSafeInteger(info.size)) {
     throw new Error(`PDF is too large to load in this browser process: ${info.size} bytes`);
+  }
+  const maxInlineBytes = info.maxInlineBytes ?? DEFAULT_MAX_INLINE_PDF_BYTES;
+  if (info.size > maxInlineBytes) {
+    throw new Error(
+      `PDF is too large for inline preview (${info.size} bytes > ${maxInlineBytes} bytes). Use export or extraction instead.`
+    );
   }
 
   const bytes = new Uint8Array(info.size);

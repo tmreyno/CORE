@@ -7,7 +7,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("ProjectTemplates");
+const BROWSER_TEMPLATE_MESSAGE =
+  "Project template tools are available in the desktop app.";
 
 // =============================================================================
 // Type Definitions - Aligned with backend project_templates.rs
@@ -114,10 +117,22 @@ export function useProjectTemplates() {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+  const skipOutsideTauri = (): boolean => {
+    if (isTauri) return false;
+    setLoading(false);
+    setError(BROWSER_TEMPLATE_MESSAGE);
+    return true;
+  };
+
   /**
    * List all available templates
    */
   const listTemplates = async (): Promise<TemplateSummary[]> => {
+    if (skipOutsideTauri()) {
+      setTemplates([]);
+      return [];
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -138,6 +153,11 @@ export function useProjectTemplates() {
    * Get full template details
    */
   const getTemplate = async (templateId: string): Promise<ProjectTemplate | null> => {
+    if (skipOutsideTauri()) {
+      setCurrentTemplate(null);
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -163,6 +183,10 @@ export function useProjectTemplates() {
     projectPath: string,
     templateId: string
   ): Promise<boolean> => {
+    if (skipOutsideTauri()) {
+      return false;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -190,6 +214,10 @@ export function useProjectTemplates() {
     category: TemplateCategory,
     description: string = ""
   ): Promise<string | null> => {
+    if (skipOutsideTauri()) {
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -216,6 +244,10 @@ export function useProjectTemplates() {
    * Delete a custom template
    */
   const deleteTemplate = async (templateId: string): Promise<boolean> => {
+    if (skipOutsideTauri()) {
+      return false;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -240,6 +272,10 @@ export function useProjectTemplates() {
     templateId: string,
     outputPath: string
   ): Promise<boolean> => {
+    if (skipOutsideTauri()) {
+      return false;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -262,6 +298,10 @@ export function useProjectTemplates() {
    * Import template from file
    */
   const importTemplate = async (filePath: string): Promise<string | null> => {
+    if (skipOutsideTauri()) {
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);

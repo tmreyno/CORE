@@ -508,6 +508,15 @@ where
                 bytes_read_total
             )));
         }
+        if chunk.len() > read_size {
+            return Err(ContainerError::IoError(format!(
+                "Oversized read hashing {}: requested {} bytes at offset {} but source returned {} bytes",
+                source.source_ref().display_id(),
+                read_size,
+                bytes_read_total,
+                chunk.len()
+            )));
+        }
 
         if use_parallel_updates {
             hasher.update_parallel(&chunk);
@@ -1028,8 +1037,27 @@ mod tests {
         assert!(matches!(
             error,
             ContainerError::IoError(message)
-                if message.contains("Hash read past declared size for over-returning-source.bin")
-                    && message.contains("expected 4")
+                if message.contains("Oversized read hashing over-returning-source.bin")
+                    && message.contains("requested 4")
+                    && message.contains("source returned 8")
+        ));
+    }
+
+    #[test]
+    fn test_hash_byte_source_rejects_chunks_larger_than_requested() {
+        let source = OverReturningByteSource {
+            declared_len: 2 * 1024 * 1024,
+            data: vec![0u8; 2 * 1024 * 1024],
+        };
+
+        let error = hash_byte_source(&source, "sha256").unwrap_err();
+
+        assert!(matches!(
+            error,
+            ContainerError::IoError(message)
+                if message.contains("Oversized read hashing over-returning-source.bin")
+                    && message.contains("requested")
+                    && message.contains("source returned")
         ));
     }
 

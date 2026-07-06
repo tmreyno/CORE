@@ -15,6 +15,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../utils/platform";
 
 /** Compression level labels matching LZMA SDK 24.09 defaults */
 export const LZMA_COMPRESSION_LEVELS = [
@@ -40,6 +41,13 @@ export async function compressToLzma(
   outputPath: string,
   compressionLevel: number = 5,
 ): Promise<string> {
+  if (!isTauri) {
+    void inputPath;
+    void outputPath;
+    void compressionLevel;
+    throw new Error("LZMA compression is available in the desktop app.");
+  }
+
   return invoke<string>("compress_to_lzma", {
     inputPath,
     outputPath,
@@ -58,6 +66,12 @@ export async function decompressLzma(
   lzmaPath: string,
   outputPath: string,
 ): Promise<string> {
+  if (!isTauri) {
+    void lzmaPath;
+    void outputPath;
+    throw new Error("LZMA decompression is available in the desktop app.");
+  }
+
   return invoke<string>("decompress_lzma", {
     lzmaPath,
     outputPath,
@@ -78,6 +92,13 @@ export async function compressToLzma2(
   outputPath: string,
   compressionLevel: number = 5,
 ): Promise<string> {
+  if (!isTauri) {
+    void inputPath;
+    void outputPath;
+    void compressionLevel;
+    throw new Error("LZMA2 compression is available in the desktop app.");
+  }
+
   return invoke<string>("compress_to_lzma2", {
     inputPath,
     outputPath,
@@ -96,6 +117,12 @@ export async function decompressLzma2(
   xzPath: string,
   outputPath: string,
 ): Promise<string> {
+  if (!isTauri) {
+    void xzPath;
+    void outputPath;
+    throw new Error("LZMA2 decompression is available in the desktop app.");
+  }
+
   return invoke<string>("decompress_lzma2", {
     xzPath,
     outputPath,

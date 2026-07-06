@@ -1030,10 +1030,22 @@ tr:hover {{
     fn render_hash_section(&self, report: &ForensicReport) -> String {
         let mut html =
             String::from("<div class=\"section\" id=\"hashes\">\n<h2>Hash Verification</h2>\n");
+        let include_source = report.hash_records.iter().any(|record| {
+            record
+                .source_id
+                .as_deref()
+                .is_some_and(|source| !source.is_empty())
+        });
         html.push_str("<table>\n");
-        html.push_str(
-            "<tr><th>Item</th><th>Algorithm</th><th>Hash Value</th><th>Verified</th></tr>\n",
-        );
+        if include_source {
+            html.push_str(
+                "<tr><th>Item</th><th>Source</th><th>Algorithm</th><th>Hash Value</th><th>Verified</th></tr>\n",
+            );
+        } else {
+            html.push_str(
+                "<tr><th>Item</th><th>Algorithm</th><th>Hash Value</th><th>Verified</th></tr>\n",
+            );
+        }
 
         for record in &report.hash_records {
             let verified_str = match record.verified {
@@ -1041,13 +1053,24 @@ tr:hover {{
                 Some(false) => "Mismatch",
                 None => "Not recorded",
             };
-            html.push_str(&format!(
-                "<tr><td>{}</td><td>{}</td><td class=\"hash-value\">{}</td><td>{}</td></tr>\n",
-                Self::escape_html(&record.item),
-                record.algorithm.as_str(),
-                Self::escape_html(&record.value),
-                verified_str
-            ));
+            if include_source {
+                html.push_str(&format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td class=\"hash-value\">{}</td><td>{}</td></tr>\n",
+                    Self::escape_html(&record.item),
+                    Self::escape_html(record.source_id.as_deref().unwrap_or("-")),
+                    record.algorithm.as_str(),
+                    Self::escape_html(&record.value),
+                    verified_str
+                ));
+            } else {
+                html.push_str(&format!(
+                    "<tr><td>{}</td><td>{}</td><td class=\"hash-value\">{}</td><td>{}</td></tr>\n",
+                    Self::escape_html(&record.item),
+                    record.algorithm.as_str(),
+                    Self::escape_html(&record.value),
+                    verified_str
+                ));
+            }
         }
 
         html.push_str("</table>\n</div>\n");

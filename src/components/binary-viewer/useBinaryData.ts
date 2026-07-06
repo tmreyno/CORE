@@ -4,15 +4,23 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { createSignal, createEffect, createMemo, type Accessor } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  createMemo,
+  type Accessor,
+} from "solid-js";
 import { commands } from "../../api/commands";
 import { getBasename } from "../../utils/pathUtils";
 import { logger } from "../../utils/logger";
 import type { BinaryMetadataSection } from "../../types/viewerMetadata";
 import type { BinaryInfo, BinaryViewerProps, ImportInfo } from "./types";
 import { formatBadge, formatHex, formatTimestamp } from "./helpers";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("BinaryViewer");
+const BROWSER_BINARY_VIEW_MESSAGE =
+  "Binary evidence analysis is available in the desktop app.";
 
 export interface UseBinaryDataReturn {
   loading: Accessor<boolean>;
@@ -24,11 +32,16 @@ export interface UseBinaryDataReturn {
   setShowExports: (v: boolean) => void;
   showSections: Accessor<boolean>;
   setShowSections: (v: boolean) => void;
+  showStrings: Accessor<boolean>;
+  setShowStrings: (v: boolean) => void;
   importFilter: Accessor<string>;
   setImportFilter: (v: string) => void;
+  stringFilter: Accessor<string>;
+  setStringFilter: (v: string) => void;
   filename: Accessor<string>;
   badge: Accessor<{ label: string; color: string } | null>;
   filteredImports: Accessor<ImportInfo[]>;
+  filteredStrings: Accessor<string[]>;
   totalImportFunctions: Accessor<number>;
   loadBinary: () => Promise<void>;
 }
@@ -40,21 +53,32 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
   const [showImports, setShowImports] = createSignal(true);
   const [showExports, setShowExports] = createSignal(false);
   const [showSections, setShowSections] = createSignal(true);
+  const [showStrings, setShowStrings] = createSignal(true);
   const [importFilter, setImportFilter] = createSignal("");
+  const [stringFilter, setStringFilter] = createSignal("");
+  let loadGeneration = 0;
 
   const loadBinary = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_BINARY_VIEW_MESSAGE);
+      }
+
       const data = props.source
         ? await commands.binary.analyzeSource<BinaryInfo>(props.source)
         : await commands.binary.analyze<BinaryInfo>(props.path);
+      if (generation !== loadGeneration) return;
       setInfo(data);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to analyze binary:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      if (generation !== loadGeneration) return;
       setLoading(false);
     }
   };
@@ -78,7 +102,7 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     return data.imports.filter(
       (imp) =>
         imp.library.toLowerCase().includes(query) ||
-        imp.functions.some((f) => f.toLowerCase().includes(query))
+        imp.functions.some((f) => f.toLowerCase().includes(query)),
     );
   });
 
@@ -86,6 +110,14 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     const data = info();
     if (!data) return 0;
     return data.imports.reduce((sum, imp) => sum + imp.function_count, 0);
+  });
+
+  const filteredStrings = createMemo(() => {
+    const data = info();
+    if (!data) return [];
+    const query = stringFilter().toLowerCase();
+    if (!query) return data.strings;
+    return data.strings.filter((value) => value.toLowerCase().includes(query));
   });
 
   // Emit metadata section when binary info loads
@@ -96,14 +128,27 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
       kind: "binary",
       format: data.format,
       architecture: data.architecture,
-      entryPoint: data.entry_point !== null ? formatHex(data.entry_point) : undefined,
+      entryPoint:
+        data.entry_point !== null ? formatHex(data.entry_point) : undefined,
       sectionCount: data.sections.length,
-      importCount: data.imports.reduce((sum, imp) => sum + imp.function_count, 0),
+      importCount: data.imports.reduce(
+        (sum, imp) => sum + imp.function_count,
+        0,
+      ),
       exportCount: data.exports.length,
+      stringCount: data.strings.length,
       isStripped: data.is_stripped,
       isDynamic: !data.is_stripped,
       subsystem: data.pe_subsystem || undefined,
-      compiledDate: data.pe_timestamp !== null ? formatTimestamp(data.pe_timestamp) : undefined,
+      isDriver: data.pe_is_driver,
+      driverType: data.pe_driver_type || undefined,
+      driverIndicators: data.pe_driver_indicators,
+      versionInfo: data.pe_version_info,
+      linuxModule: data.linux_module_info || undefined,
+      compiledDate:
+        data.pe_timestamp !== null
+          ? formatTimestamp(data.pe_timestamp)
+          : undefined,
     };
     props.onMetadata(section);
   });
@@ -118,11 +163,16 @@ export function useBinaryData(props: BinaryViewerProps): UseBinaryDataReturn {
     setShowExports,
     showSections,
     setShowSections,
+    showStrings,
+    setShowStrings,
     importFilter,
     setImportFilter,
+    stringFilter,
+    setStringFilter,
     filename,
     badge,
     filteredImports,
+    filteredStrings,
     totalImportFunctions,
     loadBinary,
   };

@@ -763,16 +763,7 @@ impl EwfHandle {
         let media_size = self.get_media_size();
         let chunk_size = self.get_chunk_size() as u64;
 
-        // Bounds check
-        if offset >= media_size {
-            return Err(ContainerError::ParseError(format!(
-                "Offset {} beyond media size {}",
-                offset, media_size
-            )));
-        }
-
-        // Adjust length if it would read past end
-        let actual_length = std::cmp::min(length as u64, media_size - offset) as usize;
+        let actual_length = bounded_media_read_len(media_size, offset, length)?;
         if actual_length == 0 {
             return Ok(Vec::new());
         }
@@ -1286,6 +1277,23 @@ impl EwfHandle {
     }
 }
 
+fn bounded_media_read_len(
+    media_size: u64,
+    offset: u64,
+    requested_length: usize,
+) -> Result<usize, ContainerError> {
+    if offset > media_size {
+        return Err(ContainerError::ParseError(format!(
+            "Offset {} beyond media size {}",
+            offset, media_size
+        )));
+    }
+
+    let remaining = media_size - offset;
+    let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+    Ok(requested_length.min(remaining))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1311,10 +1319,27 @@ mod tests {
 
     #[test]
     fn test_decompress_chunk_limited_rejects_oversized_output() {
-        let compressed = zlib_compress(&vec![0xAB; 128]);
+        let compressed = zlib_compress(&[0xAB; 128]);
 
         let err = decompress_chunk_limited(Cursor::new(compressed), 64, 3).unwrap_err();
 
         assert!(matches!(err, ContainerError::ParseError(message) if message.contains("chunk 3")));
+    }
+
+    #[test]
+    fn test_bounded_media_read_len_allows_exact_eof() {
+        assert_eq!(bounded_media_read_len(10, 10, 4).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_media_read_len_rejects_offset_past_eof() {
+        let err = bounded_media_read_len(10, 11, 4).unwrap_err();
+        assert!(err.to_string().contains("Offset 11 beyond media size 10"));
+    }
+
+    #[test]
+    fn test_bounded_media_read_len_clamps_to_remaining() {
+        assert_eq!(bounded_media_read_len(10, 8, 5).unwrap(), 2);
+        assert_eq!(bounded_media_read_len(u64::MAX, 0, 8).unwrap(), 8);
     }
 }

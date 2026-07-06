@@ -4,10 +4,15 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { ExifPanel } from "./ExifPanel";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -191,6 +196,55 @@ describe("ExifPanel", () => {
       await tick();
 
       expect(container.textContent).toContain("No EXIF data available");
+    });
+
+    it("ignores stale EXIF extraction after the selected image changes", async () => {
+      let resolveSlow: (value: typeof mockExifData) => void = () => {};
+      const slowResult = new Promise<typeof mockExifData>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const currentExif = {
+        ...mockExifData,
+        path: "/tmp/current.jpg",
+        make: "Nikon",
+        model: "Z9",
+        serial_number: "CURRENT-SERIAL",
+      };
+      const staleExif = {
+        ...mockExifData,
+        path: "/tmp/slow.jpg",
+        make: "StaleCam",
+        model: "Old Body",
+        serial_number: "STALE-SERIAL",
+      };
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "exif_extract" && args?.path === "/tmp/slow.jpg") {
+          return slowResult;
+        }
+        if (command === "exif_extract" && args?.path === "/tmp/current.jpg") {
+          return Promise.resolve(currentExif);
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
+
+      const [path, setPath] = createSignal("/tmp/slow.jpg");
+      const { container } = renderComponent(() => <ExifPanel path={path()} />);
+      await tick();
+
+      setPath("/tmp/current.jpg");
+      await tick();
+
+      expect(container.textContent).toContain("Nikon");
+      expect(container.textContent).toContain("CURRENT-SERIAL");
+
+      resolveSlow(staleExif);
+      await tick();
+
+      expect(container.textContent).toContain("Nikon");
+      expect(container.textContent).toContain("CURRENT-SERIAL");
+      expect(container.textContent).not.toContain("StaleCam");
+      expect(container.textContent).not.toContain("STALE-SERIAL");
     });
   });
 

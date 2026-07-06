@@ -26,6 +26,7 @@ import {
   type IndexProgress,
 } from "../api/search";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("SearchIndex");
 
@@ -44,6 +45,8 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
   const [indexProgress, setIndexProgress] = createSignal<IndexProgress | null>(null);
   const [stats, setStats] = createSignal<IndexStats | null>(null);
 
+  const searchAvailable = () => isTauri;
+
   /** Derive .ffxdb path from .cffx path */
   const ffxdbPath = () => {
     const cffx = deps.projectPath();
@@ -56,6 +59,13 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
     () => deps.hasProject(),
     async (hasProject, prevHasProject) => {
       if (hasProject && !prevHasProject) {
+        if (!searchAvailable()) {
+          setIndexReady(false);
+          setStats(null);
+          setIndexProgress(null);
+          return;
+        }
+
         // Project just opened — open search index
         const dbPath = ffxdbPath();
         if (dbPath) {
@@ -74,6 +84,10 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
         setIndexReady(false);
         setStats(null);
         setIndexProgress(null);
+        if (!searchAvailable()) {
+          return;
+        }
+
         try {
           await closeSearchIndex();
           log.info("Search index closed");
@@ -90,6 +104,10 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
     () => [indexReady(), deps.discoveredFilePaths().length] as const,
     ([ready, fileCount]) => {
       if (ready && fileCount > 0 && fileCount !== lastIndexedCount && !indexing()) {
+        if (!searchAvailable()) {
+          return;
+        }
+
         lastIndexedCount = fileCount;
         // Auto-index metadata only (content extraction is opt-in via UI)
         const paths = deps.discoveredFilePaths();
@@ -130,6 +148,7 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
    * Call this after a container is loaded.
    */
   const indexSingleContainer = async (containerPath: string, includeContent = false) => {
+    if (!searchAvailable()) return;
     if (!indexReady()) return;
     try {
       setIndexing(true);
@@ -144,6 +163,7 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
    * Index all currently discovered containers.
    */
   const indexAllDiscovered = async (includeContent = false) => {
+    if (!searchAvailable()) return;
     if (!indexReady()) return;
     const paths = deps.discoveredFilePaths();
     if (paths.length === 0) return;
@@ -160,6 +180,7 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
    * Rebuild the entire search index from scratch.
    */
   const rebuildIndex = async (includeContent = false) => {
+    if (!searchAvailable()) return;
     if (!indexReady()) return;
     const paths = deps.discoveredFilePaths();
     try {
@@ -175,6 +196,7 @@ export function useSearchIndex(deps: UseSearchIndexDeps) {
    * Refresh stats from the index.
    */
   const refreshStats = async () => {
+    if (!searchAvailable()) return;
     if (!indexReady()) return;
     try {
       const s = await getSearchIndexStats();

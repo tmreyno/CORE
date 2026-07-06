@@ -28,6 +28,7 @@ import {
   HiOutlineTag,
 } from "./icons";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("ProjectTemplateSelector");
 
 // ============================================================================
@@ -91,6 +92,10 @@ export interface ProjectTemplateSelectorProps {
  * Fetches available templates from backend
  */
 async function fetchTemplates(): Promise<TemplateSummary[]> {
+  if (!isTauri) {
+    return [];
+  }
+
   try {
     return await invoke<TemplateSummary[]>("template_list");
   } catch (err) {

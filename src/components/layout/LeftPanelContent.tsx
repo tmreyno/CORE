@@ -97,6 +97,10 @@ export interface LeftPanelContentProps {
   onExport?: () => void;
   /** Open the report wizard */
   onReport?: () => void;
+  /** Open a saved project from dashboard empty states */
+  onOpenProject?: () => void;
+  /** Start a new project from dashboard empty states */
+  onNewProject?: () => void;
   /** Export selected drive sources — opens export panel with given paths, optional mode and destination */
   onExportSources?: (paths: string[], mode?: "physical" | "logical" | "native", destination?: string) => void;
   /** Single source added from drive panel (auto-send on check) */
@@ -125,6 +129,8 @@ export const LeftPanelContent: Component<LeftPanelContentProps> = (props) => {
             }}
             onExport={props.onExport}
             onReport={props.onReport}
+            onOpenProject={props.onOpenProject}
+            onNewProject={props.onNewProject}
           />
         </Show>
 

@@ -29,6 +29,23 @@ export interface SectionInfo {
   virtual_size: number;
   raw_size: number;
   characteristics: string;
+  characteristics_detail: string[];
+  entropy: number | null;
+}
+
+export interface LinuxModuleInfo {
+  detected: boolean;
+  names: string[];
+  versions: string[];
+  vermagic: string[];
+  licenses: string[];
+  authors: string[];
+  descriptions: string[];
+  aliases: string[];
+  dependencies: string[];
+  firmware: string[];
+  signers: string[];
+  signatures: string[];
 }
 
 export interface BinaryInfo {
@@ -40,14 +57,33 @@ export interface BinaryInfo {
   imports: ImportInfo[];
   exports: ExportInfo[];
   sections: SectionInfo[];
+  strings: string[];
   file_size: number;
   // PE-specific
   pe_timestamp: number | null;
   pe_checksum: number | null;
   pe_subsystem: string | null;
+  pe_linker_version: string | null;
+  pe_os_version: string | null;
+  pe_image_version: string | null;
+  pe_subsystem_version: string | null;
+  pe_image_base: number | null;
+  pe_section_alignment: number | null;
+  pe_file_alignment: number | null;
+  pe_size_of_image: number | null;
+  pe_size_of_headers: number | null;
+  pe_dll_characteristics: string | null;
+  pe_dll_characteristics_detail: string[];
+  pe_certificate_table_size: number | null;
+  pe_is_driver: boolean;
+  pe_driver_type: string | null;
+  pe_driver_indicators: string[];
+  pe_version_info: Record<string, string>;
   // Mach-O specific
   macho_cpu_type: string | null;
   macho_filetype: string | null;
+  // Linux kernel module specific
+  linux_module_info?: LinuxModuleInfo | null;
   // Forensic indicators
   has_debug_info: boolean;
   is_stripped: boolean;

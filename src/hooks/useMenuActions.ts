@@ -15,6 +15,7 @@ import { onMount, onCleanup } from "solid-js";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "../utils/logger";
 import { isAcquireEdition } from "../utils/edition";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("MenuActions");
 
@@ -127,6 +128,11 @@ export function useMenuActions(deps: UseMenuActionsDeps): void {
   let unlisten: UnlistenFn | undefined;
 
   onMount(async () => {
+    if (!isTauri) {
+      log.debug("Skipping native menu listener outside Tauri runtime");
+      return;
+    }
+
     unlisten = await listen<string>("menu-action", (event) => {
       const action = event.payload;
       log.debug(`Menu action received: ${action}`);

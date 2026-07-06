@@ -16,6 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types (mirror Rust search::query types)
@@ -106,6 +107,25 @@ export type IndexPhase =
   | "committing"
   | "done";
 
+const EMPTY_INDEX_STATS: IndexStats = {
+  numDocs: 0,
+  numSegments: 0,
+  indexSizeBytes: 0,
+  totalIndexedBytes: 0,
+  contentIndexedDocs: 0,
+  categoryCounts: [],
+  containerTypeCounts: [],
+  extensionCounts: [],
+};
+
+const emptySearchResults = (): SearchResults => ({
+  hits: [],
+  totalHits: 0,
+  elapsedMs: 0,
+  categoryCounts: [],
+  containerTypeCounts: [],
+});
+
 // =============================================================================
 // Index Lifecycle
 // =============================================================================
@@ -115,21 +135,37 @@ export type IndexPhase =
  * Called when a project is opened.
  */
 export async function openSearchIndex(ffxdbPath: string): Promise<IndexStats> {
+  if (!isTauri) {
+    return { ...EMPTY_INDEX_STATS };
+  }
+
   return invoke<IndexStats>("search_open_index", { ffxdbPath });
 }
 
 /** Close the search index for the current window. */
 export async function closeSearchIndex(): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke("search_close_index");
 }
 
 /** Delete the search index files from disk. */
 export async function deleteSearchIndex(ffxdbPath: string): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke("search_delete_index", { ffxdbPath });
 }
 
 /** Get index statistics. */
 export async function getSearchIndexStats(): Promise<IndexStats> {
+  if (!isTauri) {
+    return { ...EMPTY_INDEX_STATS };
+  }
+
   return invoke<IndexStats>("search_get_stats");
 }
 
@@ -145,6 +181,10 @@ export async function indexContainer(
   containerPath: string,
   indexContent: boolean = false
 ): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke("search_index_container", { containerPath, indexContent });
 }
 
@@ -156,6 +196,10 @@ export async function indexAllContainers(
   containerPaths: string[],
   indexContent: boolean = false
 ): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke("search_index_all", { containerPaths, indexContent });
 }
 
@@ -167,6 +211,10 @@ export async function rebuildSearchIndex(
   containerPaths: string[],
   indexContent: boolean = false
 ): Promise<void> {
+  if (!isTauri) {
+    return;
+  }
+
   return invoke("search_rebuild_index", { containerPaths, indexContent });
 }
 
@@ -178,6 +226,10 @@ export async function rebuildSearchIndex(
 export async function searchQuery(
   options: TantivySearchOptions
 ): Promise<SearchResults> {
+  if (!isTauri) {
+    return emptySearchResults();
+  }
+
   return invoke<SearchResults>("search_query", { options });
 }
 
@@ -189,6 +241,10 @@ export async function searchQuery(
 export async function onIndexProgress(
   callback: (progress: IndexProgress) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    return () => {};
+  }
+
   return listen<IndexProgress>("search-index-progress", (event) => {
     callback(event.payload);
   });

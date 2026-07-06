@@ -7,6 +7,7 @@
 import { createSignal, createEffect, createMemo } from "solid-js";
 import { commands } from "../../api/commands";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 import type { ExifMetadataSection } from "../../types/viewerMetadata";
 import type { ExifMetadata, ExifPanelProps } from "./types";
 
@@ -18,20 +19,30 @@ export function useExifData(props: ExifPanelProps) {
   const [exif, setExif] = createSignal<ExifMetadata | null>(null);
   const [showRawTags, setShowRawTags] = createSignal(false);
   const [rawFilter, setRawFilter] = createSignal("");
+  let loadGeneration = 0;
 
   const loadExif = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
     try {
+      if (!isTauri) {
+        throw new Error("Image EXIF metadata is available in the desktop app.");
+      }
+
       const data = props.source
         ? await commands.image.extractExifSource(props.source)
         : await commands.image.extractExif(props.path);
+      if (generation !== loadGeneration) return;
       setExif(data);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to extract EXIF:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 

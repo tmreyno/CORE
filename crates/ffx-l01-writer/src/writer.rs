@@ -270,10 +270,7 @@ impl L01Writer {
         let mut merged_compressed = Vec::new();
         let mut merged_table = ChunkTable::new(0); // base_offset set later
 
-        for (compressed, table) in all_compressed_data
-            .into_iter()
-            .zip(all_chunk_tables.into_iter())
-        {
+        for (compressed, table) in all_compressed_data.into_iter().zip(all_chunk_tables) {
             let base = merged_compressed.len() as u64;
             for chunk in &table.chunks {
                 merged_table.add_chunk(
@@ -1127,13 +1124,10 @@ fn discover_l01_output_candidates(base_path: &Path) -> Result<HashSet<PathBuf>, 
 }
 
 fn is_l01_output_candidate_name(file_name: &str, base_stem: &str) -> bool {
-    let Some(extension) = file_name.strip_prefix(base_stem).and_then(|suffix| {
-        if suffix.starts_with('.') {
-            Some(&suffix[1..])
-        } else {
-            None
-        }
-    }) else {
+    let Some(extension) = file_name
+        .strip_prefix(base_stem)
+        .and_then(|suffix| suffix.strip_prefix('.'))
+    else {
         return false;
     };
 

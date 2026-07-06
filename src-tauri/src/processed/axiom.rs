@@ -606,11 +606,12 @@ fn parse_case_information_xml(path: &Path) -> Result<AxiomCaseInfo, ContainerErr
                     match current_element.as_str() {
                         "name" => current_source.name = text,
                         "evidencenumber" => current_source.evidence_number = Some(text),
-                        "searchtype" if in_search_types => {
-                            if current_source.search_types.len() < AXIOM_MAX_SEARCH_TYPES_PER_SOURCE
-                            {
-                                current_source.search_types.push(text);
-                            }
+                        "searchtype"
+                            if in_search_types
+                                && current_source.search_types.len()
+                                    < AXIOM_MAX_SEARCH_TYPES_PER_SOURCE =>
+                        {
+                            current_source.search_types.push(text);
                         }
                         _ => {}
                     }

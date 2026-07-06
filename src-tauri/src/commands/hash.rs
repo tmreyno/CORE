@@ -6,7 +6,8 @@
 
 //! Parallel batch hashing operations for multiple files.
 
-use std::collections::HashMap;
+use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
@@ -18,7 +19,7 @@ use crate::common::{
     hash_byte_source_with_progress, hash_cache, EvidenceByteSource, EvidenceSourceError,
     EvidenceSourceRef, HashAlgorithm, LocalFileByteSource,
 };
-use crate::containers::open_container_entry_source;
+use crate::containers::{open_container_entry_source_with_options, ContainerEntrySourceOptions};
 use crate::ewf;
 use crate::raw;
 use ffx_aff4::Aff4Reader;
@@ -109,6 +110,10 @@ pub struct HashSourceInput {
     pub container_type: Option<String>,
     /// Optional known byte size. Avoids metadata reads for some container types.
     pub size: Option<u64>,
+    /// AD1 zlib metadata/data address for direct entry reads when available.
+    pub data_addr: Option<u64>,
+    /// AD1 item header address. Preserved for source metadata and future engines.
+    pub item_addr: Option<u64>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -140,21 +145,26 @@ pub struct HashSourceProgress {
 // Helper Functions
 // =============================================================================
 
-/// Check if a container type string represents an EWF-based format (E01, Ex01, L01)
+/// Check if a container type string represents an EWF-based format (E01, Ex01, L01, Lx01)
 fn is_ewf_type(container_type: &str) -> bool {
+    let container_type = container_type.trim().to_lowercase();
     container_type.contains("e01")
         || container_type.contains("encase")
+        || container_type.contains("ewf")
         || container_type.contains("ex01")
         || container_type.contains("l01")
+        || container_type.contains("lx01")
 }
 
 /// Check if a container type string represents an AD1 format
 fn is_ad1_type(container_type: &str) -> bool {
+    let container_type = container_type.trim().to_lowercase();
     container_type.contains("ad1")
 }
 
 /// Check if a container type string represents an AFF4 format
 fn is_aff4_type(container_type: &str) -> bool {
+    let container_type = container_type.trim().to_lowercase();
     container_type.contains("aff4") || container_type.contains("aff")
 }
 
@@ -408,8 +418,16 @@ pub(crate) fn open_hash_source(
         )));
     }
 
-    open_container_entry_source(container_path, entry_path, &container_type, input.size)
-        .map_err(|e| e.to_string())
+    open_container_entry_source_with_options(
+        container_path,
+        entry_path,
+        &container_type,
+        ContainerEntrySourceOptions {
+            known_size: input.size,
+            data_addr: input.data_addr,
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn hash_source_id(input: &HashSourceInput, source_ref: Option<&EvidenceSourceRef>) -> String {
@@ -420,7 +438,10 @@ fn hash_source_id(input: &HashSourceInput, source_ref: Option<&EvidenceSourceRef
                 container_path,
                 entry_path,
                 container_type,
-            } => format!("{container_type}:{container_path}:{entry_path}"),
+            } => format!(
+                "{container_type}:{container_path}:{entry_path}{}",
+                hash_source_address_suffix(input, Some(container_type))
+            ),
             EvidenceSourceRef::NestedContainerEntry {
                 container_path,
                 nested_container_path,
@@ -442,9 +463,29 @@ fn hash_source_id(input: &HashSourceInput, source_ref: Option<&EvidenceSourceRef
     } else if let Some(path) = &input.path {
         path.clone()
     } else if let (Some(container), Some(entry)) = (&input.container_path, &input.entry_path) {
-        bounded_hash_source_id(format!("{}:{}", container, entry))
+        bounded_hash_source_id(format!(
+            "{}:{}{}",
+            container,
+            entry,
+            hash_source_address_suffix(input, input.container_type.as_deref())
+        ))
     } else {
         "unknown-source".to_string()
+    }
+}
+
+fn hash_source_address_suffix(input: &HashSourceInput, container_type: Option<&str>) -> String {
+    if !container_type.is_some_and(is_ad1_type) {
+        return String::new();
+    }
+
+    match (input.item_addr, input.data_addr) {
+        (Some(item_addr), Some(data_addr)) => {
+            format!("#item=0x{item_addr:x};data=0x{data_addr:x}")
+        }
+        (Some(item_addr), None) => format!("#item=0x{item_addr:x}"),
+        (None, Some(data_addr)) => format!("#data=0x{data_addr:x}"),
+        (None, None) => String::new(),
     }
 }
 
@@ -631,6 +672,58 @@ fn batch_hash_cache_scope(container_type: &str) -> String {
     } else {
         format!("raw-file:{normalized}")
     }
+}
+
+fn batch_hash_cache_scope_for_path(container_type: &str, path: &str) -> String {
+    let base_scope = batch_hash_cache_scope(container_type);
+    if is_ad1_type(container_type) {
+        if let Ok(segment_paths) = ad1::get_segment_paths(path) {
+            return segmented_batch_hash_cache_scope(&base_scope, &segment_paths);
+        }
+    } else if is_ewf_type(container_type) {
+        let lower_path = path.to_ascii_lowercase();
+        let segments = if lower_path.ends_with(".l01") || lower_path.ends_with(".lx01") {
+            crate::common::segments::discover_l01_segments(path)
+        } else {
+            crate::common::segments::discover_e01_segments(path)
+        };
+        if let Ok(segment_paths) = segments {
+            return segmented_batch_hash_cache_scope(&base_scope, &segment_paths);
+        }
+    }
+
+    base_scope
+}
+
+fn segmented_batch_hash_cache_scope(
+    base_scope: &str,
+    segment_paths: &[std::path::PathBuf],
+) -> String {
+    if segment_paths.len() <= 1 {
+        return base_scope.to_string();
+    }
+
+    let mut fingerprint = DefaultHasher::new();
+    segment_paths.len().hash(&mut fingerprint);
+    for segment_path in segment_paths {
+        segment_path.to_string_lossy().hash(&mut fingerprint);
+        match std::fs::metadata(segment_path) {
+            Ok(metadata) => {
+                metadata.len().hash(&mut fingerprint);
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                        duration.as_secs().hash(&mut fingerprint);
+                        duration.subsec_nanos().hash(&mut fingerprint);
+                    }
+                }
+            }
+            Err(_) => {
+                "missing".hash(&mut fingerprint);
+            }
+        }
+    }
+
+    format!("{base_scope}:segments-{:#016x}", fingerprint.finish())
 }
 
 fn hash_algorithm_worker_name(algorithm: HashAlgorithm) -> &'static str {
@@ -1397,7 +1490,8 @@ pub async fn batch_hash(
 
                 info!(container_type = %container_for_hash, algorithm = %algo_for_hash, path = %path_for_hash, "[HASH-DIAG] About to start hashing");
                 let _hash_start = std::time::Instant::now();
-                let cache_scope = batch_hash_cache_scope(&container_for_hash);
+                let cache_scope =
+                    batch_hash_cache_scope_for_path(&container_for_hash, &path_for_hash);
 
                 // Check cache first - this can skip expensive recomputation
                 let cached_hash = hash_cache::get_cached_hash_scoped(
@@ -1714,6 +1808,8 @@ mod tests {
             nested_archive_path: None,
             container_type: None,
             size: None,
+            data_addr: None,
+            item_addr: None,
         }
     }
 
@@ -1782,12 +1878,90 @@ mod tests {
     }
 
     #[test]
+    fn is_ewf_type_matches_extension_and_mime_identifiers() {
+        assert!(is_ewf_type("e01"));
+        assert!(is_ewf_type("EWF"));
+        assert!(is_ewf_type("application/x-ewf"));
+        assert!(is_ewf_type("EWF-E01"));
+        assert!(is_ewf_type("EnCase (E01)"));
+        assert!(is_ewf_type("Lx01"));
+        assert!(!is_ewf_type("ad1"));
+        assert!(!is_ewf_type("raw"));
+    }
+
+    #[test]
     fn batch_hash_cache_scope_separates_container_semantics() {
         assert_eq!(batch_hash_cache_scope("E01"), "decoded-ewf");
+        assert_eq!(batch_hash_cache_scope("ewf"), "decoded-ewf");
+        assert_eq!(batch_hash_cache_scope("application/x-ewf"), "decoded-ewf");
         assert_eq!(batch_hash_cache_scope("ad1"), "ad1-segments");
         assert_eq!(batch_hash_cache_scope("AFF4"), "decoded-aff4");
         assert_eq!(batch_hash_cache_scope("raw"), "raw-file:raw");
         assert_eq!(batch_hash_cache_scope(" "), "raw-file:disk");
+    }
+
+    #[test]
+    fn segmented_batch_hash_cache_scope_changes_when_companion_segment_changes() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("case.ad1");
+        let second = temp_dir.path().join("case.ad2");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+        let segment_paths = vec![first, second.clone()];
+
+        let before = segmented_batch_hash_cache_scope("ad1-segments", &segment_paths);
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = segmented_batch_hash_cache_scope("ad1-segments", &segment_paths);
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn batch_hash_cache_scope_for_e01_includes_companion_segment_metadata() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("image.E01");
+        let second = temp_dir.path().join("image.E02");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+
+        let before = batch_hash_cache_scope_for_path("E01", first.to_str().unwrap());
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = batch_hash_cache_scope_for_path("E01", first.to_str().unwrap());
+
+        assert!(before.starts_with("decoded-ewf:segments-"));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn batch_hash_cache_scope_for_l01_includes_companion_segment_metadata() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("logical.L01");
+        let second = temp_dir.path().join("logical.L02");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+
+        let before = batch_hash_cache_scope_for_path("L01", first.to_str().unwrap());
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = batch_hash_cache_scope_for_path("L01", first.to_str().unwrap());
+
+        assert!(before.starts_with("decoded-ewf:segments-"));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn batch_hash_cache_scope_for_lx01_includes_companion_segment_metadata() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let first = temp_dir.path().join("logical.Lx01");
+        let second = temp_dir.path().join("logical.Lx02");
+        std::fs::write(&first, b"segment one").unwrap();
+        std::fs::write(&second, b"segment two").unwrap();
+
+        let before = batch_hash_cache_scope_for_path("Lx01", first.to_str().unwrap());
+        std::fs::write(&second, b"segment two changed").unwrap();
+        let after = batch_hash_cache_scope_for_path("Lx01", first.to_str().unwrap());
+
+        assert!(before.starts_with("decoded-ewf:segments-"));
+        assert_ne!(before, after);
     }
 
     #[test]
@@ -1818,6 +1992,32 @@ mod tests {
     }
 
     #[test]
+    fn open_hash_source_accepts_ad1_address_metadata() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/evidence.ad1".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: Some(128),
+            data_addr: Some(8192),
+            item_addr: Some(4096),
+        };
+
+        let source = open_hash_source(&input).unwrap();
+
+        assert_eq!(source.len().unwrap(), 128);
+        assert_eq!(
+            source.source_ref(),
+            EvidenceSourceRef::ContainerEntry {
+                container_path: "/cases/evidence.ad1".to_string(),
+                entry_path: "/Documents/file.txt".to_string(),
+                container_type: "ad1".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn open_hash_source_requires_container_entry_path() {
         let input = HashSourceInput {
             path: Some("/cases/evidence.ad1".to_string()),
@@ -1826,6 +2026,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("ad1".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let err = match open_hash_source(&input) {
@@ -1910,6 +2112,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("ad1".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let err = validate_hash_source_request(&input, "sha256").unwrap_err();
@@ -1926,6 +2130,8 @@ mod tests {
             nested_archive_path: None,
             container_type: Some("zip".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let err = validate_hash_source_request(&input, "sha256").unwrap_err();
@@ -1941,6 +2147,84 @@ mod tests {
 
         assert_eq!(truncated.chars().count(), MAX_HASH_SOURCE_ID_CHARS);
         assert!(!truncated.ends_with("tail"));
+    }
+
+    #[test]
+    fn hash_source_id_includes_ad1_item_and_data_addresses() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/evidence.ad1".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: Some(128),
+            data_addr: Some(0x2000),
+            item_addr: Some(0x1000),
+        };
+        let source_ref = EvidenceSourceRef::ContainerEntry {
+            container_path: "/cases/evidence.ad1".to_string(),
+            entry_path: "/Documents/file.txt".to_string(),
+            container_type: "ad1".to_string(),
+        };
+
+        let source_id = hash_source_id(&input, Some(&source_ref));
+
+        assert_eq!(
+            source_id,
+            "ad1:/cases/evidence.ad1:/Documents/file.txt#item=0x1000;data=0x2000"
+        );
+    }
+
+    #[test]
+    fn hash_source_id_omits_address_suffix_for_non_ad1_entries() {
+        let input = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/disk.E01".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("e01".to_string()),
+            size: Some(128),
+            data_addr: Some(0x2000),
+            item_addr: Some(0x1000),
+        };
+        let source_ref = EvidenceSourceRef::ContainerEntry {
+            container_path: "/cases/disk.E01".to_string(),
+            entry_path: "/Documents/file.txt".to_string(),
+            container_type: "e01".to_string(),
+        };
+
+        let source_id = hash_source_id(&input, Some(&source_ref));
+
+        assert_eq!(source_id, "e01:/cases/disk.E01:/Documents/file.txt");
+    }
+
+    #[test]
+    fn hash_source_id_distinguishes_ad1_entries_with_same_path() {
+        let first = HashSourceInput {
+            path: None,
+            container_path: Some("/cases/evidence.ad1".to_string()),
+            entry_path: Some("/Documents/file.txt".to_string()),
+            nested_archive_path: None,
+            container_type: Some("ad1".to_string()),
+            size: Some(128),
+            data_addr: Some(0x2000),
+            item_addr: Some(0x1000),
+        };
+        let mut second = first.clone();
+        second.data_addr = Some(0x4000);
+        second.item_addr = Some(0x3000);
+        let source_ref = EvidenceSourceRef::ContainerEntry {
+            container_path: "/cases/evidence.ad1".to_string(),
+            entry_path: "/Documents/file.txt".to_string(),
+            container_type: "ad1".to_string(),
+        };
+
+        let first_id = hash_source_id(&first, Some(&source_ref));
+        let second_id = hash_source_id(&second, Some(&source_ref));
+
+        assert_ne!(first_id, second_id);
+        assert!(first_id.ends_with("#item=0x1000;data=0x2000"));
+        assert!(second_id.ends_with("#item=0x3000;data=0x4000"));
     }
 
     #[test]
@@ -2049,6 +2333,8 @@ mod tests {
             nested_archive_path: Some("inner.zip".to_string()),
             container_type: Some("zip".to_string()),
             size: Some(42),
+            data_addr: None,
+            item_addr: None,
         };
 
         let source = open_hash_source(&input).unwrap();
@@ -2078,6 +2364,8 @@ mod tests {
             nested_archive_path: Some("inner.zip".to_string()),
             container_type: Some("zip".to_string()),
             size: None,
+            data_addr: None,
+            item_addr: None,
         };
 
         let source = open_hash_source(&input).unwrap();

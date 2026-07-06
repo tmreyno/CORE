@@ -34,6 +34,7 @@ export function SectionsPanel(props: SectionsPanelProps) {
                 <th class="text-left p-1.5 text-txt-muted font-medium">Virtual Addr</th>
                 <th class="text-left p-1.5 text-txt-muted font-medium">Virtual Size</th>
                 <th class="text-left p-1.5 text-txt-muted font-medium">Raw Size</th>
+                <th class="text-left p-1.5 text-txt-muted font-medium">Entropy</th>
                 <th class="text-left p-1.5 text-txt-muted font-medium">Flags</th>
               </tr>
             </thead>
@@ -45,7 +46,14 @@ export function SectionsPanel(props: SectionsPanelProps) {
                     <td class="p-1.5 font-mono text-txt-secondary">{formatHex(sec.virtual_address)}</td>
                     <td class="p-1.5 text-txt-secondary">{formatBytes(sec.virtual_size)}</td>
                     <td class="p-1.5 text-txt-secondary">{formatBytes(sec.raw_size)}</td>
-                    <td class="p-1.5 font-mono text-txt-muted">{sec.characteristics}</td>
+                    <td class="p-1.5 font-mono text-txt-secondary">
+                      {sec.entropy == null ? "n/a" : sec.entropy.toFixed(3)}
+                    </td>
+                    <td class="p-1.5 font-mono text-txt-muted">
+                      {sec.characteristics_detail?.length
+                        ? sec.characteristics_detail.join(", ")
+                        : sec.characteristics}
+                    </td>
                   </tr>
                 )}
               </For>

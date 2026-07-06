@@ -336,7 +336,7 @@ static EMBEDDED_SIGNATURES: &[EmbeddedSignature] = &[
         pattern: b"MZ",
         description: "DOS/Windows Executable",
         mime_type: "application/x-msdownload",
-        extensions: &["exe", "dll"],
+        extensions: &["exe", "dll", "sys", "drv"],
         category: "executable",
     },
     EmbeddedSignature {
@@ -862,6 +862,38 @@ mod tests {
     }
 
     #[test]
+    fn analyze_byte_source_reports_windows_driver_extensions_for_mz_signature() {
+        let fixture = b"MZ\x90\x00\x03\x00\x00\x00";
+        let source = ChunkedByteSource::new("driver.sys", fixture, 2);
+
+        let analysis = analyze_byte_source(
+            &source,
+            SourceAnalysisOptions {
+                length: Some(64),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let signature = analysis
+            .signatures
+            .iter()
+            .find(|signature| {
+                signature.description == "Windows Executable"
+                    || signature.description == "DOS/Windows Executable"
+            })
+            .expect("MZ signature");
+        assert!(signature
+            .extensions
+            .iter()
+            .any(|extension| extension == "sys"));
+        assert!(signature
+            .extensions
+            .iter()
+            .any(|extension| extension == "drv"));
+    }
+
+    #[test]
     fn analyze_byte_source_reports_embedded_signature_offsets() {
         let mut fixture = vec![0u8; 32];
         fixture.extend_from_slice(b"%PDF-1.7\n");
@@ -1057,7 +1089,7 @@ mod tests {
     #[test]
     fn source_indicators_cap_extracted_value_length() {
         let mut fixture = b"https://".to_vec();
-        fixture.extend(std::iter::repeat(b'a').take(MAX_INDICATOR_VALUE_BYTES + 32));
+        fixture.extend(std::iter::repeat_n(b'a', MAX_INDICATOR_VALUE_BYTES + 32));
 
         let indicators = extract_source_indicators(&fixture, 0);
 

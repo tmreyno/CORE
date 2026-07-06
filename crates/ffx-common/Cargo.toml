@@ -25,6 +25,7 @@ hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 plist = "1"
+quick-xml = "0.37"
 
 # Date/time
 chrono = { workspace = true }

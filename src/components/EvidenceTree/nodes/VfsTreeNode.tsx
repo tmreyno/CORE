@@ -22,6 +22,7 @@ import {
   TreeRow,
   ExpandIcon,
   TreeEmptyState,
+  LoadMoreButton,
   TREE_ROW_BASE_CLASSES,
   TREE_ROW_NORMAL_CLASSES,
   getTreeIndent,
@@ -29,6 +30,9 @@ import {
 import { formatBytes } from "../../../utils";
 import type { VfsEntry, VfsPartitionInfo, NestedContainerEntry } from "../../../types";
 import { isNestedContainerFile, getNestedContainerType } from "../containerDetection";
+
+const VFS_RENDER_CAP = 200;
+const VFS_RENDER_CAP_STEP = 200;
 
 export interface VfsEntryRowProps {
   entry: VfsEntry;
@@ -99,6 +103,8 @@ export function VfsTreeNode(props: VfsTreeNodeProps): JSX.Element {
   const isLoading = () => props.isLoading(nodeKey());
   const isSelected = () => props.isSelected(nodeKey());
   const children = () => props.getChildren(props.containerPath, props.entry.path);
+  const [renderLimit, setRenderLimit] = createSignal(VFS_RENDER_CAP);
+  const visibleChildren = createMemo(() => children().slice(0, renderLimit()));
 
   // Check if this entry is a nested container file
   const isNestedContainer = createMemo(() => {
@@ -174,7 +180,7 @@ export function VfsTreeNode(props: VfsTreeNodeProps): JSX.Element {
       
       {/* Regular directory children */}
       <Show when={isExpanded() && props.entry.isDir}>
-        <For each={children()}>
+        <For each={visibleChildren()}>
           {(child) => (
             <VfsTreeNode
               entry={child}
@@ -196,6 +202,18 @@ export function VfsTreeNode(props: VfsTreeNodeProps): JSX.Element {
             />
           )}
         </For>
+        <Show when={children().length > renderLimit()}>
+          <LoadMoreButton
+            loadedCount={renderLimit()}
+            totalCount={children().length}
+            isLoading={false}
+            depth={props.depth + 1}
+            onClick={(e) => {
+              e.stopPropagation();
+              setRenderLimit((prev) => prev + VFS_RENDER_CAP_STEP);
+            }}
+          />
+        </Show>
       </Show>
       
       {/* Nested container contents (when expanded) */}
@@ -338,6 +356,7 @@ export interface PartitionNodeProps {
 export function PartitionNode(props: PartitionNodeProps): JSX.Element {
   // Handle missing mountName with fallback
   const partitionRootPath = () => {
+    if (props.partition.rootPath) return props.partition.rootPath;
     const mountName = props.partition.mountName ?? `Partition${props.partition.number ?? props.index + 1}`;
     return `/${mountName}`;
   };
@@ -345,6 +364,8 @@ export function PartitionNode(props: PartitionNodeProps): JSX.Element {
   const isExpanded = () => props.isExpanded(nodeKey());
   const isLoading = () => props.isLoading(nodeKey());
   const children = () => props.getChildren(props.containerPath, partitionRootPath());
+  const [renderLimit, setRenderLimit] = createSignal(VFS_RENDER_CAP);
+  const visibleChildren = createMemo(() => children().slice(0, renderLimit()));
 
   const togglePartition = () => props.onToggle(props.containerPath, partitionRootPath());
 
@@ -381,7 +402,7 @@ export function PartitionNode(props: PartitionNodeProps): JSX.Element {
       </div>
       <Show when={isExpanded()}>
         <div>
-          <For each={children()}>
+          <For each={visibleChildren()}>
             {(entry) => (
               <VfsTreeNode
                 entry={entry}
@@ -403,6 +424,18 @@ export function PartitionNode(props: PartitionNodeProps): JSX.Element {
               />
             )}
           </For>
+          <Show when={children().length > renderLimit()}>
+            <LoadMoreButton
+              loadedCount={renderLimit()}
+              totalCount={children().length}
+              isLoading={false}
+              depth={1}
+              onClick={(e) => {
+                e.stopPropagation();
+                setRenderLimit((prev) => prev + VFS_RENDER_CAP_STEP);
+              }}
+            />
+          </Show>
           <Show when={children().length === 0 && !isLoading()}>
             <TreeEmptyState message="Empty filesystem" depth={1} />
           </Show>

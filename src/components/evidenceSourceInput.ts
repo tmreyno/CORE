@@ -18,12 +18,15 @@ export function buildEvidenceSourceInput(
       const delimiterIndex = entry.entryPath.indexOf("::");
       const nestedArchivePath = entry.entryPath.slice(0, delimiterIndex);
       const nestedEntryPath = entry.entryPath.slice(delimiterIndex + 2);
+      const outerContainerType = inferNestedOuterContainerType(entry);
       return {
         containerPath: entry.containerPath,
         nestedArchivePath,
         entryPath: nestedEntryPath,
-        containerType: entry.containerType?.toLowerCase() ?? extensionOrDefault(nestedArchivePath, "archive"),
+        containerType: outerContainerType,
         size: entry.size,
+        dataAddr: entry.dataAddr,
+        itemAddr: entry.itemAddr,
       };
     }
 
@@ -41,6 +44,8 @@ export function buildEvidenceSourceInput(
       entryPath: entry.entryPath,
       containerType: inferEntryContainerType(entry),
       size: entry.size,
+      dataAddr: entry.dataAddr,
+      itemAddr: entry.itemAddr,
     };
   }
 
@@ -56,18 +61,73 @@ export function buildEvidenceSourceInput(
 }
 
 function inferEntryContainerType(entry: SelectedEntry): string {
-  const explicitType = entry.containerType?.toLowerCase();
+  const explicitType = normalizeEntryContainerType(entry.containerType, entry.containerPath);
   if (explicitType && explicitType !== "vfs" && explicitType !== "lazy") return explicitType;
   if (entry.isArchiveEntry) return extensionOrDefault(entry.containerPath, "archive");
-  if (entry.isVfsEntry) return extensionOrDefault(entry.containerPath, "e01");
+  if (entry.isVfsEntry) return inferVfsContainerType(entry.containerPath);
   return "ad1";
+}
+
+function inferNestedOuterContainerType(entry: SelectedEntry): string {
+  const pathType = extensionOrDefault(entry.containerPath, "");
+  if (pathType) {
+    if (pathType === "ex01") return "ex01";
+    if (pathType === "e01" || pathType === "lx01" || pathType === "l01") return pathType;
+    if (pathType === "ad1") return "ad1";
+    if (pathType === "raw" || pathType === "dd" || pathType === "img") return "raw";
+    if (pathType.startsWith("tar")) return pathType;
+    if (isKnownArchiveExtension(pathType)) return pathType;
+  }
+
+  const explicitType = normalizeEntryContainerType(entry.containerType, entry.containerPath);
+  if (explicitType && explicitType !== "vfs" && explicitType !== "lazy") return explicitType;
+  if (entry.isVfsEntry) return inferVfsContainerType(entry.containerPath);
+  return "archive";
+}
+
+function normalizeEntryContainerType(containerType: string | undefined, containerPath: string): string | undefined {
+  const explicitType = containerType?.trim().toLowerCase();
+  if (!explicitType) return undefined;
+  if (explicitType === "vfs" || explicitType === "lazy") return explicitType;
+  if (explicitType.includes("ex01")) return "ex01";
+  if (explicitType.includes("encase") || explicitType.includes("ewf") || explicitType.includes("e01")) return "e01";
+  if (explicitType.includes("lx01")) return "lx01";
+  if (explicitType.includes("l01")) return "l01";
+  if (explicitType.includes("raw image") || explicitType.includes("disk image")) return "raw";
+  if (explicitType.includes("tar")) return extensionOrDefault(containerPath, "tar");
+  return explicitType;
+}
+
+function inferVfsContainerType(containerPath: string): string {
+  const extension = extensionOrDefault(containerPath, "e01");
+  if (extension === "e01" && /\.(\d{3})$/i.test(containerPath)) return "raw";
+  return extension;
 }
 
 function extensionOrDefault(path: string, fallback: string): string {
   const name = path.split(/[\\/]/).pop() ?? path;
+  const lowerName = name.toLowerCase();
+  for (const compoundExtension of ["tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz4"]) {
+    if (lowerName.endsWith(`.${compoundExtension}`)) return compoundExtension;
+  }
   const dot = name.lastIndexOf(".");
   if (dot < 0 || dot === name.length - 1) return fallback;
   const extension = name.slice(dot + 1).toLowerCase();
   if (/^\d+$/.test(extension)) return fallback;
   return extension;
+}
+
+function isKnownArchiveExtension(extension: string): boolean {
+  return [
+    "zip",
+    "7z",
+    "rar",
+    "tar",
+    "gz",
+    "bz2",
+    "xz",
+    "zst",
+    "lz4",
+    "tgz",
+  ].includes(extension);
 }

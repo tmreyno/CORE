@@ -30,8 +30,8 @@ pub use operations::{
     extract_with_progress, find_by_extension, find_by_hash, find_by_name, get_children,
     get_children_at_addr, get_children_at_addr_lazy, get_entry_info, get_segment_paths, get_stats,
     get_tree, hash_segments, hash_segments_with_progress, hash_single_segment, info, info_fast,
-    is_ad1, read_entry_chunk, read_entry_data, read_entry_data_by_addr, verify, verify_against_log,
-    verify_chunks, verify_with_progress,
+    is_ad1, read_entry_chunk, read_entry_chunk_by_addr, read_entry_data, read_entry_data_by_addr,
+    verify, verify_against_log, verify_chunks, verify_with_progress,
 };
 
 // Re-export V2 operations

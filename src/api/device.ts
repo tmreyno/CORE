@@ -16,6 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types
@@ -84,6 +85,15 @@ export interface DeviceReadProgress {
  * On Windows, checks if running with Administrator privileges.
  */
 export async function checkPrivilege(): Promise<PrivilegeInfo> {
+  if (!isTauri) {
+    return {
+      isElevated: false,
+      description: "Raw device access is available in the desktop app.",
+      username: "",
+      elevationRequired: true,
+    };
+  }
+
   return invoke<PrivilegeInfo>("check_privilege");
 }
 
@@ -96,6 +106,11 @@ export async function checkPrivilege(): Promise<PrivilegeInfo> {
  * @param devicePath - Raw device path (e.g. "/dev/rdisk2", "/dev/sda")
  */
 export async function getDeviceSize(devicePath: string): Promise<number> {
+  if (!isTauri) {
+    void devicePath;
+    throw new Error("Raw device size checks are available in the desktop app.");
+  }
+
   return invoke<number>("get_device_size", { devicePath });
 }
 
@@ -108,6 +123,10 @@ export async function getDeviceSize(devicePath: string): Promise<number> {
  * May require elevated privileges to detect all disks.
  */
 export async function listPhysicalDisks(): Promise<PhysicalDisk[]> {
+  if (!isTauri) {
+    return [];
+  }
+
   return invoke<PhysicalDisk[]>("list_physical_disks");
 }
 
@@ -118,6 +137,10 @@ export async function listPhysicalDisks(): Promise<PhysicalDisk[]> {
  * Does NOT automatically restart the application.
  */
 export async function requestElevation(): Promise<string> {
+  if (!isTauri) {
+    return "Privilege elevation is available in the desktop app.";
+  }
+
   return invoke<string>("request_elevation");
 }
 
@@ -135,6 +158,12 @@ export async function readRawDevice(
   devicePath: string,
   outputPath: string
 ): Promise<number> {
+  if (!isTauri) {
+    void devicePath;
+    void outputPath;
+    throw new Error("Raw device reads are available in the desktop app.");
+  }
+
   return invoke<number>("read_raw_device", { devicePath, outputPath });
 }
 
@@ -147,6 +176,11 @@ export async function readRawDevice(
 export async function listenDeviceReadProgress(
   callback: (progress: DeviceReadProgress) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void callback;
+    return () => {};
+  }
+
   return listen<DeviceReadProgress>("device-read-progress", (event) => {
     callback(event.payload);
   });

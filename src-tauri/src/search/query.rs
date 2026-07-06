@@ -480,7 +480,7 @@ where
         .into_iter()
         .map(|(label, count)| FacetCount { label, count })
         .collect();
-    result.sort_by(|a, b| b.count.cmp(&a.count));
+    result.sort_by_key(|entry| std::cmp::Reverse(entry.count));
     result
 }
 

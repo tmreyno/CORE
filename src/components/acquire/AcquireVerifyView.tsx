@@ -40,6 +40,7 @@ import {
 import { getContainerType } from "../EvidenceTree/containerDetection";
 import { logger } from "../../utils/logger";
 import AcquireProcessShell from "./AcquireProcessShell";
+import { isTauri } from "../../utils/platform";
 
 // =============================================================================
 // Types
@@ -54,6 +55,9 @@ interface FileEntry {
   durationMs: number | null;
   throughputMbs: number | null;
 }
+
+const BROWSER_VERIFY_SELECTION_MESSAGE =
+  "Hash verification file and folder selection is available in the desktop app.";
 
 export interface AcquireVerifyViewProps {
   onBack: () => void;
@@ -83,6 +87,7 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
   const [overallProgress, setOverallProgress] = createSignal({ completed: 0, total: 0 });
   const [copiedPath, setCopiedPath] = createSignal<string | null>(null);
   const [isDragOver, setIsDragOver] = createSignal(false);
+  const [selectionMessage, setSelectionMessage] = createSignal("");
 
   let unlistenProgress: UnlistenFn | null = null;
   let dragCounter = 0;
@@ -156,6 +161,12 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
   };
 
   const handleAddFiles = async () => {
+    if (!isTauri) {
+      setSelectionMessage(BROWSER_VERIFY_SELECTION_MESSAGE);
+      return;
+    }
+
+    setSelectionMessage("");
     log.debug("Opening file dialog for hash verification");
     try {
       const selected = await open({
@@ -174,6 +185,12 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
   };
 
   const handleAddFolder = async () => {
+    if (!isTauri) {
+      setSelectionMessage(BROWSER_VERIFY_SELECTION_MESSAGE);
+      return;
+    }
+
+    setSelectionMessage("");
     try {
       const selected = await open({
         directory: true,
@@ -443,6 +460,12 @@ const AcquireVerifyView: Component<AcquireVerifyViewProps> = (props) => {
                 </Show>
               </div>
             </div>
+
+            <Show when={selectionMessage()}>
+              <div class="rounded border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                {selectionMessage()}
+              </div>
+            </Show>
 
             {/* File list with progress bars */}
             <Show when={files().length > 0}>

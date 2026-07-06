@@ -210,10 +210,7 @@ pub fn parse_ad1_header(header: &[u8], file_size: u64) -> Result<ParsedMetadata,
     let volume_offset = 680usize;
     if volume_offset < header.len() {
         let mut label_end = volume_offset;
-        let label_limit = volume_offset
-            .checked_add(64)
-            .unwrap_or(usize::MAX)
-            .min(header.len());
+        let label_limit = volume_offset.saturating_add(64).min(header.len());
         while label_end < label_limit && header[label_end] != 0 {
             label_end += 1;
         }

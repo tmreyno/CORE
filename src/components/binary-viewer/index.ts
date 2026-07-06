@@ -13,3 +13,4 @@ export { BinaryOverview } from "./BinaryOverview";
 export { SectionsPanel } from "./SectionsPanel";
 export { ImportsPanel } from "./ImportsPanel";
 export { ExportsPanel } from "./ExportsPanel";
+export { StringsPanel } from "./StringsPanel";

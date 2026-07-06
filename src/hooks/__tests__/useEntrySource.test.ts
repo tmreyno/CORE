@@ -14,6 +14,10 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock("../../utils/platform", () => ({
+  isTauri: true,
+}));
+
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
 
@@ -58,6 +62,15 @@ const makeChunk = (bytes: number[], totalSize = bytes.length, offset = 0) => ({
   data: globalThis.btoa(String.fromCharCode(...bytes)),
 });
 
+const makeTextChunk = (text: string, bytesRead = text.length, totalSize = bytesRead, offset = 0) => ({
+  path: "source",
+  offset,
+  bytesRead,
+  totalSize,
+  eof: offset + bytesRead >= totalSize,
+  text,
+});
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
@@ -76,19 +89,23 @@ describe("getSourceKey", () => {
       containerPath: "/evidence/disk.ad1",
       entryPath: "/files/doc.pdf",
     });
-    expect(getSourceKey(null, entry)).toBe("entry:/evidence/disk.ad1:/files/doc.pdf");
+    expect(getSourceKey(null, entry)).toBe(
+      "entry:ad1::%2Fevidence%2Fdisk.ad1::%2Ffiles%2Fdoc.pdf:2048::"
+    );
   });
 
   it("returns file key for DiscoveredFile", () => {
     const file = makeFile("/evidence/disk.e01");
-    expect(getSourceKey(file, undefined)).toBe("file:/evidence/disk.e01");
+    expect(getSourceKey(file, undefined)).toBe(
+      "file:disk:%2Fevidence%2Fdisk.e01::::1024::"
+    );
   });
 
   it("prefers entry over file when both provided", () => {
     const file = makeFile("/evidence/disk.e01");
     const entry = makeEntry();
     expect(getSourceKey(file, entry)).toBe(
-      "entry:/evidence/container.ad1:/files/test.bin"
+      "entry:ad1::%2Fevidence%2Fcontainer.ad1::%2Ffiles%2Ftest.bin:2048::"
     );
   });
 
@@ -98,6 +115,48 @@ describe("getSourceKey", () => {
 
   it("returns null for undefined file", () => {
     expect(getSourceKey(undefined, undefined)).toBeNull();
+  });
+
+  it("separates AD1 entries with the same path but different data addresses", () => {
+    const first = makeEntry({ dataAddr: 8192, itemAddr: 4096 });
+    const second = makeEntry({ dataAddr: 16384, itemAddr: 12288 });
+
+    expect(getSourceKey(null, first)).not.toBe(getSourceKey(null, second));
+  });
+
+  it("separates nested archive entries from same-named parent entries", () => {
+    const nested = makeEntry({
+      containerPath: "/evidence/archive.zip",
+      isArchiveEntry: true,
+      entryPath: "inner.zip::file.txt",
+      size: 12,
+    });
+    const outer = makeEntry({
+      containerPath: "/evidence/archive.zip",
+      isArchiveEntry: true,
+      entryPath: "file.txt",
+      size: 12,
+    });
+
+    expect(getSourceKey(null, nested)).not.toBe(getSourceKey(null, outer));
+    expect(getSourceKey(null, nested)).toContain("inner.zip");
+  });
+
+  it("separates VFS entries from different image source types", () => {
+    const e01Entry = makeEntry({
+      containerPath: "/evidence/disk.e01",
+      isVfsEntry: true,
+      containerType: "vfs",
+    });
+    const rawEntry = makeEntry({
+      containerPath: "/evidence/disk.raw",
+      isVfsEntry: true,
+      containerType: "vfs",
+    });
+
+    expect(getSourceKey(null, e01Entry)).not.toBe(getSourceKey(null, rawEntry));
+    expect(getSourceKey(null, e01Entry)).toContain("e01");
+    expect(getSourceKey(null, rawEntry)).toContain("raw");
   });
 });
 
@@ -208,6 +267,32 @@ describe("readBytesFromSource", () => {
     });
     expect(result.bytes).toEqual([0x01, 0x02]);
     expect(result.totalSize).toBe(1024);
+  });
+
+  it("preserves outer image type for nested archive entries inside E01 sources", async () => {
+    const entry = makeEntry({
+      containerPath: "/evidence/disk.E01",
+      isArchiveEntry: true,
+      entryPath: "Users/alice/archive.zip::docs/report.txt",
+      containerType: "zip",
+      size: 1024,
+    });
+    mockInvoke.mockResolvedValueOnce(makeChunk([0x52, 0x50], 1024));
+
+    const result = await readBytesFromSource(null, entry, 0, 64);
+
+    expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_source_base64_chunk", {
+      source: expect.objectContaining({
+        containerPath: "/evidence/disk.E01",
+        nestedArchivePath: "Users/alice/archive.zip",
+        entryPath: "docs/report.txt",
+        containerType: "e01",
+        size: 1024,
+      }),
+      offset: 0,
+      size: 64,
+    });
+    expect(result.bytes).toEqual([0x52, 0x50]);
   });
 
   it("reads from disk file entry using the source byte command", async () => {
@@ -346,34 +431,45 @@ describe("readBytesFromSource", () => {
 // ---------------------------------------------------------------------------
 
 describe("readTextFromSource", () => {
-  it("reads text from entry by decoding bytes", async () => {
+  it("reads text from entry using the source text command", async () => {
     const entry = makeEntry({ isVfsEntry: true, size: 100 });
-    // "Hello" in UTF-8
-    mockInvoke.mockResolvedValueOnce(makeChunk([0x48, 0x65, 0x6c, 0x6c, 0x6f], 100));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("Hello", 5, 100));
 
     const result = await readTextFromSource(null, entry, 0, 256);
 
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "viewer_read_text_source",
+      expect.objectContaining({
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "/files/test.bin",
+        }),
+        offset: 0,
+        maxChars: 256,
+      })
+    );
     expect(result.text).toBe("Hello");
+    expect(result.bytesRead).toBe(5);
     expect(result.totalSize).toBe(100);
   });
 
-  it("reads text from disk file using the source byte command", async () => {
+  it("reads text from disk file using the source text command", async () => {
     const file = makeFile("/evidence/notes.txt", 500);
-    const bytes = Array.from(new TextEncoder().encode("File contents here"));
-    mockInvoke.mockResolvedValueOnce(makeChunk(bytes, 500));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("File contents here", 18, 500));
 
     const result = await readTextFromSource(file, undefined, 0, 1024);
 
-    expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_source_base64_chunk", {
+    expect(mockInvoke).toHaveBeenCalledWith("viewer_read_text_source", {
       source: expect.objectContaining({
         path: file.path,
         containerType: "disk",
         size: 500,
       }),
       offset: 0,
-      size: 4096,
+      maxChars: 1024,
     });
     expect(result.text).toBe("File contents here");
+    expect(result.bytesRead).toBe(18);
     expect(result.totalSize).toBe(500);
   });
 
@@ -385,26 +481,38 @@ describe("readTextFromSource", () => {
 
   it("handles non-UTF8 bytes gracefully", async () => {
     const entry = makeEntry({ size: 4 });
-    mockInvoke.mockResolvedValueOnce(makeChunk([0xFF, 0xFE, 0x00, 0x01], 4));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("\uFFFD\uFFFD\u0000\u0001", 4, 4));
 
     const result = await readTextFromSource(null, entry, 0, 4);
 
     // TextDecoder with fatal:false replaces invalid sequences
     expect(typeof result.text).toBe("string");
+    expect(result.bytesRead).toBe(4);
     expect(result.totalSize).toBe(4);
   });
 
   it("truncates decoded text to maxChars", async () => {
     const entry = makeEntry({ size: 10 });
-    const bytes = Array.from(new TextEncoder().encode("abcdef"));
-    mockInvoke.mockResolvedValueOnce(makeChunk(bytes, 10));
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("abc", 3, 10));
 
     const result = await readTextFromSource(null, entry, 0, 3);
 
     expect(result.text).toBe("abc");
+    expect(result.bytesRead).toBe(3);
     expect(mockInvoke).toHaveBeenCalledWith(
-      "viewer_read_binary_source_base64_chunk",
-      expect.objectContaining({ size: 12 })
+      "viewer_read_text_source",
+      expect.objectContaining({ maxChars: 3 })
     );
+  });
+
+  it("returns backend byte counts for partial source text", async () => {
+    const entry = makeEntry({ size: 8 });
+    mockInvoke.mockResolvedValueOnce(makeTextChunk("abc", 3, 8));
+
+    const result = await readTextFromSource(null, entry, 0, 256);
+
+    expect(result.text).toBe("abc");
+    expect(result.bytesRead).toBe(3);
+    expect(result.totalSize).toBe(8);
   });
 });

@@ -12,6 +12,7 @@ import {
 } from "../../icons";
 import { Shortcut, CommonShortcuts } from "../../ui/Kbd";
 import { RecentProjectsList } from "../../RecentProjectsList";
+import { isTauri } from "../../../utils/platform";
 
 interface EmptyStateNoProjectProps {
   onOpenProject?: (path?: string) => void;
@@ -49,11 +50,12 @@ export function EmptyStateNoProject(props: EmptyStateNoProjectProps) {
       </Show>
       
       {/* Recent Projects */}
-      <Show when={props.onOpenProject}>
+      <Show when={props.onOpenProject && isTauri}>
         <div class="mt-2 mb-6 text-left">
           <RecentProjectsList 
             onOpenProject={props.onOpenProject!} 
             maxItems={4}
+            pathFilter={(path) => path.toLowerCase().endsWith(".cffx")}
           />
         </div>
       </Show>

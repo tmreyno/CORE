@@ -7,6 +7,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { HiOutlineInformationCircle } from "../../icons";
 import type { Accessor } from "solid-js";
+import { ToolsBrowserDialogMessage, createToolsBrowserDialogGuard } from "./browserDialogGuard";
 
 interface RepairTabProps {
   corruptedPath: Accessor<string>;
@@ -16,6 +17,8 @@ interface RepairTabProps {
 }
 
 export function RepairTab(props: RepairTabProps) {
+  const browserDialog = createToolsBrowserDialogGuard();
+
   return (
     <div class="space-y-3">
       <div class="info-card">
@@ -27,6 +30,7 @@ export function RepairTab(props: RepairTabProps) {
           </div>
         </div>
       </div>
+      <ToolsBrowserDialogMessage message={browserDialog.message} />
       <div class="space-y-2">
         <label class="label">Corrupted Archive</label>
         <div class="flex gap-2">
@@ -38,6 +42,7 @@ export function RepairTab(props: RepairTabProps) {
             placeholder="Select corrupted archive..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await open({ directory: false, multiple: false, filters: [{ name: "Archives", extensions: ["7z"] }] });
             if (selected) props.setCorruptedPath(selected as string);
           }}>
@@ -56,6 +61,7 @@ export function RepairTab(props: RepairTabProps) {
             placeholder="Output path for repaired archive..."
           />
           <button class="btn-sm" onClick={async () => {
+            if (!browserDialog.canUseNativeDialog()) return;
             const selected = await save({ filters: [{ name: "7z Archive", extensions: ["7z"] }] });
             if (selected) props.setOutputPath(selected as string);
           }}>

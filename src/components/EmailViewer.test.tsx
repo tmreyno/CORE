@@ -4,10 +4,15 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { EmailViewer } from "./EmailViewer";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -221,6 +226,55 @@ describe("EmailViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Invalid email format");
+    });
+
+    it("ignores stale email parser results after the selected message changes", async () => {
+      let resolveSlow: (value: typeof mockEmlData) => void = () => {};
+      const slowResult = new Promise<typeof mockEmlData>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const currentEmail = {
+        ...mockEmlData,
+        path: "/tmp/current.eml",
+        subject: "Current Message",
+        from: [{ name: "Current", address: "current@example.com" }],
+        body_text: "Current body",
+      };
+      const staleEmail = {
+        ...mockEmlData,
+        path: "/tmp/slow.eml",
+        subject: "Stale Message",
+        from: [{ name: "Stale", address: "stale@example.com" }],
+        body_text: "Stale body",
+      };
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "email_parse_eml" && args?.path === "/tmp/slow.eml") {
+          return slowResult;
+        }
+        if (command === "email_parse_eml" && args?.path === "/tmp/current.eml") {
+          return Promise.resolve(currentEmail);
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
+
+      const [path, setPath] = createSignal("/tmp/slow.eml");
+      const { container } = renderComponent(() => <EmailViewer path={path()} />);
+      await tick();
+
+      setPath("/tmp/current.eml");
+      await tick();
+
+      expect(container.textContent).toContain("Current Message");
+      expect(container.textContent).toContain("current@example.com");
+
+      resolveSlow(staleEmail);
+      await tick();
+
+      expect(container.textContent).toContain("Current Message");
+      expect(container.textContent).toContain("current@example.com");
+      expect(container.textContent).not.toContain("Stale Message");
+      expect(container.textContent).not.toContain("stale@example.com");
     });
   });
 

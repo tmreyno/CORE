@@ -272,7 +272,15 @@ impl DocxDocument {
                             String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                     }
                     Ok(Event::Text(e)) => {
-                        let text = e.unescape().unwrap_or_default().to_string();
+                        let text = e
+                            .unescape()
+                            .map_err(|e| {
+                                DocumentError::Docx(format!(
+                                    "Failed to decode text in docProps/core.xml: {}",
+                                    e
+                                ))
+                            })?
+                            .to_string();
                         match current_element.as_str() {
                             "title" => metadata.title = Some(text),
                             "creator" | "author" => metadata.author = Some(text),
@@ -289,8 +297,10 @@ impl DocxDocument {
                     }
                     Ok(Event::Eof) => break,
                     Err(e) => {
-                        tracing::warn!("Error parsing core.xml: {}", e);
-                        break;
+                        return Err(DocumentError::Docx(format!(
+                            "Failed to parse docProps/core.xml: {}",
+                            e
+                        )));
                     }
                     _ => {}
                 }
@@ -313,7 +323,15 @@ impl DocxDocument {
                             String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                     }
                     Ok(Event::Text(e)) => {
-                        let text = e.unescape().unwrap_or_default().to_string();
+                        let text = e
+                            .unescape()
+                            .map_err(|e| {
+                                DocumentError::Docx(format!(
+                                    "Failed to decode text in docProps/app.xml: {}",
+                                    e
+                                ))
+                            })?
+                            .to_string();
                         match current_element.as_str() {
                             "Application" => metadata.creator = Some(text),
                             "Pages" => {
@@ -330,7 +348,12 @@ impl DocxDocument {
                         }
                     }
                     Ok(Event::Eof) => break,
-                    Err(_) => break,
+                    Err(e) => {
+                        return Err(DocumentError::Docx(format!(
+                            "Failed to parse docProps/app.xml: {}",
+                            e
+                        )));
+                    }
                     _ => {}
                 }
             }
@@ -376,7 +399,13 @@ impl DocxDocument {
                             // Check for heading style
                             // Note: pStyle is typically self-closing (<w:pStyle w:val="Heading1"/>)
                             // which generates Event::Empty in quick_xml
-                            for attr in e.attributes().filter_map(|a| a.ok()) {
+                            for attr in e.attributes() {
+                                let attr = attr.map_err(|e| {
+                                    DocumentError::Docx(format!(
+                                        "Failed to parse paragraph style attribute: {}",
+                                        e
+                                    ))
+                                })?;
                                 if attr.key.as_ref() == b"w:val" {
                                     let val = String::from_utf8_lossy(&attr.value).to_string();
                                     if val.starts_with("Heading") {
@@ -459,13 +488,21 @@ impl DocxDocument {
                 }
                 Ok(Event::Text(e)) => {
                     if in_paragraph {
-                        current_text.push_str(&e.unescape().unwrap_or_default());
+                        let text = e.unescape().map_err(|e| {
+                            DocumentError::Docx(format!(
+                                "Failed to decode text in word/document.xml: {}",
+                                e
+                            ))
+                        })?;
+                        current_text.push_str(&text);
                     }
                 }
                 Ok(Event::Eof) => break,
                 Err(e) => {
-                    tracing::warn!("Error parsing document.xml: {}", e);
-                    break;
+                    return Err(DocumentError::Docx(format!(
+                        "Failed to parse word/document.xml: {}",
+                        e
+                    )));
                 }
                 _ => {}
             }
@@ -913,6 +950,36 @@ mod tests {
         let doc = DocxDocument::new();
         let result = doc.read_bytes(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_bytes_rejects_invalid_text_entity() {
+        let doc_xml = simple_document_xml("bad &unknown; entity");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+        ]);
+
+        let err = DocxDocument::new().read_bytes(&data).unwrap_err();
+
+        assert!(err.to_string().contains("word/document.xml"));
+        assert!(err.to_string().contains("decode text"));
+    }
+
+    #[test]
+    fn test_read_bytes_rejects_invalid_metadata_entity() {
+        let core = core_xml("bad &unknown; title", "John Doe", "Forensic Analysis");
+        let doc_xml = simple_document_xml("Content");
+        let data = build_docx_bytes(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("word/document.xml", &doc_xml),
+            ("docProps/core.xml", &core),
+        ]);
+
+        let err = DocxDocument::new().read_bytes(&data).unwrap_err();
+
+        assert!(err.to_string().contains("docProps/core.xml"));
+        assert!(err.to_string().contains("decode text"));
     }
 
     // =========================================================================

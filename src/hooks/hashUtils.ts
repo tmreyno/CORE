@@ -16,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "../utils/logger";
 const log = logger.scope('hashUtils');
+import { isTauri } from "../utils/platform";
 import type {
   StoredHashEntry,
   HashProgressEvent,
@@ -39,6 +40,11 @@ import { getBasename } from "../utils";
 export async function extractEwfStoredHashes(
   path: string
 ): Promise<StoredHashEntry[]> {
+  if (!isTauri) {
+    void path;
+    return [];
+  }
+
   try {
     const info = await invoke<{
       md5?: string;
@@ -87,13 +93,18 @@ export async function extractEwfStoredHashes(
 export async function extractAd1StoredHashes(
   path: string
 ): Promise<StoredHashEntry[]> {
+  if (!isTauri) {
+    void path;
+    return [];
+  }
+
   try {
     const info = await invoke<{
       stored_hash?: {
         algorithm: string;
         hash: string;
       };
-    }>("logical_info", { path });
+    }>("logical_info", { inputPath: path, includeTree: false });
 
     const hashes: StoredHashEntry[] = [];
 
@@ -122,6 +133,11 @@ export async function extractAd1StoredHashes(
 export async function extractUfedStoredHashes(
   path: string
 ): Promise<StoredHashEntry[]> {
+  if (!isTauri) {
+    void path;
+    return [];
+  }
+
   try {
     const info = await invoke<{
       stored_hash?: {
@@ -197,6 +213,12 @@ export async function setupProgressListener(
   eventName: string,
   onProgress: (event: HashProgressEvent) => void
 ): Promise<UnlistenFn> {
+  if (!isTauri) {
+    void eventName;
+    void onProgress;
+    return () => {};
+  }
+
   const unlisten = await listen<HashProgressEvent>(eventName, (event) => {
     onProgress(event.payload);
   });
@@ -219,6 +241,12 @@ async function hashEwfContainer(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
+  if (!isTauri) {
+    void path;
+    void algorithm;
+    throw new Error("EWF hashing is available in the desktop app.");
+  }
+
   const result = await invoke<string>("e01_v3_verify", {
     inputPath: path,
     algorithm,
@@ -237,6 +265,12 @@ async function hashAd1Container(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
+  if (!isTauri) {
+    void path;
+    void algorithm;
+    throw new Error("AD1 hashing is available in the desktop app.");
+  }
+
   const result = await invoke<string>("ad1_hash_segments", {
     inputPath: path,
     algorithm,
@@ -255,6 +289,12 @@ async function hashFileDirectly(
   path: string,
   algorithm: HashAlgorithmName
 ): Promise<string> {
+  if (!isTauri) {
+    void path;
+    void algorithm;
+    throw new Error("File hashing is available in the desktop app.");
+  }
+
   const result = await invoke<string>("raw_verify", {
     inputPath: path,
     algorithm,

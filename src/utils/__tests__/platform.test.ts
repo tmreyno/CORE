@@ -4,8 +4,35 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { formatShortcut, platform } from "../platform";
+
+type TauriWindow = Window & {
+  __TAURI_INTERNALS__?: unknown;
+  __TAURI__?: unknown;
+};
+
+const originalTauriInternals = Object.getOwnPropertyDescriptor(window, "__TAURI_INTERNALS__");
+const originalTauri = Object.getOwnPropertyDescriptor(window, "__TAURI__");
+
+function restoreTauriGlobals() {
+  if (originalTauriInternals) {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", originalTauriInternals);
+  } else {
+    delete (window as TauriWindow).__TAURI_INTERNALS__;
+  }
+
+  if (originalTauri) {
+    Object.defineProperty(window, "__TAURI__", originalTauri);
+  } else {
+    delete (window as TauriWindow).__TAURI__;
+  }
+}
+
+afterEach(() => {
+  vi.resetModules();
+  restoreTauriGlobals();
+});
 
 // =============================================================================
 // formatShortcut
@@ -158,5 +185,37 @@ describe("platform", () => {
 
   it("isDesktop is the inverse of isMobile", () => {
     expect(platform.isDesktop).toBe(!platform.isMobile);
+  });
+});
+
+describe("isTauri detection", () => {
+  async function importWithTauriInternals(internals?: unknown) {
+    vi.resetModules();
+    delete (window as TauriWindow).__TAURI_INTERNALS__;
+    delete (window as TauriWindow).__TAURI__;
+
+    if (internals !== undefined) {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: internals,
+      });
+    }
+
+    return import("../platform");
+  }
+
+  it("ignores partial Tauri markers in plain browser dev", async () => {
+    const { isTauri } = await importWithTauriInternals({});
+
+    expect(isTauri).toBe(false);
+  });
+
+  it("requires the native invoke and callback bridge", async () => {
+    const { isTauri } = await importWithTauriInternals({
+      invoke: vi.fn(),
+      transformCallback: vi.fn(),
+    });
+
+    expect(isTauri).toBe(true);
   });
 });

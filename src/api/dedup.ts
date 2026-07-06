@@ -11,6 +11,15 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../utils/platform";
+
+const BROWSER_DEDUP_MESSAGE =
+  "File deduplication analysis is available in the desktop app.";
+
+function ensureDedupRuntime() {
+  if (isTauri) return;
+  throw new Error(BROWSER_DEDUP_MESSAGE);
+}
 
 // =============================================================================
 // Types (mirror Rust types with camelCase)
@@ -115,6 +124,7 @@ export interface DedupStats {
 export async function analyzeDuplicates(
   options: DedupOptions = {}
 ): Promise<DedupResults> {
+  ensureDedupRuntime();
   return invoke<DedupResults>("dedup_analyze", { options });
 }
 
@@ -123,6 +133,7 @@ export async function enrichWithHashes(
   results: DedupResults,
   hashMap: Record<string, string>
 ): Promise<DedupResults> {
+  ensureDedupRuntime();
   return invoke<DedupResults>("dedup_enrich_hashes", { results, hashMap });
 }
 
@@ -130,6 +141,7 @@ export async function enrichWithHashes(
 export async function exportDedupCsv(
   results: DedupResults
 ): Promise<string> {
+  ensureDedupRuntime();
   return invoke<string>("dedup_export_csv", { results });
 }
 

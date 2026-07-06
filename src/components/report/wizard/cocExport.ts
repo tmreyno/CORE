@@ -14,11 +14,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 import type { ForensicReport } from "../types";
 import { loadEvidenceCollectionById } from "./cocPersistence";
 import type { EvidenceCollectionPackageImportSummary } from "../../../types/projectDb";
 
 const log = logger.scope("CocExport");
+const BROWSER_COC_EXPORT_MESSAGE =
+  "Evidence collection export is available in the desktop app.";
+const BROWSER_COC_IMPORT_MESSAGE =
+  "Evidence collection package import is available in the desktop app.";
 
 /**
  * Export an evidence collection as PDF.
@@ -32,6 +37,11 @@ export async function exportEvidenceCollectionPdf(
   caseNumber?: string,
 ): Promise<string | null> {
   try {
+    if (!isTauri) {
+      log.warn(BROWSER_COC_EXPORT_MESSAGE);
+      return null;
+    }
+
     const result = await loadEvidenceCollectionById(collectionId);
     if (!result) {
       log.warn("Collection not found for PDF export:", collectionId);
@@ -123,6 +133,11 @@ export async function exportEvidenceCollection(
   caseNumber?: string,
 ): Promise<string | null> {
   try {
+    if (!isTauri) {
+      log.warn(BROWSER_COC_EXPORT_MESSAGE);
+      return null;
+    }
+
     const result = await loadEvidenceCollectionById(collectionId);
     if (!result) {
       log.warn("Collection not found for export:", collectionId);
@@ -175,6 +190,11 @@ export async function exportEvidenceCollection(
  */
 export async function importEvidenceCollectionPackage(): Promise<EvidenceCollectionPackageImportSummary | null> {
   try {
+    if (!isTauri) {
+      log.warn(BROWSER_COC_IMPORT_MESSAGE);
+      return null;
+    }
+
     const selected = await open({
       directory: false,
       multiple: false,

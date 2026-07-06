@@ -21,10 +21,15 @@ import type { ProcessedDatabase } from "../../types/processed";
 import type { StoredHash } from "../../types";
 import type { ProjectLocations, ProjectSetupWizardProps } from "./types";
 import { isAcquireEdition } from "../../utils/edition";
+import { isTauri } from "../../utils/platform";
 import caseFolderTemplate from "../../templates/project/case-folder-template.json";
 import acquireFolderTemplate from "../../templates/project/acquire-folder-template.json";
 
 const log = logger.scope("Wizard");
+const BROWSER_FOLDER_PICKER_MESSAGE =
+  "Folder selection is available in the desktop app. In browser preview, use Open Project to load a .cffx file.";
+const BROWSER_DISCOVERY_MESSAGE =
+  "Project folder scanning is available in the desktop app. In browser preview, use Open Project to load a .cffx file.";
 
 export interface HashLoadingProgress {
   current: number;
@@ -96,6 +101,7 @@ export interface WizardState {
   // Actions
   browseProjectRoot: () => Promise<void>;
   browseAndCreateTemplate: (name: string, examiner: string) => Promise<void>;
+  createBrowserPreviewProject: () => void;
   browseEvidence: () => Promise<void>;
   browseProcessed: () => Promise<void>;
   browseCaseDocs: () => Promise<void>;
@@ -170,6 +176,12 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   // ── Discovery ───────────────────────────────────────────────────────────
 
   const discoverEvidence = async (path: string): Promise<string[]> => {
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setDiscoveredEvidence([]);
+      return [];
+    }
+
     try {
       log.debug(" Discovering evidence files in:", path);
       const files = await invoke<string[]>("discover_evidence_files", {
@@ -187,6 +199,12 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const discoverDatabases = async (path: string): Promise<ProcessedDatabase[]> => {
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setDiscoveredDatabases([]);
+      return [];
+    }
+
     try {
       log.debug(" Discovering processed databases in:", path);
       const dbs = await invoke<ProcessedDatabase[]>("scan_for_processed_databases", {
@@ -208,6 +226,22 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     setScanning(true);
     setError(null);
     setScanMessage("Looking for common directory structures...");
+
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setEvidencePath(projectRoot);
+      setProcessedDbPath(projectRoot);
+      setCaseDocumentsPath(projectRoot);
+      setSuggestedEvidence([projectRoot]);
+      setSuggestedProcessed([projectRoot]);
+      setSuggestedCaseDocs([projectRoot]);
+      setDiscoveredEvidence([]);
+      setDiscoveredDatabases([]);
+      setDiscoveredCaseDocCount(0);
+      setStep(1);
+      setScanning(false);
+      return;
+    }
 
     try {
       const commonEvidencePaths = [
@@ -345,6 +379,11 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   const applyFolderTemplate = async (
     rootPath: string,
   ): Promise<Record<string, string> | null> => {
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      return null;
+    }
+
     try {
       const template = isAcquireEdition() ? acquireFolderTemplate : caseFolderTemplate;
       const templateJson = JSON.stringify(template);
@@ -369,7 +408,19 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
 
   // ── Browse handlers ─────────────────────────────────────────────────────
 
+  const canUseNativeFolderPicker = () => {
+    if (isTauri) return true;
+    if (props.onOpenProject) {
+      props.onClose();
+      props.onOpenProject();
+      return false;
+    }
+    setError(BROWSER_FOLDER_PICKER_MESSAGE);
+    return false;
+  };
+
   const browseProjectRoot = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Project Folder",
@@ -392,6 +443,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const browseAndCreateTemplate = async (name: string, examiner: string) => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Location for Case Folders",
@@ -443,7 +495,40 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     }
   };
 
+  const createBrowserPreviewProject = () => {
+    if (isTauri) return;
+
+    const root = "browser-preview-project";
+    setLocalProjectRoot(root);
+    setProjectName("Browser Preview Project");
+    setEvidencePath(`${root}/Evidence`);
+    setProcessedDbPath(`${root}/Processed`);
+    setCaseDocumentsPath(`${root}/Case.Documents`);
+    setExportsPath(`${root}/Exports`);
+    setDiscoveredEvidence([]);
+    setDiscoveredDatabases([]);
+    setSuggestedEvidence([]);
+    setSuggestedProcessed([]);
+    setSuggestedCaseDocs([]);
+    setDiscoveredCaseDocCount(0);
+    setLoadStoredHashes(false);
+    setError(null);
+
+    props.onComplete({
+      projectName: "Browser Preview Project",
+      projectRoot: root,
+      evidencePath: `${root}/Evidence`,
+      processedDbPath: `${root}/Processed`,
+      caseDocumentsPath: `${root}/Case.Documents`,
+      exportsPath: `${root}/Exports`,
+      discoveredEvidence: [],
+      discoveredDatabases: [],
+      loadStoredHashes: false,
+    });
+  };
+
   const browseEvidence = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Evidence Directory",
@@ -464,6 +549,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const browseProcessed = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Processed Database Directory",
@@ -484,6 +570,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   };
 
   const browseCaseDocs = async () => {
+    if (!canUseNativeFolderPicker()) return;
     try {
       const selected = await open({
         title: "Select Case Documents Directory",
@@ -515,6 +602,13 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
   const loadHashesForEvidence = async () => {
     const files = discoveredEvidence();
     if (files.length === 0) {
+      finalizeSetup();
+      return;
+    }
+
+    if (!isTauri) {
+      setError(BROWSER_DISCOVERY_MESSAGE);
+      setLoadedStoredHashes(new Map());
       finalizeSetup();
       return;
     }
@@ -695,6 +789,7 @@ export function useWizardState(props: ProjectSetupWizardProps): WizardState {
     loadedStoredHashes,
     browseProjectRoot,
     browseAndCreateTemplate,
+    createBrowserPreviewProject,
     browseEvidence,
     browseProcessed,
     browseCaseDocs,

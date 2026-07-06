@@ -5,10 +5,16 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { ContainerEntryViewer } from "./ContainerEntryViewer";
 import { mockInvoke } from "../__tests__/setup";
 import type { SelectedEntry } from "./EvidenceTree";
+
+vi.mock("../utils/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../utils/platform")>()),
+  isTauri: true,
+}));
 
 // Polyfill ResizeObserver for JSDOM (used by PdfViewer)
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -29,6 +35,13 @@ function renderComponent(component: () => any) {
 
 // Wait for async updates
 const tick = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms));
+const waitForInvoke = async (command: string, timeoutMs = 1500) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (mockInvoke.mock.calls.some(([cmd]) => cmd === command)) return;
+    await tick(25);
+  }
+};
 
 // Base entry factory
 function makeEntry(overrides: Partial<SelectedEntry> = {}): SelectedEntry {
@@ -253,6 +266,102 @@ describe("ContainerEntryViewer", () => {
           extractor: "container-entry-viewer",
         },
       });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "project_db_collect_system_identity_sources",
+        expect.anything(),
+      );
+      dispose();
+    });
+
+    it("collects system identity artifacts through the dedicated collector", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "project_db_is_open") return true;
+        if (cmd === "project_db_collect_system_identity_sources") {
+          return {
+            scanned: 1,
+            matched: 1,
+            inserted: 1,
+            skipped: 0,
+            records: [{ id: "artifact-system", sourceId: "ad1:/evidence/container.ad1:/Windows/System32/config/SYSTEM" }],
+            errors: [],
+          };
+        }
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "SYSTEM",
+        entryPath: "/Windows/System32/config/SYSTEM",
+      });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="hex" />
+      );
+
+      await tick(200);
+
+      expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_system_identity_sources", {
+        request: {
+          sources: [
+            {
+              containerPath: "/evidence/container.ad1",
+              entryPath: "/Windows/System32/config/SYSTEM",
+              containerType: "ad1",
+              size: 1024,
+            },
+          ],
+          extractor: "container-entry-viewer-system-identity",
+        },
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "project_db_extract_artifact_source",
+        expect.anything(),
+      );
+      dispose();
+    });
+
+    it("collects driver binaries through the dedicated binary artifact collector", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "project_db_is_open") return true;
+        if (cmd === "project_db_collect_binary_artifact_sources") {
+          return {
+            scanned: 1,
+            matched: 1,
+            inserted: 1,
+            skipped: 0,
+            records: [{ id: "artifact-driver", sourceId: "ad1:/evidence/container.ad1:/Windows/System32/drivers/contosoflt.sys" }],
+            errors: [],
+          };
+        }
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "contosoflt.sys",
+        entryPath: "/Windows/System32/drivers/contosoflt.sys",
+      });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="hex" />
+      );
+
+      await tick(200);
+
+      expect(mockInvoke).toHaveBeenCalledWith("project_db_collect_binary_artifact_sources", {
+        request: {
+          sources: [
+            {
+              containerPath: "/evidence/container.ad1",
+              entryPath: "/Windows/System32/drivers/contosoflt.sys",
+              containerType: "ad1",
+              size: 1024,
+            },
+          ],
+          extractor: "container-entry-viewer-binary-artifact",
+        },
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "project_db_extract_artifact_source",
+        expect.anything(),
+      );
       dispose();
     });
 
@@ -320,6 +429,45 @@ describe("ContainerEntryViewer", () => {
           size: 1024,
         }),
       });
+      dispose();
+    });
+
+    it("does not extract unknown hex-only entries in auto mode", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_content_format_source") {
+          return {
+            format: "Binary",
+            viewerType: "Hex",
+            description: "Unknown binary data",
+            mimeType: "application/octet-stream",
+            method: "fallback",
+          };
+        }
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "pagefile.sys",
+        size: 4_294_967_296,
+        isVfsEntry: true,
+      });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(300);
+
+      expect(mockInvoke).toHaveBeenCalledWith("detect_content_format_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "/files/test.bin",
+          containerType: "ad1",
+          size: 4_294_967_296,
+        }),
+      });
+      expect(
+        mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp"),
+      ).toBe(false);
       dispose();
     });
 
@@ -447,6 +595,26 @@ describe("ContainerEntryViewer", () => {
       dispose();
     });
 
+    it("falls back to hex when detection returns no viewer type", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_content_format" || cmd === "detect_content_format_source") {
+          return undefined;
+        }
+        return null;
+      });
+
+      const entry = makeEntry({ name: "unknown.dat", isArchiveEntry: true });
+      const { container, dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await tick(200);
+
+      expect(container.innerHTML).toBeTruthy();
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      dispose();
+    });
+
     it("does not run content detection for known previewable extensions", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {
@@ -545,9 +713,9 @@ describe("ContainerEntryViewer", () => {
   });
 
   describe("preview extraction flow", () => {
-    it("extracts container entry to temp for AD1 files", async () => {
+    it("uses source-backed preview for AD1 files without temp extraction", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "container_extract_entry_to_temp") return "/tmp/extracted.pdf";
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -566,16 +734,20 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(mockInvoke).toHaveBeenCalledWith("container_extract_entry_to_temp", expect.objectContaining({
-        containerPath: "/evidence/container.ad1",
-        entryPath: "files/report.pdf",
-      }));
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_get_binary_info_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "files/report.pdf",
+          containerType: "ad1",
+        }),
+      });
       dispose();
     });
 
-    it("extracts archive entry with archive flag", async () => {
+    it("uses source-backed preview for archive entries without temp extraction", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "container_extract_entry_to_temp") return "/tmp/archived.xlsx";
+        if (cmd === "spreadsheet_info_source") return { sheets: [] };
         return null;
       });
 
@@ -592,10 +764,14 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(mockInvoke).toHaveBeenCalledWith("container_extract_entry_to_temp", expect.objectContaining({
-        containerPath: "/evidence/archive.zip",
-        isArchiveEntry: true,
-      }));
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_detect_type_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/archive.zip",
+          entryPath: "data.xlsx",
+          containerType: "zip",
+        }),
+      });
       dispose();
     });
 
@@ -651,9 +827,9 @@ describe("ContainerEntryViewer", () => {
       dispose();
     });
 
-    it("passes dataAddr to extract command when available", async () => {
+    it("passes dataAddr to source-backed preview commands when available", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === "container_extract_entry_to_temp") return "/tmp/entry.bin";
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -672,9 +848,14 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(mockInvoke).toHaveBeenCalledWith("container_extract_entry_to_temp", expect.objectContaining({
-        dataAddr: 0x1000,
-      }));
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_get_binary_info_source", {
+        source: expect.objectContaining({
+          dataAddr: 0x1000,
+          containerType: "ad1",
+          entryPath: "files/entry.pdf",
+        }),
+      });
       dispose();
     });
 
@@ -697,9 +878,15 @@ describe("ContainerEntryViewer", () => {
   });
 
   describe("preview loading state", () => {
-    it("shows extracting spinner during preview extraction", async () => {
-      // Use a promise that never resolves to keep loading state
-      mockInvoke.mockReturnValue(new Promise(() => {}));
+    it("does not show temp extraction spinner for source-backed image preview", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
+        }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
+        return null;
+      });
 
       const entry = makeEntry({ name: "photo.jpg", isArchiveEntry: true });
       const { container, dispose } = renderComponent(() =>
@@ -708,13 +895,21 @@ describe("ContainerEntryViewer", () => {
 
       await tick(100);
 
-      expect(container.textContent).toContain("Extracting file...");
+      expect(container.textContent).not.toContain("Extracting file...");
       expect(container.textContent).toContain("photo.jpg");
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
 
-    it("shows Loading text on Preview button during extraction", async () => {
-      mockInvoke.mockReturnValue(new Promise(() => {}));
+    it("keeps preview controls enabled for source-backed image preview", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
+        }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
+        return null;
+      });
 
       const entry = makeEntry({ name: "photo.jpg", isArchiveEntry: true });
       const onChange = vi.fn();
@@ -727,18 +922,19 @@ describe("ContainerEntryViewer", () => {
       const loadingBtn = Array.from(container.querySelectorAll("button")).find(
         b => b.textContent?.includes("Loading...")
       );
-      expect(loadingBtn).toBeDefined();
-      expect(loadingBtn?.disabled).toBe(true);
+      expect(loadingBtn).toBeUndefined();
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
   });
 
   describe("preview error state", () => {
-    it("displays error message when extraction fails", async () => {
+    it("does not surface temp extraction errors for source-backed preview", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {
           throw new Error("Permission denied: /tmp/extract");
         }
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -749,16 +945,18 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(container.textContent).toContain("Preview unavailable");
-      expect(container.textContent).toContain("Permission denied: /tmp/extract");
+      expect(container.textContent).not.toContain("Preview unavailable");
+      expect(container.textContent).not.toContain("Permission denied: /tmp/extract");
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
 
-    it("handles string error from extraction", async () => {
+    it("skips string extraction errors for source-backed preview", async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "container_extract_entry_to_temp") {
           throw "Container is corrupted";
         }
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "application/pdf" };
         return null;
       });
 
@@ -769,13 +967,52 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
 
-      expect(container.textContent).toContain("Preview unavailable");
-      expect(container.textContent).toContain("Container is corrupted");
+      expect(container.textContent).not.toContain("Preview unavailable");
+      expect(container.textContent).not.toContain("Container is corrupted");
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
       dispose();
     });
   });
 
   describe("viewer delegation", () => {
+    const binaryInfo = (path: string) => ({
+      path,
+      format: "PE",
+      architecture: "x86_64",
+      is_64bit: true,
+      entry_point: 4096,
+      imports: [],
+      exports: [],
+      sections: [],
+      strings: [],
+      file_size: 1024,
+      pe_timestamp: null,
+      pe_checksum: null,
+      pe_subsystem: "Native",
+      pe_linker_version: null,
+      pe_os_version: null,
+      pe_image_version: null,
+      pe_subsystem_version: null,
+      pe_image_base: null,
+      pe_section_alignment: null,
+      pe_file_alignment: null,
+      pe_size_of_image: null,
+      pe_size_of_headers: null,
+      pe_dll_characteristics: null,
+      pe_dll_characteristics_detail: [],
+      pe_certificate_table_size: null,
+      pe_is_driver: true,
+      pe_driver_type: "kernel-driver",
+      pe_driver_indicators: ["extension:.sys"],
+      pe_version_info: {},
+      macho_cpu_type: null,
+      macho_filetype: null,
+      linux_module_info: null,
+      has_debug_info: false,
+      is_stripped: false,
+      has_code_signing: false,
+    });
+
     // Helper to set up a successful preview extraction
     function setupPreview(extractedPath = "/tmp/extracted") {
       mockInvoke.mockImplementation(async (cmd: string) => {
@@ -794,7 +1031,8 @@ describe("ContainerEntryViewer", () => {
         if (cmd === "email_parse_msg") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
         if (cmd === "email_parse_msg_source") return { path: extractedPath, subject: "Email", from: [], to: [], cc: [], bcc: [], body_text: "", body_html: null, attachments: [], headers: [], size: 0 };
         if (cmd === "plist_read") return { success: true, data: {}, error: null };
-        if (cmd === "binary_analyze") return { success: true, analysis: {}, error: null };
+        if (cmd === "binary_analyze") return binaryInfo(extractedPath);
+        if (cmd === "binary_analyze_source") return binaryInfo(extractedPath);
         if (cmd === "registry_get_info") return { path: extractedPath, rootKeyName: "ROOT", rootKeyPath: "ROOT", rootTimestamp: "", totalKeys: 0, totalValues: 0, rootSubkeyCount: 0, rootValueCount: 0 };
         if (cmd === "registry_get_info_source") return { path: extractedPath, rootKeyName: "ROOT", rootKeyPath: "ROOT", rootTimestamp: "", totalKeys: 0, totalValues: 0, rootSubkeyCount: 0, rootValueCount: 0 };
         if (cmd === "registry_get_subkeys") return { parentPath: "", subkeys: [] };
@@ -891,6 +1129,33 @@ describe("ContainerEntryViewer", () => {
 
       await tick(200);
       expect(container.innerHTML).toBeTruthy();
+      dispose();
+    });
+
+    it("routes uppercase .SYS evidence entries to source-backed binary analysis without extraction", async () => {
+      setupPreview("/tmp/DRIVER.SYS");
+      const entry = makeEntry({
+        name: "DRIVER.SYS",
+        entryPath: "Windows/System32/drivers/DRIVER.SYS",
+        isArchiveEntry: false,
+        isVfsEntry: true,
+        isDiskFile: false,
+      });
+      const { dispose } = renderComponent(() =>
+        <ContainerEntryViewer entry={entry} viewMode="auto" />
+      );
+
+      await waitForInvoke("binary_analyze_source");
+
+      expect(mockInvoke.mock.calls.some(([cmd]) => cmd === "container_extract_entry_to_temp")).toBe(false);
+      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", {
+        source: expect.objectContaining({
+          containerPath: "/evidence/container.ad1",
+          entryPath: "Windows/System32/drivers/DRIVER.SYS",
+          containerType: "ad1",
+          size: 1024,
+        }),
+      });
       dispose();
     });
 
@@ -1395,6 +1660,37 @@ describe("ContainerEntryViewer", () => {
       );
 
       expect(container.textContent).toContain("Makefile");
+      dispose();
+    });
+
+    it("clears stale preview loading when the selected entry changes", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
+        }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
+        return null;
+      });
+
+      const [entry, setEntry] = createSignal(
+        makeEntry({ name: "photo.jpg", entryPath: "/files/photo.jpg" }),
+      );
+      const [viewMode, setViewMode] = createSignal<"preview" | "hex">("preview");
+      const { container, dispose } = renderComponent(() => (
+        <ContainerEntryViewer entry={entry()} viewMode={viewMode()} />
+      ));
+
+      await tick(50);
+      expect(container.textContent).toContain("photo.jpg");
+      expect(container.textContent).not.toContain("Extracting file");
+
+      setViewMode("hex");
+      setEntry(makeEntry({ name: "notes.bin", entryPath: "/files/notes.bin" }));
+      await tick(50);
+
+      expect(container.textContent).not.toContain("Extracting file");
+      expect(container.textContent).toContain("notes.bin");
       dispose();
     });
 

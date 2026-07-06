@@ -4,10 +4,15 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
+import { createSignal } from "solid-js";
 import { BinaryViewer } from "./BinaryViewer";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -18,7 +23,7 @@ function renderComponent(component: () => any) {
 }
 
 // Wait for async updates
-const tick = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms));
+const tick = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Mock PE binary data (matches BinaryInfo interface)
 const mockPeData = {
@@ -34,20 +39,76 @@ const mockPeData = {
   pe_timestamp: 1705312200,
   pe_checksum: 54321,
   pe_subsystem: "WindowsConsole",
+  pe_linker_version: "14.38",
+  pe_os_version: "10.0",
+  pe_image_version: "10.0",
+  pe_subsystem_version: "10.0",
+  pe_image_base: 5368709120,
+  pe_section_alignment: 4096,
+  pe_file_alignment: 512,
+  pe_size_of_image: 65536,
+  pe_size_of_headers: 1024,
+  pe_dll_characteristics: "0x2160",
+  pe_dll_characteristics_detail: ["dynamic-base", "nx-compatible", "wdm-driver"],
+  pe_certificate_table_size: 8192,
+  pe_is_driver: false,
+  pe_driver_type: null,
+  pe_driver_indicators: [],
+  pe_version_info: {
+    CompanyName: "CORE Test Tools",
+    FileVersion: "1.2.3.4",
+  },
   macho_cpu_type: null,
   macho_filetype: null,
   sections: [
-    { name: ".text", virtual_address: 4096, virtual_size: 32768, raw_size: 32768, characteristics: "CNT_CODE | MEM_EXECUTE | MEM_READ" },
-    { name: ".rdata", virtual_address: 40960, virtual_size: 8192, raw_size: 8192, characteristics: "CNT_INITIALIZED_DATA | MEM_READ" },
-    { name: ".data", virtual_address: 49152, virtual_size: 4096, raw_size: 2048, characteristics: "CNT_INITIALIZED_DATA | MEM_READ | MEM_WRITE" },
+    {
+      name: ".text",
+      virtual_address: 4096,
+      virtual_size: 32768,
+      raw_size: 32768,
+      entropy: 6.421,
+      characteristics: "CNT_CODE | MEM_EXECUTE | MEM_READ",
+      characteristics_detail: ["contains-code", "executable", "readable"],
+    },
+    {
+      name: ".rdata",
+      virtual_address: 40960,
+      virtual_size: 8192,
+      raw_size: 8192,
+      entropy: 5.117,
+      characteristics: "CNT_INITIALIZED_DATA | MEM_READ",
+      characteristics_detail: ["initialized-data", "readable"],
+    },
+    {
+      name: ".data",
+      virtual_address: 49152,
+      virtual_size: 4096,
+      raw_size: 2048,
+      entropy: 3.904,
+      characteristics: "CNT_INITIALIZED_DATA | MEM_READ | MEM_WRITE",
+      characteristics_detail: ["initialized-data", "readable", "writable"],
+    },
   ],
   imports: [
-    { library: "KERNEL32.dll", functions: ["CreateFileW", "ReadFile", "CloseHandle", "GetLastError"], function_count: 4 },
-    { library: "USER32.dll", functions: ["MessageBoxW", "GetWindowTextW"], function_count: 2 },
+    {
+      library: "KERNEL32.dll",
+      functions: ["CreateFileW", "ReadFile", "CloseHandle", "GetLastError"],
+      function_count: 4,
+    },
+    {
+      library: "USER32.dll",
+      functions: ["MessageBoxW", "GetWindowTextW"],
+      function_count: 2,
+    },
   ],
   exports: [
     { name: "DllMain", ordinal: 1, address: 4096 },
     { name: "PluginInit", ordinal: 2, address: 4200 },
+  ],
+  strings: [
+    "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt",
+    "\\Device\\ContosoFilter",
+    "https://drivers.example.test/update",
   ],
 };
 
@@ -65,13 +126,64 @@ const mockElfData = {
   pe_timestamp: null,
   pe_checksum: null,
   pe_subsystem: null,
+  pe_linker_version: null,
+  pe_os_version: null,
+  pe_image_version: null,
+  pe_subsystem_version: null,
+  pe_image_base: null,
+  pe_section_alignment: null,
+  pe_file_alignment: null,
+  pe_size_of_image: null,
+  pe_size_of_headers: null,
+  pe_dll_characteristics: null,
+  pe_dll_characteristics_detail: [],
+  pe_certificate_table_size: null,
+  pe_is_driver: false,
+  pe_driver_type: null,
+  pe_driver_indicators: [],
+  pe_version_info: {},
   macho_cpu_type: null,
   macho_filetype: null,
+  linux_module_info: null,
   sections: [
-    { name: ".text", virtual_address: 4096, virtual_size: 16384, raw_size: 16384, characteristics: "ALLOC | EXECINSTR" },
+    {
+      name: ".text",
+      virtual_address: 4096,
+      virtual_size: 16384,
+      raw_size: 16384,
+      entropy: 5.733,
+      characteristics: "ALLOC | EXECINSTR",
+      characteristics_detail: ["allocated", "executable"],
+    },
   ],
   imports: [],
   exports: [],
+  strings: ["/etc/os-release", "/usr/lib/systemd/system"],
+};
+
+const mockLinuxModuleData = {
+  ...mockElfData,
+  path: "/evidence/linux.E01:/lib/modules/6.8.0/kernel/drivers/net/coretap.ko",
+  strings: [
+    "name=coretap",
+    "version=1.2.3",
+    "vermagic=6.8.0 SMP mod_unload",
+    "depends=cfg80211,rfkill",
+  ],
+  linux_module_info: {
+    detected: true,
+    names: ["coretap"],
+    versions: ["1.2.3"],
+    vermagic: ["6.8.0 SMP mod_unload"],
+    licenses: ["GPL"],
+    authors: ["CORE Lab"],
+    descriptions: ["CORE packet capture tap"],
+    aliases: ["pci:v00008086d*"],
+    dependencies: ["cfg80211", "rfkill"],
+    firmware: ["coretap.bin"],
+    signers: ["CORE Lab"],
+    signatures: ["sig_hashalgo=sha256"],
+  },
 };
 
 // Mock Mach-O data
@@ -88,11 +200,28 @@ const mockMachoData = {
   pe_timestamp: null,
   pe_checksum: null,
   pe_subsystem: null,
+  pe_linker_version: null,
+  pe_os_version: null,
+  pe_image_version: null,
+  pe_subsystem_version: null,
+  pe_image_base: null,
+  pe_section_alignment: null,
+  pe_file_alignment: null,
+  pe_size_of_image: null,
+  pe_size_of_headers: null,
+  pe_dll_characteristics: null,
+  pe_dll_characteristics_detail: [],
+  pe_certificate_table_size: null,
+  pe_is_driver: false,
+  pe_driver_type: null,
+  pe_driver_indicators: [],
+  pe_version_info: {},
   macho_cpu_type: "ARM64",
   macho_filetype: "Execute",
   sections: [],
   imports: [],
   exports: [],
+  strings: ["/System/Library/Extensions/Example.kext"],
 };
 
 describe("BinaryViewer", () => {
@@ -120,7 +249,9 @@ describe("BinaryViewer", () => {
       renderComponent(() => <BinaryViewer path="/tmp/program.exe" />);
       await tick();
 
-      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze", { path: "/tmp/program.exe" });
+      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze", {
+        path: "/tmp/program.exe",
+      });
     });
 
     it("calls binary_analyze_source when an evidence source is provided", async () => {
@@ -135,10 +266,14 @@ describe("BinaryViewer", () => {
         size: 8192,
       };
 
-      renderComponent(() => <BinaryViewer path="/tmp/program.exe" source={source} />);
+      renderComponent(() => (
+        <BinaryViewer path="/tmp/program.exe" source={source} />
+      ));
       await tick();
 
-      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", { source });
+      expect(mockInvoke).toHaveBeenCalledWith("binary_analyze_source", {
+        source,
+      });
     });
 
     it("shows PE-specific information", async () => {
@@ -150,6 +285,37 @@ describe("BinaryViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("WindowsConsole");
+      expect(container.textContent).toContain("Linker Version");
+      expect(container.textContent).toContain("14.38");
+      expect(container.textContent).toContain("Image Base");
+      expect(container.textContent).toContain("0x140000000");
+      expect(container.textContent).toContain("dynamic-base");
+      expect(container.textContent).toContain("wdm-driver");
+    });
+
+    it("shows Windows driver classification details for .sys files", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        ...mockPeData,
+        path: "/evidence/image.E01:/Windows/System32/drivers/contosoflt.sys",
+        pe_subsystem: "Native",
+        pe_is_driver: true,
+        pe_driver_type: "File system minifilter driver",
+        pe_driver_indicators: [
+          "driver file extension",
+          "file-system filter driver APIs",
+          "imports ntoskrnl.exe",
+        ],
+      });
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path="/Windows/System32/drivers/contosoflt.sys" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Driver Analysis");
+      expect(container.textContent).toContain("File system minifilter driver");
+      expect(container.textContent).toContain("driver file extension");
+      expect(container.textContent).toContain("imports ntoskrnl.exe");
     });
 
     it("renders sections table", async () => {
@@ -163,6 +329,8 @@ describe("BinaryViewer", () => {
       expect(container.textContent).toContain(".text");
       expect(container.textContent).toContain(".rdata");
       expect(container.textContent).toContain(".data");
+      expect(container.textContent).toContain("6.421");
+      expect(container.textContent).toContain("contains-code, executable, readable");
     });
 
     it("renders imports list", async () => {
@@ -188,6 +356,21 @@ describe("BinaryViewer", () => {
       // Exports section exists with count (collapsed by default)
       expect(container.textContent).toContain("Exports");
       expect(container.textContent).toContain("2");
+    });
+
+    it("renders embedded strings for driver investigation", async () => {
+      mockInvoke.mockResolvedValueOnce(mockPeData);
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path="/tmp/program.exe" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Strings");
+      expect(container.textContent).toContain(
+        "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt",
+      );
+      expect(container.textContent).toContain("\\Device\\ContosoFilter");
     });
 
     it("shows security indicators", async () => {
@@ -226,6 +409,42 @@ describe("BinaryViewer", () => {
 
       expect(container.textContent).toContain("Stripped");
     });
+
+    it("shows Linux kernel module metadata for .ko files", async () => {
+      mockInvoke.mockResolvedValueOnce(mockLinuxModuleData);
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path="/lib/modules/coretap.ko" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Linux Module");
+      expect(container.textContent).toContain("coretap");
+      expect(container.textContent).toContain("6.8.0 SMP mod_unload");
+      expect(container.textContent).toContain("cfg80211");
+      expect(container.textContent).toContain("sig_hashalgo=sha256");
+    });
+
+    it("emits Linux kernel module metadata to the details panel", async () => {
+      mockInvoke.mockResolvedValueOnce(mockLinuxModuleData);
+      const onMetadata = vi.fn();
+
+      renderComponent(() => (
+        <BinaryViewer path="/lib/modules/coretap.ko" onMetadata={onMetadata} />
+      ));
+      await tick();
+
+      expect(onMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "binary",
+          linuxModule: expect.objectContaining({
+            detected: true,
+            names: ["coretap"],
+            vermagic: ["6.8.0 SMP mod_unload"],
+          }),
+        }),
+      );
+    });
   });
 
   describe("Mach-O binary rendering", () => {
@@ -253,6 +472,45 @@ describe("BinaryViewer", () => {
     });
   });
 
+  describe("stale analysis handling", () => {
+    it("ignores stale binary analysis when the selected path changes", async () => {
+      let resolveFirst: (value: typeof mockPeData) => void = () => {};
+      const firstAnalysis = new Promise<typeof mockPeData>((resolve) => {
+        resolveFirst = resolve;
+      });
+      const [path, setPath] = createSignal("/tmp/slow-driver.sys");
+
+      mockInvoke.mockImplementation((command: string, args: any) => {
+        if (command !== "binary_analyze") {
+          return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+        }
+        if (args.path === "/tmp/slow-driver.sys") {
+          return firstAnalysis;
+        }
+        if (args.path === "/tmp/current-driver.sys") {
+          return Promise.resolve({
+            ...mockPeData,
+            path: "/tmp/current-driver.sys",
+            architecture: "ARM64",
+          });
+        }
+        return Promise.reject(new Error(`Unexpected path: ${args.path}`));
+      });
+
+      const { container } = renderComponent(() => (
+        <BinaryViewer path={path()} />
+      ));
+
+      setPath("/tmp/current-driver.sys");
+      await tick();
+      resolveFirst(mockPeData);
+      await tick();
+
+      expect(container.textContent).toContain("ARM64");
+      expect(container.textContent).not.toContain("x86_64");
+    });
+  });
+
   describe("Loading and error states", () => {
     it("shows loading state initially", () => {
       mockInvoke.mockReturnValue(new Promise(() => {}));
@@ -265,7 +523,9 @@ describe("BinaryViewer", () => {
     });
 
     it("shows error when analysis fails", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("Not a recognized binary format"));
+      mockInvoke.mockRejectedValueOnce(
+        new Error("Not a recognized binary format"),
+      );
 
       const { container } = renderComponent(() => (
         <BinaryViewer path="/tmp/unknown.bin" />

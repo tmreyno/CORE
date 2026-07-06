@@ -14,6 +14,7 @@ use std::path::Path;
 
 use super::{OfficeMetadata, OfficeParagraph, OfficeTextSection, ParagraphHint};
 use crate::viewer::document::error::{DocumentError, DocumentResult};
+use zip::result::ZipError;
 
 const MAX_OOXML_XML_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -62,16 +63,32 @@ pub(crate) fn extract_ooxml_metadata_from_reader<R: Read + Seek>(
     let mut meta = OfficeMetadata::default();
 
     // Parse core.xml (Dublin Core metadata)
-    if let Ok(mut entry) = archive.by_name(core_path) {
-        if let Ok(xml_data) = read_ooxml_xml_entry(&mut entry, core_path) {
-            parse_core_xml(&xml_data, &mut meta);
+    match archive.by_name(core_path) {
+        Ok(mut entry) => {
+            let xml_data = read_ooxml_xml_entry(&mut entry, core_path)?;
+            parse_core_xml(&xml_data, &mut meta)?;
+        }
+        Err(ZipError::FileNotFound) => {}
+        Err(e) => {
+            return Err(DocumentError::Parse(format!(
+                "Failed to read OOXML metadata entry '{}': {}",
+                core_path, e
+            )));
         }
     }
 
     // Parse app.xml (application properties)
-    if let Ok(mut entry) = archive.by_name(app_path) {
-        if let Ok(xml_data) = read_ooxml_xml_entry(&mut entry, app_path) {
-            parse_app_xml(&xml_data, &mut meta);
+    match archive.by_name(app_path) {
+        Ok(mut entry) => {
+            let xml_data = read_ooxml_xml_entry(&mut entry, app_path)?;
+            parse_app_xml(&xml_data, &mut meta)?;
+        }
+        Err(ZipError::FileNotFound) => {}
+        Err(e) => {
+            return Err(DocumentError::Parse(format!(
+                "Failed to read OOXML metadata entry '{}': {}",
+                app_path, e
+            )));
         }
     }
 
@@ -79,7 +96,7 @@ pub(crate) fn extract_ooxml_metadata_from_reader<R: Read + Seek>(
 }
 
 /// Parse Dublin Core metadata from core.xml
-fn parse_core_xml(xml: &str, meta: &mut OfficeMetadata) {
+fn parse_core_xml(xml: &str, meta: &mut OfficeMetadata) -> DocumentResult<()> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -95,7 +112,16 @@ fn parse_core_xml(xml: &str, meta: &mut OfficeMetadata) {
                 in_element = true;
             }
             Ok(Event::Text(ref e)) if in_element => {
-                let text = e.unescape().unwrap_or_default().trim().to_string();
+                let text = e
+                    .unescape()
+                    .map_err(|e| {
+                        DocumentError::Parse(format!(
+                            "Failed to decode text in OOXML core properties: {}",
+                            e
+                        ))
+                    })?
+                    .trim()
+                    .to_string();
                 if text.is_empty() {
                     continue;
                 }
@@ -114,14 +140,21 @@ fn parse_core_xml(xml: &str, meta: &mut OfficeMetadata) {
                 in_element = false;
             }
             Ok(Event::Eof) => break,
-            Err(_) => break,
+            Err(e) => {
+                return Err(DocumentError::Parse(format!(
+                    "Failed to parse OOXML core properties: {}",
+                    e
+                )));
+            }
             _ => {}
         }
     }
+
+    Ok(())
 }
 
 /// Parse application properties from app.xml
-fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) {
+fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) -> DocumentResult<()> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -137,7 +170,16 @@ fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) {
                 in_element = true;
             }
             Ok(Event::Text(ref e)) if in_element => {
-                let text = e.unescape().unwrap_or_default().trim().to_string();
+                let text = e
+                    .unescape()
+                    .map_err(|e| {
+                        DocumentError::Parse(format!(
+                            "Failed to decode text in OOXML app properties: {}",
+                            e
+                        ))
+                    })?
+                    .trim()
+                    .to_string();
                 if text.is_empty() {
                     continue;
                 }
@@ -153,11 +195,9 @@ fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) {
                             meta.word_count = Some(n);
                         }
                     }
-                    "Characters" | "CharactersWithSpaces" => {
-                        if meta.char_count.is_none() {
-                            if let Ok(n) = text.parse::<u32>() {
-                                meta.char_count = Some(n);
-                            }
+                    "Characters" | "CharactersWithSpaces" if meta.char_count.is_none() => {
+                        if let Ok(n) = text.parse::<u32>() {
+                            meta.char_count = Some(n);
                         }
                     }
                     _ => {}
@@ -167,10 +207,17 @@ fn parse_app_xml(xml: &str, meta: &mut OfficeMetadata) {
                 in_element = false;
             }
             Ok(Event::Eof) => break,
-            Err(_) => break,
+            Err(e) => {
+                return Err(DocumentError::Parse(format!(
+                    "Failed to parse OOXML app properties: {}",
+                    e
+                )));
+            }
             _ => {}
         }
     }
+
+    Ok(())
 }
 
 // =============================================================================
@@ -199,7 +246,7 @@ pub(crate) fn extract_docx_text_from_reader<R: Read + Seek>(
         read_ooxml_xml_entry(&mut entry, "word/document.xml")?
     };
 
-    let paragraphs = extract_docx_styled_paragraphs(&xml_data);
+    let paragraphs = extract_docx_styled_paragraphs(&xml_data)?;
 
     Ok(vec![OfficeTextSection {
         label: None,
@@ -226,28 +273,26 @@ pub(crate) fn extract_pptx_text_from_reader<R: Read + Seek>(
         .map_err(|e| DocumentError::Parse(format!("Not a valid PPTX: {}", e)))?;
 
     // Collect slide file names and sort them
-    let mut slide_names: Vec<String> = (0..archive.len())
-        .filter_map(|i| {
-            let entry = archive.by_index(i).ok()?;
-            let name = entry.name().to_string();
-            if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
-                Some(name)
-            } else {
-                None
-            }
-        })
-        .collect();
+    let mut slide_names: Vec<String> = Vec::new();
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| {
+            DocumentError::Parse(format!("Failed to inspect PPTX ZIP entry {}: {}", i, e))
+        })?;
+        let name = entry.name().to_string();
+        if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
+            slide_names.push(name);
+        }
+    }
     slide_names.sort();
 
     let mut sections = Vec::new();
     for (idx, slide_name) in slide_names.iter().enumerate() {
-        let xml_data = if let Ok(mut entry) = archive.by_name(slide_name) {
-            read_ooxml_xml_entry(&mut entry, slide_name)?
-        } else {
-            String::new()
-        };
+        let mut entry = archive.by_name(slide_name).map_err(|e| {
+            DocumentError::Parse(format!("Failed to read PPTX slide '{}': {}", slide_name, e))
+        })?;
+        let xml_data = read_ooxml_xml_entry(&mut entry, slide_name)?;
 
-        let paragraphs = extract_ooxml_paragraphs_simple(&xml_data, b"a:p", b"a:t");
+        let paragraphs = extract_ooxml_paragraphs_simple(&xml_data, b"a:p", b"a:t")?;
         if !paragraphs.is_empty() {
             sections.push(OfficeTextSection {
                 label: Some(format!("Slide {}", idx + 1)),
@@ -291,7 +336,7 @@ fn style_to_hint(style: &str) -> ParagraphHint {
 /// Extract styled paragraphs from a DOCX XML document.
 ///
 /// Detects `<w:pStyle>` to identify headings, titles, lists, and quotes.
-fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
+fn extract_docx_styled_paragraphs(xml: &str) -> DocumentResult<Vec<OfficeParagraph>> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -318,7 +363,13 @@ fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
                     in_ppr = true;
                 } else if name_ref == b"w:pStyle" && in_ppr {
                     // Read the w:val attribute for the style name
-                    for attr in e.attributes().flatten() {
+                    for attr in e.attributes() {
+                        let attr = attr.map_err(|e| {
+                            DocumentError::Parse(format!(
+                                "Failed to parse DOCX paragraph style attribute: {}",
+                                e
+                            ))
+                        })?;
                         if attr.key.local_name().as_ref() == b"val" {
                             let val = String::from_utf8_lossy(&attr.value);
                             current_hint = style_to_hint(&val);
@@ -334,7 +385,13 @@ fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
                 let name = e.name();
                 let name_ref = name.as_ref();
                 if name_ref == b"w:pStyle" && in_ppr {
-                    for attr in e.attributes().flatten() {
+                    for attr in e.attributes() {
+                        let attr = attr.map_err(|e| {
+                            DocumentError::Parse(format!(
+                                "Failed to parse DOCX paragraph style attribute: {}",
+                                e
+                            ))
+                        })?;
                         if attr.key.local_name().as_ref() == b"val" {
                             let val = String::from_utf8_lossy(&attr.value);
                             current_hint = style_to_hint(&val);
@@ -345,9 +402,10 @@ fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
                 }
             }
             Ok(Event::Text(ref e)) if in_text => {
-                if let Ok(text) = e.unescape() {
-                    current_text.push_str(&text);
-                }
+                let text = e.unescape().map_err(|e| {
+                    DocumentError::Parse(format!("Failed to decode DOCX paragraph text: {}", e))
+                })?;
+                current_text.push_str(&text);
             }
             Ok(Event::End(ref e)) => {
                 let name = e.name();
@@ -372,12 +430,17 @@ fn extract_docx_styled_paragraphs(xml: &str) -> Vec<OfficeParagraph> {
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => break,
+            Err(e) => {
+                return Err(DocumentError::Parse(format!(
+                    "Failed to parse DOCX document XML: {}",
+                    e
+                )));
+            }
             _ => {}
         }
     }
 
-    paragraphs
+    Ok(paragraphs)
 }
 
 /// Extract paragraphs from OOXML XML content (simple mode, no style detection).
@@ -388,7 +451,7 @@ fn extract_ooxml_paragraphs_simple(
     xml: &str,
     para_tag: &[u8],
     text_tag: &[u8],
-) -> Vec<OfficeParagraph> {
+) -> DocumentResult<Vec<OfficeParagraph>> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -410,9 +473,10 @@ fn extract_ooxml_paragraphs_simple(
                 }
             }
             Ok(Event::Text(ref e)) if in_text => {
-                if let Ok(text) = e.unescape() {
-                    current_paragraph.push_str(&text);
-                }
+                let text = e.unescape().map_err(|e| {
+                    DocumentError::Parse(format!("Failed to decode OOXML paragraph text: {}", e))
+                })?;
+                current_paragraph.push_str(&text);
             }
             Ok(Event::End(ref e)) => {
                 let name = e.name();
@@ -427,12 +491,17 @@ fn extract_ooxml_paragraphs_simple(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => break,
+            Err(e) => {
+                return Err(DocumentError::Parse(format!(
+                    "Failed to parse OOXML paragraph XML: {}",
+                    e
+                )));
+            }
             _ => {}
         }
     }
 
-    paragraphs
+    Ok(paragraphs)
 }
 
 // =============================================================================
@@ -468,7 +537,7 @@ mod tests {
         </cp:coreProperties>"#;
 
         let mut meta = OfficeMetadata::default();
-        parse_core_xml(xml, &mut meta);
+        parse_core_xml(xml, &mut meta).unwrap();
 
         assert_eq!(meta.title.as_deref(), Some("Test Document"));
         assert_eq!(meta.creator.as_deref(), Some("John Doe"));
@@ -490,7 +559,7 @@ mod tests {
         </Properties>"#;
 
         let mut meta = OfficeMetadata::default();
-        parse_app_xml(xml, &mut meta);
+        parse_app_xml(xml, &mut meta).unwrap();
 
         assert_eq!(meta.application.as_deref(), Some("Microsoft Office Word"));
         assert_eq!(meta.page_count, Some(5));
@@ -502,9 +571,20 @@ mod tests {
     fn test_parse_core_xml_empty() {
         let xml = r#"<?xml version="1.0"?><cp:coreProperties></cp:coreProperties>"#;
         let mut meta = OfficeMetadata::default();
-        parse_core_xml(xml, &mut meta);
+        parse_core_xml(xml, &mut meta).unwrap();
         assert!(meta.title.is_none());
         assert!(meta.creator.is_none());
+    }
+
+    #[test]
+    fn test_parse_core_xml_rejects_invalid_entity() {
+        let xml =
+            r#"<cp:coreProperties><dc:title>bad &unknown; entity</dc:title></cp:coreProperties>"#;
+        let mut meta = OfficeMetadata::default();
+
+        let err = parse_core_xml(xml, &mut meta).unwrap_err();
+
+        assert!(err.to_string().contains("OOXML core properties"));
     }
 
     #[test]
@@ -523,7 +603,7 @@ mod tests {
             </w:body>
         </w:document>"#;
 
-        let paragraphs = extract_docx_styled_paragraphs(xml);
+        let paragraphs = extract_docx_styled_paragraphs(xml).unwrap();
         assert_eq!(paragraphs.len(), 2);
         assert_eq!(paragraphs[0].text, "Hello World");
         assert_eq!(paragraphs[0].hint, ParagraphHint::Normal);
@@ -557,7 +637,7 @@ mod tests {
             </w:body>
         </w:document>"#;
 
-        let paragraphs = extract_docx_styled_paragraphs(xml);
+        let paragraphs = extract_docx_styled_paragraphs(xml).unwrap();
         assert_eq!(paragraphs.len(), 5);
         assert_eq!(paragraphs[0].hint, ParagraphHint::Title);
         assert_eq!(paragraphs[1].hint, ParagraphHint::Heading1);
@@ -583,7 +663,7 @@ mod tests {
             </p:cSld>
         </p:sld>"#;
 
-        let paragraphs = extract_ooxml_paragraphs_simple(xml, b"a:p", b"a:t");
+        let paragraphs = extract_ooxml_paragraphs_simple(xml, b"a:p", b"a:t").unwrap();
         assert_eq!(paragraphs.len(), 2);
         assert_eq!(paragraphs[0].text, "Slide Title");
         assert_eq!(paragraphs[1].text, "Bullet point one");
@@ -592,8 +672,26 @@ mod tests {
     #[test]
     fn test_extract_ooxml_paragraphs_empty() {
         let xml = r#"<w:document><w:body></w:body></w:document>"#;
-        let paragraphs = extract_docx_styled_paragraphs(xml);
+        let paragraphs = extract_docx_styled_paragraphs(xml).unwrap();
         assert!(paragraphs.is_empty());
+    }
+
+    #[test]
+    fn test_extract_docx_paragraphs_rejects_invalid_entity() {
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>bad &unknown; entity</w:t></w:r></w:p></w:body></w:document>"#;
+
+        let err = extract_docx_styled_paragraphs(xml).unwrap_err();
+
+        assert!(err.to_string().contains("DOCX paragraph text"));
+    }
+
+    #[test]
+    fn test_extract_pptx_paragraphs_rejects_invalid_entity() {
+        let xml = r#"<a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:r><a:t>bad &unknown; entity</a:t></a:r></a:p>"#;
+
+        let err = extract_ooxml_paragraphs_simple(xml, b"a:p", b"a:t").unwrap_err();
+
+        assert!(err.to_string().contains("OOXML paragraph text"));
     }
 
     #[test]

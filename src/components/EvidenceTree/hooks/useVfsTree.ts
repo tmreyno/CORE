@@ -15,6 +15,11 @@ import { createSignal, Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { VfsMountInfo, VfsEntry } from "../../../types";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
+import {
+  collectBinaryArtifactEntries,
+  collectSystemIdentityEntries,
+} from "../../systemIdentitySources";
 
 const log = logger.scope("VfsTree");
 
@@ -56,6 +61,8 @@ export function useVfsTree(): UseVfsTreeReturn {
   const [vfsChildrenCache, setVfsChildrenCache] = createSignal<Map<string, VfsEntry[]>>(new Map());
   // Track expanded paths
   const [expandedVfsPaths, setExpandedVfsPaths] = createSignal<Set<string>>(new Set());
+  const inFlightMounts = new Map<string, Promise<VfsMountInfo | null>>();
+  const inFlightChildrenLoads = new Map<string, Promise<VfsEntry[]>>();
 
   // Mount a disk image container and get partition info
   const mountVfsContainer = async (containerPath: string): Promise<VfsMountInfo | null> => {
@@ -66,28 +73,42 @@ export function useVfsTree(): UseVfsTreeReturn {
       log.debug(`mountVfsContainer - returning cached mount with ${cached.partitions.length} partitions (${(performance.now() - startTime).toFixed(1)}ms)`);
       return cached;
     }
-
-    try {
-      log.debug("mountVfsContainer - invoking vfs_mount_image...");
-      const invokeStart = performance.now();
-      const mountInfo = await invoke<VfsMountInfo>("vfs_mount_image", {
-        containerPath,
-      });
-      
-      log.debug(`mountVfsContainer - backend returned in ${(performance.now() - invokeStart).toFixed(1)}ms, ${mountInfo.partitions.length} partitions, diskSize=${mountInfo.diskSize}`);
-      
-      setVfsMountCache(prev => {
-        const next = new Map(prev);
-        next.set(containerPath, mountInfo);
-        return next;
-      });
-      
-      log.debug(`mountVfsContainer - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
-      return mountInfo;
-    } catch (err) {
-      log.error("mountVfsContainer FAILED:", err);
+    if (!isTauri) {
       return null;
     }
+    const pending = inFlightMounts.get(containerPath);
+    if (pending) {
+      log.debug(`mountVfsContainer - sharing pending mount for ${containerPath}`);
+      return pending;
+    }
+
+    const loadPromise = (async (): Promise<VfsMountInfo | null> => {
+      try {
+        log.debug("mountVfsContainer - invoking vfs_mount_image...");
+        const invokeStart = performance.now();
+        const mountInfo = await invoke<VfsMountInfo>("vfs_mount_image", {
+          containerPath,
+        });
+
+        log.debug(`mountVfsContainer - backend returned in ${(performance.now() - invokeStart).toFixed(1)}ms, ${mountInfo.partitions.length} partitions, diskSize=${mountInfo.diskSize}`);
+
+        setVfsMountCache(prev => {
+          const next = new Map(prev);
+          next.set(containerPath, mountInfo);
+          return next;
+        });
+
+        log.debug(`mountVfsContainer - total time: ${(performance.now() - startTime).toFixed(1)}ms`);
+        return mountInfo;
+      } catch (err) {
+        log.error("mountVfsContainer FAILED:", err);
+        return null;
+      } finally {
+        inFlightMounts.delete(containerPath);
+      }
+    })();
+    inFlightMounts.set(containerPath, loadPromise);
+    return loadPromise;
   };
 
   // Load directory contents
@@ -101,27 +122,56 @@ export function useVfsTree(): UseVfsTreeReturn {
       log.debug(`loadVfsChildren - returning ${cached.length} cached entries`);
       return cached;
     }
-
-    try {
-      log.debug("loadVfsChildren - invoking vfs_list_dir...");
-      const children = await invoke<VfsEntry[]>("vfs_list_dir", {
-        containerPath,
-        dirPath: vfsPath,
-      });
-      
-      log.debug(`loadVfsChildren - backend returned ${children.length} entries for ${vfsPath}`);
-      
-      setVfsChildrenCache(prev => {
-        const next = new Map(prev);
-        next.set(cacheKey, children);
-        return next;
-      });
-      
-      return children;
-    } catch (err) {
-      log.error(`loadVfsChildren failed for ${vfsPath}:`, err);
+    if (!isTauri) {
       return [];
     }
+    const pending = inFlightChildrenLoads.get(cacheKey);
+    if (pending) {
+      log.debug(`loadVfsChildren - sharing pending load for ${vfsPath}`);
+      return pending;
+    }
+
+    const loadPromise = (async (): Promise<VfsEntry[]> => {
+      try {
+        log.debug("loadVfsChildren - invoking vfs_list_dir...");
+        const children = await invoke<VfsEntry[]>("vfs_list_dir", {
+          containerPath,
+          dirPath: vfsPath,
+        });
+
+        log.debug(`loadVfsChildren - backend returned ${children.length} entries for ${vfsPath}`);
+
+        setVfsChildrenCache(prev => {
+          const next = new Map(prev);
+          next.set(cacheKey, children);
+          return next;
+        });
+
+        void collectSystemIdentityEntries(
+          containerPath,
+          children,
+          inferVfsContainerType(containerPath),
+        ).catch((err) => {
+          log.warn(`System identity collection failed for ${vfsPath}:`, err);
+        });
+        void collectBinaryArtifactEntries(
+          containerPath,
+          children,
+          inferVfsContainerType(containerPath),
+        ).catch((err) => {
+          log.warn(`Binary artifact collection failed for ${vfsPath}:`, err);
+        });
+
+        return children;
+      } catch (err) {
+        log.error(`loadVfsChildren failed for ${vfsPath}:`, err);
+        return [];
+      } finally {
+        inFlightChildrenLoads.delete(cacheKey);
+      }
+    })();
+    inFlightChildrenLoads.set(cacheKey, loadPromise);
+    return loadPromise;
   };
 
   // Toggle directory expansion
@@ -144,13 +194,19 @@ export function useVfsTree(): UseVfsTreeReturn {
       const needsLoad = !vfsChildrenCache().has(cacheKey);
       
       if (needsLoad) {
+        if (_loading.has(nodeKey)) {
+          return;
+        }
         setLoading(prev => new Set([...prev, nodeKey]));
-        await loadVfsChildren(containerPath, vfsPath);
-        setLoading(prev => {
-          const next = new Set(prev);
-          next.delete(nodeKey);
-          return next;
-        });
+        try {
+          await loadVfsChildren(containerPath, vfsPath);
+        } finally {
+          setLoading(prev => {
+            const next = new Set(prev);
+            next.delete(nodeKey);
+            return next;
+          });
+        }
       }
       
       expanded.add(nodeKey);
@@ -251,4 +307,11 @@ export function useVfsTree(): UseVfsTreeReturn {
     collapseAllVfsDirs,
     restoreExpandedPaths,
   };
+}
+
+function inferVfsContainerType(containerPath: string): string {
+  const extension = containerPath.split(".").pop()?.toLowerCase() ?? "";
+  if (["e01", "ex01", "l01", "lx01"].includes(extension)) return extension;
+  if (["raw", "dd", "img"].includes(extension) || /^\d{3}$/.test(extension)) return "raw";
+  return extension || "e01";
 }

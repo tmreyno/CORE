@@ -32,6 +32,8 @@ import { splitPath } from "../utils/pathUtils";
 export interface RecentProjectsListProps {
   /** Called when user clicks to open a project */
   onOpenProject: (path: string) => void;
+  /** Optional filter for callers that only support a subset of recent file types */
+  pathFilter?: (path: string) => boolean;
   /** Maximum items to show (default: 5) */
   maxItems?: number;
   /** Compact mode for sidebar display */
@@ -84,11 +86,18 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
   });
 
   const refreshProjects = () => {
-    const recent = getRecentProjects();
+    const recent = getRecentProjects().filter((project) =>
+      props.pathFilter ? props.pathFilter(project.path) : true,
+    );
     const maxItems = props.maxItems ?? 5;
     // When showAll is active, display the full list; otherwise truncate
     setProjects(showAll() ? recent : recent.slice(0, maxItems));
   };
+
+  const totalFilteredProjects = () =>
+    getRecentProjects().filter((project) =>
+      props.pathFilter ? props.pathFilter(project.path) : true,
+    ).length;
 
   const handleRemove = (path: string, e: MouseEvent) => {
     e.stopPropagation();
@@ -194,7 +203,7 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
         </div>
 
         {/* Show more / Show less toggle */}
-        <Show when={getRecentProjects().length > (props.maxItems ?? 5)}>
+        <Show when={totalFilteredProjects() > (props.maxItems ?? 5)}>
           <div class="mt-3 text-center">
             <button 
               class="text-xs text-accent hover:text-accent-hover transition-colors"
@@ -205,7 +214,7 @@ export const RecentProjectsList: Component<RecentProjectsListProps> = (props) =>
             >
               {showAll() 
                 ? `Show less` 
-                : `Show all (${getRecentProjects().length} projects)`}
+                : `Show all (${totalFilteredProjects()} projects)`}
             </button>
           </div>
         </Show>

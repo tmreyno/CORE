@@ -27,6 +27,7 @@ export interface UseTextViewerReturn {
   error: Accessor<string | null>;
   totalSize: Accessor<number>;
   loadedChars: Accessor<number>;
+  loadedBytes: Accessor<number>;
   maxLoadedChars: Accessor<number>;
   showLineNumbers: Accessor<boolean>;
   setShowLineNumbers: (v: boolean) => void;
@@ -59,6 +60,7 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
   const [error, setError] = createSignal<string | null>(null);
   const [totalSize, setTotalSize] = createSignal(0);
   const [loadedChars, setLoadedChars] = createSignal(0);
+  const [loadedBytes, setLoadedBytes] = createSignal(0);
 
   // View options
   const [showLineNumbers, setShowLineNumbers] = createSignal(true);
@@ -69,25 +71,33 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
   const [searchQuery, setSearchQuery] = createSignal("");
   const [searchResults, setSearchResults] = createSignal<number[]>([]);
   const [currentResult, setCurrentResult] = createSignal(0);
+  let loadGeneration = 0;
 
   const sourceKey = () => getSourceKey(props.file, props.entry);
   const displayFilename = () => getSourceFilename(props.file, props.entry);
 
   // Load initial file content
   const loadContent = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
 
     try {
       const result = await readTextFromSource(props.file ?? null, props.entry, 0, INITIAL_LOAD_SIZE);
+      if (generation !== loadGeneration) return;
       setContent(result.text);
       setLoadedChars(result.text.length);
+      setLoadedBytes(result.bytesRead);
       setTotalSize(result.totalSize);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       setError(`Failed to load file: ${e}`);
       setContent("");
+      setLoadedBytes(0);
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
@@ -95,12 +105,13 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
   const loadMoreContent = async () => {
     if (loadingMore() || loading()) return;
 
-    const currentLoaded = loadedChars();
+    const currentLoaded = loadedBytes();
     const total = totalSize();
     const maxChars = getMaxLoadedChars();
 
     if (currentLoaded >= total || currentLoaded >= maxChars) return;
 
+    const generation = loadGeneration;
     setLoadingMore(true);
 
     try {
@@ -111,12 +122,17 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
         Math.min(LOAD_MORE_SIZE, total - currentLoaded, maxChars - currentLoaded)
       );
 
+      if (generation !== loadGeneration) return;
       setContent((prev) => prev + result.text);
-      setLoadedChars(currentLoaded + result.text.length);
+      setLoadedChars((prev) => prev + result.text.length);
+      setLoadedBytes(currentLoaded + result.bytesRead);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to load more text:", e);
     } finally {
-      setLoadingMore(false);
+      if (generation === loadGeneration) {
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -138,6 +154,7 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
     setContent("");
     setError(null);
     setLoadedChars(0);
+    setLoadedBytes(0);
     setTotalSize(0);
     loadContent();
   });
@@ -216,7 +233,7 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
     return LANGUAGE_MAP[ext] || "plaintext";
   };
 
-  const isTruncated = createMemo(() => loadedChars() < totalSize());
+  const isTruncated = createMemo(() => loadedBytes() < totalSize());
 
   return {
     content,
@@ -225,6 +242,7 @@ export function useTextViewer(props: TextViewerProps): UseTextViewerReturn {
     error,
     totalSize,
     loadedChars,
+    loadedBytes,
     maxLoadedChars: maxLoadedCharsMemo,
     showLineNumbers,
     setShowLineNumbers,

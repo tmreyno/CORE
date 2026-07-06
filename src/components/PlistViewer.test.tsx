@@ -4,10 +4,15 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { PlistViewer } from "./PlistViewer";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -138,6 +143,62 @@ describe("PlistViewer", () => {
       await tick();
 
       expect(container.textContent).toContain("Invalid plist format");
+    });
+
+    it("ignores stale plist loads after the selected path changes", async () => {
+      let resolveSlow: (value: typeof mockPlistData) => void = () => {};
+      const slowResult = new Promise<typeof mockPlistData>((resolve) => {
+        resolveSlow = resolve;
+      });
+      const currentData = {
+        ...mockPlistData,
+        path: "/tmp/current.plist",
+        entries: [
+          {
+            key_path: "CurrentSelection",
+            value_type: "String",
+            value_preview: "current-value",
+          },
+        ],
+      };
+      const staleData = {
+        ...mockPlistData,
+        path: "/tmp/slow.plist",
+        entries: [
+          {
+            key_path: "StaleSelection",
+            value_type: "String",
+            value_preview: "stale-value",
+          },
+        ],
+      };
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "plist_read" && args?.path === "/tmp/slow.plist") {
+          return slowResult;
+        }
+        if (command === "plist_read" && args?.path === "/tmp/current.plist") {
+          return Promise.resolve(currentData);
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
+
+      const [path, setPath] = createSignal("/tmp/slow.plist");
+      const { container } = renderComponent(() => <PlistViewer path={path()} />);
+      await tick();
+
+      setPath("/tmp/current.plist");
+      await tick();
+
+      expect(container.textContent).toContain("CurrentSelection");
+      expect(container.textContent).toContain("current-value");
+
+      resolveSlow(staleData);
+      await tick();
+
+      expect(container.textContent).toContain("CurrentSelection");
+      expect(container.textContent).not.toContain("StaleSelection");
+      expect(container.textContent).not.toContain("stale-value");
     });
   });
 

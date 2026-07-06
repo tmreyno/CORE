@@ -401,18 +401,18 @@ fn extract_gps(exif: &exif::Exif) -> Option<GpsCoordinates> {
     let lat_val = parse_gps_coord(&lat.value)?;
     let lon_val = parse_gps_coord(&lon.value)?;
 
-    let lat_ref_str = lat_ref.display_value().to_string();
-    let lon_ref_str = lon_ref.display_value().to_string();
+    let lat_ref_str = gps_ref_from_display(lat_ref.display_value().to_string(), "N", "S")?;
+    let lon_ref_str = gps_ref_from_display(lon_ref.display_value().to_string(), "E", "W")?;
 
-    let latitude = if lat_ref_str.contains('S') {
-        -lat_val
-    } else {
-        lat_val
+    let latitude = match lat_ref_str.as_str() {
+        "S" => -lat_val,
+        "N" => lat_val,
+        _ => return None,
     };
-    let longitude = if lon_ref_str.contains('W') {
-        -lon_val
-    } else {
-        lon_val
+    let longitude = match lon_ref_str.as_str() {
+        "W" => -lon_val,
+        "E" => lon_val,
+        _ => return None,
     };
     if !is_valid_gps_coordinate(latitude, longitude) {
         return None;
@@ -434,6 +434,16 @@ fn extract_gps(exif: &exif::Exif) -> Option<GpsCoordinates> {
         latitude_ref: lat_ref_str,
         longitude_ref: lon_ref_str,
     })
+}
+
+fn gps_ref_from_display(value: String, positive: &str, negative: &str) -> Option<String> {
+    let value = clean_display_value(value);
+    let value = value.trim();
+    if value == positive || value == negative {
+        Some(value.to_string())
+    } else {
+        None
+    }
 }
 
 fn rational_to_f64(value: &exif::Rational) -> Option<f64> {
@@ -590,6 +600,21 @@ mod tests {
         assert!(!is_valid_gps_coordinate(90.1, 0.0));
         assert!(!is_valid_gps_coordinate(0.0, -180.1));
         assert!(!is_valid_gps_coordinate(f64::NAN, 0.0));
+    }
+
+    #[test]
+    fn gps_ref_from_display_accepts_only_exact_refs() {
+        assert_eq!(
+            gps_ref_from_display("\"S\"".to_string(), "N", "S").as_deref(),
+            Some("S")
+        );
+        assert_eq!(
+            gps_ref_from_display("W".to_string(), "E", "W").as_deref(),
+            Some("W")
+        );
+        assert!(gps_ref_from_display("South".to_string(), "N", "S").is_none());
+        assert!(gps_ref_from_display("SW".to_string(), "E", "W").is_none());
+        assert!(gps_ref_from_display(String::new(), "N", "S").is_none());
     }
 
     #[test]

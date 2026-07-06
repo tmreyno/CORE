@@ -231,13 +231,18 @@ fn checked_exfat_read_bounds(
     offset: u64,
     requested_size: usize,
 ) -> Result<Option<std::ops::Range<usize>>, VfsError> {
-    if requested_size == 0 || offset >= file_size {
+    if offset > file_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
+    }
+
+    if requested_size == 0 || offset == file_size {
         return Ok(None);
     }
 
-    let remaining = file_size
-        .checked_sub(offset)
-        .ok_or_else(|| VfsError::IoError("exFAT read offset exceeded file size".to_string()))?;
+    let remaining = file_size - offset;
     let actual_size = requested_size.min(usize::try_from(remaining).unwrap_or(usize::MAX));
     let start = usize::try_from(offset)
         .map_err(|_| VfsError::IoError("exFAT read offset does not fit in usize".to_string()))?;
@@ -1010,6 +1015,18 @@ mod tests {
     fn test_checked_exfat_read_bounds_handles_eof_and_zero_size() {
         assert_eq!(checked_exfat_read_bounds(128, 128, 16).unwrap(), None);
         assert_eq!(checked_exfat_read_bounds(128, 0, 0).unwrap(), None);
+    }
+
+    #[test]
+    fn test_checked_exfat_read_bounds_rejects_offset_past_eof() {
+        let err = checked_exfat_read_bounds(128, 129, 16).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 129,
+                size: 16
+            }
+        ));
     }
 
     #[test]

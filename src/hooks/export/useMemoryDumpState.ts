@@ -33,6 +33,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 export interface UseMemoryDumpStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -57,6 +58,8 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
   // ─── Load Memory Info ───────────────────────────────────────────────────
 
   const loadMemoryInfo = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     setMemoryInfoLoading(true);
     try {
       const info = await getMemoryCaptureInfo();
@@ -71,6 +74,8 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
   // ─── Capture Handler ────────────────────────────────────────────────────
 
   const handleCaptureMemory = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     const info = memoryInfo();
     if (!info?.captureSupported) {
       toast.error("Not Supported", info?.unsupportedReason || "Memory capture is not supported on this platform");
@@ -219,6 +224,8 @@ export function useMemoryDumpState(options: UseMemoryDumpStateOptions) {
   // ─── Cancel ─────────────────────────────────────────────────────────────
 
   const handleCancelMemoryCapture = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     try {
       await cancelMemoryCapture();
       toast.info("Cancelling", "Memory capture will stop at the next chunk boundary");

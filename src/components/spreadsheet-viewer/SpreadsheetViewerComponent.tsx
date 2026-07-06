@@ -38,6 +38,7 @@ import {
 } from "./helpers";
 import { printDocument } from "../document/documentHelpers";
 import type { SpreadsheetMetadataSection } from "../../types/viewerMetadata";
+import { isTauri } from "../../utils/platform";
 import type {
   SpreadsheetViewerProps,
   SpreadsheetInfo,
@@ -45,6 +46,10 @@ import type {
 } from "./types";
 
 const log = logger.scope("SpreadsheetViewer");
+const BROWSER_SPREADSHEET_EXPORT_MESSAGE =
+  "Spreadsheet CSV export is available in the desktop app.";
+const BROWSER_SPREADSHEET_VIEW_MESSAGE =
+  "Spreadsheet evidence viewing is available in the desktop app.";
 
 export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [loading, setLoading] = createSignal(true);
@@ -53,6 +58,8 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [activeSheet, setActiveSheet] = createSignal(0);
   const [rows, setRows] = createSignal<CellValue[][]>([]);
   const [loadingSheet, setLoadingSheet] = createSignal(false);
+  let loadGeneration = 0;
+  let sheetLoadGeneration = 0;
 
   // Search & sort state
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -60,6 +67,7 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
   const [sortCol, setSortCol] = createSignal<number | null>(null);
   const [sortAsc, setSortAsc] = createSignal(true);
   const [copiedCell, setCopiedCell] = createSignal<string | null>(null);
+  const [exportMessage, setExportMessage] = createSignal("");
 
   // Memoized computed values
   const sheets = createMemo(() => info()?.sheets ?? []);
@@ -92,29 +100,40 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
 
   // Load spreadsheet info
   const loadInfo = async () => {
+    const generation = ++loadGeneration;
+    sheetLoadGeneration++;
     setLoading(true);
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_SPREADSHEET_VIEW_MESSAGE);
+      }
+
       const result = props.source
         ? await commands.spreadsheet.infoSource<SpreadsheetInfo>(props.source)
         : await commands.spreadsheet.info<SpreadsheetInfo>(props.path);
+      if (generation !== loadGeneration) return;
       setInfo(result);
 
       // Load first sheet
       if (result.sheets.length > 0) {
-        await loadSheet(0);
+        await loadSheet(0, generation);
       }
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to load spreadsheet:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 
   // Load a specific sheet's data
-  const loadSheet = async (sheetIndex: number) => {
+  const loadSheet = async (sheetIndex: number, infoGeneration = loadGeneration) => {
+    const generation = ++sheetLoadGeneration;
     const sheetInfo = info();
     if (!sheetInfo || sheetIndex >= sheetInfo.sheets.length) return;
 
@@ -124,6 +143,10 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
     setSortCol(null);
     setSortAsc(true);
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_SPREADSHEET_VIEW_MESSAGE);
+      }
+
       const sheetName = sheetInfo.sheets[sheetIndex].name;
       const data = props.source
         ? await commands.spreadsheet.readSheetSource<CellValue[][]>(
@@ -138,13 +161,17 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
             0,
             500
           );
+      if (infoGeneration !== loadGeneration || generation !== sheetLoadGeneration) return;
       setRows(data);
       setActiveSheet(sheetIndex);
     } catch (e) {
+      if (infoGeneration !== loadGeneration || generation !== sheetLoadGeneration) return;
       log.error("Failed to load sheet:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoadingSheet(false);
+      if (infoGeneration === loadGeneration && generation === sheetLoadGeneration) {
+        setLoadingSheet(false);
+      }
     }
   };
 
@@ -193,6 +220,12 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
       sheets()[activeSheet()]?.name || "Sheet1";
     const headers = columnHeaders();
 
+    if (!isTauri) {
+      setExportMessage(BROWSER_SPREADSHEET_EXPORT_MESSAGE);
+      return;
+    }
+
+    setExportMessage("");
     try {
       const path = await save({
         title: "Export Spreadsheet as CSV",
@@ -358,6 +391,12 @@ export function SpreadsheetViewerComponent(props: SpreadsheetViewerProps) {
           <span class="text-xs text-success animate-fade-in">Copied</span>
         </Show>
       </div>
+
+      <Show when={exportMessage()}>
+        <div class="px-3 py-2 border-b border-border/40 bg-warning/10 text-xs text-warning">
+          {exportMessage()}
+        </div>
+      </Show>
 
       {/* Content */}
       <div class="flex-1 overflow-auto relative">

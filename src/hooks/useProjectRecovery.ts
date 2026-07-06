@@ -8,7 +8,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import type { FFXProject } from "./useActivityTimeline";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("ProjectRecovery");
+const BROWSER_RECOVERY_MESSAGE =
+  "Project recovery tools are available in the desktop app.";
 
 /**
  * Backup type matching backend BackupType enum
@@ -104,6 +107,13 @@ export function useProjectRecovery() {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+  const ensureDesktopRuntime = () => {
+    if (isTauri) return true;
+    setLoading(false);
+    setError(BROWSER_RECOVERY_MESSAGE);
+    return false;
+  };
+
   /**
    * Create a backup of the project
    */
@@ -112,6 +122,7 @@ export function useProjectRecovery() {
     backupType: BackupType = "ManualBackup",
     user?: string
   ): Promise<string | null> => {
+    if (!ensureDesktopRuntime()) return null;
     try {
       setLoading(true);
       setError(null);
@@ -137,6 +148,7 @@ export function useProjectRecovery() {
    * Create a versioned backup
    */
   const createVersionBackup = async (projectPath: string): Promise<string | null> => {
+    if (!ensureDesktopRuntime()) return null;
     try {
       setLoading(true);
       setError(null);
@@ -160,6 +172,7 @@ export function useProjectRecovery() {
    * List all version backups for a project
    */
   const listVersions = async (projectPath: string): Promise<BackupFile[]> => {
+    if (!ensureDesktopRuntime()) return [];
     try {
       setLoading(true);
       setError(null);
@@ -183,6 +196,7 @@ export function useProjectRecovery() {
    * Check recovery availability
    */
   const checkRecovery = async (projectPath: string): Promise<RecoveryInfo | null> => {
+    if (!ensureDesktopRuntime()) return null;
     try {
       setLoading(true);
       setError(null);
@@ -205,6 +219,7 @@ export function useProjectRecovery() {
    * Recover project from autosave
    */
   const recoverFromAutosave = async (projectPath: string): Promise<FFXProject | null> => {
+    if (!ensureDesktopRuntime()) return null;
     try {
       setLoading(true);
       setError(null);
@@ -226,6 +241,7 @@ export function useProjectRecovery() {
    * Clear autosave file
    */
   const clearAutosave = async (projectPath: string): Promise<boolean> => {
+    if (!ensureDesktopRuntime()) return false;
     try {
       setLoading(true);
       setError(null);
@@ -247,6 +263,7 @@ export function useProjectRecovery() {
    * Check project health
    */
   const checkHealth = async (projectPath: string): Promise<ProjectHealth | null> => {
+    if (!ensureDesktopRuntime()) return null;
     try {
       setLoading(true);
       setError(null);

@@ -45,7 +45,13 @@ pub struct DirEntry {
 /// List the contents of a host-filesystem directory.
 /// Returns files and subdirectories (non-recursive, single level).
 #[tauri::command]
-pub fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
+pub async fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || list_directory_blocking(path))
+        .await
+        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn list_directory_blocking(path: String) -> Result<Vec<DirEntry>, String> {
     let dir = PathBuf::from(&path);
     if !dir.exists() {
         return Err(format!("Path does not exist: {}", dir.display()));
@@ -110,26 +116,45 @@ pub fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
 
 /// Check if a path exists (file or directory)
 #[tauri::command]
-pub fn path_exists(path: String) -> Result<bool, String> {
-    let path = std::path::PathBuf::from(&path);
-    Ok(path.exists())
+pub async fn path_exists(path: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::PathBuf::from(&path);
+        Ok(path.exists())
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }
 
 /// Check if a path is a directory
 #[tauri::command]
-pub fn path_is_directory(path: String) -> Result<bool, String> {
-    let path = std::path::PathBuf::from(&path);
-    Ok(path.is_dir())
+pub async fn path_is_directory(path: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::PathBuf::from(&path);
+        Ok(path.is_dir())
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }
 
 /// Discover evidence files (E01, AD1, L01, etc.) in a directory
 /// Returns just the file paths for quick discovery
 #[tauri::command]
-pub fn discover_evidence_files(
+pub async fn discover_evidence_files(
     #[allow(non_snake_case)] dirPath: String,
     recursive: bool,
 ) -> Result<Vec<String>, String> {
-    let path = std::path::PathBuf::from(&dirPath);
+    tauri::async_runtime::spawn_blocking(move || {
+        discover_evidence_files_blocking(dirPath, recursive)
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn discover_evidence_files_blocking(
+    dir_path: String,
+    recursive: bool,
+) -> Result<Vec<String>, String> {
+    let path = std::path::PathBuf::from(&dir_path);
 
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
@@ -140,9 +165,9 @@ pub fn discover_evidence_files(
     }
 
     let files = if recursive {
-        containers::scan_directory_recursive(&dirPath)?
+        containers::scan_directory_recursive(&dir_path)?
     } else {
-        containers::scan_directory(&dirPath)?
+        containers::scan_directory(&dir_path)?
     };
 
     Ok(bounded_discovered_files(files)
@@ -155,12 +180,21 @@ pub fn discover_evidence_files(
 /// Returns ProcessedDbInfo directly (can be converted to ProcessedDatabase in frontend)
 #[cfg(feature = "flavor-review")]
 #[tauri::command]
-pub fn scan_for_processed_databases(
+pub async fn scan_for_processed_databases(
     #[allow(non_snake_case)] dirPath: String,
+) -> Result<Vec<processed::types::ProcessedDbInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || scan_for_processed_databases_blocking(dirPath))
+        .await
+        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+#[cfg(feature = "flavor-review")]
+fn scan_for_processed_databases_blocking(
+    dir_path: String,
 ) -> Result<Vec<processed::types::ProcessedDbInfo>, String> {
     use std::path::PathBuf;
 
-    let path = PathBuf::from(&dirPath);
+    let path = PathBuf::from(&dir_path);
 
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
@@ -173,21 +207,29 @@ pub fn scan_for_processed_databases(
 }
 
 #[tauri::command]
-pub fn scan_directory(
+pub async fn scan_directory(
     #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<containers::DiscoveredFile>, String> {
-    containers::scan_directory(&dirPath)
-        .map(bounded_discovered_files)
-        .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        containers::scan_directory(&dirPath)
+            .map(bounded_discovered_files)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }
 
 #[tauri::command]
-pub fn scan_directory_recursive(
+pub async fn scan_directory_recursive(
     #[allow(non_snake_case)] dirPath: String,
 ) -> Result<Vec<containers::DiscoveredFile>, String> {
-    containers::scan_directory_recursive(&dirPath)
-        .map(bounded_discovered_files)
-        .map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        containers::scan_directory_recursive(&dirPath)
+            .map(bounded_discovered_files)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }
 
 #[tauri::command]
@@ -237,8 +279,17 @@ pub async fn scan_directory_streaming(
 
 /// Find case documents (COC forms, intake forms, notes, etc.) in a directory
 #[tauri::command]
-pub fn find_case_documents(
+pub async fn find_case_documents(
     #[allow(non_snake_case)] dirPath: String,
+    recursive: bool,
+) -> Result<Vec<containers::CaseDocument>, String> {
+    tauri::async_runtime::spawn_blocking(move || find_case_documents_blocking(dirPath, recursive))
+        .await
+        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn find_case_documents_blocking(
+    dir_path: String,
     recursive: bool,
 ) -> Result<Vec<containers::CaseDocument>, String> {
     let config = containers::CaseDocumentSearchConfig {
@@ -249,19 +300,23 @@ pub fn find_case_documents(
     };
 
     Ok(bounded_case_documents(containers::find_case_documents(
-        &dirPath, &config,
+        &dir_path, &config,
     )))
 }
 
 /// Find Chain of Custody (COC) forms specifically
 #[tauri::command]
-pub fn find_coc_forms(
+pub async fn find_coc_forms(
     #[allow(non_snake_case)] dirPath: String,
     recursive: bool,
 ) -> Result<Vec<containers::CaseDocument>, String> {
-    Ok(bounded_case_documents(containers::find_coc_forms(
-        &dirPath, recursive,
-    )))
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(bounded_case_documents(containers::find_coc_forms(
+            &dirPath, recursive,
+        )))
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }
 
 /// Find case document folders relative to an evidence path
@@ -269,10 +324,16 @@ pub fn find_coc_forms(
 /// Searches parent directories for folders like "4.Case.Documents",
 /// "Case Documents", "Paperwork", etc.
 #[tauri::command]
-pub fn find_case_document_folders(
+pub async fn find_case_document_folders(
     #[allow(non_snake_case)] evidencePath: String,
 ) -> Result<Vec<String>, String> {
-    let folders = containers::find_case_document_folders(&evidencePath);
+    tauri::async_runtime::spawn_blocking(move || find_case_document_folders_blocking(evidencePath))
+        .await
+        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn find_case_document_folders_blocking(evidence_path: String) -> Result<Vec<String>, String> {
+    let folders = containers::find_case_document_folders(&evidence_path);
     Ok(folders
         .into_iter()
         .take(DISCOVERY_MAX_CASE_DOCUMENTS)
@@ -286,20 +347,31 @@ pub fn find_case_document_folders(
 /// Given an evidence path, this finds the case root and searches all
 /// typical case document locations.
 #[tauri::command]
-pub fn discover_case_documents(
+pub async fn discover_case_documents(
     #[allow(non_snake_case)] evidencePath: String,
     #[allow(non_snake_case)] previewOnly: Option<bool>,
 ) -> Result<Vec<containers::CaseDocument>, String> {
-    let preview_only = previewOnly.unwrap_or(true); // Default to preview mode for speed
+    tauri::async_runtime::spawn_blocking(move || {
+        discover_case_documents_blocking(evidencePath, previewOnly)
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn discover_case_documents_blocking(
+    evidence_path: String,
+    preview_only: Option<bool>,
+) -> Result<Vec<containers::CaseDocument>, String> {
+    let preview_only = preview_only.unwrap_or(true); // Default to preview mode for speed
     info!(
         "discover_case_documents called with path: {}, preview_only: {}",
-        evidencePath, preview_only
+        evidence_path, preview_only
     );
 
     let mut all_documents = Vec::new();
 
     // First, find all case document folders by pattern matching
-    let doc_folders = containers::find_case_document_folders(&evidencePath);
+    let doc_folders = containers::find_case_document_folders(&evidence_path);
     info!(
         "Found {} case document folders by pattern",
         doc_folders.len()
@@ -335,7 +407,7 @@ pub fn discover_case_documents(
     // FALLBACK: If no specific case document folders found, search parent directories directly
     if doc_folders.is_empty() {
         info!("No specific case doc folders found, searching parent directories...");
-        let path = std::path::Path::new(&evidencePath);
+        let path = std::path::Path::new(&evidence_path);
 
         // Get the starting directory
         let start_dir = if path.is_file() {
@@ -446,7 +518,19 @@ pub struct CreateFoldersResult {
 ///
 /// Returns a `CreateFoldersResult` with counts and role→path mapping.
 #[tauri::command]
-pub fn create_folders_from_template(
+pub async fn create_folders_from_template(
+    template_json: String,
+    root_path: String,
+    case_name: Option<String>,
+) -> Result<CreateFoldersResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        create_folders_from_template_blocking(template_json, root_path, case_name)
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn create_folders_from_template_blocking(
     template_json: String,
     root_path: String,
     case_name: Option<String>,
@@ -569,7 +653,13 @@ pub fn create_folders_from_template(
 /// Used by the Acquire edition to create per-evidence-item subfolders
 /// under the project's evidence directory.
 #[tauri::command]
-pub fn create_directory(path: String) -> Result<String, String> {
+pub async fn create_directory(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || create_directory_blocking(path))
+        .await
+        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+}
+
+fn create_directory_blocking(path: String) -> Result<String, String> {
     let dir = PathBuf::from(&path);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create directory {}: {e}", dir.display()))?;
@@ -783,9 +873,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let oversized = "x".repeat(DISCOVERY_TEMPLATE_JSON_MAX_BYTES + 1);
 
-        let err =
-            create_folders_from_template(oversized, dir.path().to_string_lossy().to_string(), None)
-                .unwrap_err();
+        let err = create_folders_from_template_blocking(
+            oversized,
+            dir.path().to_string_lossy().to_string(),
+            None,
+        )
+        .unwrap_err();
 
         assert!(err.contains("Template JSON exceeds maximum size"));
     }

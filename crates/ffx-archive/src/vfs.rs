@@ -517,14 +517,14 @@ impl ArchiveVfs {
             return Err(VfsError::NotAFile(path.to_string()));
         }
 
-        let entry_path = path.trim_start_matches('/');
-        let data = super::libarchive_read_file(&self.path, entry_path)
-            .map_err(|e| VfsError::IoError(format!("Failed to read archive entry: {}", e)))?;
-
-        let Some((start, end)) = bounded_read_range(offset, size, data.len()) else {
+        let declared_size = entry.attr.size;
+        if bounded_read_range_u64(offset, size, declared_size)?.is_none() {
             return Ok(Vec::new());
-        };
-        Ok(data[start..end].to_vec())
+        }
+
+        let entry_path = path.trim_start_matches('/');
+        super::libarchive_read_file_range(&self.path, entry_path, offset, size)
+            .map_err(|e| VfsError::IoError(format!("Failed to read archive entry range: {}", e)))
     }
 
     /// Read file data from archive
@@ -606,7 +606,7 @@ impl ArchiveVfs {
             if normalize_archive_entry_path(&filename, false).as_deref() == Some(path) {
                 if compression == 0 {
                     let Some((start, end)) =
-                        bounded_read_range_u64(offset, size, uncompressed_size)
+                        bounded_read_range_u64(offset, size, uncompressed_size)?
                     else {
                         return Ok(Vec::new());
                     };
@@ -715,23 +715,20 @@ impl VirtualFileSystem for ArchiveVfs {
     }
 }
 
-fn bounded_read_range(offset: u64, size: usize, len: usize) -> Option<(usize, usize)> {
-    let start = usize::try_from(offset).ok()?;
-    if start >= len {
-        return None;
+fn bounded_read_range_u64(
+    offset: u64,
+    size: usize,
+    len: u64,
+) -> Result<Option<(u64, u64)>, VfsError> {
+    if offset > len {
+        return Err(VfsError::OutOfBounds { offset, size });
     }
-
-    let end = start.saturating_add(size).min(len);
-    Some((start, end))
-}
-
-fn bounded_read_range_u64(offset: u64, size: usize, len: u64) -> Option<(u64, u64)> {
-    if offset >= len {
-        return None;
+    if offset == len || size == 0 {
+        return Ok(None);
     }
 
     let end = offset.saturating_add(size as u64).min(len);
-    Some((offset, end))
+    Ok(Some((offset, end)))
 }
 
 fn normalize_archive_entry_path(entry_path: &str, is_dir: bool) -> Option<String> {
@@ -774,7 +771,7 @@ fn read_deflated_zip_range(
     offset: u64,
     size: usize,
 ) -> Result<Vec<u8>, VfsError> {
-    let Some((start, end)) = bounded_read_range_u64(offset, size, uncompressed_size) else {
+    let Some((start, end)) = bounded_read_range_u64(offset, size, uncompressed_size)? else {
         return Ok(Vec::new());
     };
     let reader = file.by_ref().take(compressed_size);
@@ -1165,19 +1162,35 @@ mod tests {
     }
 
     #[test]
+    fn test_bounded_read_range_allows_exact_eof() {
+        assert_eq!(bounded_read_range_u64(8, 4, 8).unwrap(), None);
+    }
+
+    #[test]
     fn test_bounded_read_range_rejects_offset_past_end() {
-        assert_eq!(bounded_read_range(10, 4, 8), None);
+        let err = bounded_read_range_u64(10, 4, 8).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 10,
+                size: 4
+            }
+        ));
     }
 
     #[test]
     fn test_bounded_read_range_saturates_large_size() {
-        assert_eq!(bounded_read_range(6, usize::MAX, 8), Some((6, 8)));
+        assert_eq!(
+            bounded_read_range_u64(6, usize::MAX, 8).unwrap(),
+            Some((6, 8))
+        );
     }
 
     #[test]
     fn test_bounded_read_range_u64_saturates_large_size() {
         assert_eq!(
-            bounded_read_range_u64(2 * 1024 * 1024 * 1024, usize::MAX, 3 * 1024 * 1024 * 1024),
+            bounded_read_range_u64(2 * 1024 * 1024 * 1024, usize::MAX, 3 * 1024 * 1024 * 1024)
+                .unwrap(),
             Some((2 * 1024 * 1024 * 1024, 3 * 1024 * 1024 * 1024))
         );
     }

@@ -28,6 +28,7 @@ import { useMemoryDumpState } from "./export/useMemoryDumpState";
 import { useTriageState } from "./export/useTriageState";
 import { useRawExportState } from "./export/useRawExportState";
 import { useAff4ExportState } from "./export/useAff4ExportState";
+import { isTauri } from "../utils/platform";
 
 // Re-export types so existing `import { ExportMode } from "../hooks/useExportState"` works
 export type { ExportMode } from "./export/types";
@@ -203,7 +204,10 @@ export function useExportState(options: UseExportStateOptions) {
     if (!aff4.aff4ImageName() || aff4.aff4ImageName() === "evidence") aff4.setAff4ImageName(evidenceName);
   };
 
-  if (options.systemStats) {
+  if (!isTauri) {
+    const stats = options.systemStats;
+    applySystemInfo(stats?.hostname || "", "user", stats?.systemSerialNumber || "");
+  } else if (options.systemStats) {
     // Use pre-collected system stats from Identify phase — only need username
     const stats = options.systemStats;
     invoke<string>("get_current_username").then((username) => {

@@ -20,8 +20,11 @@ import {
 } from "./helpers";
 import type { PlistMetadataSection } from "../../types/viewerMetadata";
 import type { PlistViewerProps, PlistInfo } from "./types";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("PlistViewer");
+const BROWSER_PLIST_VIEW_MESSAGE =
+  "Plist evidence viewing is available in the desktop app.";
 
 export function PlistViewerComponent(props: PlistViewerProps) {
   const [loading, setLoading] = createSignal(true);
@@ -32,21 +35,31 @@ export function PlistViewerComponent(props: PlistViewerProps) {
     new Set(),
   );
   const [copiedPath, setCopiedPath] = createSignal<string | null>(null);
+  let loadGeneration = 0;
 
   const loadPlist = async () => {
+    const generation = ++loadGeneration;
     setLoading(true);
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_PLIST_VIEW_MESSAGE);
+      }
+
       const info = props.source
         ? await commands.plist.readSource<PlistInfo>(props.source)
         : await commands.plist.read<PlistInfo>(props.path);
+      if (generation !== loadGeneration) return;
       setPlistInfo(info);
     } catch (e) {
+      if (generation !== loadGeneration) return;
       log.error("Failed to parse plist:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 

@@ -53,7 +53,7 @@ export default defineConfig(async ({ mode }) => {
     server: {
       port: 1420,
       strictPort: true,
-      host: host || false,
+      host: host || "0.0.0.0",
       hmr: host
         ? {
             protocol: "ws",
@@ -63,17 +63,6 @@ export default defineConfig(async ({ mode }) => {
         : undefined,
       watch: {
         ignored: ["**/src-tauri/**"],
-      },
-      // Pre-transform heavy module trees so they're ready before the browser requests them
-      warmup: {
-        clientFiles: edition === "acquire"
-          ? [
-              "./src/components/acquire/AcquireLayout.tsx",
-              "./src/components/acquire/AcquireDashboard.tsx",
-            ]
-          : [
-              "./src/App.tsx",
-            ],
       },
     },
   };

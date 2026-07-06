@@ -583,7 +583,7 @@ where
 
     ensure_verified_byte_count("XXH3", bytes_processed, total_size)?;
     progress_callback(total_size, total_size);
-    Ok(format!("{:016x}", hasher.digest128()))
+    Ok(format_xxh3_digest128(hasher.digest128()))
 }
 
 /// Pipelined verification: I/O thread feeds data to hashing thread
@@ -926,6 +926,10 @@ fn ensure_verified_byte_count(
     Ok(())
 }
 
+fn format_xxh3_digest128(digest: u128) -> String {
+    format!("{digest:032x}")
+}
+
 // =============================================================================
 // Virtual Filesystem Implementation
 // =============================================================================
@@ -985,6 +989,13 @@ mod tests {
             "unexpected error: {}",
             err
         );
+    }
+
+    #[test]
+    fn test_format_xxh3_digest128_preserves_leading_zeroes() {
+        let formatted = format_xxh3_digest128(0x1);
+        assert_eq!(formatted, "00000000000000000000000000000001");
+        assert_eq!(formatted.len(), 32);
     }
 
     fn write_raw_fixture(data: &[u8]) -> std::path::PathBuf {

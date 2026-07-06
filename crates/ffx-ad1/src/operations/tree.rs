@@ -175,6 +175,30 @@ pub fn read_entry_data_by_addr(
     Ok((*data).clone())
 }
 
+/// Read a chunk of file data by address (for large file streaming)
+#[must_use = "this returns the file data chunk, which should be used"]
+pub fn read_entry_chunk_by_addr(
+    path: &str,
+    data_addr: u64,
+    total_size: u64,
+    offset: u64,
+    size: usize,
+) -> Result<Vec<u8>, ContainerError> {
+    let mut session = Session::open(path)?;
+
+    let temp_item = Item {
+        id: 0,
+        name: String::new(),
+        item_type: 0,
+        decompressed_size: total_size,
+        zlib_metadata_addr: data_addr,
+        metadata: Vec::new(),
+        children: Vec::new(),
+    };
+
+    session.read_file_data_range(&temp_item, offset, size)
+}
+
 /// Read a chunk of file data (for large files / streaming)
 #[must_use = "this returns the file data chunk, which should be used"]
 pub fn read_entry_chunk(

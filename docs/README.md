@@ -108,7 +108,7 @@ CORE-FFX provides the following major subsystems. Each is fully implemented and 
 | [`src-tauri/src/containers/README.md`](../src-tauri/src/containers/README.md) | Container abstraction layer |
 | [`src-tauri/src/containers/ARCHITECTURE.md`](../src-tauri/src/containers/ARCHITECTURE.md) | Container architecture |
 | [`src-tauri/src/viewer/README.md`](../src-tauri/src/viewer/README.md) | Viewer module (hex, document, etc.) |
-| [`src-tauri/src/common/README.md`](../src-tauri/src/common/README.md) | Shared utilities (hash, binary, segments, filesystem drivers) |
+| [`crates/ffx-common/src`](../crates/ffx-common/src) | Shared utilities and forensic engines (hash, binary, segments, filesystem drivers) |
 | [`src-tauri/src/processed/README.md`](../src-tauri/src/processed/README.md) | Processed database parsers (AXIOM, Cellebrite, Autopsy) |
 | [`src-tauri/src/report/README.md`](../src-tauri/src/report/README.md) | Report generation module |
 | [`src-tauri/src/l01_writer/`](../src-tauri/src/l01_writer/) | Pure-Rust L01 logical evidence writer |

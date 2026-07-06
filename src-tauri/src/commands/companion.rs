@@ -398,30 +398,28 @@ mod tests {
     use tempfile::TempDir;
 
     fn companion_json(primary_path: &Path) -> String {
-        format!(
-            r#"{{
-  "version": "1.0",
-  "tool": "CORE-FFX",
-  "toolVersion": "0.1.112",
-  "createdAt": "2026-07-03T00:00:00Z",
-  "acquisitionType": "triage",
-  "source": {{
-    "paths": ["{}"]
-  }},
-  "output": {{
-    "format": "7z",
-    "primaryPath": "{}",
-    "totalBytes": 4
-  }},
-  "timing": {{
-    "startedAt": "2026-07-03T00:00:00Z",
-    "completedAt": "2026-07-03T00:00:01Z",
-    "durationMs": 1000
-  }}
-}}"#,
-            primary_path.display(),
-            primary_path.display()
-        )
+        let primary_path = primary_path.display().to_string();
+        serde_json::json!({
+            "version": "1.0",
+            "tool": "CORE-FFX",
+            "toolVersion": "0.1.112",
+            "createdAt": "2026-07-03T00:00:00Z",
+            "acquisitionType": "triage",
+            "source": {
+                "paths": [primary_path.clone()],
+            },
+            "output": {
+                "format": "7z",
+                "primaryPath": primary_path,
+                "totalBytes": 4,
+            },
+            "timing": {
+                "startedAt": "2026-07-03T00:00:00Z",
+                "completedAt": "2026-07-03T00:00:01Z",
+                "durationMs": 1000,
+            },
+        })
+        .to_string()
     }
 
     #[test]

@@ -18,6 +18,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types
@@ -122,6 +123,10 @@ export interface EwfExportResult {
  * Get the libewf library version
  */
 export async function getEwfVersion(): Promise<string> {
+  if (!isTauri) {
+    return "desktop app required";
+  }
+
   return invoke<string>("ewf_get_version");
 }
 
@@ -136,6 +141,12 @@ export async function createE01Image(
   options: EwfExportOptions,
   onProgress?: (progress: EwfExportProgress) => void,
 ): Promise<EwfExportResult> {
+  if (!isTauri) {
+    void options;
+    void onProgress;
+    throw new Error("E01 image creation is available in the desktop app.");
+  }
+
   let unlisten: UnlistenFn | undefined;
 
   try {
@@ -173,6 +184,11 @@ export async function createE01Image(
  * @returns true if the export was found and cancelled, false if not found
  */
 export async function cancelE01Export(outputPath: string): Promise<boolean> {
+  if (!isTauri) {
+    void outputPath;
+    return false;
+  }
+
   return invoke<boolean>("ewf_cancel_export", { outputPath });
 }
 
@@ -246,6 +262,11 @@ export interface EwfImageInfo {
  * @returns Complete image metadata including format, case info, and stored hashes
  */
 export async function readEwfImageInfo(path: string): Promise<EwfImageInfo> {
+  if (!isTauri) {
+    void path;
+    throw new Error("EWF image metadata extraction is available in the desktop app.");
+  }
+
   return invoke<EwfImageInfo>("ewf_read_image_info", { path });
 }
 

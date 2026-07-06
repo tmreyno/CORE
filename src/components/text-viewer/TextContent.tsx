@@ -44,12 +44,12 @@ export function TextContent(props: TextContentProps) {
       </Show>
 
       {/* End of file indicator */}
-      <Show when={!tv.loadingMore() && tv.loadedChars() >= tv.totalSize()}>
+      <Show when={!tv.loadingMore() && tv.loadedBytes() >= tv.totalSize()}>
         <div class="flex items-center justify-center py-4 text-txt-muted text-xs">— End of file —</div>
       </Show>
 
       {/* Max loaded indicator */}
-      <Show when={!tv.loadingMore() && tv.loadedChars() >= tv.maxLoadedChars() && tv.totalSize() > tv.maxLoadedChars()}>
+      <Show when={!tv.loadingMore() && tv.loadedBytes() >= tv.maxLoadedChars() && tv.totalSize() > tv.maxLoadedChars()}>
         <div class="flex items-center justify-center py-4 text-amber-500/70 text-xs">
           — Maximum preview size reached ({formatBytes(tv.maxLoadedChars())}) —
         </div>

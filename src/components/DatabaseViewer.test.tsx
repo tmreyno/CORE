@@ -4,10 +4,15 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { DatabaseViewer } from "./DatabaseViewer";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -235,6 +240,105 @@ describe("DatabaseViewer", () => {
       page: 0,
       pageSize: 100,
     });
+  });
+
+  it("ignores stale database info after the selected database changes", async () => {
+    let resolveSlowInfo: (value: typeof mockDatabaseInfo) => void = () => {};
+    const slowInfo = new Promise<typeof mockDatabaseInfo>((resolve) => {
+      resolveSlowInfo = resolve;
+    });
+    const currentInfo = {
+      ...mockDatabaseInfo,
+      path: "/test/current.db",
+      tables: [
+        {
+          name: "current_table",
+          rowCount: 1,
+          columnCount: 1,
+          isSystem: false,
+        },
+      ],
+    };
+    const currentSchema = {
+      ...mockTableSchema,
+      name: "current_table",
+      columns: [
+        {
+          index: 0,
+          name: "current_col",
+          dataType: "TEXT",
+          isPrimaryKey: false,
+          nullable: true,
+          defaultValue: null,
+        },
+      ],
+    };
+    const currentRows = {
+      tableName: "current_table",
+      columns: ["current_col"],
+      rows: [["Current Row"]],
+      totalCount: 1,
+      page: 0,
+      pageSize: 100,
+      hasMore: false,
+    };
+
+    mockInvoke.mockImplementation((cmd: string, args: any) => {
+      if (cmd === "database_get_info" && args?.path === "/test/slow.db") {
+        return slowInfo;
+      }
+      if (cmd === "database_get_info" && args?.path === "/test/current.db") {
+        return Promise.resolve(currentInfo);
+      }
+      if (
+        cmd === "database_get_table_schema" &&
+        args?.dbPath === "/test/current.db"
+      ) {
+        return Promise.resolve(currentSchema);
+      }
+      if (cmd === "database_query_table" && args?.dbPath === "/test/current.db") {
+        return Promise.resolve(currentRows);
+      }
+      if (cmd === "database_get_table_schema" && args?.dbPath === "/test/slow.db") {
+        return Promise.resolve(mockTableSchema);
+      }
+      if (cmd === "database_query_table" && args?.dbPath === "/test/slow.db") {
+        return Promise.resolve({
+          ...mockTableRows,
+          rows: [["1", "Stale Row", null, null]],
+        });
+      }
+      return Promise.reject(new Error(`Unexpected invoke: ${cmd}`));
+    });
+
+    const [path, setPath] = createSignal("/test/slow.db");
+    const { container } = renderComponent(() => <DatabaseViewer path={path()} />);
+    await tick();
+
+    setPath("/test/current.db");
+    await tick();
+
+    expect(container.textContent).toContain("current_table");
+    expect(container.textContent).toContain("Current Row");
+
+    resolveSlowInfo({
+      ...mockDatabaseInfo,
+      path: "/test/slow.db",
+      tables: [
+        {
+          name: "stale_table",
+          rowCount: 1,
+          columnCount: 1,
+          isSystem: false,
+        },
+      ],
+    });
+    await tick();
+
+    expect(container.textContent).toContain("current_table");
+    expect(container.textContent).toContain("Current Row");
+    expect(container.textContent).not.toContain("stale_table");
+    expect(container.textContent).not.toContain("Stale Row");
   });
 
   it("shows row counts for tables", async () => {

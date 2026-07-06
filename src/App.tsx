@@ -20,12 +20,14 @@ import { QuickActionsBar } from "./components/QuickActionsBar";
 import { AppHeader } from "./components/layout/AppHeader";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
 import type { DiscoveredFile } from "./types";
+import type { SelectedEntry } from "./components/EvidenceTree";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
 import { announce } from "./utils/accessibility";
 import { logger } from "./utils/logger";
 import { getBasename, getDirname } from "./utils/pathUtils";
 import { isAcquireEdition, isFullEdition } from "./utils/edition";
+import { isTauri } from "./utils/platform";
 import { zoomIn, zoomOut, zoomReset, restoreZoom } from "./utils/zoom";
 import type { AcquireView } from "./components/acquire/AcquireLayout";
 import AcquireLayout from "./components/acquire/AcquireLayout";
@@ -68,6 +70,9 @@ interface ProjectCloseModalState {
   error: string | null;
   steps: ProjectCloseModalStep[];
 }
+
+const isCffxProjectPath = (path: string) => path.toLowerCase().endsWith(".cffx");
+const isAcquisitionSessionPath = (path: string) => path.toLowerCase().endsWith(".acquisition.json");
 
 // AcquireLayout is eagerly imported (not lazy) because it is the primary view
 // in the Acquire edition and is always needed on initial render. Lazy-loading it
@@ -295,7 +300,9 @@ function App() {
   // Stable reactive accessor: true when the current edition has an active project/session.
   // Must be a createMemo (not an inline arrow) so SolidJS tracks the dependency correctly.
   const acquireHasProject = createMemo(() =>
-    isAcquireEdition() ? !!sessionManager?.hasSession() : !!projectManager.hasProject()
+    isAcquireEdition()
+      ? !!sessionManager?.hasSession() || !!projectManager.hasProject()
+      : !!projectManager.hasProject()
   );
 
   log.debug(`Acquire & portable mode state ready (+${(performance.now() - t0).toFixed(1)}ms)`);
@@ -399,24 +406,6 @@ function App() {
     updateAcquisition: (id, updates) => sessionManager.updateAcquisition(id, updates),
     addActivity: (entry) => sessionManager.addActivity(entry),
   } : undefined;
-
-  /** Open a file dialog to pick and load an existing .acquisition.json session */
-  const handleLoadSession = async () => {
-    if (!sessionManager) return;
-    const selected = await open({
-      title: "Open Acquisition Session",
-      filters: [{ name: "Acquisition Session", extensions: ["acquisition.json"] }],
-      multiple: false,
-    });
-    if (typeof selected === "string") {
-      try {
-        await sessionManager.load(selected);
-        toast.success("Session Loaded", `Loaded ${getBasename(selected)}`);
-      } catch (e) {
-        toast.error("Failed to Load Session", String(e));
-      }
-    }
-  };
 
   /** Create a new acquisition session from StartSessionDialog opts */
   const handleCreateSession = async (opts: import("./hooks/acquire/useAcquisitionSession").CreateSessionOpts) => {
@@ -525,7 +514,12 @@ function App() {
   const welcomeModalRecentProjects = createMemo(() => {
     // Re-read on showWelcomeModal change to ensure freshness
     void showWelcomeModal();
-    return getRecentProjects().map(p => ({
+    if (!isTauri) return [];
+    return getRecentProjects().filter((project) =>
+      isAcquireEdition()
+        ? isAcquisitionSessionPath(project.path)
+        : isCffxProjectPath(project.path),
+    ).map(p => ({
       path: p.path,
       name: p.name,
       lastOpened: p.lastOpened,
@@ -601,7 +595,11 @@ function App() {
   };
   
   // Search handlers from useAppActions
-  const { handleSearch, handleSearchResultSelect } = createSearchHandlers({ fileManager, projectManager });
+  const { handleSearch, handleSearchResultSelect } = createSearchHandlers({
+    fileManager,
+    projectManager,
+    onOpenEvidenceFile: centerPaneTabs.openEvidenceFile,
+  });
 
   // ── Text selection actions (from viewer right-click) ──────────────────
 
@@ -731,6 +729,10 @@ function App() {
         message: "The current project has unsaved changes. Save it before closing or switching projects?",
       });
 
+      if (decision === "cancel") {
+        return false;
+      }
+
       shouldSave = decision === "save";
     }
 
@@ -810,19 +812,98 @@ function App() {
   };
   
   // Loading-wrapped versions of slow project operations
+  let projectLoadInProgress = false;
+  let projectSetupInProgress = false;
+
   const handleLoadProject = async (path?: string) => {
-    const canProceed = await closeCurrentProject("switch-project");
-    if (!canProceed) return;
-    await globalLoading.run("Loading project…", () => _handleLoadProject(path));
+    if (projectLoadInProgress) return;
+    projectLoadInProgress = true;
+    try {
+      if (!path) {
+        if (!projectManager.hasProject() || !isTauri) {
+          await _handleLoadProject();
+          return;
+        }
+
+        const selected = await open({
+          filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
+          title: "Open Project",
+          multiple: false,
+        });
+
+        if (!selected) {
+          return;
+        }
+
+        path = selected as string;
+      }
+
+      const canProceed = await closeCurrentProject("switch-project");
+      if (!canProceed) return;
+      await globalLoading.run("Loading project…", () => _handleLoadProject(path));
+    } finally {
+      projectLoadInProgress = false;
+    }
+  };
+  const handleOpenRecentProject = async (path: string) => {
+    if (isAcquireEdition()) {
+      if (!sessionManager) return;
+      if (!isAcquisitionSessionPath(path)) {
+        toast.error("Cannot Open Recent Item", "Acquire can only open .acquisition.json session files.");
+        return;
+      }
+      try {
+        await sessionManager.load(path);
+        toast.success("Session Loaded", `Loaded ${getBasename(path)}`);
+      } catch (e) {
+        toast.error("Failed to Load Session", String(e));
+      }
+      return;
+    }
+
+    if (!isCffxProjectPath(path)) {
+      toast.error("Cannot Open Recent Item", "Full Suite can only open .cffx project files.");
+      return;
+    }
+    await handleLoadProject(path);
   };
   const handleSaveProject = () =>
     globalLoading.run("Saving project…", () => _handleSaveProject());
   const handleSaveProjectAs = () =>
     globalLoading.run("Saving project…", () => _handleSaveProjectAs());
   const handleProjectSetupComplete = async (locations: import("./components").ProjectLocations) => {
-    const canProceed = await closeCurrentProject("new-project");
-    if (!canProceed) return;
-    await globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+    if (projectSetupInProgress) return;
+    projectSetupInProgress = true;
+    try {
+      const canProceed = await closeCurrentProject("new-project");
+      if (!canProceed) return;
+      await globalLoading.run("Setting up project…", () => _handleProjectSetupComplete(locations));
+    } finally {
+      projectSetupInProgress = false;
+    }
+  };
+  const handleNewProject = () => {
+    if (isAcquireEdition()) {
+      setShowAcquireSessionDialog(true);
+      return;
+    }
+
+    if (!isTauri) {
+      void handleProjectSetupComplete({
+        projectName: "Browser Preview Project",
+        projectRoot: "browser-preview-project",
+        evidencePath: "browser-preview-project/Evidence",
+        processedDbPath: "browser-preview-project/Processed",
+        caseDocumentsPath: "browser-preview-project/Case.Documents",
+        exportsPath: "browser-preview-project/Exports",
+        discoveredEvidence: [],
+        discoveredDatabases: [],
+        loadStoredHashes: false,
+      });
+      return;
+    }
+
+    setShowProjectWizard(true);
   };
   const handleScanEvidence = () =>
     globalLoading.run("Scanning for evidence…", () => fileManager.scanForFiles());
@@ -870,7 +951,41 @@ function App() {
     projectManager,
     toast,
     buildSaveOptions: getSaveOptions,
+    onOpenEvidenceFile: centerPaneTabs.openEvidenceFile,
   });
+
+  const activeHashEntry = (): SelectedEntry | null => {
+    const tab = centerPaneTabs.activeTab();
+    if (tab?.type === "entry" && tab.entry) return tab.entry;
+    if (tab?.type === "document" && tab.documentEntry) return tab.documentEntry;
+    if (tab) return null;
+    return selectedContainerEntry();
+  };
+
+  const parentFileForEntry = (entry: SelectedEntry): DiscoveredFile | null => {
+    const active = fileManager.activeFile();
+    if (active?.path === entry.containerPath || (entry.isDiskFile && active?.path === entry.entryPath)) {
+      return active;
+    }
+
+    return (
+      fileManager
+        .discoveredFiles()
+        .find((file) => file.path === entry.containerPath || (entry.isDiskFile && file.path === entry.entryPath)) ??
+      null
+    );
+  };
+
+  const handleHashActive = () => {
+    const entry = activeHashEntry();
+    if (entry && !entry.isDir) {
+      void hashManager.hashEntry(entry, parentFileForEntry(entry));
+      return;
+    }
+
+    const active = fileManager.activeFile();
+    if (active) void hashManager.hashSingleFile(active);
+  };
   
   // ===========================================================================
   // Keyboard Handler Hook - manages global shortcuts
@@ -884,7 +999,8 @@ function App() {
     setShowShortcutsModal,
     setShowProjectWizard,
     setShowReportWizard,
-    onLoadProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
+    onLoadProject: handleLoadProject,
+    onNewProject: handleNewProject,
     onOpenDirectory: handleOpenDirectory,
     showCommandPalette,
     showShortcutsModal,
@@ -913,11 +1029,14 @@ function App() {
     onOpenEvidenceCollection: () => centerPaneTabs.openEvidenceCollection(),
     onOpenEvidenceCollectionList: () => centerPaneTabs.openEvidenceCollectionList(),
     onOpenDirectory: handleOpenDirectory,
-    onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
+    onOpenProject: handleLoadProject,
+    onNewProject: handleNewProject,
     onCloseProject: () => { void handleCloseProject(); },
     onOpenHelp: () => centerPaneTabs.openHelpTab(),
     onOpenExport: () => openExportWithDrives(),
     onToggleQuickActions: () => setShowQuickActions((prev) => !prev),
+    onHashActive: handleHashActive,
+    hasHashTarget: () => !!activeHashEntry() || !!fileManager.activeFile(),
     onCycleTheme: () => themeActions.cycleTheme(),
     onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
     onShowEvidence: () => { setLeftCollapsed(false); setLeftPanelTab("evidence"); },
@@ -960,7 +1079,7 @@ function App() {
   // Native Menu Actions — handles events from macOS/Windows menu bar
   // ===========================================================================
   useMenuActions({
-    onOpenProject: () => isAcquireEdition() ? handleLoadSession() : handleLoadProject(),
+    onOpenProject: handleLoadProject,
     onOpenDirectory: handleOpenDirectory,
     onSaveProject: handleSaveProject,
     onSaveProjectAs: handleSaveProjectAs,
@@ -969,7 +1088,7 @@ function App() {
     onToggleRightPanel: () => setRightCollapsed((prev) => !prev),
     onKeyboardShortcuts: () => setShowShortcutsModal(true),
     onCommandPalette: () => setShowCommandPalette(true),
-    onNewProject: () => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true),
+    onNewProject: handleNewProject,
     onExport: () => { if (projectManager.hasProject()) openExportWithDrives(); },
     onGenerateReport: () => { if (projectManager.hasProject()) setShowReportWizard(true); },
     onScanEvidence: () => handleScanEvidence(),
@@ -990,15 +1109,17 @@ function App() {
       if (tabId) centerPaneTabs.closeTab(tabId);
     },
     onToggleAutoSave: () => {
-      const current = projectManager.autoSaveEnabled();
-      projectManager.setAutoSaveEnabled(!current);
-      toast.info(current ? "Auto-save disabled" : "Auto-save enabled");
+      const enabled = !projectManager.autoSaveEnabled();
+      projectManager.setAutoSaveEnabled(enabled);
+      if (enabled) {
+        projectManager.startAutoSave();
+      } else {
+        projectManager.stopAutoSave();
+      }
+      toast.info(enabled ? "Auto-save enabled" : "Auto-save disabled");
     },
     onHashSelected: () => hashManager.hashSelectedFiles(),
-    onHashActive: () => {
-      const active = fileManager.activeFile();
-      if (active) hashManager.hashSingleFile(active);
-    },
+    onHashActive: handleHashActive,
     onStartTour: () => tour.start(),
     onShowDashboard: () => { setLeftCollapsed(false); setLeftPanelTab("dashboard"); },
     onShowActivity: () => { setLeftCollapsed(false); setLeftPanelTab("activity"); },
@@ -1023,6 +1144,14 @@ function App() {
     onImportAcquisitions: () => setShowImportWizard(true),
     onProjectRecovery: () => { if (projectManager.hasProject()) setShowRecoveryModal(true); },
     onCollectLogs: async () => {
+      if (!isTauri) {
+        toast.error(
+          "Log Collection Unavailable",
+          "Support log collection is available in the desktop app.",
+        );
+        return;
+      }
+
       try {
         const datePart = new Date().toISOString().slice(0, 10);
         const path = await save({
@@ -1174,10 +1303,10 @@ function App() {
         saveContextMenu={saveContextMenu}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
-        onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
-        onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
+        onNewProject={handleNewProject}
+        onOpenProject={handleLoadProject}
         recentProjects={welcomeModalRecentProjects}
-        onSelectRecentProject={isAcquireEdition() ? ((path: string) => sessionManager?.load(path).then(() => toast.success("Session Loaded")).catch((e: unknown) => toast.error("Failed", String(e)))) : handleLoadProject}
+        onSelectRecentProject={handleOpenRecentProject}
         tour={tour}
         showProjectWizard={showProjectWizard}
         setShowProjectWizard={setShowProjectWizard}
@@ -1400,22 +1529,36 @@ function App() {
               onSettings={() => setShowSettingsPanel(true)}
               onHelp={() => centerPaneTabs.openHelpTab()}
               onCommandPalette={() => setShowCommandPalette(true)}
-              onOpenProject={() => isAcquireEdition() ? handleLoadSession() : handleLoadProject()}
-              onOpenRecentProject={(path) => handleLoadProject(path)}
-              onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
-              projectName={() => (isAcquireEdition() ? sessionManager?.projectName() : projectManager.projectName()) || undefined}
+              onOpenProject={handleLoadProject}
+              onOpenRecentProject={handleOpenRecentProject}
+              onNewProject={handleNewProject}
+              projectName={() => (
+                isAcquireEdition()
+                  ? sessionManager?.projectName() || projectManager.projectName()
+                  : projectManager.projectName()
+              ) || undefined}
               hasProject={acquireHasProject}
               evidenceCount={() => fileManager.discoveredFiles().length}
               initialSources={() => fileManager.discoveredFiles()
                 .filter(f => fileManager.selectedFiles().has(f.path))
                 .map(f => f.path)
               }
-              initialExaminerName={() => (isAcquireEdition() ? sessionManager?.examiner() : (projectManager.project()?.owner_name || projectManager.project()?.current_user)) || undefined}
+              initialExaminerName={() => (
+                isAcquireEdition()
+                  ? sessionManager?.examiner()
+                      || projectManager.project()?.owner_name
+                      || projectManager.project()?.current_user
+                  : projectManager.project()?.owner_name || projectManager.project()?.current_user
+              ) || undefined}
               onExportComplete={(outputPath) => {
                 toast.success("Export Complete", `Files exported to: ${outputPath}`);
                 registerAcquisitionOutput(outputPath);
               }}
-              initialDestination={isAcquireEdition() ? (sessionManager?.outputFolder() || "") : (projectManager.projectLocations()?.exports_path || "")}
+              initialDestination={
+                isAcquireEdition()
+                  ? sessionManager?.outputFolder() || projectManager.projectLocations()?.exports_path || ""
+                  : projectManager.projectLocations()?.exports_path || ""
+              }
               onActivityCreate={(activity) => {
                 setActivities(list => [...list, activity]);
               }}
@@ -1424,7 +1567,11 @@ function App() {
                   list.map(a => a.id === id ? { ...a, ...updates } : a)
                 );
               }}
-              caseNumber={() => (isAcquireEdition() ? sessionManager?.caseNumber() : projectManager.caseNumber()) || undefined}
+              caseNumber={() => (
+                isAcquireEdition()
+                  ? sessionManager?.caseNumber() || projectManager.caseNumber()
+                  : projectManager.caseNumber()
+              ) || undefined}
               discoveredFiles={fileManager.discoveredFiles}
               fileInfoMap={fileManager.fileInfoMap}
               onVerifyHashes={() => {
@@ -1437,8 +1584,16 @@ function App() {
               isPortable={portableMode.isPortable}
               portableConfig={portableMode.config}
               activeTriageActivity={activeTriageActivity}
-              evidenceBasePath={isAcquireEdition() ? (sessionManager?.evidenceFolder() || "") : (projectManager.projectLocations()?.evidence_path || "")}
-              currentUsername={isAcquireEdition() ? (sessionManager?.examiner() || undefined) : (projectManager.project()?.current_user || undefined)}
+              evidenceBasePath={
+                isAcquireEdition()
+                  ? sessionManager?.evidenceFolder() || projectManager.projectLocations()?.evidence_path || ""
+                  : projectManager.projectLocations()?.evidence_path || ""
+              }
+              currentUsername={
+                isAcquireEdition()
+                  ? sessionManager?.examiner() || projectManager.project()?.current_user || undefined
+                  : projectManager.project()?.current_user || undefined
+              }
               sessionWriter={acquireSessionWriter}
             />
         </main>
@@ -1476,6 +1631,14 @@ function App() {
               onExportBookmarks={async () => {
                 const proj = projectManager.project();
                 if (!proj?.bookmarks?.length) return;
+                if (!isTauri) {
+                  toast.error(
+                    "Bookmark Export Unavailable",
+                    "Bookmark export file saving is available in the desktop app.",
+                  );
+                  return;
+                }
+
                 try {
                   const path = await save({
                     title: "Export Bookmarks",
@@ -1571,6 +1734,8 @@ function App() {
               onExportSources={handleExportSources}
               onSourceAdd={handleSourceAdd}
               onSourceRemove={handleSourceRemove}
+              onOpenProject={handleLoadProject}
+              onNewProject={handleNewProject}
             />
           </aside>
         </Show>
@@ -1606,8 +1771,8 @@ function App() {
             onTabsChange={centerPaneTabs.setTabs}
             viewMode={centerPaneTabs.viewMode}
             onViewModeChange={centerPaneTabs.setViewMode}
-            onOpenProject={isAcquireEdition() ? handleLoadSession : handleLoadProject}
-            onNewProject={() => isAcquireEdition() ? setShowAcquireSessionDialog(true) : setShowProjectWizard(true)}
+            onOpenProject={handleLoadProject}
+            onNewProject={handleNewProject}
             projectName={projectManager.projectName}
             projectRoot={projectManager.rootPath}
             evidenceCount={() => fileManager.discoveredFiles().length}
@@ -1810,10 +1975,12 @@ function App() {
         bookmarkCount={projectManager.bookmarkCount()}
         noteCount={projectManager.noteCount()}
         onAutoSaveToggle={() => {
-          if (projectManager.modified()) {
-            handleSaveProject();
+          const enabled = !projectManager.autoSaveEnabled();
+          projectManager.setAutoSaveEnabled(enabled);
+          if (enabled) {
+            projectManager.startAutoSave();
           } else {
-            projectManager.setAutoSaveEnabled(!projectManager.autoSaveEnabled());
+            projectManager.stopAutoSave();
           }
         }}
         onEvidenceClick={() => { setLeftCollapsed(false); setLeftPanelTab("evidence"); }}

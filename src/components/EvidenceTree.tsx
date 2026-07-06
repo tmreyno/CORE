@@ -228,7 +228,15 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                     }}
                     onEntryClick={(cp, entry, _pi) => {
                       tree.setSelectedEntryKey(`${cp}::vfs::${entry.path}`);
-                      props.onSelectEntry({ containerPath: cp, entryPath: entry.path, name: entry.name, size: entry.size, isDir: entry.isDir, isVfsEntry: true });
+                      props.onSelectEntry({
+                        containerPath: cp,
+                        entryPath: entry.path,
+                        name: entry.name,
+                        size: entry.size,
+                        isDir: entry.isDir,
+                        isVfsEntry: true,
+                        containerType: file.container_type.toLowerCase(),
+                      });
                     }}
                     // Nested container support
                     isNestedExpanded={(parentPath, nestedPath) => tree.nested.isNestedExpanded(parentPath, nestedPath)}
@@ -299,6 +307,7 @@ export function EvidenceTree(props: EvidenceTreeProps) {
                         isDir: entry.isDir, 
                         isVfsEntry: false,
                         isArchiveEntry: true,
+                        containerType: file.container_type.toLowerCase(),
                         metadata: {
                           archiveFormat: archiveMeta?.format ?? "Unknown",
                           totalEntries: archiveMeta?.entry_count ?? 0,

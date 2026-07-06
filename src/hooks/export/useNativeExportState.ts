@@ -35,6 +35,7 @@ import {
 import { exportFiles, cancelExport, type CopyProgress, type ExportOptions } from "../../api/fileExport";
 import { getErrorMessage } from "../../utils/errorUtils";
 import { getBasename, joinPath } from "../../utils/pathUtils";
+import { isTauri } from "../../utils/platform";
 import {
   createActivity,
   updateProgress,
@@ -48,6 +49,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 export interface UseNativeExportStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -113,6 +115,12 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
   // Update size estimate when sources or compression level changes
   createEffect(() => {
+    if (!isTauri) {
+      setEstimatedUncompressed(0);
+      setEstimatedCompressed(0);
+      return;
+    }
+
     const sourceList = common.sources();
     const level = compressionLevel();
     if (sourceList.length > 0 && common.mode() === "native" && common.nativeExportTab() === "archive") {
@@ -130,7 +138,13 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
 
   // ─── Archive Handler ───────────────────────────────────────────────────
 
+  const canUseNativeExportEngine = () => {
+    return canUseDesktopExportEngine(toast);
+  };
+
   const handleCreateArchive = async () => {
+    if (!canUseNativeExportEngine()) return;
+
     log.info(`Starting archive creation: ${archiveName()}, level=${compressionLevel()}, sources=${common.sources().length}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);
@@ -276,6 +290,8 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   // ─── Copy/Export Handler ────────────────────────────────────────────────
 
   const handleCopyOrExport = async () => {
+    if (!canUseNativeExportEngine()) return;
+
     log.info(`Starting file export: sources=${common.sources().length}, dest=${common.destination()}, hashes=${computeHashes()}, verify=${verifyAfterCopy()}`);
     common.setIsProcessing(true);
     common.setIsAcquiring(true);
@@ -617,6 +633,8 @@ export function useNativeExportState(options: UseNativeExportStateOptions) {
   };
 
   const handleToolAction = async () => {
+    if (!canUseNativeExportEngine()) return;
+
     const currentTab = toolsTab();
 
     switch (currentTab) {

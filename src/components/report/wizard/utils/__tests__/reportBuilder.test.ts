@@ -164,7 +164,21 @@ describe("buildForensicReport", () => {
     it("includes project DB engine appendices when evidence is provided", () => {
       const projectDbEvidence: ProjectDbReportEvidence = {
         evidenceItems: [],
-        hashRecords: [],
+        hashRecords: [
+          {
+            item: "logical.ad1",
+            source_id: "ad1:/case/logical.ad1:/docs/a.txt",
+            source_ref: {
+              kind: "ad1",
+              container_path: "/case/logical.ad1",
+              entry_path: "/docs/a.txt",
+            },
+            algorithm: "SHA256",
+            value: "abcdef1234567890",
+            computed_at: "2026-02-16T10:02:00Z",
+            verified: true,
+          },
+        ],
         hashAlgorithmSummaries: [
           {
             algorithm: "SHA256",
@@ -245,6 +259,11 @@ describe("buildForensicReport", () => {
       expect(report.appendices[0].title).toBe(
         "Project Hash and Verification Summary",
       );
+      expect(report.appendices[0].content).toContain("Hash Records");
+      expect(report.appendices[0].content).toContain(
+        "ad1:/case/logical.ad1:/docs/a.txt",
+      );
+      expect(report.appendices[0].content).toContain("abcdef1234567890");
       expect(report.appendices[1].title).toBe("Source Analysis Summary");
       expect(report.appendices[1].content).toContain("PDF Document");
       expect(report.appendices[2].title).toBe(

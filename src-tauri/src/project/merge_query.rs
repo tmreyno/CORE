@@ -106,27 +106,6 @@ pub(super) fn query_ffxdb_collections(conn: &rusqlite::Connection) -> Vec<MergeC
     results
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn count_ffxdb_table_returns_zero_for_missing_or_invalid_table() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute("CREATE TABLE artifacts (id TEXT PRIMARY KEY)", [])
-            .unwrap();
-        conn.execute("INSERT INTO artifacts (id) VALUES ('a1'), ('a2')", [])
-            .unwrap();
-
-        assert_eq!(count_ffxdb_table(&conn, "artifacts"), 2);
-        assert_eq!(count_ffxdb_table(&conn, "source_analyses"), 0);
-        assert_eq!(
-            count_ffxdb_table(&conn, "artifacts; DROP TABLE artifacts"),
-            0
-        );
-    }
-}
-
 /// Query coc_items from .ffxdb
 pub(super) fn query_ffxdb_coc_items(conn: &rusqlite::Connection) -> Vec<MergeCocSummary> {
     let sql = "SELECT id, coc_number, case_number, evidence_id, description, \
@@ -339,5 +318,26 @@ pub(super) fn query_ffxdb_additional_clues(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_ffxdb_table_returns_zero_for_missing_or_invalid_table() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE artifacts (id TEXT PRIMARY KEY)", [])
+            .unwrap();
+        conn.execute("INSERT INTO artifacts (id) VALUES ('a1'), ('a2')", [])
+            .unwrap();
+
+        assert_eq!(count_ffxdb_table(&conn, "artifacts"), 2);
+        assert_eq!(count_ffxdb_table(&conn, "source_analyses"), 0);
+        assert_eq!(
+            count_ffxdb_table(&conn, "artifacts; DROP TABLE artifacts"),
+            0
+        );
     }
 }

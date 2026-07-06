@@ -38,8 +38,13 @@ import { persistCocItemsToDb, loadCocItemsFromDb } from "./cocDbSync";
 import { generateId, nowISO } from "../../../types/project";
 import type { ProjectReportRecord } from "../../../types/project";
 import { logger } from "../../../utils/logger";
+import { isTauri } from "../../../utils/platform";
 
 const log = logger.scope("ReportWizard");
+const BROWSER_REPORT_EXPORT_MESSAGE =
+  "Report export is available in the desktop app.";
+const BROWSER_REPORT_PREVIEW_MESSAGE =
+  "Report preview is available in the desktop app.";
 
 // =============================================================================
 // ACTIONS INTERFACE
@@ -107,6 +112,11 @@ export function useWizardActions(
   const generatePreview = async () => {
     state.setPreviewLoading(true);
     try {
+      if (!isTauri) {
+        state.setPreviewHtml(`<div style="color: red; padding: 20px;">${BROWSER_REPORT_PREVIEW_MESSAGE}</div>`);
+        return;
+      }
+
       const report = buildReport();
       const html = await invoke<string>("preview_report", { report });
       state.setPreviewHtml(html);
@@ -127,6 +137,11 @@ export function useWizardActions(
     state.setExportError(null);
 
     try {
+      if (!isTauri) {
+        state.setExportError(BROWSER_REPORT_EXPORT_MESSAGE);
+        return;
+      }
+
       const report = buildReport();
       const format = state.outputFormats().find((f) => f.format === state.selectedFormat());
 
@@ -196,6 +211,11 @@ export function useWizardActions(
     state.setExportError(null);
 
     try {
+      if (!isTauri) {
+        state.setExportError(BROWSER_REPORT_EXPORT_MESSAGE);
+        return;
+      }
+
       const report = buildReport();
       const path = await save({
         title: "Save Standard Report Package",

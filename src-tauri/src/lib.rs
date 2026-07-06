@@ -228,11 +228,9 @@ fn common_run_event(_app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
         tauri::RunEvent::Reopen {
             has_visible_windows,
             ..
-        } => {
-            if !has_visible_windows {
-                if let Err(e) = menu::create_new_window_from_app(_app_handle) {
-                    eprintln!("Failed to create window on reopen: {e}");
-                }
+        } if !has_visible_windows => {
+            if let Err(e) = menu::create_new_window_from_app(_app_handle) {
+                eprintln!("Failed to create window on reopen: {e}");
             }
         }
         _ => {}
@@ -437,6 +435,8 @@ fn run_full(context: tauri::Context) {
             commands::project_db_summarize_artifacts_by_evidence,
             commands::project_db_summarize_artifacts_by_extractor,
             commands::project_db_extract_artifact_source,
+            commands::project_db_collect_system_identity_sources,
+            commands::project_db_collect_binary_artifact_sources,
             commands::project_db_get_source_analysis,
             commands::project_db_list_source_analyses,
             commands::project_db_summarize_source_analyses_by_category,
@@ -615,6 +615,7 @@ fn run_full(context: tauri::Context) {
             commands::viewer_analyze_path,
             commands::viewer_analyze_source,
             commands::viewer_read_text,
+            commands::viewer_read_text_source,
             commands::viewer_get_binary_info,
             commands::viewer_get_binary_info_source,
             commands::viewer_read_binary_base64,
@@ -912,6 +913,8 @@ pub fn run_acquire(context: tauri::Context) {
             commands::project_db_summarize_artifacts_by_evidence,
             commands::project_db_summarize_artifacts_by_extractor,
             commands::project_db_extract_artifact_source,
+            commands::project_db_collect_system_identity_sources,
+            commands::project_db_collect_binary_artifact_sources,
             commands::project_db_get_source_analysis,
             commands::project_db_list_source_analyses,
             commands::project_db_summarize_source_analyses_by_category,

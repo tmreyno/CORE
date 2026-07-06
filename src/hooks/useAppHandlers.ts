@@ -26,8 +26,11 @@ import type { LeftPanelTab } from "../components";
 import type { QuickAction } from "./useWorkspaceProfiles";
 import { dbSync } from "./project/useProjectDbSync";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("AppHandlers");
+const BROWSER_PROCESSED_SCAN_MESSAGE =
+  "Processed database scanning is available in the desktop app.";
 
 // ---------------------------------------------------------------------------
 // Dependency interface
@@ -99,6 +102,11 @@ export function useAppHandlers(deps: UseAppHandlersDeps): AppHandlers {
    */
   const handleLocationSelect = async (path: string, locationId: string) => {
     if (locationId === "processed") {
+      if (!isTauri) {
+        toast.error("Scan Unavailable", BROWSER_PROCESSED_SCAN_MESSAGE);
+        return;
+      }
+
       // Scan for processed databases and sync to ffxdb
       log.info(`Scanning for processed databases at: ${path}`);
       try {

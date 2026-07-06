@@ -43,8 +43,15 @@ import { ViewerHeader } from "./ViewerHeader";
 import { useTextSelectionMenu } from "../../hooks/useTextSelectionMenu";
 import { commands } from "../../api/commands";
 import { buildEvidenceSourceInput } from "../evidenceSourceInput";
+import {
+  buildSystemIdentitySourceInput,
+  isLikelyBinaryArtifactEntry,
+} from "../systemIdentitySources";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("ContainerEntryViewer");
+const BROWSER_ENTRY_VIEW_MESSAGE =
+  "Container entry preview is available in the desktop app.";
 
 export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const [previewPath, setPreviewPath] = createSignal<string | null>(null);
@@ -103,14 +110,18 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     () => isDatabase(props.entry.name) || detectedFormat()?.viewerType === "Database",
   );
 
-  // Extension OR content detection says previewable
-  const effectiveCanPreview = createMemo(() => fileCanPreview() || detectedFormat() !== null);
+  // Extension OR content detection says previewable. Hex-only detection keeps
+  // auto mode on streaming hex and must not trigger temp extraction.
+  const detectedCanPreview = createMemo(
+    () => detectedFormat() !== null && detectedFormat()?.viewerType !== "Hex",
+  );
+  const effectiveCanPreview = createMemo(() => fileCanPreview() || detectedCanPreview());
 
   // ── Auto-mode determination ─────────────────────────────────────────────
 
   const determineAutoMode = (): "hex" | "text" | "preview" => {
     if (fileCanPreview()) return "preview";
-    if (detectedFormat() !== null) return "preview";
+    if (detectedCanPreview()) return "preview";
     if (
       isCode(props.entry.name) ||
       isTextDocument(props.entry.name) ||
@@ -124,6 +135,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
   let lastEntryKey = "";
   let isHandlingPreview = false;
+  let isDetectingContent = false;
+  let lastDetectedEntryKey = "";
   let previewPathEntryKey = "";
 
   const entryKey = createMemo(
@@ -132,6 +145,39 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
   const entrySource = createMemo(() =>
     buildEvidenceSourceInput(null, props.entry, previewPath() ?? undefined)
   );
+
+  const detectEntryContent = async (
+    capturedKey: string,
+  ): Promise<ContentDetectResult | null> => {
+    if (!isTauri) {
+      if (capturedKey === entryKey()) setAutoMode("hex");
+      return null;
+    }
+
+    const source = buildEvidenceSourceInput(null, props.entry, previewPath() ?? undefined);
+    if (!source) return null;
+
+    const detected =
+      source.containerType !== "disk"
+        ? await commands.document.detectContentFormatSource<ContentDetectResult>(source)
+        : await commands.document.detectContentFormat<ContentDetectResult>(props.entry.entryPath);
+
+    if (capturedKey !== entryKey()) return null;
+
+    if (!detected?.viewerType) {
+      setAutoMode("hex");
+      return null;
+    }
+
+    if (detected.viewerType !== "Hex") {
+      setDetectedFormat(detected);
+      setAutoMode("preview");
+    } else {
+      setAutoMode("hex");
+    }
+
+    return detected;
+  };
 
   /** Preview path guarded against stale entries */
   const guardedPreviewPath = () => {
@@ -143,6 +189,8 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
   let lastPersistedArtifactKey = "";
   createEffect(() => {
+    if (!isTauri) return;
+
     const key = entryKey();
     if (!key || props.entry.isDir || lastPersistedArtifactKey === key) return;
 
@@ -153,10 +201,23 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     void (async () => {
       try {
         if (!(await commands.projectDb.isOpen())) return;
-        await commands.artifact.extractSourceAndInsert({
-          source,
-          extractor: "container-entry-viewer",
-        });
+        const systemIdentitySource = buildSystemIdentitySourceInput(props.entry);
+        if (systemIdentitySource) {
+          await commands.artifact.collectSystemIdentitySources({
+            sources: [systemIdentitySource],
+            extractor: "container-entry-viewer-system-identity",
+          });
+        } else if (isLikelyBinaryArtifactEntry(props.entry)) {
+          await commands.artifact.collectBinaryArtifactSources({
+            sources: [source],
+            extractor: "container-entry-viewer-binary-artifact",
+          });
+        } else {
+          await commands.artifact.extractSourceAndInsert({
+            source,
+            extractor: "container-entry-viewer",
+          });
+        }
       } catch (err) {
         log.warn("Artifact persistence failed:", err);
       }
@@ -172,6 +233,17 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     setPreviewError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_ENTRY_VIEW_MESSAGE);
+      }
+
+      if (!fileCanPreview() && !detectedCanPreview()) {
+        const detected = await detectEntryContent(capturedKey);
+        if (!detected || detected.viewerType === "Hex") {
+          return;
+        }
+      }
+
       const isDiskFile =
         props.entry.isDiskFile === true ||
         (props.entry.containerPath === props.entry.entryPath &&
@@ -182,6 +254,14 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
       if (isDiskFile) {
         log.debug("Using disk file path directly:", props.entry.entryPath);
+        filePath = props.entry.entryPath;
+      } else if (entrySource()) {
+        log.debug("Using source-backed preview without temp extraction:", props.entry.entryPath, {
+          containerPath: props.entry.containerPath,
+          isVfsEntry: props.entry.isVfsEntry,
+          isArchiveEntry: props.entry.isArchiveEntry,
+          size: props.entry.size,
+        });
         filePath = props.entry.entryPath;
       } else {
         log.debug("Extracting for preview:", props.entry.entryPath, {
@@ -209,24 +289,6 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
       previewPathEntryKey = capturedKey;
       setPreviewPath(filePath);
-
-      // For unknown extensions, run magic-byte content detection
-      if (!fileCanPreview()) {
-        try {
-          log.debug("Running content detection for unknown type:", props.entry.name);
-          const source = buildEvidenceSourceInput(null, props.entry, filePath);
-          const detected =
-            source && source.containerType !== "disk"
-              ? await commands.document.detectContentFormatSource<ContentDetectResult>(source)
-              : await commands.document.detectContentFormat<ContentDetectResult>(filePath);
-          log.debug("Content detection result:", detected);
-          if (detected.format !== "Binary" || detected.method === "magic") {
-            setDetectedFormat(detected);
-          }
-        } catch (detectErr) {
-          log.warn("Content detection failed, falling back to hex:", detectErr);
-        }
-      }
     } catch (e) {
       if (capturedKey === entryKey()) {
         log.error("Preview extraction failed:", e);
@@ -291,8 +353,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     if (entryChanged) {
       lastEntryKey = currentKey;
       isHandlingPreview = false;
+      isDetectingContent = false;
+      lastDetectedEntryKey = "";
       previewPathEntryKey = "";
       setPreviewPath(null);
+      setPreviewLoading(false);
       setPreviewError(null);
       setDetectedFormat(null);
       setAutoMode(determineAutoMode());
@@ -300,12 +365,32 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
     const shouldPreview =
       (mode === "preview" || mode === "document" || mode === "auto") && !props.entry.isDir;
-    const shouldAttempt = shouldPreview && (canPreview(props.entry.name) || mode === "auto");
+    const canPreviewNow = fileCanPreview() || detectedCanPreview();
     const hasPath = untrack(() => previewPath());
 
-    if (shouldAttempt && !isHandlingPreview && !hasPath) {
+    if (shouldPreview && canPreviewNow && !isHandlingPreview && !hasPath) {
       isHandlingPreview = true;
       handlePreview();
+      return;
+    }
+
+    if (
+      shouldPreview &&
+      mode === "auto" &&
+      !canPreviewNow &&
+      !isDetectingContent &&
+      lastDetectedEntryKey !== currentKey
+    ) {
+      isDetectingContent = true;
+      lastDetectedEntryKey = currentKey;
+      detectEntryContent(currentKey)
+        .catch((detectErr) => {
+          log.warn("Content detection failed, falling back to hex:", detectErr);
+          if (currentKey === entryKey()) setAutoMode("hex");
+        })
+        .finally(() => {
+          if (currentKey === entryKey()) isDetectingContent = false;
+        });
     }
   });
 

@@ -39,11 +39,15 @@ import type { DiscoveredFile, ContainerInfo } from "../../types";
 import type { DriveInfo } from "../../api/drives";
 import type { SystemStats } from "../../hooks";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 
 const AcquireExportView = lazy(() => import("./AcquireExportView"));
 const AcquireCollectionView = lazy(() => import("./AcquireCollectionView"));
 const AcquireIdentifyView = lazy(() => import("./AcquireIdentifyView"));
 const AcquireTriageView = lazy(() => import("./AcquireTriageView"));
+
+const BROWSER_QUICK_VERIFY_MESSAGE =
+  "Quick hash file selection is available in the desktop app.";
 
 // =============================================================================
 // Types
@@ -97,6 +101,8 @@ export interface AcquireLayoutProps {
   // ---- Portable mode ----
   isPortable: () => boolean;
   portableConfig: () => PortableConfig | null;
+  initialSystemStats?: SystemStats | null;
+  initialDrives?: DriveInfo[];
 
 
 
@@ -119,11 +125,16 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
   const log = logger.scope("AcquireLayout");
 
   // Local system identification state (no longer threaded from App.tsx)
-  const [systemStatsData, setSystemStatsData] = createSignal<SystemStats | null>(null);
-  const [systemDrivesData, setSystemDrivesData] = createSignal<DriveInfo[]>([]);
+  const [systemStatsData, setSystemStatsData] = createSignal<SystemStats | null>(
+    props.initialSystemStats ?? null,
+  );
+  const [systemDrivesData, setSystemDrivesData] = createSignal<DriveInfo[]>(
+    props.initialDrives ?? [],
+  );
 
   // Pre-filled files for the verify view (from dashboard quick-verify)
   const [pendingVerifyFiles, setPendingVerifyFiles] = createSignal<string[] | null>(null);
+  const [browserDialogMessage, setBrowserDialogMessage] = createSignal<string | null>(null);
 
   // Right panel toggle for the collection view
   const [showSystemPanel, setShowSystemPanel] = createSignal(true);
@@ -143,6 +154,7 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
   };
 
   const handleAction = (action: AcquireAction) => {
+    setBrowserDialogMessage(null);
     log.info(`Action: ${action}`);
     switch (action) {
       case "physical":
@@ -180,12 +192,18 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
   };
 
   const handleBack = () => {
+    setBrowserDialogMessage(null);
     log.debug("Navigating back to dashboard");
     props.setAcquireView("dashboard");
   };
 
   const handleQuickVerify = async () => {
     log.debug("Opening quick verify file picker");
+    if (!isTauri) {
+      setBrowserDialogMessage(BROWSER_QUICK_VERIFY_MESSAGE);
+      return;
+    }
+
     try {
       const selected = await open({
         multiple: true,
@@ -208,34 +226,43 @@ const AcquireLayout: Component<AcquireLayoutProps> = (props) => {
     <main class="flex flex-col flex-1 min-h-0 overflow-hidden bg-bg">
       {/* Dashboard view (default) */}
       <Show when={props.acquireView() === "dashboard"}>
-        <AcquireDashboard
-          onAction={handleAction}
-          onSettings={props.onSettings}
-          onHelp={props.onHelp}
-          onCommandPalette={props.onCommandPalette}
-          onOpenProject={props.onOpenProject}
-          onOpenRecentProject={props.onOpenRecentProject}
-          onNewProject={props.onNewProject}
-          projectName={props.projectName}
-          hasProject={props.hasProject}
-          evidenceCount={props.evidenceCount}
-          isPortable={props.isPortable}
-          portableConfig={props.portableConfig}
-          onQuickVerify={handleQuickVerify}
-          initialSystemStats={systemStatsData()}
-          initialDrives={systemDrivesData()}
-          evidenceItemFolder={evidenceItemFolder}
-          initialDestination={props.initialDestination}
-          onViewCollection={(_id) => {
-            openCollection(_id, true);
-          }}
-          caseNumber={props.caseNumber}
-          examinerName={props.initialExaminerName}
-          discoveredFiles={props.discoveredFiles}
-          fileInfoMap={props.fileInfoMap}
-          onExportComplete={props.onExportComplete}
-          sessionWriter={props.sessionWriter}
-        />
+        <>
+          <Show when={browserDialogMessage()}>
+            {(message) => (
+              <div class="mx-4 mt-3 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                {message()}
+              </div>
+            )}
+          </Show>
+          <AcquireDashboard
+            onAction={handleAction}
+            onSettings={props.onSettings}
+            onHelp={props.onHelp}
+            onCommandPalette={props.onCommandPalette}
+            onOpenProject={props.onOpenProject}
+            onOpenRecentProject={props.onOpenRecentProject}
+            onNewProject={props.onNewProject}
+            projectName={props.projectName}
+            hasProject={props.hasProject}
+            evidenceCount={props.evidenceCount}
+            isPortable={props.isPortable}
+            portableConfig={props.portableConfig}
+            onQuickVerify={handleQuickVerify}
+            initialSystemStats={systemStatsData()}
+            initialDrives={systemDrivesData()}
+            evidenceItemFolder={evidenceItemFolder}
+            initialDestination={props.initialDestination}
+            onViewCollection={(_id) => {
+              openCollection(_id, true);
+            }}
+            caseNumber={props.caseNumber}
+            examinerName={props.initialExaminerName}
+            discoveredFiles={props.discoveredFiles}
+            fileInfoMap={props.fileInfoMap}
+            onExportComplete={props.onExportComplete}
+            sessionWriter={props.sessionWriter}
+          />
+        </>
       </Show>
 
       {/* Non-dashboard views */}

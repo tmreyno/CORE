@@ -7,7 +7,10 @@
 //! Tests for ProjectDatabase operations.
 
 use super::*;
+use crate::common::{hash::is_valid_hash, HashAlgorithm};
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tempfile::TempDir;
 
 fn create_test_db() -> (TempDir, ProjectDatabase) {
@@ -29,7 +32,49 @@ fn table_exists(db: &ProjectDatabase, name: &str) -> bool {
 }
 
 fn hex_digest(ch: char, len: usize) -> String {
-    std::iter::repeat(ch).take(len).collect()
+    std::iter::repeat_n(ch, len).collect()
+}
+
+fn expected_migrated_hashes_and_paths(
+    project: &crate::project::FFXProject,
+) -> (usize, HashSet<String>) {
+    let mut hashes = HashSet::new();
+    let mut paths = HashSet::new();
+
+    if let Some(cache) = &project.evidence_cache {
+        paths.extend(cache.discovered_files.iter().map(|file| file.path.clone()));
+        for (path, hash) in &cache.computed_hashes {
+            if let Ok(algorithm) = HashAlgorithm::from_str(&hash.algorithm) {
+                if is_valid_hash(hash.hash.trim(), algorithm) {
+                    paths.insert(path.clone());
+                    hashes.insert(format!(
+                        "{}\0{}\0{}",
+                        path,
+                        algorithm.name(),
+                        hash.hash.trim()
+                    ));
+                }
+            }
+        }
+    }
+
+    for (path, file_hashes) in &project.hash_history.files {
+        for hash in file_hashes {
+            if let Ok(algorithm) = HashAlgorithm::from_str(&hash.algorithm) {
+                if is_valid_hash(hash.hash_value.trim(), algorithm) {
+                    paths.insert(path.clone());
+                    hashes.insert(format!(
+                        "{}\0{}\0{}",
+                        path,
+                        algorithm.name(),
+                        hash.hash_value.trim()
+                    ));
+                }
+            }
+        }
+    }
+
+    (hashes.len(), paths)
 }
 
 fn make_existing_collection(id: &str) -> DbEvidenceCollection {
@@ -592,6 +637,153 @@ fn test_evidence_and_hashes() {
         verification_summaries[1].latest_verified_at.as_deref(),
         Some("2026-02-16T10:05:00Z")
     );
+}
+
+#[test]
+fn test_project_migration_persists_cached_documents_and_hashes() {
+    let (_dir, db) = create_test_db();
+    let mut project = crate::project::FFXProject::new("/case");
+    let evidence_path = "/case/evidence.E01".to_string();
+    let cached_md5 = hex_digest('a', 32);
+    let legacy_sha1 = hex_digest('b', 40);
+
+    project.evidence_cache = Some(crate::project::EvidenceCache {
+        discovered_files: vec![crate::project::CachedDiscoveredFile {
+            path: evidence_path.clone(),
+            filename: "evidence.E01".to_string(),
+            container_type: "E01".to_string(),
+            size: 1024,
+            segment_count: 1,
+            created: None,
+            modified: None,
+        }],
+        file_info: Default::default(),
+        computed_hashes: [(
+            evidence_path.clone(),
+            crate::project::CachedFileHash {
+                algorithm: "MD5".to_string(),
+                hash: cached_md5.clone(),
+                verified: false,
+                computed_at: "2026-02-16T10:00:00Z".to_string(),
+            },
+        )]
+        .into_iter()
+        .collect(),
+        cached_at: "2026-02-16T10:00:00Z".to_string(),
+        valid: true,
+    });
+    project.hash_history.files.insert(
+        evidence_path.clone(),
+        vec![crate::project::ProjectFileHash {
+            algorithm: "SHA1".to_string(),
+            hash_value: legacy_sha1.clone(),
+            computed_at: "2026-02-16T10:01:00Z".to_string(),
+            verification: Some(crate::project::ProjectVerification {
+                result: "match".to_string(),
+                verified_against: legacy_sha1.clone(),
+                verified_at: "2026-02-16T10:02:00Z".to_string(),
+            }),
+        }],
+    );
+    project.case_documents_cache = Some(crate::project::CaseDocumentsCache {
+        documents: vec![crate::project::CachedCaseDocument {
+            path: "/case/docs/COC.pdf".to_string(),
+            filename: "COC.pdf".to_string(),
+            document_type: "chain_of_custody".to_string(),
+            size: 4096,
+            format: "PDF".to_string(),
+            case_number: Some("CASE-001".to_string()),
+            evidence_id: Some("EV-001".to_string()),
+            modified: Some("2026-02-16T09:00:00Z".to_string()),
+        }],
+        search_path: "/case/docs".to_string(),
+        cached_at: "2026-02-16T10:03:00Z".to_string(),
+        valid: true,
+    });
+
+    db.migrate_from_project(&project).unwrap();
+
+    let stats = db.get_stats().unwrap();
+    assert_eq!(stats.total_evidence_files, 1);
+    assert_eq!(stats.total_hashes, 2);
+    assert_eq!(stats.total_verifications, 1);
+    assert_eq!(stats.total_case_documents, 1);
+
+    let evidence = db
+        .get_evidence_file_by_path(&evidence_path)
+        .unwrap()
+        .expect("migrated evidence file");
+    assert_eq!(evidence.id, evidence_path);
+
+    let hashes = db.get_hashes_for_file(&evidence.id).unwrap();
+    assert_eq!(hashes.len(), 2);
+    assert!(hashes
+        .iter()
+        .any(|hash| hash.algorithm == "MD5" && hash.hash_value == cached_md5));
+    let sha1_hash = hashes
+        .iter()
+        .find(|hash| hash.algorithm == "SHA-1")
+        .expect("canonicalized legacy SHA1 hash");
+    assert_eq!(sha1_hash.hash_value, legacy_sha1);
+    let verifications = db.get_verifications_for_hash(&sha1_hash.id).unwrap();
+    assert_eq!(verifications.len(), 1);
+    assert_eq!(verifications[0].result, "match");
+
+    let docs = db.get_case_documents().unwrap();
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0].path, "/case/docs/COC.pdf");
+    assert_eq!(docs[0].case_number.as_deref(), Some("CASE-001"));
+}
+
+#[test]
+#[ignore = "set CORE_FFX_SEED_CFFX_PATHS to one or more local seed .cffx paths"]
+fn test_project_migration_with_seed_cffx_paths_from_env() {
+    let paths = std::env::var_os("CORE_FFX_SEED_CFFX_PATHS")
+        .expect("CORE_FFX_SEED_CFFX_PATHS must be set for this ignored smoke test");
+
+    for path in std::env::split_paths(&paths) {
+        let content = crate::project::read_project_json_with_limit(&path, "seed project").unwrap();
+        let project: crate::project::FFXProject = serde_json::from_str(&content).unwrap();
+        let (expected_hashes, expected_evidence_paths) =
+            expected_migrated_hashes_and_paths(&project);
+        let expected_case_documents = project
+            .case_documents_cache
+            .as_ref()
+            .map(|cache| cache.documents.len())
+            .unwrap_or(0);
+        let expected_processed_databases = project.processed_databases.loaded_paths.len();
+
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("seed.ffxdb");
+        let db = ProjectDatabase::open(&db_path).unwrap();
+        db.migrate_from_project(&project).unwrap();
+        let stats = db.get_stats().unwrap();
+
+        assert_eq!(
+            stats.total_evidence_files as usize,
+            expected_evidence_paths.len(),
+            "seed evidence file count mismatch for {}",
+            path.display()
+        );
+        assert_eq!(
+            stats.total_hashes as usize,
+            expected_hashes,
+            "seed hash count mismatch for {}",
+            path.display()
+        );
+        assert_eq!(
+            stats.total_case_documents as usize,
+            expected_case_documents,
+            "seed case document count mismatch for {}",
+            path.display()
+        );
+        assert_eq!(
+            stats.total_processed_databases as usize,
+            expected_processed_databases,
+            "seed processed DB count mismatch for {}",
+            path.display()
+        );
+    }
 }
 
 #[test]

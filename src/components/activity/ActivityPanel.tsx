@@ -38,6 +38,10 @@ import type { ActivityPanelProps, ActivityFilter, SortDirection } from "./types"
 import { activitiesToCsv, activitiesToJson } from "./activityExport";
 import { SessionItem } from "./SessionItem";
 import { ActivityItem } from "./ActivityItem";
+import { isTauri } from "../../utils/platform";
+
+const BROWSER_ACTIVITY_EXPORT_MESSAGE =
+  "Activity export file saving is available in the desktop app.";
 
 export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
   const toast = useToast();
@@ -121,6 +125,11 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
     const entries = filteredActivities();
     if (entries.length === 0) return;
 
+    if (!isTauri) {
+      toast.error("Export Unavailable", BROWSER_ACTIVITY_EXPORT_MESSAGE);
+      return;
+    }
+
     setExporting(true);
     try {
       const ext = format === "csv" ? "csv" : "json";
@@ -145,6 +154,11 @@ export const ActivityPanel: Component<ActivityPanelProps> = (props) => {
   const handleFullTimelineExport = async (format: "csv" | "json") => {
     const project = props.project;
     if (!project) return;
+
+    if (!isTauri) {
+      toast.error("Export Unavailable", BROWSER_ACTIVITY_EXPORT_MESSAGE);
+      return;
+    }
 
     setExporting(true);
     try {

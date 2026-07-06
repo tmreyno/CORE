@@ -40,6 +40,7 @@ import { printDocument } from "./document/documentHelpers";
 import type { EvidenceExportFormat } from "./report/wizard/cocDbSync";
 import type { DbEvidenceCollection, DbCollectedItem } from "../types/projectDb";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 import { useToast } from "./Toast";
 
 const log = logger.scope("EvidenceCollectionListPanel");
@@ -135,6 +136,13 @@ export const EvidenceCollectionListPanel: Component<EvidenceCollectionListPanelP
   });
 
   const refresh = async () => {
+    if (!isTauri) {
+      setCollections([]);
+      setCollectedItemsMap({});
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const [result, allItems] = await Promise.all([

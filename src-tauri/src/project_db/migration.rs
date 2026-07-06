@@ -7,8 +7,13 @@
 //! One-time migration from .cffx FFXProject into .ffxdb database.
 
 use super::database::ProjectDatabase;
+use crate::common::{hash::is_valid_hash, HashAlgorithm};
 use rusqlite::{params, Result as SqlResult};
-use tracing::info;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::str::FromStr;
+use tracing::{info, warn};
 
 impl ProjectDatabase {
     // ========================================================================
@@ -19,6 +24,7 @@ impl ProjectDatabase {
     /// Used when opening a project that has data in the .cffx but no .ffxdb yet.
     /// This is idempotent — it uses INSERT OR IGNORE to avoid duplicates.
     pub fn migrate_from_project(&self, project: &crate::project::FFXProject) -> SqlResult<()> {
+        let migration_time = chrono::Utc::now().to_rfc3339();
         info!(
             "Migrating project '{}' data to .ffxdb ({} activities, {} sessions, {} users)",
             project.name,
@@ -134,16 +140,11 @@ impl ProjectDatabase {
         }
 
         // --- Evidence Files from cache ---
+        let mut evidence_file_ids_by_path = HashMap::new();
         if let Some(ref cache) = project.evidence_cache {
             for f in &cache.discovered_files {
-                let id = format!(
-                    "ev_{}",
-                    f.path
-                        .chars()
-                        .filter(|c| c.is_alphanumeric())
-                        .take(16)
-                        .collect::<String>()
-                );
+                let id = f.path.clone();
+                evidence_file_ids_by_path.insert(f.path.clone(), id.clone());
                 conn.execute(
                     "INSERT OR IGNORE INTO evidence_files (id, path, filename, container_type, total_size, segment_count, discovered_at, created, modified)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -157,14 +158,47 @@ impl ProjectDatabase {
             }
         }
 
+        migrate_cached_hashes(
+            &conn,
+            project,
+            &mut evidence_file_ids_by_path,
+            &migration_time,
+        )?;
+
+        // --- Case Documents from cache ---
+        if let Some(ref cache) = project.case_documents_cache {
+            let discovered_at = non_empty_or(&cache.cached_at, &migration_time);
+            for d in &cache.documents {
+                let id = case_document_id(&d.document_type, &d.path);
+                let document_type = non_empty_or(&d.document_type, "unknown");
+                let format = non_empty_or(&d.format, "unknown");
+                conn.execute(
+                    "INSERT OR IGNORE INTO case_documents (id, path, filename, document_type, size, format, case_number, evidence_id, modified, discovered_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        id,
+                        d.path,
+                        d.filename,
+                        document_type,
+                        d.size as i64,
+                        format,
+                        d.case_number,
+                        d.evidence_id,
+                        d.modified,
+                        discovered_at,
+                    ],
+                )?;
+            }
+        }
+
         // Record migration timestamp
         conn.execute(
             "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('migrated_from_cffx', ?1)",
-            params![chrono::Utc::now().to_rfc3339()],
+            params![&migration_time],
         )?;
 
         // --- Processed Databases ---
-        let now_str = chrono::Utc::now().to_rfc3339();
+        let now_str = migration_time.clone();
         let pd_state = &project.processed_databases;
 
         // Register each loaded processed database path
@@ -440,5 +474,204 @@ impl ProjectDatabase {
             pd_state.loaded_paths.len()
         );
         Ok(())
+    }
+}
+
+fn migrate_cached_hashes(
+    conn: &rusqlite::Connection,
+    project: &crate::project::FFXProject,
+    evidence_file_ids_by_path: &mut HashMap<String, String>,
+    migration_time: &str,
+) -> SqlResult<()> {
+    let mut seen = HashSet::new();
+
+    if let Some(ref cache) = project.evidence_cache {
+        for (file_path, hash) in &cache.computed_hashes {
+            migrate_hash_record(
+                conn,
+                evidence_file_ids_by_path,
+                &mut seen,
+                file_path,
+                &hash.algorithm,
+                &hash.hash,
+                non_empty_or(&hash.computed_at, migration_time),
+                None,
+                migration_time,
+            )?;
+        }
+    }
+
+    for (file_path, hashes) in &project.hash_history.files {
+        for hash in hashes {
+            migrate_hash_record(
+                conn,
+                evidence_file_ids_by_path,
+                &mut seen,
+                file_path,
+                &hash.algorithm,
+                &hash.hash_value,
+                non_empty_or(&hash.computed_at, migration_time),
+                hash.verification.as_ref(),
+                migration_time,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn migrate_hash_record(
+    conn: &rusqlite::Connection,
+    evidence_file_ids_by_path: &mut HashMap<String, String>,
+    seen: &mut HashSet<String>,
+    file_path: &str,
+    algorithm: &str,
+    hash_value: &str,
+    computed_at: &str,
+    verification: Option<&crate::project::ProjectVerification>,
+    migration_time: &str,
+) -> SqlResult<()> {
+    let algorithm = match HashAlgorithm::from_str(algorithm) {
+        Ok(algorithm) => algorithm,
+        Err(err) => {
+            warn!(
+                path = file_path,
+                algorithm, "Skipping cached project hash with unsupported algorithm: {}", err
+            );
+            return Ok(());
+        }
+    };
+    let canonical_algorithm = algorithm.name();
+    let hash_value = hash_value.trim();
+    if !is_valid_hash(hash_value, algorithm) {
+        warn!(
+            path = file_path,
+            algorithm = canonical_algorithm,
+            "Skipping cached project hash with invalid digest length or characters"
+        );
+        return Ok(());
+    }
+
+    let dedupe_key = format!("{file_path}\0{canonical_algorithm}\0{hash_value}");
+    if !seen.insert(dedupe_key.clone()) {
+        return Ok(());
+    }
+
+    let file_id = ensure_evidence_file(conn, evidence_file_ids_by_path, file_path, migration_time)?;
+    let source_ref_json = serde_json::json!({
+        "kind": "localFile",
+        "path": file_path,
+    })
+    .to_string();
+    let hash_id = stable_id("cached_hash", &dedupe_key);
+
+    conn.execute(
+        "INSERT OR IGNORE INTO hashes (id, file_id, source_id, source_ref_json, algorithm, hash_value, computed_at, segment_index, segment_name, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            hash_id,
+            file_id,
+            file_path,
+            source_ref_json,
+            canonical_algorithm,
+            hash_value,
+            computed_at,
+            None::<i32>,
+            None::<String>,
+            "cached",
+        ],
+    )?;
+
+    if let Some(verification) = verification {
+        let expected_hash = verification.verified_against.trim();
+        if is_valid_hash(expected_hash, algorithm) {
+            conn.execute(
+                "INSERT OR IGNORE INTO verifications (id, hash_id, verified_at, result, expected_hash, actual_hash)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    stable_id("cached_verification", &format!("{hash_id}\0{}", verification.verified_at)),
+                    hash_id,
+                    non_empty_or(&verification.verified_at, computed_at),
+                    non_empty_or(&verification.result, "match"),
+                    expected_hash,
+                    hash_value,
+                ],
+            )?;
+        } else {
+            warn!(
+                path = file_path,
+                algorithm = canonical_algorithm,
+                "Skipping cached project hash verification with invalid expected digest"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_evidence_file(
+    conn: &rusqlite::Connection,
+    evidence_file_ids_by_path: &mut HashMap<String, String>,
+    file_path: &str,
+    migration_time: &str,
+) -> SqlResult<String> {
+    if let Some(id) = evidence_file_ids_by_path.get(file_path) {
+        return Ok(id.clone());
+    }
+
+    let id = file_path.to_string();
+    let filename = Path::new(file_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(file_path);
+    conn.execute(
+        "INSERT OR IGNORE INTO evidence_files (id, path, filename, container_type, total_size, segment_count, discovered_at, created, modified)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            id,
+            file_path,
+            filename,
+            "File",
+            0i64,
+            1i32,
+            migration_time,
+            None::<String>,
+            None::<String>,
+        ],
+    )?;
+    evidence_file_ids_by_path.insert(file_path.to_string(), id.clone());
+    Ok(id)
+}
+
+fn case_document_id(document_type: &str, path: &str) -> String {
+    let mut id: String = format!("{document_type}-{path}")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(128)
+        .collect();
+    if id.trim_matches('_').is_empty() {
+        id = stable_id("case_doc", path);
+    }
+    id
+}
+
+fn stable_id(prefix: &str, source: &str) -> String {
+    let digest = Sha256::digest(source.as_bytes());
+    format!("{prefix}_{digest:x}")
+}
+
+fn non_empty_or<'a>(value: &'a str, fallback: &'a str) -> &'a str {
+    if value.trim().is_empty() {
+        fallback
+    } else {
+        value
     }
 }

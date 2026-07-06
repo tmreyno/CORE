@@ -66,7 +66,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ─── macOS Build (Apple Silicon + Intel Universal) ──────────────────────────
+  # ─── macOS Build (Apple Silicon) ────────────────────────────────────────────
   build-macos:
     name: Build macOS
     needs: create-release
@@ -84,7 +84,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: aarch64-apple-darwin,x86_64-apple-darwin
+          target: aarch64-apple-darwin
           cache-workspaces: ". -> target"
 
       - name: Setup Node.js
@@ -339,7 +339,7 @@ jobs:
           else
             unset APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_CONTENT APPLE_API_KEY_PATH
           fi
-          npm run tauri build
+          npm run tauri -- build --target aarch64-apple-darwin
         env:
           LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
 
@@ -895,6 +895,7 @@ jobs:
             --repo "$GH_REPO" \
             --pattern "*.sig" \
             --pattern "*.tar.gz" \
+            --pattern "*.dmg" \
             --pattern "*-setup.exe" \
             --pattern "*.AppImage" \
             --dir artifacts || true
@@ -917,97 +918,95 @@ jobs:
           if [ -z "$NOTES" ]; then
             NOTES="Release ${TAG} of CORE-FFX"
           fi
-          NOTES_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))" <<< "$NOTES")
 
-          # ─── Generate manifest for a given edition ───────────────────────────
-          generate_manifest() {
-            local PREFIX="$1"
-            local OUTFILE="$2"
+          export TAG VERSION REPO BASE_URL PUB_DATE NOTES
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
 
-            local MAC_SIG="" MAC_URL="" WIN_SIG="" WIN_URL="" LINUX_SIG="" LINUX_URL=""
+          artifacts = pathlib.Path("artifacts")
+          prefix = "CORE-FFX"
+          base_url = os.environ["BASE_URL"]
 
-            # macOS: *.app.tar.gz + *.app.tar.gz.sig
-            for f in artifacts/${PREFIX}*.app.tar.gz.sig; do
-              [ -f "$f" ] && MAC_SIG=$(cat "$f") && break
-            done
-            for f in artifacts/${PREFIX}*.app.tar.gz; do
-              [ -f "$f" ] && MAC_URL="${BASE_URL}/$(basename "$f")" && break
-            done
+          def first(pattern):
+              matches = sorted(artifacts.glob(pattern))
+              return matches[0] if matches else None
 
-            # Windows: *-setup.exe + *-setup.exe.sig
-            for f in artifacts/${PREFIX}*-setup.exe.sig; do
-              [ -f "$f" ] && WIN_SIG=$(cat "$f") && break
-            done
-            for f in artifacts/${PREFIX}*-setup.exe; do
-              [ -f "$f" ] && WIN_URL="${BASE_URL}/$(basename "$f")" && break
-            done
+          def read_signature(path):
+              return path.read_text(encoding="utf-8").strip()
 
-            # Linux: *.AppImage + *.AppImage.sig
-            for f in artifacts/${PREFIX}*.AppImage.sig; do
-              [ -f "$f" ] && LINUX_SIG=$(cat "$f") && break
-            done
-            for f in artifacts/${PREFIX}*.AppImage; do
-              [ -f "$f" ] && LINUX_URL="${BASE_URL}/$(basename "$f")" && break
-            done
+          def release_url(path):
+              return f"{base_url}/{path.name}"
 
-            # Build JSON
-            cat > "$OUTFILE" << MANIFEST
-          {
-            "version": "${VERSION}",
-            "notes": ${NOTES_JSON},
-            "pub_date": "${PUB_DATE}",
-            "platforms": {
-          MANIFEST
+          def macos_platforms():
+              platforms = []
+              for dmg in sorted(artifacts.glob(f"{prefix}*.dmg")):
+                  name = dmg.name.lower()
+                  if "universal" in name:
+                      return ["darwin-aarch64", "darwin-x86_64"]
+                  if "aarch64" in name or "arm64" in name:
+                      platforms.append("darwin-aarch64")
+                  if re.search(r"(^|[_-])(x64|x86_64|amd64)([_\\-.]|$)", name):
+                      platforms.append("darwin-x86_64")
+              return list(dict.fromkeys(platforms))
 
-            local FIRST=true
+          platforms = {}
 
-            if [ -n "$MAC_SIG" ] && [ -n "$MAC_URL" ]; then
-              [ "$FIRST" = "false" ] && echo "," >> "$OUTFILE"
-              cat >> "$OUTFILE" << PLATFORM
-              "darwin-aarch64": {
-                "signature": "${MAC_SIG}",
-                "url": "${MAC_URL}"
-              },
-              "darwin-x86_64": {
-                "signature": "${MAC_SIG}",
-                "url": "${MAC_URL}"
+          mac_sig = first(f"{prefix}*.app.tar.gz.sig")
+          mac_bundle = first(f"{prefix}*.app.tar.gz")
+          if mac_sig and mac_bundle:
+              archs = macos_platforms()
+              if not archs:
+                  print(
+                      "macOS updater artifact exists, but no DMG architecture marker "
+                      "(aarch64, arm64, x64, x86_64, amd64, or universal) was found.",
+                      file=sys.stderr,
+                  )
+                  sys.exit(1)
+              for platform in archs:
+                  platforms[platform] = {
+                      "signature": read_signature(mac_sig),
+                      "url": release_url(mac_bundle),
+                  }
+
+          win_sig = first(f"{prefix}*-setup.exe.sig")
+          win_bundle = first(f"{prefix}*-setup.exe")
+          if win_sig and win_bundle:
+              platforms["windows-x86_64"] = {
+                  "signature": read_signature(win_sig),
+                  "url": release_url(win_bundle),
               }
-          PLATFORM
-              FIRST=false
-            fi
 
-            if [ -n "$WIN_SIG" ] && [ -n "$WIN_URL" ]; then
-              [ "$FIRST" = "false" ] && echo "," >> "$OUTFILE"
-              cat >> "$OUTFILE" << PLATFORM
-              "windows-x86_64": {
-                "signature": "${WIN_SIG}",
-                "url": "${WIN_URL}"
+          linux_sig = first(f"{prefix}*.AppImage.sig")
+          linux_bundle = first(f"{prefix}*.AppImage")
+          if linux_sig and linux_bundle:
+              platforms["linux-x86_64"] = {
+                  "signature": read_signature(linux_sig),
+                  "url": release_url(linux_bundle),
               }
-          PLATFORM
-            fi
 
-            if [ -n "$LINUX_SIG" ] && [ -n "$LINUX_URL" ]; then
-              [ "$FIRST" = "false" ] && echo "," >> "$OUTFILE"
-              cat >> "$OUTFILE" << PLATFORM
-              "linux-x86_64": {
-                "signature": "${LINUX_SIG}",
-                "url": "${LINUX_URL}"
-              }
-          PLATFORM
-            fi
+          if not platforms:
+              print("No updater platforms were discovered from release artifacts.", file=sys.stderr)
+              sys.exit(1)
 
-            echo "    }" >> "$OUTFILE"
-            echo "  }" >> "$OUTFILE"
-
-            # Clean up indentation
-            python3 -c "import json,sys; d=json.load(open('$OUTFILE')); json.dump(d,open('$OUTFILE','w'),indent=2)"
-
-            echo "=== Generated $OUTFILE ==="
-            cat "$OUTFILE"
+          manifest = {
+              "version": os.environ["VERSION"],
+              "notes": os.environ["NOTES"].strip() or f"Release {os.environ['TAG']} of CORE-FFX",
+              "pub_date": os.environ["PUB_DATE"],
+              "platforms": platforms,
           }
 
-          # Generate manifest for CORE-FFX only
-          generate_manifest "CORE-FFX" "latest.json"
+          pathlib.Path("latest.json").write_text(
+              json.dumps(manifest, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          print("=== Generated latest.json ===")
+          print(pathlib.Path("latest.json").read_text(encoding="utf-8"))
+          PY
 
       - name: Upload update manifests
         uses: softprops/action-gh-release@v2

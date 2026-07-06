@@ -6,6 +6,7 @@
 
 import { Component, Show, createSignal } from 'solid-js';
 import { HiOutlineFolder, HiOutlineDocumentDuplicate, HiOutlineArrowLeft } from '../icons';
+import { isTauri } from '../../utils/platform';
 
 interface SelectFolderStepProps {
   error: () => string | null;
@@ -13,6 +14,8 @@ interface SelectFolderStepProps {
   onBrowse: () => void;
   /** Create template folders: called with (projectName, examiner) — handler opens location picker */
   onCreateFromTemplate: (projectName: string, examiner: string) => void;
+  /** Browser-preview project creation without desktop filesystem access */
+  onCreatePreviewProject: () => void;
 }
 
 export const SelectFolderStep: Component<SelectFolderStepProps> = (props) => {
@@ -31,36 +34,73 @@ export const SelectFolderStep: Component<SelectFolderStepProps> = (props) => {
     <div class="folder-select-state">
       <Show when={mode() === 'choose'}>
         <h3 class="text-lg font-medium text-txt mb-1">New Project</h3>
-        <p class="text-txt-muted text-sm mb-5 text-center max-w-md">
-          Open an existing case folder, or create a new case folder structure.
-        </p>
+        <Show
+          when={isTauri}
+          fallback={
+            <p class="text-txt-muted text-sm mb-5 text-center max-w-md">
+              Open an existing <span class="font-medium text-txt">.cffx</span> project file,
+              or create an in-memory preview project without folder scanning.
+            </p>
+          }
+        >
+          <p class="text-txt-muted text-sm mb-5 text-center max-w-md">
+            Open an existing case folder, or create a new case folder structure.
+          </p>
+        </Show>
 
         <div class="flex flex-col gap-3 w-full max-w-sm">
+          <Show when={!isTauri}>
+            <button
+              class="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover transition-colors text-left cursor-pointer"
+              onClick={props.onBrowse}
+            >
+              <HiOutlineFolder class="w-6 h-6 text-accent shrink-0" />
+              <div>
+                <div class="text-sm font-medium text-txt">Open Project File</div>
+                <div class="text-xs text-txt-muted">Choose a .cffx file from this browser session</div>
+              </div>
+            </button>
+            <button
+              class="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover transition-colors text-left cursor-pointer"
+              onClick={props.onCreatePreviewProject}
+            >
+              <HiOutlineDocumentDuplicate class="w-6 h-6 text-accent shrink-0" />
+              <div>
+                <div class="text-sm font-medium text-txt">Create Preview Project</div>
+                <div class="text-xs text-txt-muted">Start an in-memory project without folder scanning</div>
+              </div>
+            </button>
+          </Show>
+
           {/* Option 1: Open existing folder */}
-          <button
-            class="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover transition-colors text-left cursor-pointer"
-            onClick={props.onBrowse}
-          >
-            <HiOutlineFolder class="w-6 h-6 text-accent shrink-0" />
-            <div>
-              <div class="text-sm font-medium text-txt">Open Existing Folder</div>
-              <div class="text-xs text-txt-muted">Select a folder that already has case files</div>
-            </div>
-          </button>
+          <Show when={isTauri}>
+            <button
+              class="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover transition-colors text-left cursor-pointer"
+              onClick={props.onBrowse}
+            >
+              <HiOutlineFolder class="w-6 h-6 text-accent shrink-0" />
+              <div>
+                <div class="text-sm font-medium text-txt">Open Existing Folder</div>
+                <div class="text-xs text-txt-muted">Select a folder that already has case files</div>
+              </div>
+            </button>
+          </Show>
 
           {/* Option 2: Create from template */}
-          <button
-            class="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover transition-colors text-left cursor-pointer"
-            onClick={() => setMode('template')}
-          >
-            <HiOutlineDocumentDuplicate class="w-6 h-6 text-accent shrink-0" />
-            <div>
-              <div class="text-sm font-medium text-txt">Create Case Folder Structure</div>
-              <div class="text-xs text-txt-muted">
-                Enter a case name, then pick where to create the folders
+          <Show when={isTauri}>
+            <button
+              class="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover transition-colors text-left cursor-pointer"
+              onClick={() => setMode('template')}
+            >
+              <HiOutlineDocumentDuplicate class="w-6 h-6 text-accent shrink-0" />
+              <div>
+                <div class="text-sm font-medium text-txt">Create Case Folder Structure</div>
+                <div class="text-xs text-txt-muted">
+                  Enter a case name, then pick where to create the folders
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          </Show>
         </div>
       </Show>
 

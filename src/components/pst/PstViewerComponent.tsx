@@ -22,6 +22,7 @@ import { logger } from "../../utils/logger";
 import { FolderNode } from "./FolderNode";
 import { MessageList } from "./MessageList";
 import { MessageDetail } from "./MessageDetail";
+import { isTauri } from "../../utils/platform";
 import type { PstViewerProps } from "./types";
 import type {
   PstInfo,
@@ -31,6 +32,8 @@ import type {
 } from "../../types/pst";
 
 const log = logger.scope("PstViewer");
+const BROWSER_PST_VIEW_MESSAGE =
+  "PST evidence viewing is available in the desktop app.";
 
 // ============================================================================
 // Main Component
@@ -49,12 +52,18 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
   const [selectedMessage, setSelectedMessage] = createSignal<PstMessageDetailType | null>(null);
   const [messageLoading, setMessageLoading] = createSignal(false);
   const [selectedMessageId, setSelectedMessageId] = createSignal<number | null>(null);
+  let archiveGeneration = 0;
+  let messagesGeneration = 0;
+  let detailGeneration = 0;
 
   // ── Load folder tree when path changes ──
   createEffect(
     on(
       () => `${props.path}|${JSON.stringify(props.source ?? null)}`,
       async () => {
+        const generation = ++archiveGeneration;
+        messagesGeneration++;
+        detailGeneration++;
         const path = props.path;
         const source = props.source;
         setLoading(true);
@@ -66,10 +75,15 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
         setSelectedMessageId(null);
 
         try {
+          if (!isTauri) {
+            throw new Error(BROWSER_PST_VIEW_MESSAGE);
+          }
+
           log.info(`Loading PST folders: ${path}`);
           const info = source
             ? await commands.pst.getFoldersSource<PstInfo>(source)
             : await commands.pst.getFolders<PstInfo>(path);
+          if (generation !== archiveGeneration) return;
           setPstInfo(info);
           log.info(`Loaded ${info.totalFolders} folders from "${info.displayName}"`);
 
@@ -82,11 +96,14 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
             });
           }
         } catch (err) {
+          if (generation !== archiveGeneration) return;
           const msg = err instanceof Error ? err.message : String(err);
           log.error(`Failed to load PST: ${msg}`);
           setError(msg);
         } finally {
-          setLoading(false);
+          if (generation === archiveGeneration) {
+            setLoading(false);
+          }
         }
       },
     ),
@@ -98,17 +115,26 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
       () => selectedFolder(),
       async (folder) => {
         if (!folder) {
+          messagesGeneration++;
+          detailGeneration++;
           setMessages([]);
           setSelectedMessage(null);
           setSelectedMessageId(null);
           return;
         }
 
+        const archiveToken = archiveGeneration;
+        const generation = ++messagesGeneration;
+        detailGeneration++;
         setMessagesLoading(true);
         setSelectedMessage(null);
         setSelectedMessageId(null);
 
         try {
+          if (!isTauri) {
+            throw new Error(BROWSER_PST_VIEW_MESSAGE);
+          }
+
           log.info(`Loading messages for folder: ${folder.name} (nodeId=${folder.nodeId})`);
           const source = props.source;
           const msgs = source
@@ -124,6 +150,7 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
                 undefined,
                 500,
               );
+          if (archiveToken !== archiveGeneration || generation !== messagesGeneration) return;
           setMessages(msgs);
           log.info(`Loaded ${msgs.length} messages`);
 
@@ -138,10 +165,13 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
             });
           }
         } catch (err) {
+          if (archiveToken !== archiveGeneration || generation !== messagesGeneration) return;
           log.error(`Failed to load messages: ${err}`);
           setMessages([]);
         } finally {
-          setMessagesLoading(false);
+          if (archiveToken === archiveGeneration && generation === messagesGeneration) {
+            setMessagesLoading(false);
+          }
         }
       },
     ),
@@ -149,10 +179,17 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
 
   // ── Load message detail when message is selected ──
   const handleMessageSelect = async (msg: PstMessageSummary) => {
+    const archiveToken = archiveGeneration;
+    const messagesToken = messagesGeneration;
+    const generation = ++detailGeneration;
     setSelectedMessageId(msg.nodeId);
     setMessageLoading(true);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_PST_VIEW_MESSAGE);
+      }
+
       log.info(`Loading message detail: nodeId=${msg.nodeId}`);
       const source = props.source;
       const detail = source
@@ -164,6 +201,11 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
             props.path,
             msg.nodeId,
           );
+      if (
+        archiveToken !== archiveGeneration ||
+        messagesToken !== messagesGeneration ||
+        generation !== detailGeneration
+      ) return;
       setSelectedMessage(detail);
 
       // Update metadata
@@ -178,10 +220,21 @@ export const PstViewer: Component<PstViewerProps> = (props) => {
         });
       }
     } catch (err) {
+      if (
+        archiveToken !== archiveGeneration ||
+        messagesToken !== messagesGeneration ||
+        generation !== detailGeneration
+      ) return;
       log.error(`Failed to load message: ${err}`);
       setSelectedMessage(null);
     } finally {
-      setMessageLoading(false);
+      if (
+        archiveToken === archiveGeneration &&
+        messagesToken === messagesGeneration &&
+        generation === detailGeneration
+      ) {
+        setMessageLoading(false);
+      }
     }
   };
 

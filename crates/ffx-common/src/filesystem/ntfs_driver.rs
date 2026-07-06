@@ -253,13 +253,11 @@ impl FilesystemDriver for NtfsDriver {
             .map_err(|e| VfsError::IoError(format!("Failed to get attribute: {:?}", e)))?;
 
         let file_size = data_attr.value_length();
-        if offset >= file_size {
+        let actual_size = bounded_ntfs_read_len(file_size, offset, size)?;
+        if actual_size == 0 {
             return Ok(Vec::new());
         }
 
-        let available = checked_available_bytes(file_size, offset)
-            .ok_or_else(|| VfsError::IoError("NTFS read offset exceeded file size".to_string()))?;
-        let actual_size = clamp_ntfs_read_size(available, size);
         let mut buf = vec![0u8; actual_size];
 
         // Create a reader and read the data
@@ -272,12 +270,16 @@ impl FilesystemDriver for NtfsDriver {
             .seek(&mut io, SeekFrom::Start(offset))
             .map_err(|e| VfsError::IoError(format!("Failed to seek: {:?}", e)))?;
 
-        // Read data
-        let bytes_read = reader
-            .read(&mut io, &mut buf)
-            .map_err(|e| VfsError::IoError(format!("Failed to read: {:?}", e)))?;
+        let mut bytes_read = 0usize;
+        while bytes_read < actual_size {
+            let chunk_read = reader
+                .read(&mut io, &mut buf[bytes_read..])
+                .map_err(|e| VfsError::IoError(format!("Failed to read: {:?}", e)))?;
 
-        buf.truncate(bytes_read);
+            ensure_ntfs_read_progress(&normalized, offset, actual_size, bytes_read, chunk_read)?;
+            bytes_read += chunk_read;
+        }
+
         Ok(buf)
     }
 }
@@ -398,6 +400,22 @@ fn checked_available_bytes(total_size: u64, offset: u64) -> Option<u64> {
     total_size.checked_sub(offset)
 }
 
+fn bounded_ntfs_read_len(
+    file_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, VfsError> {
+    if offset > file_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
+    }
+
+    let available = file_size - offset;
+    Ok(clamp_ntfs_read_size(available, requested_size))
+}
+
 fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
     if delta >= 0 {
         base.checked_add(delta as u64)
@@ -406,6 +424,22 @@ fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
         base.checked_sub(delta.unsigned_abs())
             .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, "NTFS seek before start"))
     }
+}
+
+fn ensure_ntfs_read_progress(
+    path: &str,
+    offset: u64,
+    expected_size: usize,
+    bytes_read: usize,
+    chunk_read: usize,
+) -> Result<(), VfsError> {
+    if chunk_read == 0 {
+        return Err(VfsError::IoError(format!(
+            "NTFS file range read ended early for {path} at offset {offset}: read {bytes_read} of {expected_size} bytes"
+        )));
+    }
+
+    Ok(())
 }
 
 // =============================================================================
@@ -467,9 +501,40 @@ mod tests {
     }
 
     #[test]
+    fn test_bounded_ntfs_read_len_allows_exact_eof() {
+        assert_eq!(bounded_ntfs_read_len(8, 8, 16).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_ntfs_read_len_rejects_offset_past_eof() {
+        let err = bounded_ntfs_read_len(8, 9, 16).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 9,
+                size: 16
+            }
+        ));
+    }
+
+    #[test]
+    fn test_bounded_ntfs_read_len_clamps_to_remaining() {
+        assert_eq!(bounded_ntfs_read_len(8, 4, 16).unwrap(), 4);
+    }
+
+    #[test]
     fn test_checked_seek_position_rejects_underflow() {
         let err = checked_seek_position(4, -8).expect_err("seek before start should fail");
         assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_ensure_ntfs_read_progress_rejects_zero_chunk() {
+        let err = ensure_ntfs_read_progress("/short.bin", 4, 16, 8, 0)
+            .expect_err("zero-progress NTFS read should fail");
+
+        assert!(matches!(err, VfsError::IoError(_)));
+        assert!(err.to_string().contains("read 8 of 16 bytes"));
     }
 
     #[test]

@@ -28,6 +28,29 @@ pub fn open_container_entry_source(
     container_type: impl Into<String>,
     known_size: Option<u64>,
 ) -> EvidenceSourceResult<Box<dyn EvidenceByteSource>> {
+    open_container_entry_source_with_options(
+        container_path,
+        entry_path,
+        container_type,
+        ContainerEntrySourceOptions {
+            known_size,
+            ..ContainerEntrySourceOptions::default()
+        },
+    )
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ContainerEntrySourceOptions {
+    pub known_size: Option<u64>,
+    pub data_addr: Option<u64>,
+}
+
+pub fn open_container_entry_source_with_options(
+    container_path: impl Into<String>,
+    entry_path: impl Into<String>,
+    container_type: impl Into<String>,
+    options: ContainerEntrySourceOptions,
+) -> EvidenceSourceResult<Box<dyn EvidenceByteSource>> {
     let container_path = container_path.into();
     let entry_path = entry_path.into();
     let container_type = container_type.into();
@@ -37,7 +60,8 @@ pub fn open_container_entry_source(
         return Ok(Box::new(Ad1EntryByteSource::new(
             container_path,
             entry_path,
-            known_size,
+            options.known_size,
+            options.data_addr,
         )));
     }
 
@@ -45,7 +69,7 @@ pub fn open_container_entry_source(
         return Ok(Box::new(L01EntryByteSource::new(
             container_path,
             entry_path,
-            known_size,
+            options.known_size,
         )));
     }
 
@@ -70,7 +94,7 @@ pub fn open_container_entry_source(
         return Ok(Box::new(UfedEntryByteSource::new(
             container_path,
             entry_path,
-            known_size,
+            options.known_size,
         )));
     }
 
@@ -92,16 +116,7 @@ pub fn open_container_entry_source(
     }
 
     if is_raw_type(&kind) {
-        let vfs = raw::vfs::RawVfs::open_filesystem(&container_path)
-            .or_else(|_| raw::vfs::RawVfs::open(&container_path))
-            .map_err(|e| {
-                source_error(
-                    &container_path,
-                    &entry_path,
-                    &container_type,
-                    format!("Raw VFS open failed: {e:?}"),
-                )
-            })?;
+        let vfs = open_raw_vfs_for_entry(&container_path, &entry_path, &container_type)?;
         return Ok(Box::new(VfsEntryByteSource::new(
             Arc::new(vfs),
             container_path,
@@ -118,19 +133,41 @@ pub fn open_container_entry_source(
     ))
 }
 
+fn open_raw_vfs_for_entry(
+    container_path: &str,
+    entry_path: &str,
+    container_type: &str,
+) -> EvidenceSourceResult<raw::vfs::RawVfs> {
+    raw::vfs::RawVfs::open_with_physical_fallback(container_path).map_err(|e| {
+        source_error(
+            container_path,
+            entry_path,
+            container_type,
+            format!("Raw VFS open failed: {e:?}"),
+        )
+    })
+}
+
 #[derive(Clone, Debug)]
 pub struct Ad1EntryByteSource {
     container_path: String,
     entry_path: String,
     known_size: Option<u64>,
+    data_addr: Option<u64>,
 }
 
 impl Ad1EntryByteSource {
-    pub fn new(container_path: String, entry_path: String, known_size: Option<u64>) -> Self {
+    pub fn new(
+        container_path: String,
+        entry_path: String,
+        known_size: Option<u64>,
+        data_addr: Option<u64>,
+    ) -> Self {
         Self {
             container_path,
             entry_path,
             known_size,
+            data_addr,
         }
     }
 }
@@ -141,13 +178,13 @@ impl EvidenceByteSource for Ad1EntryByteSource {
     }
 
     fn len(&self) -> EvidenceSourceResult<u64> {
-        if let Some(size) = self.known_size {
-            return Ok(size);
-        }
-
-        ad1::get_entry_info(&self.container_path, &self.entry_path)
-            .map(|entry| entry.size)
-            .map_err(|e| source_error(&self.container_path, &self.entry_path, "ad1", e.to_string()))
+        live_or_known_size(self.known_size, || {
+            ad1::get_entry_info(&self.container_path, &self.entry_path)
+                .map(|entry| entry.size)
+                .map_err(|e| {
+                    source_error(&self.container_path, &self.entry_path, "ad1", e.to_string())
+                })
+        })
     }
 
     fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
@@ -155,6 +192,19 @@ impl EvidenceByteSource for Ad1EntryByteSource {
         let read_size = bounded_read_size(&self.source_ref(), total_size, offset, size)?;
         if read_size == 0 {
             return Ok(Vec::new());
+        }
+
+        if let Some(data_addr) = self.data_addr {
+            return ad1::read_entry_chunk_by_addr(
+                &self.container_path,
+                data_addr,
+                total_size,
+                offset,
+                read_size,
+            )
+            .map_err(|e| {
+                source_error(&self.container_path, &self.entry_path, "ad1", e.to_string())
+            });
         }
 
         ad1::read_entry_chunk(&self.container_path, &self.entry_path, offset, read_size)
@@ -201,15 +251,13 @@ impl EvidenceByteSource for L01EntryByteSource {
     }
 
     fn len(&self) -> EvidenceSourceResult<u64> {
-        if let Some(size) = self.known_size {
-            return Ok(size);
-        }
-
-        let entry = self.entry()?;
-        Ok(if entry.size > 0 {
-            entry.size
-        } else {
-            entry.data_size
+        live_or_known_size(self.known_size, || {
+            let entry = self.entry()?;
+            Ok(if entry.size > 0 {
+                entry.size
+            } else {
+                entry.data_size
+            })
         })
     }
 
@@ -406,30 +454,38 @@ fn checked_entry_data_offset(
     })
 }
 
+fn live_or_known_size<F>(known_size: Option<u64>, live_size: F) -> EvidenceSourceResult<u64>
+where
+    F: FnOnce() -> EvidenceSourceResult<u64>,
+{
+    match live_size() {
+        Ok(size) => Ok(size),
+        Err(error) => known_size.ok_or(error),
+    }
+}
+
 impl EvidenceByteSource for UfedEntryByteSource {
     fn source_ref(&self) -> EvidenceSourceRef {
         self.source_id()
     }
 
     fn len(&self) -> EvidenceSourceResult<u64> {
-        if let Some(size) = self.known_size {
-            return Ok(size);
-        }
+        live_or_known_size(self.known_size, || {
+            if self.is_zip_backed() {
+                return self.zip_entry_len();
+            }
 
-        if self.is_zip_backed() {
-            return self.zip_entry_len();
-        }
-
-        std::fs::metadata(self.local_entry_path())
-            .map(|metadata| metadata.len())
-            .map_err(|e| {
-                source_error(
-                    &self.container_path,
-                    &self.entry_path,
-                    "ufed",
-                    format!("UFED local entry metadata failed: {e}"),
-                )
-            })
+            std::fs::metadata(self.local_entry_path())
+                .map(|metadata| metadata.len())
+                .map_err(|e| {
+                    source_error(
+                        &self.container_path,
+                        &self.entry_path,
+                        "ufed",
+                        format!("UFED local entry metadata failed: {e}"),
+                    )
+                })
+        })
     }
 
     fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
@@ -482,13 +538,44 @@ fn is_ewf_type(kind: &str) -> bool {
 }
 
 fn is_raw_type(kind: &str) -> bool {
-    kind == "raw" || kind == "dd" || kind == "img" || kind == "001"
+    kind == "raw"
+        || kind == "dd"
+        || kind == "img"
+        || kind == "001"
+        || kind.contains("raw image")
+        || kind.contains("disk image")
 }
 
 fn is_archive_type(kind: &str) -> bool {
     matches!(
         kind,
-        "archive" | "zip" | "zip64" | "7z" | "rar" | "rar4" | "rar5" | "tar" | "tar.gz"
+        "archive"
+            | "zip"
+            | "zip64"
+            | "7z"
+            | "7-zip"
+            | "rar"
+            | "rar4"
+            | "rar5"
+            | "tar"
+            | "gz"
+            | "gzip"
+            | "bz2"
+            | "bzip2"
+            | "xz"
+            | "zst"
+            | "zstd"
+            | "lz4"
+            | "tar.gz"
+            | "tgz"
+            | "tar.xz"
+            | "txz"
+            | "tar.bz2"
+            | "tbz2"
+            | "tar.zst"
+            | "tar.lz4"
+            | "dmg"
+            | "iso"
     )
 }
 
@@ -503,6 +590,7 @@ mod tests {
             "/cases/evidence.ad1".to_string(),
             "/Documents/file.txt".to_string(),
             Some(128),
+            Some(4096),
         );
 
         assert_eq!(
@@ -546,6 +634,26 @@ mod tests {
     }
 
     #[test]
+    fn live_or_known_size_prefers_live_size_over_stale_known_size() {
+        assert_eq!(live_or_known_size(Some(2), || Ok(7)).unwrap(), 7);
+    }
+
+    #[test]
+    fn live_or_known_size_falls_back_to_known_size_when_live_lookup_fails() {
+        let size = live_or_known_size(Some(9), || {
+            Err(source_error(
+                "/cases/evidence.ad1",
+                "/missing.bin",
+                "ad1",
+                "entry not found".to_string(),
+            ))
+        })
+        .unwrap();
+
+        assert_eq!(size, 9);
+    }
+
+    #[test]
     fn local_container_entry_path_accepts_windows_relative_components() {
         let resolved = local_container_entry_path("/cases/ufed/case.ufd", r"files\media\photo.jpg");
 
@@ -567,6 +675,53 @@ mod tests {
     }
 
     #[test]
+    fn archive_type_gate_matches_browsable_archive_types() {
+        for kind in [
+            "archive", "zip", "zip64", "7z", "7-zip", "rar", "rar4", "rar5", "tar", "gz", "gzip",
+            "bz2", "bzip2", "xz", "zst", "zstd", "lz4", "tar.gz", "tgz", "tar.xz", "txz",
+            "tar.bz2", "tbz2", "tar.zst", "tar.lz4", "dmg", "iso",
+        ] {
+            assert!(is_archive_type(kind), "{kind} should route to ArchiveVfs");
+        }
+    }
+
+    #[test]
+    fn raw_type_gate_accepts_project_display_labels() {
+        for kind in ["raw", "dd", "img", "001", "Raw Image", "raw disk image"] {
+            assert!(
+                is_raw_type(&kind.to_lowercase()),
+                "{kind} should route to RawVfs"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_entry_source_reads_physical_fallback_virtual_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let container_path = temp_dir.path().join("disk.img");
+        std::fs::write(&container_path, b"abcdef").unwrap();
+
+        let source = open_container_entry_source(
+            container_path.to_string_lossy().to_string(),
+            "/disk.raw",
+            "raw",
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(source.len().unwrap(), 6);
+        assert_eq!(source.read_range(2, 3).unwrap(), b"cde");
+        assert_eq!(
+            source.source_ref(),
+            EvidenceSourceRef::VfsEntry {
+                container_path: container_path.to_string_lossy().to_string(),
+                entry_path: "/disk.raw".to_string(),
+                container_type: Some("raw".to_string()),
+            }
+        );
+    }
+
+    #[test]
     fn ufed_source_reads_local_entry_path() {
         let temp_dir = tempfile::tempdir().unwrap();
         let container_path = temp_dir.path().join("case.ufd");
@@ -584,6 +739,15 @@ mod tests {
         assert_eq!(source.len().unwrap(), 6);
         assert_eq!(source.read_range(2, 3).unwrap(), b"cde");
         assert_eq!(source.read_range(6, 10).unwrap(), b"");
+        let err = source.read_range(7, 1).unwrap_err();
+        assert!(matches!(
+            err,
+            EvidenceSourceError::InvalidRange {
+                offset: 7,
+                size: 6,
+                ..
+            }
+        ));
         assert_eq!(
             source.source_ref(),
             EvidenceSourceRef::ContainerEntry {
@@ -633,6 +797,40 @@ mod tests {
 
         assert_eq!(source.len().unwrap(), 6);
         assert_eq!(source.read_range(0, 64).unwrap(), b"report");
+    }
+
+    #[test]
+    fn ufed_source_len_uses_live_size_over_stale_known_size() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let container_path = temp_dir.path().join("case.ufd");
+        let entry_path = temp_dir.path().join("files/report.txt");
+        std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
+        std::fs::write(&container_path, b"[case]\n").unwrap();
+        std::fs::write(&entry_path, b"correct-size").unwrap();
+
+        let source = UfedEntryByteSource::new(
+            container_path.to_string_lossy().to_string(),
+            "files/report.txt".to_string(),
+            Some(1),
+        );
+
+        assert_eq!(source.len().unwrap(), "correct-size".len() as u64);
+        assert_eq!(source.read_range(0, 64).unwrap(), b"correct-size");
+    }
+
+    #[test]
+    fn ufed_source_len_falls_back_to_known_size_when_live_local_entry_missing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let container_path = temp_dir.path().join("case.ufd");
+        std::fs::write(&container_path, b"[case]\n").unwrap();
+
+        let source = UfedEntryByteSource::new(
+            container_path.to_string_lossy().to_string(),
+            "missing/report.txt".to_string(),
+            Some(123),
+        );
+
+        assert_eq!(source.len().unwrap(), 123);
     }
 
     #[test]

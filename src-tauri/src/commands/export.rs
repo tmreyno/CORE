@@ -391,48 +391,88 @@ fn verify_file_hash(path: &Path, expected_hash: &str) -> Result<bool, String> {
     Ok(actual_hash == expected_hash)
 }
 
+fn verify_copied_file(path: &Path, expected_hash: &str) -> Result<(), String> {
+    match verify_file_hash(path, expected_hash) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("Hash verification failed".to_string()),
+        Err(e) => Err(format!("Hash verification error: {e}")),
+    }
+}
+
 /// Calculate total size of files to copy
-fn calculate_total_size(paths: &[String]) -> u64 {
+fn calculate_total_size(paths: &[String]) -> Result<u64, String> {
     let mut total = 0u64;
     for path in paths {
-        if let Ok(meta) = fs::metadata(path) {
-            if meta.is_file() {
-                total = total.saturating_add(meta.len());
-            } else if meta.is_dir() {
-                total = total.saturating_add(calculate_dir_size(Path::new(path)));
-            }
+        let source = Path::new(path);
+        let meta = fs::metadata(source).map_err(|e| {
+            format!(
+                "Failed to read source metadata for {}: {}",
+                source.display(),
+                e
+            )
+        })?;
+        if meta.is_file() {
+            total = total.saturating_add(meta.len());
+        } else if meta.is_dir() {
+            total = total.saturating_add(calculate_dir_size(source)?);
+        } else {
+            return Err(format!(
+                "Unsupported export source {}: not a file or directory",
+                source.display()
+            ));
         }
     }
-    total
+    Ok(total)
 }
 
 /// Calculate directory size recursively
-fn calculate_dir_size(dir: &Path) -> u64 {
+fn calculate_dir_size(dir: &Path) -> Result<u64, String> {
     calculate_dir_size_at_depth(dir, 0)
 }
 
-fn calculate_dir_size_at_depth(dir: &Path, depth: usize) -> u64 {
+fn calculate_dir_size_at_depth(dir: &Path, depth: usize) -> Result<u64, String> {
     if depth > MAX_EXPORT_TRAVERSAL_DEPTH {
         warn!(
             "Skipping directory {}: maximum export traversal depth {} exceeded",
             dir.display(),
             MAX_EXPORT_TRAVERSAL_DEPTH
         );
-        return 0;
+        return Ok(0);
     }
 
     let mut total = 0u64;
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                total = total.saturating_add(path.metadata().map(|m| m.len()).unwrap_or(0));
-            } else if path.is_dir() {
-                total = total.saturating_add(calculate_dir_size_at_depth(&path, depth + 1));
-            }
+    let entries = fs::read_dir(dir)
+        .map_err(|e| format!("Failed to read export directory {}: {}", dir.display(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| {
+            format!(
+                "Failed to read export directory entry in {}: {}",
+                dir.display(),
+                e
+            )
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|e| {
+            format!(
+                "Failed to read export source type for {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+        if file_type.is_file() {
+            let meta = entry.metadata().map_err(|e| {
+                format!(
+                    "Failed to read export file metadata for {}: {}",
+                    path.display(),
+                    e
+                )
+            })?;
+            total = total.saturating_add(meta.len());
+        } else if file_type.is_dir() {
+            total = total.saturating_add(calculate_dir_size_at_depth(&path, depth + 1)?);
         }
     }
-    total
+    Ok(total)
 }
 
 fn required_export_space(total_bytes: u64) -> u64 {
@@ -441,32 +481,48 @@ fn required_export_space(total_bytes: u64) -> u64 {
 }
 
 /// Collect all files from paths (expanding directories)
-fn collect_files(paths: &[String]) -> Vec<(String, String)> {
+fn collect_files(paths: &[String]) -> Result<Vec<(String, String)>, String> {
     let mut files = Vec::new();
 
     for path in paths {
         let path_obj = Path::new(path);
-        if path_obj.is_file() {
+        let meta = fs::metadata(path_obj).map_err(|e| {
+            format!(
+                "Failed to read source metadata for {}: {}",
+                path_obj.display(),
+                e
+            )
+        })?;
+        if meta.is_file() {
             let filename = path_obj
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.clone());
             files.push((path.clone(), filename));
-        } else if path_obj.is_dir() {
+        } else if meta.is_dir() {
             // Use the parent directory as base so the selected folder name is preserved
             // in the relative paths. e.g. selecting /path/to/Evidence produces
             // Evidence/file1.txt instead of just file1.txt
             let base = path_obj.parent().unwrap_or(path_obj);
-            collect_dir_files(base, path_obj, &mut files);
+            collect_dir_files(base, path_obj, &mut files)?;
+        } else {
+            return Err(format!(
+                "Unsupported export source {}: not a file or directory",
+                path_obj.display()
+            ));
         }
     }
 
-    files
+    Ok(files)
 }
 
 /// Recursively collect files from a directory
-fn collect_dir_files(base: &Path, dir: &Path, files: &mut Vec<(String, String)>) {
-    collect_dir_files_at_depth(base, dir, files, 0);
+fn collect_dir_files(
+    base: &Path,
+    dir: &Path,
+    files: &mut Vec<(String, String)>,
+) -> Result<(), String> {
+    collect_dir_files_at_depth(base, dir, files, 0)
 }
 
 fn collect_dir_files_at_depth(
@@ -474,34 +530,56 @@ fn collect_dir_files_at_depth(
     dir: &Path,
     files: &mut Vec<(String, String)>,
     depth: usize,
-) {
+) -> Result<(), String> {
     if depth > MAX_EXPORT_TRAVERSAL_DEPTH {
         warn!(
             "Skipping directory {}: maximum export traversal depth {} exceeded",
             dir.display(),
             MAX_EXPORT_TRAVERSAL_DEPTH
         );
-        return;
+        return Ok(());
     }
 
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                let rel_path = path
-                    .strip_prefix(base)
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| {
-                        path.file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default()
-                    });
-                files.push((path.to_string_lossy().to_string(), rel_path));
-            } else if path.is_dir() {
-                collect_dir_files_at_depth(base, &path, files, depth + 1);
-            }
+    let entries = fs::read_dir(dir)
+        .map_err(|e| format!("Failed to read export directory {}: {}", dir.display(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| {
+            format!(
+                "Failed to read export directory entry in {}: {}",
+                dir.display(),
+                e
+            )
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|e| {
+            format!(
+                "Failed to read export source type for {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+        if file_type.is_file() {
+            let rel_path = path
+                .strip_prefix(base)
+                .map(relative_export_path)
+                .unwrap_or_else(|_| {
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                });
+            files.push((path.to_string_lossy().to_string(), rel_path));
+        } else if file_type.is_dir() {
+            collect_dir_files_at_depth(base, &path, files, depth + 1)?;
         }
     }
+    Ok(())
+}
+
+fn relative_export_path(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Export/copy files to a destination directory with optional forensic features
@@ -608,8 +686,8 @@ fn run_export_inner(
         },
     );
 
-    let total_bytes = calculate_total_size(source_paths);
-    let files = collect_files(source_paths);
+    let total_bytes = calculate_total_size(source_paths)?;
+    let files = collect_files(source_paths)?;
     let total_files = files.len();
 
     // Check destination free space
@@ -693,16 +771,23 @@ fn run_export_inner(
                 if opts.compute_hashes {
                     if let (Some(sha256), Ok(source_meta)) = (&hash, fs::metadata(source_path)) {
                         let verified = if opts.verify_after_copy {
-                            verify_file_hash(&dest_file, sha256).unwrap_or_default()
+                            if let Err(e) = verify_copied_file(&dest_file, sha256) {
+                                warn!("Verification failed for {}: {}", rel_path, e);
+                                failures.push((source.clone(), e));
+                                files_failed += 1;
+                                continue;
+                            }
+                            debug!("Hash verified for {}", rel_path);
+                            true
                         } else {
-                            true // Not verified, just copied
+                            false
                         };
 
                         if !verified {
-                            warn!("Verification failed for {}", rel_path);
-                            failures.push((source.clone(), "Hash verification failed".to_string()));
-                            files_failed += 1;
-                            continue;
+                            debug!(
+                                "Hash computed for {} without post-copy verification",
+                                rel_path
+                            );
                         }
 
                         let modified_time = source_meta
@@ -762,23 +847,13 @@ fn run_export_inner(
                     // Simple copy mode - verify hash if requested
                     if opts.verify_after_copy {
                         if let Some(ref expected) = hash {
-                            match verify_file_hash(&dest_file, expected) {
-                                Ok(true) => {
-                                    debug!("Hash verified for {}", rel_path);
-                                }
-                                Ok(false) => {
-                                    warn!("Hash mismatch for {}", rel_path);
-                                    failures.push((
-                                        source.clone(),
-                                        "Hash verification failed".to_string(),
-                                    ));
-                                    files_failed += 1;
-                                    continue;
-                                }
-                                Err(e) => {
-                                    warn!("Hash verification error for {}: {}", rel_path, e);
-                                }
+                            if let Err(e) = verify_copied_file(&dest_file, expected) {
+                                warn!("Verification failed for {}: {}", rel_path, e);
+                                failures.push((source.clone(), e));
+                                files_failed += 1;
+                                continue;
                             }
+                            debug!("Hash verified for {}", rel_path);
                         }
                     }
                 }
@@ -806,11 +881,10 @@ fn run_export_inner(
     }
 
     let duration_ms = start_time.elapsed().as_millis() as u64;
-    let avg_speed = if duration_ms > 0 {
-        bytes_copied.saturating_mul(1000) / duration_ms
-    } else {
-        0
-    };
+    let avg_speed = bytes_copied
+        .saturating_mul(1000)
+        .checked_div(duration_ms)
+        .unwrap_or(0);
 
     // Generate manifest and reports if requested
     let mut json_manifest_path = None;
@@ -837,10 +911,17 @@ fn run_export_inner(
                 "failures": failures,
             });
 
-            if let Err(e) = fs::write(
-                &manifest_path,
-                serde_json::to_string_pretty(&manifest).unwrap_or_default(),
-            ) {
+            let manifest_json = match serde_json::to_string_pretty(&manifest) {
+                Ok(json) => json,
+                Err(e) => {
+                    warn!("Failed to serialize JSON manifest: {}", e);
+                    String::new()
+                }
+            };
+
+            if manifest_json.is_empty() {
+                warn!("Skipping empty JSON manifest for {}", export_name);
+            } else if let Err(e) = fs::write(&manifest_path, manifest_json) {
                 warn!("Failed to write JSON manifest: {}", e);
             } else {
                 info!("JSON manifest written to {}", manifest_path.display());
@@ -1019,7 +1100,41 @@ mod tests {
             b.to_string_lossy().to_string(),
         ];
 
-        assert_eq!(calculate_total_size(&paths), 8);
+        assert_eq!(calculate_total_size(&paths).unwrap(), 8);
+    }
+
+    #[test]
+    fn calculate_total_size_rejects_missing_source() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.bin");
+        let paths = vec![missing.to_string_lossy().to_string()];
+
+        let err = calculate_total_size(&paths).unwrap_err();
+        assert!(err.contains("Failed to read source metadata"));
+    }
+
+    #[test]
+    fn collect_files_rejects_missing_source() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.bin");
+        let paths = vec![missing.to_string_lossy().to_string()];
+
+        let err = collect_files(&paths).unwrap_err();
+        assert!(err.contains("Failed to read source metadata"));
+    }
+
+    #[test]
+    fn collect_files_expands_directory_with_selected_folder_name() {
+        let dir = TempDir::new().unwrap();
+        let evidence_dir = dir.path().join("Evidence");
+        std::fs::create_dir(&evidence_dir).unwrap();
+        let file = evidence_dir.join("a.bin");
+        std::fs::write(&file, [0u8; 3]).unwrap();
+        let paths = vec![evidence_dir.to_string_lossy().to_string()];
+
+        let files = collect_files(&paths).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].1, "Evidence/a.bin");
     }
 
     #[test]
@@ -1073,5 +1188,37 @@ mod tests {
         let source = std::path::Path::new("advance.bin");
 
         assert_eq!(checked_export_copy_advance(40, 2, source).unwrap(), 42);
+    }
+
+    #[test]
+    fn verify_copied_file_accepts_matching_hash() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("copied.bin");
+        std::fs::write(&path, b"evidence").unwrap();
+        let expected = format!("{:x}", Sha256::digest(b"evidence"));
+
+        assert!(verify_copied_file(&path, &expected).is_ok());
+    }
+
+    #[test]
+    fn verify_copied_file_rejects_hash_mismatch() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("copied.bin");
+        std::fs::write(&path, b"evidence").unwrap();
+        let wrong = format!("{:x}", Sha256::digest(b"changed"));
+
+        let err = verify_copied_file(&path, &wrong).unwrap_err();
+        assert_eq!(err, "Hash verification failed");
+    }
+
+    #[test]
+    fn verify_copied_file_preserves_read_error() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.bin");
+        let expected = format!("{:x}", Sha256::digest(b"evidence"));
+
+        let err = verify_copied_file(&missing, &expected).unwrap_err();
+        assert!(err.starts_with("Hash verification error:"));
+        assert!(err.contains("Failed to open file for verification"));
     }
 }

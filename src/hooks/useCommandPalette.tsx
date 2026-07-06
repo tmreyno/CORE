@@ -32,6 +32,7 @@ import {
   HiOutlineBookmark,
   HiOutlineCheckBadge,
   HiOutlineXMark,
+  HiOutlinePlusCircle,
 } from "../components/icons";
 import type { Accessor, Setter } from "solid-js";
 import type { CommandAction } from "../components";
@@ -63,6 +64,8 @@ export interface CommandPaletteConfig {
   onOpenDirectory?: () => void;
   /** Unified open project handler (shows file picker for .cffx) */
   onOpenProject?: () => void;
+  /** Unified new project handler */
+  onNewProject?: () => void;
   /** Close the current project */
   onCloseProject?: () => void;
   /** Open help / user guide tab */
@@ -71,6 +74,10 @@ export interface CommandPaletteConfig {
   onOpenExport?: () => void;
   /** Toggle quick actions bar */
   onToggleQuickActions?: () => void;
+  /** Hash the currently active evidence file or selected source entry. */
+  onHashActive?: () => void;
+  /** Whether an active hash target exists. */
+  hasHashTarget?: Accessor<boolean>;
   /** Cycle through themes */
   onCycleTheme?: () => void;
   /** Navigate to sidebar tabs */
@@ -113,6 +120,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
     onOpenEvidenceCollectionList,
     onOpenDirectory,
     onOpenProject,
+    onNewProject,
     onCloseProject,
     onOpenHelp,
     onOpenExport,
@@ -159,6 +167,14 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "File",
       shortcut: "cmd+o",
       onSelect: () => onOpenProject ? onOpenProject() : {},
+    },
+    {
+      id: "new-project",
+      label: "New Project",
+      icon: <HiOutlinePlusCircle class="w-4 h-4" />,
+      category: "File",
+      shortcut: "cmd+shift+n",
+      onSelect: () => onNewProject ? onNewProject() : setShowProjectWizard(true),
     },
     {
       id: "merge-projects",
@@ -228,10 +244,14 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       category: "Hash",
       shortcut: "cmd+h",
       onSelect: () => {
+        if (config.onHashActive) {
+          config.onHashActive();
+          return;
+        }
         const active = fileManager.activeFile();
         if (active) hashManager.hashSingleFile(active);
       },
-      disabled: !fileManager.activeFile(),
+      disabled: config.hasHashTarget ? !config.hasHashTarget() : !fileManager.activeFile(),
     },
     {
       id: "export",
@@ -411,7 +431,7 @@ export function createCommandPaletteActions(config: CommandPaletteConfig): () =>
       label: "Project Setup",
       icon: <HiOutlineCog6Tooth class="w-4 h-4" />,
       category: "Project",
-      onSelect: () => setShowProjectWizard(true),
+      onSelect: () => onNewProject ? onNewProject() : setShowProjectWizard(true),
     },
     ];
 

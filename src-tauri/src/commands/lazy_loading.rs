@@ -785,8 +785,10 @@ mod tests {
 
     #[test]
     fn lazy_page_params_uses_bounded_config_batch_size() {
-        let mut config = LazyLoadConfig::default();
-        config.batch_size = 0;
+        let config = LazyLoadConfig {
+            batch_size: 0,
+            ..LazyLoadConfig::default()
+        };
 
         let (offset, batch_size) = lazy_page_params(None, None, config);
 

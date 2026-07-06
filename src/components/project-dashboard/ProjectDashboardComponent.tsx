@@ -22,10 +22,13 @@ import {
   HiOutlineShieldCheck,
   HiOutlineArrowUpTray,
   HiOutlineClipboardDocumentList,
+  HiOutlineFolderOpen,
+  HiOutlinePlusCircle,
 } from "../icons";
 import type { ProjectDbStats } from "../../types/projectDb";
 import { formatBytes } from "../../utils";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
 import type { ProjectDashboardProps } from "./types";
 import { formatTimeAgo } from "./helpers";
 import { StatCard } from "./StatCard";
@@ -48,6 +51,10 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
 
   // Try to load db stats (non-blocking)
   onMount(async () => {
+    if (!isTauri) {
+      return;
+    }
+
     try {
       const stats = await invoke<ProjectDbStats>("project_db_get_stats");
       setDbStats(stats);
@@ -125,6 +132,22 @@ export const ProjectDashboard: Component<ProjectDashboardProps> = (props) => {
               <span class="text-3xl">📂</span>
               <p>No project loaded</p>
               <p class="text-xs">Open or create a project to see the dashboard</p>
+              <Show when={props.onOpenProject || props.onNewProject}>
+                <div class="flex items-center justify-center gap-2 pt-2">
+                  <Show when={props.onNewProject}>
+                    <button class="btn btn-primary btn-sm" onClick={() => props.onNewProject?.()}>
+                      <HiOutlinePlusCircle class="w-4 h-4" />
+                      New Project
+                    </button>
+                  </Show>
+                  <Show when={props.onOpenProject}>
+                    <button class="btn btn-secondary btn-sm" onClick={() => props.onOpenProject?.()}>
+                      <HiOutlineFolderOpen class="w-4 h-4" />
+                      Open Project
+                    </button>
+                  </Show>
+                </div>
+              </Show>
             </div>
           </div>
         }

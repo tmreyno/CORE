@@ -121,6 +121,129 @@ function makeEvidence(): ProjectDbReportEvidence {
       },
       {
         id: "artifact-5",
+        sourceId: "e01:/case/disk.E01:/sys/class/dmi/id/product_serial",
+        name: "product_serial",
+        category: "systeminfo",
+        typeDescription: "Linux DMI System Information",
+        size: 8,
+        sizeDisplay: "8 B",
+        confidence: "medium",
+        isText: true,
+        metadata: {
+          "system.osFamily": "linux",
+          "system.manufacturer": "Dell Inc.",
+          "system.model": "Precision 5680",
+          "system.serialNumber": "ABC1234",
+          "system.hardwareUuid": "00112233-4455-6677-8899-aabbccddeeff",
+          "system.osName": "Ubuntu",
+          "system.osVersion": "24.04",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:30Z",
+      },
+      {
+        id: "artifact-6",
+        sourceId: "e01:/case/disk.E01:/Windows/System32/config/SOFTWARE",
+        name: "SOFTWARE",
+        category: "systeminfo",
+        typeDescription: "Windows Registry Hive",
+        size: 65536,
+        sizeDisplay: "64 KB",
+        confidence: "high",
+        isText: false,
+        metadata: {
+          "system.osName": "Windows 11 Pro",
+          "system.osDisplayVersion": "24H2",
+          "system.osBuild": "26100",
+          "system.productId": "00330-80000-00000-AA000",
+          "system.registeredOwner": "Case Lab",
+          "system.oemManufacturer": "Dell Inc.",
+          "system.oemModel": "Precision 5680",
+          "system.activeComputerName": "DESKTOP-CASE01",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:45Z",
+      },
+      {
+        id: "artifact-7",
+        sourceId: "e01:/case/mac.E01:/SystemProfiler/SPHardwareDataType.plist",
+        name: "SPHardwareDataType.plist",
+        category: "systeminfo",
+        typeDescription: "macOS Hardware Identity",
+        size: 2048,
+        sizeDisplay: "2 KB",
+        confidence: "medium",
+        isText: false,
+        metadata: {
+          "system.osFamily": "macos",
+          "system.model": "MacBook Pro",
+          "system.modelIdentifier": "MacBookPro18,3",
+          "system.serialNumber": "C02TEST12345",
+          "system.hardwareUuid": "00000000-1111-2222-3333-444444444444",
+          "system.bootRomVersion": "11881.120.56",
+          "system.smcVersion": "1.0f0",
+          "system.cpuType": "Apple M1 Pro",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:48Z",
+      },
+      {
+        id: "artifact-8",
+        sourceId:
+          "e01:/case/disk.E01:/Windows/System32/drivers/contosoflt.sys",
+        name: "contosoflt.sys",
+        category: "system",
+        typeDescription: "Windows File system minifilter driver",
+        size: 131072,
+        sizeDisplay: "128 KB",
+        confidence: "high",
+        isText: false,
+        metadata: {
+          "binary.analysisStatus": "parsed",
+          "binary.format": "PE64",
+          "binary.architecture": "x86_64",
+          "binary.importLibraries": "fltmgr.sys; ntoskrnl.exe",
+          "binary.exports": "DriverEntry",
+          "pe.isDriver": "true",
+          "pe.driverType": "File system minifilter driver",
+          "pe.driverServiceNames": "contosoflt",
+          "pe.driverRegistryPaths":
+            "Registry\\Machine\\System\\CurrentControlSet\\Services\\contosoflt",
+          "pe.driverPdbPaths":
+            "C:\\agent\\_work\\drivers\\contosoflt\\objfre\\amd64\\contosoflt.pdb",
+          "pe.version.CompanyName": "Contoso Driver Labs",
+          "pe.version.OriginalFilename": "contosoflt.sys",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:50Z",
+      },
+      {
+        id: "artifact-9",
+        sourceId: "e01:/case/linux.E01:/lib/modules/6.8.0/kernel/drivers/net/coretap.ko",
+        name: "coretap.ko",
+        category: "system",
+        typeDescription: "Linux Kernel Module",
+        size: 98304,
+        sizeDisplay: "96 KB",
+        confidence: "high",
+        isText: false,
+        metadata: {
+          "binary.analysisStatus": "parsed",
+          "binary.format": "ELF64",
+          "binary.architecture": "x86_64",
+          "linux.moduleDetected": "true",
+          "linux.moduleNames": "coretap",
+          "linux.moduleVersions": "1.2.3",
+          "linux.moduleVermagic": "6.8.0 SMP mod_unload",
+          "linux.moduleLicenses": "GPL",
+          "linux.moduleDependencies": "cfg80211; rfkill",
+          "linux.moduleDescriptions": "CORE packet capture tap",
+        },
+        extractor: "core-artifact-extractor",
+        extractedAt: "2026-02-16T10:03:55Z",
+      },
+      {
+        id: "artifact-10",
         sourceId: "ad1:/case/logical.ad1:/mobile/history.sqlite",
         name: "history.sqlite",
         category: "database",
@@ -250,6 +373,19 @@ describe("buildProjectDbEvidenceAppendices", () => {
     expect(appendices[1].content).toContain("attachments: 1");
     expect(appendices[1].content).toContain("label: com.core.ffx.agent");
     expect(appendices[1].content).toContain("registry: 1.5");
+    expect(appendices[1].content).toContain("manufacturer: Dell Inc.");
+    expect(appendices[1].content).toContain("serial: ABC1234");
+    expect(appendices[1].content).toContain("OS: Windows 11 Pro");
+    expect(appendices[1].content).toContain("product id: 00330-80000-00000-AA000");
+    expect(appendices[1].content).toContain("model: MacBook Pro");
+    expect(appendices[1].content).toContain("model id: MacBookPro18,3");
+    expect(appendices[1].content).toContain("serial: C02TEST12345");
+    expect(appendices[1].content).toContain("format: PE64");
+    expect(appendices[1].content).toContain("imports: fltmgr.sys; ntoskrnl.exe");
+    expect(appendices[1].content).toContain("driver: true");
+    expect(appendices[1].content).toContain("module: true");
+    expect(appendices[1].content).toContain("module names: coretap");
+    expect(appendices[1].content).toContain("vermagic: 6.8.0 SMP mod_unload");
     expect(appendices[1].content).toContain("tables: 2");
     expect(appendices[2].content).toContain("PDF Document");
     expect(appendices[2].content).toContain("admin@example.com");

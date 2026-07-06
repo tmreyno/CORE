@@ -8,6 +8,7 @@ import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
 import { HiOutlineDocument, HiOutlineExclamationTriangle } from "../icons";
 import { logger } from "../../utils/logger";
 import { commands } from "../../api/commands";
+import { isTauri } from "../../utils/platform";
 import { DocumentParagraph } from "./DocumentParagraph";
 import type { OfficeViewerProps, OfficeDocumentInfo } from "./types";
 
@@ -50,6 +51,10 @@ export function OfficeViewer(props: OfficeViewerProps) {
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error("Office document extraction is available in the desktop app.");
+      }
+
       const result = props.source
         ? await commands.office.readDocumentSource<OfficeDocumentInfo>(props.source)
         : await commands.office.readDocument<OfficeDocumentInfo>(props.path);
@@ -84,7 +89,9 @@ export function OfficeViewer(props: OfficeViewerProps) {
       log.error("Failed to load office document:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (gen === loadGeneration) {
+        setLoading(false);
+      }
     }
   };
 

@@ -8,6 +8,7 @@ import { createSignal } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
 import { getBasename } from '../utils';
 import { logger } from '../utils/logger';
+import { isTauri } from '../utils/platform';
 import type { 
   ProcessedDatabase, ArtifactCategorySummary, AxiomCaseInfo, AxiomKeywordFile
 } from '../types/processed';
@@ -46,11 +47,20 @@ export function useProcessedDatabases() {
 
   // Current detail view for center panel
   const [detailView, setDetailView] = createSignal<DetailViewType>({ type: 'case' });
+  let detailsEpoch = 0;
+  const hasActiveDatabasePath = (path: string) =>
+    selectedDatabase()?.path === path || databases().some(item => item.path === path);
 
   /** Load AXIOM case info for a database */
   const loadAxiomDetails = async (db: ProcessedDatabase): Promise<void> => {
     if (db.db_type !== 'MagnetAxiom') return;
     if (axiomCaseInfo()[db.path]) return; // Already loaded
+    if (loadingDetails().has(db.path)) return;
+    if (!isTauri) {
+      log.debug("Skipping AXIOM detail loading outside Tauri runtime");
+      return;
+    }
+    const epoch = detailsEpoch;
     
     const loadingSet = new Set(loadingDetails());
     loadingSet.add(db.path);
@@ -59,14 +69,18 @@ export function useProcessedDatabases() {
     try {
       // Load case info
       const caseInfo = await invoke<AxiomCaseInfo>('get_axiom_case_info', { path: db.path });
+      if (epoch !== detailsEpoch || !hasActiveDatabasePath(db.path)) return;
       setAxiomCaseInfo(prev => ({ ...prev, [db.path]: caseInfo }));
       
       // Load artifact categories
       const categories = await invoke<ArtifactCategorySummary[]>('get_axiom_artifact_categories', { path: db.path });
+      if (epoch !== detailsEpoch || !hasActiveDatabasePath(db.path)) return;
       setArtifactCategories(prev => ({ ...prev, [db.path]: categories }));
     } catch (err) {
+      if (epoch !== detailsEpoch) return;
       log.warn(`Failed to load AXIOM details for ${db.path}:`, err);
     } finally {
+      if (epoch !== detailsEpoch) return;
       const newLoading = new Set(loadingDetails());
       newLoading.delete(db.path);
       setLoadingDetails(newLoading);
@@ -100,7 +114,21 @@ export function useProcessedDatabases() {
 
   /** Remove a database from the list */
   const removeDatabase = (path: string) => {
+    detailsEpoch += 1;
     setDatabases(prev => prev.filter(db => db.path !== path));
+    setAxiomCaseInfo(prev => {
+      const next = { ...prev };
+      delete next[path];
+      return next;
+    });
+    setArtifactCategories(prev => {
+      const next = { ...prev };
+      delete next[path];
+      return next;
+    });
+    const newLoading = new Set(loadingDetails());
+    newLoading.delete(path);
+    setLoadingDetails(newLoading);
     if (selectedDatabase()?.path === path) {
       setSelectedDatabase(null);
     }
@@ -108,10 +136,12 @@ export function useProcessedDatabases() {
 
   /** Clear all databases */
   const clearAll = () => {
+    detailsEpoch += 1;
     setDatabases([]);
     setSelectedDatabase(null);
     setAxiomCaseInfo({});
     setArtifactCategories({});
+    setLoadingDetails(new Set<string>());
     setDetailView({ type: 'case' });
   };
 

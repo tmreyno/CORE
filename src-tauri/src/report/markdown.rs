@@ -698,10 +698,21 @@ impl MarkdownGenerator {
     /// Render hash verification section
     fn render_hash_section(&self, report: &ForensicReport) -> String {
         let mut md = String::from("## Hash Verification\n\n");
+        let include_source = report.hash_records.iter().any(|record| {
+            record
+                .source_id
+                .as_deref()
+                .is_some_and(|source| !source.is_empty())
+        });
 
         if self.gfm_tables {
-            md.push_str("| Item | Algorithm | Hash Value | Verified |\n");
-            md.push_str("|------|-----------|------------|----------|\n");
+            if include_source {
+                md.push_str("| Item | Source | Algorithm | Hash Value | Verified |\n");
+                md.push_str("|------|--------|-----------|------------|----------|\n");
+            } else {
+                md.push_str("| Item | Algorithm | Hash Value | Verified |\n");
+                md.push_str("|------|-----------|------------|----------|\n");
+            }
 
             for record in &report.hash_records {
                 let verified = match record.verified {
@@ -709,13 +720,24 @@ impl MarkdownGenerator {
                     Some(false) => "Mismatch",
                     None => "Not recorded",
                 };
-                md.push_str(&format!(
-                    "| {} | {} | `{}` | {} |\n",
-                    Self::escape_md_table_cell(&record.item),
-                    record.algorithm.as_str(),
-                    Self::escape_md_table_cell(&record.value),
-                    verified
-                ));
+                if include_source {
+                    md.push_str(&format!(
+                        "| {} | {} | {} | `{}` | {} |\n",
+                        Self::escape_md_table_cell(&record.item),
+                        Self::escape_md_table_cell(record.source_id.as_deref().unwrap_or("-")),
+                        record.algorithm.as_str(),
+                        Self::escape_md_table_cell(&record.value),
+                        verified
+                    ));
+                } else {
+                    md.push_str(&format!(
+                        "| {} | {} | `{}` | {} |\n",
+                        Self::escape_md_table_cell(&record.item),
+                        record.algorithm.as_str(),
+                        Self::escape_md_table_cell(&record.value),
+                        verified
+                    ));
+                }
             }
         } else {
             for record in &report.hash_records {
@@ -724,9 +746,16 @@ impl MarkdownGenerator {
                     Some(false) => "Mismatch",
                     None => "Not recorded",
                 };
+                let source = record
+                    .source_id
+                    .as_deref()
+                    .filter(|source| !source.is_empty())
+                    .map(|source| format!(" [{}]", Self::escape_md(source)))
+                    .unwrap_or_default();
                 md.push_str(&format!(
-                    "- **{}** ({}): `{}` - {}\n",
+                    "- **{}**{} ({}): `{}` - {}\n",
                     Self::escape_md(&record.item),
+                    source,
                     record.algorithm.as_str(),
                     Self::escape_md(&record.value),
                     verified
@@ -911,8 +940,7 @@ impl MarkdownGenerator {
         s.replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace("\r\n", "\\n")
-            .replace('\r', "\\n")
-            .replace('\n', "\\n")
+            .replace(['\r', '\n'], "\\n")
     }
 
     fn render_rich_text_md(&self, text: &str) -> String {

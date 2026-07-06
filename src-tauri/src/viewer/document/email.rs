@@ -88,7 +88,7 @@ fn truncate_email_text(value: &str, max_chars: usize) -> String {
 /// Parse an EML file
 pub fn parse_eml(path: impl AsRef<Path>) -> DocumentResult<EmailInfo> {
     let path = path.as_ref();
-    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let file_size = fs::metadata(path)?.len();
     ensure_email_size_allowed(file_size, "Email")?;
     let data = fs::read(path)?;
     parse_eml_bytes(path.to_string_lossy(), &data)
@@ -138,7 +138,7 @@ pub fn parse_mbox(
     max_messages: Option<usize>,
 ) -> DocumentResult<Vec<EmailInfo>> {
     let path = path.as_ref();
-    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let file_size = fs::metadata(path)?.len();
     ensure_email_size_allowed(file_size, "MBOX")?;
     // Use read + from_utf8_lossy to handle non-UTF-8 bytes in MBOX files
     let raw = fs::read(path)?;
@@ -159,26 +159,47 @@ pub fn parse_mbox_bytes(
     // Simple MBOX parsing - split on "From " at line start
     let mut messages = Vec::new();
     let mut current_message = String::new();
+    let mut next_message_index = 1usize;
+    let mut seen_mbox_separator = false;
 
     for line in data.lines() {
-        if line.starts_with("From ") && !current_message.is_empty() {
-            if messages.len() >= max {
-                break;
-            }
-            if let Ok(info) = parse_message_bytes(current_message.as_bytes(), &source_id) {
+        if line.starts_with("From ") {
+            if !current_message.is_empty() {
+                if messages.len() >= max {
+                    break;
+                }
+                let info =
+                    parse_message_bytes(current_message.as_bytes(), &source_id).map_err(|e| {
+                        DocumentError::Parse(format!(
+                            "Failed to parse MBOX message {}: {}",
+                            next_message_index, e
+                        ))
+                    })?;
                 messages.push(info);
+                next_message_index += 1;
+                current_message.clear();
             }
-            current_message.clear();
+            seen_mbox_separator = true;
+            continue;
         }
+
+        if !seen_mbox_separator && current_message.is_empty() && line.trim().is_empty() {
+            continue;
+        }
+
         current_message.push_str(line);
         current_message.push('\n');
     }
 
     // Don't forget the last message
     if !current_message.is_empty() && messages.len() < max {
-        if let Ok(info) = parse_message_bytes(current_message.as_bytes(), &source_id) {
-            messages.push(info);
-        }
+        let info = parse_message_bytes(current_message.as_bytes(), &source_id).map_err(|e| {
+            DocumentError::Parse(format!(
+                "Failed to parse MBOX message {}: {}",
+                next_message_index, e
+            ))
+        })?;
+        messages.push(info);
     }
 
     Ok(messages)
@@ -276,7 +297,7 @@ fn parse_message_bytes(data: &[u8], source_id: &str) -> DocumentResult<EmailInfo
 /// Parse an Outlook .msg file (OLE compound document format)
 pub fn parse_msg(path: impl AsRef<Path>) -> DocumentResult<EmailInfo> {
     let path = path.as_ref();
-    let file_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let file_size = fs::metadata(path)?.len();
     ensure_email_size_allowed(file_size, "MSG")?;
 
     let outlook = msg_parser::Outlook::from_path(path)
@@ -545,6 +566,43 @@ mod tests {
                 .and_then(|message| message.subject.as_deref()),
             Some("Message 999")
         );
+    }
+
+    #[test]
+    fn parse_mbox_bytes_rejects_unparseable_message() {
+        let data =
+            b"From broken@example.com Sat Jan 01 00:00:00 2024\nnot an RFC5322 message body only\n";
+
+        let err = parse_mbox_bytes("container.ad1:mail/broken.mbox", data, Some(10)).unwrap_err();
+
+        assert!(err.to_string().contains("Failed to parse MBOX message 1"));
+    }
+
+    #[test]
+    fn parse_eml_reports_missing_file_metadata_error() {
+        let missing = tempfile::tempdir().unwrap().path().join("missing.eml");
+
+        let err = parse_eml(&missing).unwrap_err();
+
+        assert!(matches!(err, DocumentError::Io(_)));
+    }
+
+    #[test]
+    fn parse_mbox_reports_missing_file_metadata_error() {
+        let missing = tempfile::tempdir().unwrap().path().join("missing.mbox");
+
+        let err = parse_mbox(&missing, Some(10)).unwrap_err();
+
+        assert!(matches!(err, DocumentError::Io(_)));
+    }
+
+    #[test]
+    fn parse_msg_reports_missing_file_metadata_error() {
+        let missing = tempfile::tempdir().unwrap().path().join("missing.msg");
+
+        let err = parse_msg(&missing).unwrap_err();
+
+        assert!(matches!(err, DocumentError::Io(_)));
     }
 
     #[test]

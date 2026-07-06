@@ -348,7 +348,7 @@ handleHashCompleted(file, algorithm, computedHash)
 | File | Purpose |
 |------|---------|
 | `src-tauri/src/commands/hash.rs` | `batch_hash`, `StorageClass`, per-drive semaphores, 3-arm routing, queue management |
-| `src-tauri/src/common/hash_cache.rs` | `HashCache`, LRU eviction, `GLOBAL_HASH_CACHE`, convenience functions |
+| `crates/ffx-common/src/hash_cache.rs` | `HashCache`, LRU eviction, `GLOBAL_HASH_CACHE`, scoped cache convenience functions |
 | `src-tauri/src/ewf/operations.rs` | `verify_with_progress` for E01/L01 |
 | `src-tauri/src/ad1/mod.rs` | `hash_segments_with_progress` for AD1 |
 | `src-tauri/src/commands/raw.rs` | `verify_with_progress` for raw images |

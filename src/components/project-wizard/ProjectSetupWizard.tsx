@@ -88,6 +88,7 @@ export const ProjectSetupWizard: Component<ProjectSetupWizardProps> = (props) =>
                 onCreateFromTemplate={(name, examiner) =>
                   state.browseAndCreateTemplate(name, examiner)
                 }
+                onCreatePreviewProject={state.createBrowserPreviewProject}
               />
             </Show>
 

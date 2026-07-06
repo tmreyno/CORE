@@ -97,6 +97,8 @@ pub async fn preview_report(
 /// Get available output formats
 #[tauri::command]
 pub fn get_output_formats() -> Vec<FormatInfo> {
+    let typst_supported = OutputFormat::Typst.is_supported();
+
     vec![
         FormatInfo {
             format: OutputFormat::Pdf,
@@ -130,9 +132,13 @@ pub fn get_output_formats() -> Vec<FormatInfo> {
         FormatInfo {
             format: OutputFormat::Typst,
             name: "Typst".to_string(),
-            description: "Modern typesetting format - Coming soon".to_string(),
+            description: if typst_supported {
+                "Modern typesetting format - Best for high-quality source reports".to_string()
+            } else {
+                "Modern typesetting format - Requires the typst-reports feature".to_string()
+            },
             extension: "typ".to_string(),
-            supported: false,
+            supported: typst_supported,
         },
     ]
 }
@@ -377,6 +383,8 @@ pub fn extract_evidence_from_containers(
                     value: h.hash.clone(),
                     computed_at: None,
                     verified: h.verified,
+                    source_id: None,
+                    source_ref: None,
                 });
             }
         }
@@ -388,6 +396,8 @@ pub fn extract_evidence_from_containers(
                 value: h.hash.clone(),
                 computed_at: Some(chrono::Utc::now()),
                 verified: h.verified,
+                source_id: None,
+                source_ref: None,
             });
         }
 
@@ -746,6 +756,11 @@ fn hash_record_from_project_db(item: &str, hash: &DbProjectHash) -> HashRecord {
         value: hash.hash_value.clone(),
         computed_at: parse_project_datetime(Some(&hash.computed_at)),
         verified: None,
+        source_id: hash.source_id.clone(),
+        source_ref: hash
+            .source_ref_json
+            .as_deref()
+            .and_then(parse_artifact_source_ref),
     }
 }
 
@@ -806,7 +821,14 @@ fn artifact_summary_from_project_db(artifact: &DbNormalizedArtifact) -> ReportAr
 }
 
 fn parse_artifact_source_ref(source_ref_json: &str) -> Option<serde_json::Value> {
-    serde_json::from_str(source_ref_json).ok()
+    match serde_json::from_str(source_ref_json) {
+        Ok(value) => Some(value),
+        Err(error) => Some(serde_json::json!({
+            "invalidSourceRef": true,
+            "parseError": truncate_report_text(&error.to_string(), MAX_REPORT_FIELD_CHARS),
+            "raw": truncate_report_text(source_ref_json, MAX_REPORT_FIELD_CHARS),
+        })),
+    }
 }
 
 fn parse_artifact_metadata(metadata_json: Option<&str>) -> BTreeMap<String, String> {
@@ -814,42 +836,53 @@ fn parse_artifact_metadata(metadata_json: Option<&str>) -> BTreeMap<String, Stri
         return BTreeMap::new();
     };
 
-    serde_json::from_str::<BTreeMap<String, String>>(metadata_json)
-        .map(|metadata| {
-            metadata
-                .into_iter()
+    match serde_json::from_str::<BTreeMap<String, String>>(metadata_json) {
+        Ok(metadata) => metadata
+            .into_iter()
+            .take(MAX_REPORT_METADATA_ENTRIES)
+            .map(|(key, value)| {
+                (
+                    truncate_report_text(&key, MAX_REPORT_FIELD_CHARS),
+                    truncate_report_text(&value, MAX_REPORT_FIELD_CHARS),
+                )
+            })
+            .collect(),
+        Err(map_error) => match serde_json::from_str::<serde_json::Value>(metadata_json) {
+            Ok(serde_json::Value::Object(object)) => object
+                .iter()
                 .take(MAX_REPORT_METADATA_ENTRIES)
                 .map(|(key, value)| {
                     (
-                        truncate_report_text(&key, MAX_REPORT_FIELD_CHARS),
-                        truncate_report_text(&value, MAX_REPORT_FIELD_CHARS),
+                        truncate_report_text(key, MAX_REPORT_FIELD_CHARS),
+                        truncate_report_text(
+                            &metadata_value_to_string(value),
+                            MAX_REPORT_FIELD_CHARS,
+                        ),
                     )
                 })
-                .collect()
-        })
-        .or_else(|_| {
-            serde_json::from_str::<serde_json::Value>(metadata_json).map(|value| {
-                value
-                    .as_object()
-                    .map(|object| {
-                        object
-                            .iter()
-                            .take(MAX_REPORT_METADATA_ENTRIES)
-                            .map(|(key, value)| {
-                                (
-                                    truncate_report_text(key, MAX_REPORT_FIELD_CHARS),
-                                    truncate_report_text(
-                                        &metadata_value_to_string(value),
-                                        MAX_REPORT_FIELD_CHARS,
-                                    ),
-                                )
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-        })
-        .unwrap_or_default()
+                .collect(),
+            Ok(_) => artifact_metadata_parse_error(
+                "artifact metadata JSON is not an object",
+                metadata_json,
+            ),
+            Err(value_error) => {
+                artifact_metadata_parse_error(&format!("{map_error}; {value_error}"), metadata_json)
+            }
+        },
+    }
+}
+
+fn artifact_metadata_parse_error(error: &str, raw: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (
+            "metadata.parseError".to_string(),
+            truncate_report_text(error, MAX_REPORT_FIELD_CHARS),
+        ),
+        (
+            "metadata.raw".to_string(),
+            truncate_report_text(raw, MAX_REPORT_FIELD_CHARS),
+        ),
+    ])
 }
 
 fn metadata_value_to_string(value: &serde_json::Value) -> String {
@@ -1099,38 +1132,9 @@ The examination process included:
 
     builder = builder.methodology(methodology);
 
-    // Build with minimal required fields
-    builder.build().unwrap_or_else(|_| {
-        // Return a truly minimal report if builder fails
-        ForensicReport {
-            metadata: ReportMetadata {
-                title: "Forensic Examination Report".to_string(),
-                report_number: "".to_string(),
-                version: "1.0".to_string(),
-                classification: Classification::Confidential,
-                generated_at: chrono::Utc::now(),
-                generated_by: "FFX Forensic File Xplorer".to_string(),
-            },
-            case_info: CaseInfo::default(),
-            examiner: ExaminerInfo::default(),
-            executive_summary: None,
-            scope: None,
-            methodology: Some(methodology.to_string()),
-            evidence_items: vec![],
-            chain_of_custody: vec![],
-            findings: vec![],
-            timeline: vec![],
-            hash_records: vec![],
-            tools: vec![],
-            conclusions: None,
-            appendices: vec![],
-            signatures: vec![],
-            notes: None,
-            report_type: None,
-            coc_items: None,
-            evidence_collection: None,
-        }
-    })
+    builder
+        .build()
+        .expect("report template builder should include required case and examiner fields")
 }
 
 #[cfg(feature = "ai-assistant")]
@@ -1386,54 +1390,55 @@ fn build_evidence_collection_package(
                 Some(serde_json::to_string(&item.photo_refs).map_err(|e| e.to_string())?)
             };
 
-            Ok(DbCollectedItem {
-                id: item_id,
-                collection_id: collection_id.clone(),
-                coc_item_id: None,
-                evidence_file_id: None,
-                source_id: None,
-                source_ref_json: None,
-                item_number,
-                description: item.description.clone(),
-                found_location: item.found_location.clone(),
-                item_type: if item.item_type.is_empty() {
+            serde_json::from_value::<DbCollectedItem>(serde_json::json!({
+                "id": item_id,
+                "collectionId": collection_id,
+                "cocItemId": null,
+                "evidenceFileId": null,
+                "sourceId": null,
+                "sourceRefJson": null,
+                "itemNumber": item_number,
+                "description": item.description,
+                "foundLocation": item.found_location,
+                "itemType": if item.item_type.is_empty() {
                     item.device_type.clone()
                 } else {
                     item.item_type.clone()
                 },
-                make: item.make.clone(),
-                model: item.model.clone(),
-                serial_number: item.serial_number.clone(),
-                condition: item.condition.clone(),
-                packaging: item.packaging.clone(),
-                packaging_type: None,
-                packaging_detail: None,
-                photo_refs_json,
-                notes: item.notes.clone(),
-                item_collection_datetime: item.item_collection_datetime.clone(),
-                item_system_datetime: item.item_system_datetime.clone(),
-                item_collecting_officer: item.item_collecting_officer.clone(),
-                item_authorization: item.item_authorization.clone(),
-                device_type: (!item.device_type.is_empty()).then(|| item.device_type.clone()),
-                device_type_other: item.device_type_other.clone(),
-                storage_interface: item.storage_interface.clone(),
-                storage_interface_other: item.storage_interface_other.clone(),
-                brand: item.brand.clone(),
-                color: item.color.clone(),
-                imei: item.imei.clone(),
-                other_identifiers: item.other_identifiers.clone(),
-                building: item.building.clone(),
-                room: item.room.clone(),
-                location_other: item.location_other.clone(),
-                image_format: item.image_format.clone(),
-                image_format_other: item.image_format_other.clone(),
-                acquisition_method: item.acquisition_method.clone(),
-                acquisition_method_other: item.acquisition_method_other.clone(),
-                hash_algorithm: None,
-                hash_value: None,
-                hash_computed_at: None,
-                storage_notes: item.storage_notes.clone(),
-            })
+                "make": item.make,
+                "model": item.model,
+                "serialNumber": item.serial_number,
+                "condition": item.condition,
+                "packaging": item.packaging,
+                "packagingType": null,
+                "packagingDetail": null,
+                "photoRefsJson": photo_refs_json,
+                "notes": item.notes,
+                "itemCollectionDatetime": item.item_collection_datetime,
+                "itemSystemDatetime": item.item_system_datetime,
+                "itemCollectingOfficer": item.item_collecting_officer,
+                "itemAuthorization": item.item_authorization,
+                "deviceType": (!item.device_type.is_empty()).then(|| item.device_type.clone()),
+                "deviceTypeOther": item.device_type_other,
+                "storageInterface": item.storage_interface,
+                "storageInterfaceOther": item.storage_interface_other,
+                "brand": item.brand,
+                "color": item.color,
+                "imei": item.imei,
+                "otherIdentifiers": item.other_identifiers,
+                "building": item.building,
+                "room": item.room,
+                "locationOther": item.location_other,
+                "imageFormat": item.image_format,
+                "imageFormatOther": item.image_format_other,
+                "acquisitionMethod": item.acquisition_method,
+                "acquisitionMethodOther": item.acquisition_method_other,
+                "hashAlgorithm": null,
+                "hashValue": null,
+                "hashComputedAt": null,
+                "storageNotes": item.storage_notes,
+            }))
+            .map_err(|e| e.to_string())
         })
         .collect::<Result<Vec<_>, String>>()?;
 
@@ -1528,10 +1533,13 @@ mod tests {
     }
 
     #[test]
-    fn test_get_output_formats_typst_not_supported() {
+    fn test_get_output_formats_typst_support_matches_feature_flag() {
         let formats = get_output_formats();
         let typst = formats.iter().find(|f| f.extension == "typ").unwrap();
         assert_eq!(typst.name, "Typst");
+        #[cfg(feature = "typst-reports")]
+        assert!(typst.supported);
+        #[cfg(not(feature = "typst-reports"))]
         assert!(!typst.supported);
     }
 
@@ -1827,8 +1835,11 @@ mod tests {
         let hash = DbProjectHash {
             id: "hash_1".to_string(),
             file_id: "ev_1".to_string(),
-            source_id: None,
-            source_ref_json: None,
+            source_id: Some("ad1:/case/logical.ad1:/docs/a.txt".to_string()),
+            source_ref_json: Some(
+                r#"{"kind":"containerEntry","containerPath":"/case/logical.ad1","entryPath":"/docs/a.txt","containerType":"ad1"}"#
+                    .to_string(),
+            ),
             algorithm: "BLAKE3".to_string(),
             hash_value: "abc".to_string(),
             computed_at: "2026-02-16T10:01:00Z".to_string(),
@@ -1842,6 +1853,18 @@ mod tests {
         assert_eq!(record.item, "disk.E01");
         assert!(matches!(record.algorithm, HashAlgorithm::Blake3));
         assert!(record.computed_at.is_some());
+        assert_eq!(
+            record.source_id.as_deref(),
+            Some("ad1:/case/logical.ad1:/docs/a.txt")
+        );
+        assert_eq!(
+            record
+                .source_ref
+                .as_ref()
+                .and_then(|value| value.get("entryPath"))
+                .and_then(|value| value.as_str()),
+            Some("/docs/a.txt")
+        );
     }
 
     #[test]
@@ -2091,8 +2114,44 @@ mod tests {
 
         let summary = artifact_summary_from_project_db(&artifact);
 
-        assert!(summary.metadata.is_empty());
-        assert!(summary.source_ref.is_none());
+        assert!(summary
+            .metadata
+            .get("metadata.parseError")
+            .is_some_and(|error| !error.is_empty()));
+        assert_eq!(
+            summary.metadata.get("metadata.raw").map(String::as_str),
+            Some("{not-valid-json")
+        );
+        assert_eq!(
+            summary
+                .source_ref
+                .as_ref()
+                .and_then(|value| value.get("invalidSourceRef"))
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            summary
+                .source_ref
+                .as_ref()
+                .and_then(|value| value.get("raw"))
+                .and_then(serde_json::Value::as_str),
+            Some("{not-valid-json")
+        );
+    }
+
+    #[test]
+    fn test_artifact_summary_marks_non_object_metadata_json() {
+        let metadata = parse_artifact_metadata(Some("[1,2,3]"));
+
+        assert_eq!(
+            metadata.get("metadata.parseError").map(String::as_str),
+            Some("artifact metadata JSON is not an object")
+        );
+        assert_eq!(
+            metadata.get("metadata.raw").map(String::as_str),
+            Some("[1,2,3]")
+        );
     }
 
     #[test]
@@ -2531,6 +2590,9 @@ mod tests {
             .metadata
             .title
             .starts_with("Forensic Examination Report"));
+        assert_eq!(report.case_info.case_number, "");
+        assert_eq!(report.examiner.name, "");
+        assert!(report.methodology.is_some());
     }
 
     // =========================================================================

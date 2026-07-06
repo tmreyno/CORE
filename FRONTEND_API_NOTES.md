@@ -1359,7 +1359,7 @@ These TypeScript files must stay aligned with their Rust counterparts:
 |-----------------|------------|
 | `src/types/container.ts` | `src-tauri/src/containers/types.rs`, `src-tauri/src/formats.rs` |
 | `src/types/containerInfo.ts` | `src-tauri/src/containers/types.rs` |
-| `src/types/lazy-loading.ts` | `src-tauri/src/commands/lazy_loading.rs`, `src-tauri/src/common/lazy_loading.rs` |
+| `src/types/lazy-loading.ts` | `src-tauri/src/commands/lazy_loading.rs`, `crates/ffx-common/src/lazy_loading.rs` |
 | `src/types/viewer.ts` | `src-tauri/src/viewer/document/types.rs` |
 | `src/types/project.ts` | `src-tauri/src/project.rs` |
 | `src/types/database.ts` | `src-tauri/src/database.rs` |

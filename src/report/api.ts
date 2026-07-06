@@ -18,6 +18,7 @@ import type {
   ProjectDbAnnotationRecord,
 } from "../api/commands";
 import { formatBytes } from "../utils";
+import { isTauri } from "../utils/platform";
 
 export interface ProjectDbReportAppendix {
   appendix_id: string;
@@ -66,6 +67,8 @@ export interface HashRecord {
   value: string;
   computed_at?: string;
   verified?: boolean;
+  source_id?: string;
+  source_ref?: unknown;
 }
 
 export interface ImageInfo {
@@ -332,6 +335,11 @@ export function containersToInputs(
 export async function extractEvidenceFromContainers(
   containers: ContainerInfoInput[],
 ): Promise<EvidenceItem[]> {
+  if (!isTauri) {
+    void containers;
+    return [];
+  }
+
   return invoke<EvidenceItem[]>("extract_evidence_from_containers", {
     containers,
   });
@@ -341,9 +349,31 @@ export async function extractEvidenceFromContainers(
  * Extract report-ready evidence, hashes, and normalized artifacts from .ffxdb.
  */
 export async function extractReportEvidenceFromProjectDb(): Promise<ProjectDbReportEvidence> {
+  if (!isTauri) {
+    return emptyProjectDbReportEvidence();
+  }
+
   return invoke<ProjectDbReportEvidence>(
     "extract_report_evidence_from_project_db",
   );
+}
+
+function emptyProjectDbReportEvidence(): ProjectDbReportEvidence {
+  return {
+    evidenceItems: [],
+    hashRecords: [],
+    hashAlgorithmSummaries: [],
+    verificationResultSummaries: [],
+    artifacts: [],
+    artifactSummaries: [],
+    artifactCategories: [],
+    artifactEvidenceSummaries: [],
+    artifactExtractorSummaries: [],
+    sourceAnalyses: [],
+    sourceAnalysisSummaries: [],
+    sourceAnalysisCategorySummaries: [],
+    annotations: [],
+  };
 }
 
 /**
@@ -410,6 +440,12 @@ export async function createEvidenceFromContainer(
   container: ContainerInfoInput,
   evidenceId: string,
 ): Promise<EvidenceItem> {
+  if (!isTauri) {
+    void container;
+    void evidenceId;
+    throw new Error("Report evidence extraction is available in the desktop app.");
+  }
+
   return invoke<EvidenceItem>("create_evidence_from_container", {
     container,
     evidenceId,
@@ -455,6 +491,24 @@ function buildHashAppendix(evidence: ProjectDbReportEvidence): string {
     for (const summary of evidence.verificationResultSummaries) {
       lines.push(
         `| ${summary.result} | ${summary.count} | ${summary.hashCount} | ${summary.latestVerifiedAt || "-"} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (evidence.hashRecords.length > 0) {
+    lines.push("### Hash Records");
+    lines.push("");
+    lines.push("| Item | Source | Algorithm | Hash Value | Computed At | Verified |");
+    lines.push("| --- | --- | --- | --- | --- | --- |");
+    for (const record of evidence.hashRecords.slice(0, 250)) {
+      lines.push(
+        `| ${record.item || "-"} | ${record.source_id || "-"} | ${record.algorithm} | \`${record.value}\` | ${record.computed_at || "-"} | ${record.verified ?? "-"} |`,
+      );
+    }
+    if (evidence.hashRecords.length > 250) {
+      lines.push(
+        `| ... | ... | ... | ... | ... | ${evidence.hashRecords.length - 250} more records omitted |`,
       );
     }
     lines.push("");
@@ -558,6 +612,229 @@ function artifactMetadataSummary(metadata: Record<string, string>): string {
     ["registry.lastWriteTime", "last write"],
     ["registry.hiveBinsDataSize", "hive bins"],
     ["registry.path", "path"],
+    ["binary.analysisStatus", "binary"],
+    ["binary.indexAnalysisStatus", "binary"],
+    ["binary.format", "format"],
+    ["binary.architecture", "arch"],
+    ["binary.entryPoint", "entry"],
+    ["binary.importLibraries", "imports"],
+    ["binary.exports", "exports"],
+    ["binary.sections", "sections"],
+    ["binary.executableSections", "executable sections"],
+    ["binary.writableSections", "writable sections"],
+    ["binary.maxSectionEntropy", "max entropy"],
+    ["binary.highEntropySections", "high entropy"],
+    ["pe.isDriver", "driver"],
+    ["pe.driverType", "driver type"],
+    ["pe.driverIndicators", "driver indicators"],
+    ["pe.driverServiceNames", "services"],
+    ["pe.driverDeviceNames", "devices"],
+    ["pe.driverDosDeviceNames", "DOS devices"],
+    ["pe.driverRegistryPaths", "registry paths"],
+    ["pe.driverPdbPaths", "PDB"],
+    ["pe.driverUrls", "URLs"],
+    ["pe.driverGuids", "GUIDs"],
+    ["pe.version.CompanyName", "company"],
+    ["pe.version.FileDescription", "description"],
+    ["pe.version.FileVersion", "file version"],
+    ["pe.version.OriginalFilename", "original name"],
+    ["pe.version.ProductName", "product"],
+    ["pe.version.ProductVersion", "product version"],
+    ["macho.cpuType", "CPU"],
+    ["macho.fileType", "Mach-O type"],
+    ["linux.moduleDetected", "module"],
+    ["linux.moduleNames", "module names"],
+    ["linux.moduleVermagic", "vermagic"],
+    ["linux.moduleVersions", "module versions"],
+    ["linux.moduleLicenses", "licenses"],
+    ["linux.moduleAuthors", "authors"],
+    ["linux.moduleDescriptions", "descriptions"],
+    ["linux.moduleAliases", "aliases"],
+    ["linux.moduleDependencies", "dependencies"],
+    ["linux.moduleFirmware", "firmware"],
+    ["linux.moduleSigners", "signers"],
+    ["linux.moduleSignatures", "signatures"],
+    ["system.osFamily", "OS family"],
+    ["system.hostname", "hostname"],
+    ["system.manufacturer", "manufacturer"],
+    ["system.model", "model"],
+    ["system.modelIdentifier", "model id"],
+    ["system.serialNumber", "serial"],
+    ["system.uuid", "uuid"],
+    ["system.hardwareUuid", "hardware uuid"],
+    ["system.bootRomVersion", "Boot ROM"],
+    ["system.smcVersion", "SMC"],
+    ["system.cpuType", "CPU"],
+    ["system.processorSpeed", "CPU speed"],
+    ["system.cpuLogicalProcessorCount", "logical CPUs"],
+    ["system.cpuModels", "CPU models"],
+    ["system.cpuVendors", "CPU vendors"],
+    ["system.cpuCoreCounts", "CPU cores"],
+    ["system.cpuArchitectures", "CPU architectures"],
+    ["system.cpuHardware", "CPU hardware"],
+    ["system.cpuFeatures", "CPU features"],
+    ["system.memoryTotalKiB", "memory KiB"],
+    ["system.memoryTotalBytes", "memory bytes"],
+    ["system.machineId", "machine id"],
+    ["system.osName", "OS"],
+    ["system.osVersion", "OS version"],
+    ["system.osDisplayVersion", "OS display"],
+    ["system.osBuild", "OS build"],
+    ["system.osBuildNumber", "OS build number"],
+    ["system.osUpdateBuildRevision", "UBR"],
+    ["system.osEdition", "edition"],
+    ["system.osInstallationType", "install type"],
+    ["system.osInstallDateEpoch", "install date"],
+    ["system.productId", "product id"],
+    ["system.registeredOwner", "owner"],
+    ["system.registeredOrganization", "organization"],
+    ["system.oemManufacturer", "OEM"],
+    ["system.oemModel", "OEM model"],
+    ["system.oemSupportUrl", "OEM support"],
+    ["system.osPrettyName", "OS"],
+    ["system.osId", "OS id"],
+    ["system.prettyHostname", "pretty hostname"],
+    ["system.localHostname", "local hostname"],
+    ["system.locale", "locale"],
+    ["system.language", "language"],
+    ["system.localeTime", "time locale"],
+    ["system.localeNumeric", "numeric locale"],
+    ["system.timeZone", "time zone"],
+    ["system.timeZoneFormat", "time zone format"],
+    ["system.timeZoneFileVersion", "time zone file"],
+    ["system.timeZoneRule", "time zone rule"],
+    ["system.rootDevice", "root device"],
+    ["system.mountCount", "mounts"],
+    ["system.mounts", "mount table"],
+    ["system.volumeCount", "volumes"],
+    ["system.volumeNames", "volume names"],
+    ["system.volumeUuids", "volume UUIDs"],
+    ["system.diskIdentifiers", "disk ids"],
+    ["system.volumeFilesystems", "filesystems"],
+    ["system.volumeMounts", "volume mounts"],
+    ["system.totalVolumeBytes", "volume bytes"],
+    ["system.volumes", "volume details"],
+    ["system.iconName", "icon"],
+    ["system.chassis", "chassis"],
+    ["system.deployment", "deployment"],
+    ["system.location", "location"],
+    ["system.sku", "SKU"],
+    ["system.family", "family"],
+    ["system.hardwareId", "hardware id"],
+    ["system.boardVendor", "board vendor"],
+    ["system.boardName", "board"],
+    ["system.boardSerial", "board serial"],
+    ["system.baseboardManufacturer", "baseboard vendor"],
+    ["system.baseboardProduct", "baseboard"],
+    ["system.baseboardVersion", "baseboard version"],
+    ["system.biosVendor", "BIOS vendor"],
+    ["system.biosVersion", "BIOS"],
+    ["system.biosReleaseDate", "BIOS date"],
+    ["system.systemBiosVersion", "system BIOS"],
+    ["system.videoBiosVersion", "video BIOS"],
+    ["system.chassisSerial", "chassis serial"],
+    ["system.activeComputerName", "active computer"],
+    ["system.computerName", "computer"],
+    ["system.profileCount", "profiles"],
+    ["system.profileNames", "profile names"],
+    ["system.networkProfileCount", "networks"],
+    ["system.networkProfiles", "network names"],
+    ["system.networkConfigType", "network config"],
+    ["system.networkInterfaceCount", "interfaces"],
+    ["system.networkInterfaces", "interfaces"],
+    ["system.ipv4Addresses", "IP addresses"],
+    ["system.gateways", "gateways"],
+    ["system.dnsServers", "DNS"],
+    ["system.dnsSearchDomains", "DNS search"],
+    ["system.hostAliases", "host aliases"],
+    ["system.networkMethods", "network methods"],
+    ["system.connectionIds", "connections"],
+    ["system.connectionUuids", "connection UUIDs"],
+    ["system.primaryMacAddress", "primary MAC"],
+    ["system.macAddresses", "MAC addresses"],
+    ["system.wifiKnownNetworkCount", "known Wi-Fi"],
+    ["system.wifiSsids", "Wi-Fi SSIDs"],
+    ["system.wifiAuthTypes", "Wi-Fi auth"],
+    ["system.wifiSecurityTypes", "Wi-Fi security"],
+    ["system.wifiEncryptionTypes", "Wi-Fi encryption"],
+    ["system.wifiAutoJoinSsids", "Wi-Fi auto-join"],
+    ["system.wifiLastConnected", "Wi-Fi last connected"],
+    ["system.networkConnectionModes", "connection modes"],
+    ["system.accountConfigType", "account config"],
+    ["system.localUserCount", "local users"],
+    ["system.regularUserCount", "regular users"],
+    ["system.loginUserCount", "login users"],
+    ["system.localGroupCount", "local groups"],
+    ["system.shadowEntryCount", "shadow entries"],
+    ["system.passwordHashUserCount", "password hashes"],
+    ["system.passwordLockedUserCount", "locked passwords"],
+    ["system.passwordDisabledUserCount", "disabled passwords"],
+    ["system.passwordEmptyUserCount", "empty passwords"],
+    ["system.rootAccountPresent", "root account"],
+    ["system.userUidRange", "UID range"],
+    ["system.localUsers", "users"],
+    ["system.regularUsers", "regular user names"],
+    ["system.loginUsers", "login accounts"],
+    ["system.passwordHashUsers", "hash users"],
+    ["system.passwordLockedUsers", "locked users"],
+    ["system.passwordDisabledUsers", "disabled users"],
+    ["system.passwordEmptyUsers", "empty-password users"],
+    ["system.passwordHashAlgorithms", "hash algorithms"],
+    ["system.homeDirectories", "home directories"],
+    ["system.loginShells", "login shells"],
+    ["system.localGroups", "groups"],
+    ["system.adminGroups", "admin groups"],
+    ["system.groupMembers", "group members"],
+    ["system.driveLetters", "drives"],
+    ["system.volumeGuids", "volumes"],
+    ["system.driverServiceCount", "driver services"],
+    ["system.driverServices", "driver names"],
+    ["system.driverServiceNames", "driver names"],
+    ["system.driverImagePaths", "driver paths"],
+    ["system.driverServiceDetails", "driver details"],
+    ["system.firewallConfigType", "firewall"],
+    ["system.firewallRuleCount", "firewall rules"],
+    ["system.firewallTables", "firewall tables"],
+    ["system.firewallChains", "firewall chains"],
+    ["system.firewallPolicies", "firewall policies"],
+    ["system.firewallLogEntryCount", "firewall log entries"],
+    ["system.firewallAllowedCount", "firewall allowed"],
+    ["system.firewallDroppedCount", "firewall dropped"],
+    ["system.firewallProtocols", "firewall protocols"],
+    ["system.firewallGlobalState", "firewall state"],
+    ["system.firewallStealthEnabled", "stealth mode"],
+    ["system.firewallAllowSignedEnabled", "signed apps"],
+    ["system.firewallLoggingEnabled", "firewall logging"],
+    ["system.firewallApplicationRuleCount", "app firewall rules"],
+    ["system.setupLogType", "setup log"],
+    ["system.setupLogLineCount", "setup lines"],
+    ["system.setupDeviceInstallCount", "device installs"],
+    ["system.setupComputerNames", "setup computers"],
+    ["system.setupHostOsVersions", "host OS"],
+    ["system.setupBuildVersions", "setup build"],
+    ["system.setupManufacturers", "setup manufacturers"],
+    ["system.setupModels", "setup models"],
+    ["system.setupBiosVersions", "setup BIOS"],
+    ["system.setupArchitectures", "setup arch"],
+    ["system.setupDeviceHardwareIds", "hardware ids"],
+    ["system.setupDeviceDescriptions", "devices"],
+    ["system.setupDriverProviders", "driver providers"],
+    ["system.setupDriverVersions", "driver versions"],
+    ["system.setupInfNames", "INF names"],
+    ["system.installHistoryCount", "installs"],
+    ["system.latestInstallName", "latest install"],
+    ["system.latestInstallVersion", "install version"],
+    ["system.latestInstallDate", "install date"],
+    ["system.latestInstallPackages", "install packages"],
+    ["activity.commandHistoryType", "history"],
+    ["activity.commandCount", "commands"],
+    ["activity.networkCommandCount", "network commands"],
+    ["activity.privilegedCommandCount", "privileged commands"],
+    ["activity.fileTransferCommandCount", "file transfers"],
+    ["activity.commandNames", "command names"],
+    ["os.release.name", "OS"],
+    ["os.release.version", "version"],
+    ["os.release.buildId", "build"],
     ["plist.format", "plist"],
     ["plist.rootType", "root"],
     ["plist.topLevelKeys", "keys"],
@@ -709,6 +986,11 @@ export async function generateEvidenceFromFiles(
 export async function getReportTemplate(
   investigationType: string,
 ): Promise<unknown> {
+  if (!isTauri) {
+    void investigationType;
+    return null;
+  }
+
   return invoke("get_report_template", { investigationType });
 }
 
@@ -716,6 +998,10 @@ export async function getReportTemplate(
  * Check if AI assistant is available
  */
 export async function isAiAvailable(): Promise<boolean> {
+  if (!isTauri) {
+    return false;
+  }
+
   return invoke<boolean>("is_ai_available");
 }
 
@@ -748,6 +1034,10 @@ export type NarrativeType =
  * Get available AI providers
  */
 export async function getAiProviders(): Promise<AiProviderInfo[]> {
+  if (!isTauri) {
+    return [];
+  }
+
   return invoke<AiProviderInfo[]>("get_ai_providers");
 }
 
@@ -755,6 +1045,10 @@ export async function getAiProviders(): Promise<AiProviderInfo[]> {
  * Check if Ollama is running locally
  */
 export async function checkOllamaConnection(): Promise<boolean> {
+  if (!isTauri) {
+    return false;
+  }
+
   return invoke<boolean>("check_ollama_connection");
 }
 
@@ -768,6 +1062,15 @@ export async function generateAiNarrative(
   model: string,
   apiKey?: string,
 ): Promise<string> {
+  if (!isTauri) {
+    void context;
+    void narrativeType;
+    void provider;
+    void model;
+    void apiKey;
+    throw new Error("AI report narrative generation is available in the desktop app.");
+  }
+
   return invoke<string>("generate_ai_narrative", {
     context,
     narrativeType,
@@ -822,6 +1125,10 @@ export function buildEvidenceContext(evidenceItems: EvidenceItem[]): string {
  * Export report to JSON
  */
 export async function exportReportJson(report: unknown): Promise<string> {
+  if (!isTauri) {
+    return JSON.stringify(report, null, 2);
+  }
+
   return invoke<string>("export_report_json", { report });
 }
 
@@ -829,5 +1136,9 @@ export async function exportReportJson(report: unknown): Promise<string> {
  * Import report from JSON
  */
 export async function importReportJson(json: string): Promise<unknown> {
+  if (!isTauri) {
+    return JSON.parse(json);
+  }
+
   return invoke("import_report_json", { json });
 }

@@ -16,8 +16,11 @@ import { logger } from "../../utils/logger";
 import { commands, type HashSourceInput } from "../../api/commands";
 import type { DatabaseMetadataSection } from "../../types/viewerMetadata";
 import type { DatabaseInfo, TableSchema, TableRows } from "./types";
+import { isTauri } from "../../utils/platform";
 
 const log = logger.scope("DatabaseViewer");
+const BROWSER_DATABASE_VIEW_MESSAGE =
+  "Database evidence viewing is available in the desktop app.";
 
 export const PAGE_SIZE = 100;
 
@@ -37,41 +40,61 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
   const [rowsLoading, setRowsLoading] = createSignal(false);
   const [schemaExpanded, setSchemaExpanded] = createSignal(true);
   const [currentPage, setCurrentPage] = createSignal(0);
+  let databaseGeneration = 0;
+  let tableGeneration = 0;
+  let pageGeneration = 0;
 
   // ── Load database info ──
   const loadDatabase = async () => {
+    const generation = ++databaseGeneration;
+    tableGeneration++;
+    pageGeneration++;
     setLoading(true);
     setError(null);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_DATABASE_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const info = source
         ? await commands.sqlite.getInfoSource<DatabaseInfo>(source)
         : await commands.sqlite.getInfo<DatabaseInfo>(opts.path());
+      if (generation !== databaseGeneration) return;
       setDbInfo(info);
 
       // Auto-select first non-system table
       const userTable = info.tables.find((t) => !t.isSystem);
       if (userTable) {
-        selectTable(userTable.name);
+        void selectTable(userTable.name, generation);
       } else if (info.tables.length > 0) {
-        selectTable(info.tables[0].name);
+        void selectTable(info.tables[0].name, generation);
       }
     } catch (e) {
+      if (generation !== databaseGeneration) return;
       log.error("Failed to load database:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === databaseGeneration) {
+        setLoading(false);
+      }
     }
   };
 
   // ── Select a table and load schema + rows ──
-  const selectTable = async (tableName: string) => {
+  const selectTable = async (tableName: string, dbGeneration = databaseGeneration) => {
+    const generation = ++tableGeneration;
+    pageGeneration++;
     setSelectedTable(tableName);
     setCurrentPage(0);
     setRowsLoading(true);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_DATABASE_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const [schemaResult, rowsResult] = await Promise.all([
         source
@@ -91,12 +114,16 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
               PAGE_SIZE,
             ),
       ]);
+      if (dbGeneration !== databaseGeneration || generation !== tableGeneration) return;
       setSchema(schemaResult);
       setTableRows(rowsResult);
     } catch (e) {
+      if (dbGeneration !== databaseGeneration || generation !== tableGeneration) return;
       log.error("Failed to load table:", tableName, e);
     } finally {
-      setRowsLoading(false);
+      if (dbGeneration === databaseGeneration && generation === tableGeneration) {
+        setRowsLoading(false);
+      }
     }
   };
 
@@ -104,10 +131,17 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
   const loadPage = async (page: number) => {
     const table = selectedTable();
     if (!table) return;
+    const dbGeneration = databaseGeneration;
+    const tableToken = tableGeneration;
+    const generation = ++pageGeneration;
     setRowsLoading(true);
     setCurrentPage(page);
 
     try {
+      if (!isTauri) {
+        throw new Error(BROWSER_DATABASE_VIEW_MESSAGE);
+      }
+
       const source = opts.source?.();
       const rows = source
         ? await commands.sqlite.queryTableSource<TableRows>(
@@ -122,11 +156,27 @@ export function useDatabaseData(opts: UseDatabaseDataOptions) {
             page,
             PAGE_SIZE,
           );
+      if (
+        dbGeneration !== databaseGeneration ||
+        tableToken !== tableGeneration ||
+        generation !== pageGeneration
+      ) return;
       setTableRows(rows);
     } catch (e) {
+      if (
+        dbGeneration !== databaseGeneration ||
+        tableToken !== tableGeneration ||
+        generation !== pageGeneration
+      ) return;
       log.error("Failed to load page:", page, e);
     } finally {
-      setRowsLoading(false);
+      if (
+        dbGeneration === databaseGeneration &&
+        tableToken === tableGeneration &&
+        generation === pageGeneration
+      ) {
+        setRowsLoading(false);
+      }
     }
   };
 

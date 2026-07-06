@@ -144,12 +144,32 @@ export interface BinaryMetadataSection {
   sectionCount?: number;
   importCount?: number;
   exportCount?: number;
+  stringCount?: number;
   isStripped?: boolean;
   isDynamic?: boolean;
   compiler?: string;
   // PE-specific
   subsystem?: string;
   characteristics?: string[];
+  isDriver?: boolean;
+  driverType?: string;
+  driverIndicators?: string[];
+  versionInfo?: Record<string, string>;
+  // Linux kernel module specific
+  linuxModule?: {
+    detected: boolean;
+    names: string[];
+    versions: string[];
+    vermagic: string[];
+    licenses: string[];
+    authors: string[];
+    descriptions: string[];
+    aliases: string[];
+    dependencies: string[];
+    firmware: string[];
+    signers: string[];
+    signatures: string[];
+  };
   // Timestamps
   compiledDate?: string;
 }

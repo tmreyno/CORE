@@ -61,6 +61,12 @@ import {
   detectConflicts,
 } from "./CollectionReconciliation";
 import { DataCategorySelector } from "./DataCategorySelector";
+import { isTauri } from "../../utils/platform";
+
+const BROWSER_PROJECT_PICKER_MESSAGE =
+  "Project file selection is available in the desktop app. In browser preview, open a .cffx project directly from Open Project.";
+const BROWSER_SAVE_PICKER_MESSAGE =
+  "Merged project save browsing is available in the desktop app. In browser preview, enter the output path manually.";
 
 const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
   // --- Mode ---
@@ -198,6 +204,11 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
 
   // --- Step 1: Add project files ---
   const handleAddProjects = async () => {
+    if (!isTauri) {
+      setError(BROWSER_PROJECT_PICKER_MESSAGE);
+      return;
+    }
+
     const selected = await open({
       multiple: !isMergeIntoOpen(), // Only allow single select in merge-into-open mode
       filters: [{ name: "CORE-FFX Projects", extensions: ["cffx"] }],
@@ -291,6 +302,11 @@ const MergeProjectsWizard: Component<MergeProjectsWizardProps> = (props) => {
 
   // --- Step 2: Choose output path ---
   const handleChooseOutput = async () => {
+    if (!isTauri) {
+      setError(BROWSER_SAVE_PICKER_MESSAGE);
+      return;
+    }
+
     const selected = await save({
       filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
       title: "Save merged project as",

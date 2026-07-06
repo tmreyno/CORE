@@ -27,8 +27,10 @@ import {
 import { useImportAcquisitions } from "../../hooks/useImportAcquisitions";
 import type { ImportAcquisitionsOptions } from "../../hooks/useImportAcquisitions";
 import type { DiscoveredAcquisition } from "../../api/importAcquisitions";
+import type { ImportResult } from "../../api/importAcquisitions";
 import type { DiscoveredFile } from "../../types/container";
 import { formatBytes } from "../../utils";
+import { isTauri } from "../../utils/platform";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,8 @@ export interface ImportAcquisitionsWizardProps {
   onClose: () => void;
   /** Called for each imported file (add to evidence tree) */
   onFileImported?: (file: DiscoveredFile) => void;
+  /** Called after a successful import batch so callers can mark project state dirty. */
+  onImportComplete?: (result: ImportResult) => void;
   /** Set of output paths already in the project (to detect duplicates) */
   knownPaths?: Set<string>;
 }
@@ -52,6 +56,9 @@ const TYPE_BADGES: Record<string, { label: string; color: string }> = {
   memory: { label: "MEM", color: "text-warning" },
   triage: { label: "Triage", color: "text-info" },
 };
+
+const BROWSER_DIRECTORY_PICKER_MESSAGE =
+  "Acquisition directory scanning is available in the desktop app.";
 
 function getTypeBadge(acquisitionType: string) {
   return TYPE_BADGES[acquisitionType] || { label: acquisitionType, color: "text-txt-muted" };
@@ -75,6 +82,7 @@ function formatDate(iso: string): string {
 export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> = (props) => {
   const [scanDir, setScanDir] = createSignal("");
   const [hasScanned, setHasScanned] = createSignal(false);
+  const [browseMessage, setBrowseMessage] = createSignal<string | null>(null);
 
   const importer = useImportAcquisitions();
 
@@ -95,6 +103,11 @@ export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> 
   // ── Actions ──
 
   async function handleBrowse() {
+    if (!isTauri) {
+      setBrowseMessage(BROWSER_DIRECTORY_PICKER_MESSAGE);
+      return;
+    }
+
     const dir = await open({ directory: true, title: "Select acquisition directory" });
     if (typeof dir === "string") {
       setScanDir(dir);
@@ -105,6 +118,10 @@ export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> 
 
   async function doScan(dir: string) {
     if (!dir) return;
+    if (!isTauri) {
+      setBrowseMessage(BROWSER_DIRECTORY_PICKER_MESSAGE);
+      return;
+    }
     setHasScanned(true);
     await importer.scan(dir);
   }
@@ -118,7 +135,10 @@ export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> 
     const options: ImportAcquisitionsOptions = {
       onFileImported: props.onFileImported,
     };
-    await importer.importSelected(known, options);
+    const result = await importer.importSelected(known, options);
+    if (result.imported > 0) {
+      props.onImportComplete?.(result);
+    }
   }
 
   function handleClose() {
@@ -177,6 +197,15 @@ export const ImportAcquisitionsWizard: Component<ImportAcquisitionsWizardProps> 
           </Show>
 
           {/* ── Error ── */}
+          <Show when={browseMessage()}>
+            {(message) => (
+              <div class="flex items-center gap-2 p-3 rounded-lg bg-warning/10 text-warning text-sm">
+                <HiOutlineInformationCircle class="w-icon-sm h-icon-sm shrink-0" />
+                <span>{message()}</span>
+              </div>
+            )}
+          </Show>
+
           <Show when={importer.error()}>
             <div class="flex items-center gap-2 p-3 rounded-lg bg-error/10 text-error text-sm">
               <HiOutlineExclamationTriangle class="w-icon-sm h-icon-sm shrink-0" />

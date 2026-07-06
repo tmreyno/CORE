@@ -44,11 +44,14 @@ import { OptionalMetadataRow, StatusBadge } from "./viewerMetadata/shared";
 import { printDocument } from "./document/documentHelpers";
 import { useToast } from "./Toast";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 import type { DbEvidenceCollection, DbCollectedItem } from "../types/projectDb";
 import type { DiscoveredFile } from "../types";
 
 const log = logger.scope("EvidenceCollectionSummary");
 const PACKAGING_OPTIONS = CORE_BASELINE_EVIDENCE_POLICY_PACK.packagingTypes;
+const BROWSER_COLLECTION_EXPORT_MESSAGE =
+  "Evidence collection export is available in the desktop app.";
 
 // =============================================================================
 // Props
@@ -78,6 +81,12 @@ export function EvidenceCollectionSummaryPanel(props: EvidenceCollectionSummaryP
     if (!props.hasProject()) {
       setCollections([]);
       setAllItems([]);
+      return;
+    }
+    if (!isTauri) {
+      setCollections([]);
+      setAllItems([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -157,6 +166,10 @@ export function EvidenceCollectionSummaryPanel(props: EvidenceCollectionSummaryP
     const cols = matchingCollections();
     const items = matchingItems();
     if (cols.length === 0) return;
+    if (!isTauri) {
+      toast.error("Export Unavailable", BROWSER_COLLECTION_EXPORT_MESSAGE);
+      return;
+    }
 
     try {
       const filename = props.activeFile()?.filename ?? "evidence";
@@ -198,6 +211,10 @@ export function EvidenceCollectionSummaryPanel(props: EvidenceCollectionSummaryP
     const cols = collections();
     const items = allItems();
     if (cols.length === 0 && items.length === 0) return;
+    if (!isTauri) {
+      toast.error("Export Unavailable", BROWSER_COLLECTION_EXPORT_MESSAGE);
+      return;
+    }
 
     try {
       const path = await save({

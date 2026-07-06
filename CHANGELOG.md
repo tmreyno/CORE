@@ -4,6 +4,18 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.113] - 2026-07-06
+
+### Fixed
+- Evidence project open repair now rekeys legacy generated evidence IDs to resolved evidence paths so seed `.cffx` project databases keep hash and evidence records connected.
+- Hex viewer navigation now loads bounded windows for deep offsets in large evidence sources instead of requesting oversized start-of-file reads.
+- Direct driver entry viewing now persists `.sys`, `.drv`, and `.ko` entries through the binary artifact collector.
+- macOS boot plist, kernel extension `Info.plist`, and non-`/private` dsLocal identity artifacts are now collected by the evidence tree classifier.
+
+### Changed
+- System identity collection includes additional Linux network configuration sources and driver/system identity artifacts discovered during AD1/VFS tree loads.
+- Update availability now shows bundled `0.1.112` and `0.1.113` release review notes directly in the app instead of requiring users to open the release website.
+
 ## [0.1.112] - 2026-04-16
 
 ### Changed
@@ -1312,7 +1324,8 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.112...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.113...HEAD
+[0.1.113]: https://github.com/tmreyno/CORE/compare/v0.1.112...v0.1.113
 [0.1.112]: https://github.com/tmreyno/CORE/compare/v0.1.111...v0.1.112
 [0.1.111]: https://github.com/tmreyno/CORE/compare/v0.1.110...v0.1.111
 [0.1.110]: https://github.com/tmreyno/CORE/compare/v0.1.109...v0.1.110

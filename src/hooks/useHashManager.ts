@@ -89,6 +89,7 @@ export function useHashManager(fileManager: FileManager) {
 
     // Actions — computation
     hashSingleFile: computation.hashSingleFile,
+    hashEntry: computation.hashEntry,
     hashSelectedFiles: computation.hashSelectedFiles,
     hashAllFiles: computation.hashAllFiles,
 

@@ -8,7 +8,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import type { FFXProject } from "./useActivityTimeline";
 import { logger } from "../utils/logger";
+import { isTauri } from "../utils/platform";
 const log = logger.scope("ProjectComparison");
+const BROWSER_COMPARISON_MESSAGE =
+  "Project comparison tools are available in the desktop app.";
 
 /**
  * Project comparison result from backend
@@ -110,10 +113,22 @@ export function useProjectComparison() {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+  const ensureDesktopRuntime = () => {
+    if (isTauri) return true;
+    setLoading(false);
+    setError(BROWSER_COMPARISON_MESSAGE);
+    return false;
+  };
+
   /**
    * Compare two projects
    */
   const compareProjects = async (projectA: FFXProject, projectB: FFXProject): Promise<ProjectComparison | null> => {
+    if (!ensureDesktopRuntime()) {
+      setComparison(null);
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -141,6 +156,11 @@ export function useProjectComparison() {
     projectB: FFXProject,
     strategy: MergeStrategy = "Manual"
   ): Promise<MergeResult | null> => {
+    if (!ensureDesktopRuntime()) {
+      setMergeResult(null);
+      return null;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -169,6 +189,8 @@ export function useProjectComparison() {
     source: FFXProject,
     overwrite: boolean = false
   ): Promise<FFXProject | null> => {
+    if (!ensureDesktopRuntime()) return null;
+
     try {
       setLoading(true);
       setError(null);
@@ -196,6 +218,8 @@ export function useProjectComparison() {
     source: FFXProject,
     overwrite: boolean = false
   ): Promise<FFXProject | null> => {
+    if (!ensureDesktopRuntime()) return null;
+
     try {
       setLoading(true);
       setError(null);

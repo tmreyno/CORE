@@ -14,8 +14,17 @@ import { logAuditAction } from "../utils/telemetry";
 import { logger } from "../utils/logger";
 import { getPreference, getLastPath, setLastPath } from "../components/preferences";
 import { dbSync } from "./project/useProjectDbSync";
+import { isTauri } from "../utils/platform";
 
 const log = logger.scope("FileManager");
+const BROWSER_METADATA_MESSAGE =
+  "Container metadata loading is available in the desktop app. Browser preview can use cached .cffx metadata only.";
+
+function cachedInfoSatisfiesRequest(info: ContainerInfo, includeTree: boolean): boolean {
+  if (!includeTree) return true;
+  if (!info.ad1) return true;
+  return Array.isArray(info.ad1.tree);
+}
 
 // System stats interface (matches Rust struct with serde rename_all = "camelCase")
 export interface NetworkInterfaceInfo {
@@ -105,6 +114,11 @@ export function useFileManager() {
   
   // Setup system stats listener
   const setupSystemStatsListener = async (): Promise<() => void> => {
+    if (!isTauri) {
+      log.debug("Skipping system stats listener outside Tauri runtime");
+      return () => {};
+    }
+
     // Fire-and-forget initial stats fetch — don't block mount on backend response.
     // The 2-second system-stats monitor will populate stats shortly anyway.
     invoke<SystemStats>("get_system_stats")
@@ -290,6 +304,11 @@ export function useFileManager() {
   // Browse for directory
   const browseScanDir = async (): Promise<void> => {
     log.debug("browseScanDir called");
+    if (!isTauri) {
+      setError("Directory browsing is available in the desktop app. In browser preview, open a .cffx project file instead.");
+      return;
+    }
+
     try {
       const defaultPath = getLastPath("evidence");
       log.debug(`Opening directory picker, defaultPath=${defaultPath}`);
@@ -322,6 +341,11 @@ export function useFileManager() {
     if (!targetDir.trim()) {
       log.debug("No directory specified");
       setError("Select a directory first");
+      return;
+    }
+
+    if (!isTauri) {
+      setError("Evidence directory scanning is available in the desktop app. Browser preview can restore evidence only from a .cffx cache.");
       return;
     }
     
@@ -406,6 +430,10 @@ export function useFileManager() {
   const loadStoredHashesInBackground = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
+    if (!isTauri) {
+      setOk(`Restored ${files.length} file(s) from project cache`);
+      return;
+    }
     
     let loaded = 0;
     const total = files.length;
@@ -468,6 +496,15 @@ export function useFileManager() {
 
   // Load file info for a single file
   const loadFileInfo = async (file: DiscoveredFile, includeTree = false): Promise<ContainerInfo> => {
+    const cached = fileInfoMap().get(file.path);
+    if (cached && cachedInfoSatisfiesRequest(cached, includeTree)) {
+      return cached;
+    }
+    if (!isTauri) {
+      updateFileStatus(file.path, "metadata-unavailable", 0, BROWSER_METADATA_MESSAGE);
+      throw new Error(BROWSER_METADATA_MESSAGE);
+    }
+
     updateFileStatus(file.path, "reading-metadata", 0);
     try {
       const result = await invoke<ContainerInfo>("logical_info", { inputPath: file.path, includeTree });
@@ -493,6 +530,10 @@ export function useFileManager() {
   const loadAllInfo = async (): Promise<void> => {
     const files = discoveredFiles();
     if (files.length === 0) return;
+    if (!isTauri) {
+      setOk(`Restored ${files.length} file(s) from project cache`);
+      return;
+    }
     
     const total = files.length;
     let loaded = 0;
@@ -551,18 +592,27 @@ export function useFileManager() {
   // because it can take 15-20 seconds for large AD1 files.
   // The EvidenceTree component uses V2 lazy loading APIs which are ~17,000x faster
   // (1ms for root children vs 17s for full tree parsing).
-  const selectAndViewFile = async (file: DiscoveredFile): Promise<void> => {
+  const selectAndViewFile = async (file: DiscoveredFile): Promise<boolean> => {
     // Check for large container warning preference
     if (getPreference("warnOnLargeContainers")) {
       const thresholdGb = getPreference("largeContainerThresholdGb");
       const thresholdBytes = thresholdGb * 1024 * 1024 * 1024;
       
       if (file.size > thresholdBytes) {
-        const confirmed = await ask(
-          `This container (${formatBytes(file.size)}) exceeds ${thresholdGb}GB.\n\nLarge containers may take longer to process and use more memory. Continue?`,
-          { title: "Large Container", kind: "warning" }
-        );
-        if (!confirmed) return;
+        if (!isTauri) {
+          log.info(
+            `Skipping native large-container confirmation outside Tauri runtime for ${file.filename}`,
+          );
+        } else {
+          const confirmed = await ask(
+            `This container (${formatBytes(file.size)}) exceeds ${thresholdGb}GB.\n\nLarge containers may take longer to process and use more memory. Continue?`,
+            { title: "Large Container", kind: "warning" },
+          ).catch(err => {
+            log.warn(`Large-container confirmation failed for ${file.filename}:`, normalizeError(err));
+            return false;
+          });
+          if (!confirmed) return false;
+        }
       }
     }
     
@@ -579,15 +629,16 @@ export function useFileManager() {
     const existingInfo = fileInfoMap().get(file.path);
     
     // Load basic container info (without tree) if not already cached
-    if (!existingInfo) {
-      try {
-        await loadFileInfo(file, false);  // Fast: ~3ms for AD1, ~5s for E01
-      } catch (err) {
+    if (!existingInfo && isTauri) {
+      void loadFileInfo(file, false).catch(err => {
         // Log but don't propagate - file may have missing segments
         log.warn(`Failed to load info for ${file.filename}:`, normalizeError(err));
-      }
+      });
+    } else if (!existingInfo) {
+      updateFileStatus(file.path, "metadata-unavailable", 0, BROWSER_METADATA_MESSAGE);
     }
     // Tree is populated by EvidenceTree via V2 lazy loading APIs
+    return true;
   };
 
   // ===== PROJECT RESTORE FUNCTIONS =====

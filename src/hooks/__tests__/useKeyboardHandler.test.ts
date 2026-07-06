@@ -186,6 +186,16 @@ describe("useKeyboardHandler", () => {
       expect(deps.setShowProjectWizard).toHaveBeenCalledWith(true);
       dispose();
     });
+
+    it("uses the unified new project action when provided", () => {
+      const onNewProject = vi.fn();
+      const { deps, dispose } = setup({ onNewProject });
+      fireKey(meta("n", { shiftKey: true }));
+
+      expect(onNewProject).toHaveBeenCalledTimes(1);
+      expect(deps.setShowProjectWizard).not.toHaveBeenCalled();
+      dispose();
+    });
   });
 
   // -----------------------------------------------------------------------

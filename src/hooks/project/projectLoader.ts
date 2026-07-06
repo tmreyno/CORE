@@ -18,12 +18,31 @@ import type { CenterTab, CenterPaneViewMode } from "../../components/layout/Cent
 import type { DiscoveredFile, CaseDocument, ContainerInfo, AxiomCaseInfo, ArtifactCategorySummary } from "../../types";
 import type { ProjectTab } from "../../types/project";
 import type { useFileManager, useHashManager, useProject, useProcessedDatabases } from "../../hooks";
-import { getDirname } from "../../utils/pathUtils";
+import { getBasename, getDirname } from "../../utils/pathUtils";
+import { getContainerBrowserMode } from "../../components/EvidenceTree/containerDetection";
 import type { LeftPanelTab } from "../../components";
 import { logger } from "../../utils/logger";
+import { isTauri } from "../../utils/platform";
+import { createDocumentEntry } from "./projectSetup";
 
 // Create a scoped logger for project operations
 const log = logger.scope("Project");
+
+type RestorableProjectTab = ProjectTab & {
+  entry_size?: number;
+  entry_is_dir?: boolean;
+  entry_is_vfs_entry?: boolean;
+  entry_is_archive_entry?: boolean;
+  entry_is_disk_file?: boolean;
+  entry_container_type?: string;
+  entry_metadata?: Record<string, unknown>;
+  entry_data_addr?: number | null;
+  entry_item_addr?: number | null;
+  entry_compressed_size?: number | null;
+  entry_data_end_addr?: number | null;
+  entry_metadata_addr?: number | null;
+  entry_first_child_addr?: number | null;
+};
 
 // ─── Params Interface ────────────────────────────────────────────────────────
 
@@ -55,6 +74,7 @@ export interface HandleLoadProjectParams {
     success: (title: string, message?: string) => void;
     error: (title: string, message?: string) => void;
     warning: (title: string, message?: string) => void;
+    info?: (title: string, message?: string) => void;
   };
   /** Optional: Path to load (if not provided, shows file picker) */
   projectPath?: string;
@@ -65,7 +85,7 @@ export interface HandleLoadProjectParams {
 /**
  * Helper to restore CenterTabs from project tabs
  */
-function restoreCenterTabs(
+export function restoreCenterTabs(
   projectTabs: ProjectTab[],
   discoveredFiles: DiscoveredFile[],
   processedDatabases: import("../../types/processed").ProcessedDatabase[],
@@ -96,29 +116,41 @@ function restoreCenterTabs(
         const docPath = savedTab.document_path || savedTab.file_path;
         const matchedDoc = caseDocuments.find((d) => d.path === docPath);
         if (matchedDoc || docPath) {
+          const documentEntry = createDocumentEntry(
+            matchedDoc ?? ({
+              path: docPath,
+              filename: savedTab.name || getBasename(docPath) || "Document",
+              size: 0,
+              document_type: "unknown",
+              format: savedTab.container_type || "file",
+            } as unknown as CaseDocument),
+          );
           restoredTabs.push({
             id: savedTab.id || `document:${docPath}`,
             type: "document",
             title: savedTab.name,
             documentPath: docPath,
+            documentEntry,
             closable: true,
           });
         }
         break;
       }
       case "entry": {
-        if (savedTab.entry_path && savedTab.entry_container_path) {
+        const containerPath = savedTab.entry_container_path || savedTab.file_path;
+        if (savedTab.entry_path && containerPath) {
+          const matchedFile = discoveredFiles.find((f) => f.path === containerPath);
+          const entry = restoreEntryFromProjectTab(
+            savedTab as RestorableProjectTab,
+            containerPath,
+            matchedFile,
+          );
           restoredTabs.push({
             id: savedTab.id || `entry:${savedTab.entry_path}`,
             type: "entry",
             title: savedTab.entry_name || savedTab.name,
-            entry: {
-              containerPath: savedTab.entry_container_path,
-              entryPath: savedTab.entry_path,
-              name: savedTab.entry_name || savedTab.name,
-              size: 0,
-              isDir: false,
-            },
+            subtitle: matchedFile?.filename || savedTab.subtitle,
+            entry,
             closable: true,
           });
         }
@@ -191,6 +223,123 @@ function restoreCenterTabs(
   return restoredTabs;
 }
 
+type ActiveTabProjectState = {
+  active_tab_path?: string | null;
+  center_pane_state?: {
+    active_tab_id?: string | null;
+  } | null;
+};
+
+function centerTabPaths(tab: CenterTab): string[] {
+  return [
+    tab.file?.path,
+    tab.documentPath,
+    tab.entry?.containerPath,
+    tab.entry?.entryPath,
+    tab.processedDb?.path,
+  ].filter((path): path is string => Boolean(path));
+}
+
+function resolveActiveCenterTab(
+  restoredTabs: CenterTab[],
+  project: ActiveTabProjectState,
+): CenterTab | undefined {
+  const savedActiveId = project.center_pane_state?.active_tab_id;
+  const byId = savedActiveId
+    ? restoredTabs.find((tab) => tab.id === savedActiveId)
+    : undefined;
+  if (byId) return byId;
+
+  const savedActivePath = project.active_tab_path;
+  if (savedActivePath) {
+    const byPath = restoredTabs.find((tab) =>
+      centerTabPaths(tab).includes(savedActivePath),
+    );
+    if (byPath) return byPath;
+  }
+
+  return restoredTabs[0];
+}
+
+function evidenceFileForCenterTab(
+  tab: CenterTab | undefined,
+  discoveredFiles: DiscoveredFile[],
+): DiscoveredFile | undefined {
+  if (!tab) return undefined;
+  if (tab.file) return tab.file;
+
+  const containerPath = tab.entry?.containerPath;
+  if (!containerPath) return undefined;
+
+  return discoveredFiles.find((file) => file.path === containerPath);
+}
+
+function restoreEntryFromProjectTab(
+  savedTab: RestorableProjectTab,
+  containerPath: string,
+  matchedFile: DiscoveredFile | undefined,
+): SelectedEntry {
+  const containerType =
+    savedTab.entry_container_type ||
+    matchedFile?.container_type ||
+    savedTab.container_type ||
+    "";
+
+  return restoreSelectedEntry(
+    {
+      containerPath,
+      entryPath: savedTab.entry_path || "",
+      name: savedTab.entry_name || savedTab.name,
+      size: savedTab.entry_size ?? 0,
+      isDir: savedTab.entry_is_dir ?? false,
+      isVfsEntry: savedTab.entry_is_vfs_entry,
+      isArchiveEntry: savedTab.entry_is_archive_entry,
+      isDiskFile: savedTab.entry_is_disk_file,
+      containerType,
+      metadata: savedTab.entry_metadata,
+      dataAddr: savedTab.entry_data_addr,
+      itemAddr: savedTab.entry_item_addr,
+      compressedSize: savedTab.entry_compressed_size,
+      dataEndAddr: savedTab.entry_data_end_addr,
+      metadataAddr: savedTab.entry_metadata_addr,
+      firstChildAddr: savedTab.entry_first_child_addr,
+    },
+    matchedFile ? [matchedFile] : [],
+  );
+}
+
+export function restoreSelectedEntry(
+  savedEntry: SelectedEntry,
+  discoveredFiles: DiscoveredFile[],
+): SelectedEntry {
+  const matchedFile = discoveredFiles.find(
+    (file) => file.path === savedEntry.containerPath,
+  );
+  const containerType =
+    savedEntry.containerType || matchedFile?.container_type || "";
+  const browserMode = getContainerBrowserMode(containerType);
+
+  return {
+    ...savedEntry,
+    containerPath: savedEntry.containerPath,
+    entryPath: savedEntry.entryPath,
+    name: savedEntry.name,
+    size: savedEntry.size ?? 0,
+    isDir: savedEntry.isDir ?? false,
+    isVfsEntry: savedEntry.isVfsEntry ?? browserMode === "vfs",
+    isArchiveEntry: savedEntry.isArchiveEntry ?? browserMode === "archive",
+    isDiskFile: savedEntry.isDiskFile,
+    containerType,
+    metadata: savedEntry.metadata,
+    dataAddr: savedEntry.dataAddr,
+    itemAddr: savedEntry.itemAddr,
+    compressedSize: savedEntry.compressedSize,
+    dataEndAddr: savedEntry.dataEndAddr,
+    metadataAddr: savedEntry.metadataAddr,
+    firstChildAddr: savedEntry.firstChildAddr,
+  };
+}
+
 // ─── Main Load Handler ───────────────────────────────────────────────────────
 
 /**
@@ -201,11 +350,10 @@ function restoreCenterTabs(
  * 2. Restore evidence cache (discovered files, container info, computed hashes)
  * 3. Restore UI state (panel sizes, view modes, selected entry, etc.)
  * 4. Restore filter state (type filter for evidence tree)
- * 5. Restore tabs (evidence, documents, entries, processed databases)
- * 6. Restore selected container entry
- * 7. Restore hash history
- * 8. Restore processed databases state
- * 9. Restore case documents cache
+ * 5. Restore processed databases and case documents needed by saved tabs
+ * 6. Restore tabs (evidence, documents, entries, processed databases)
+ * 7. Restore selected container entry
+ * 8. Restore hash history
  *
  * NOTE: project_db_open + DB seeding is handled inside loadProject()
  * (useProjectIO.ts) before startNewSession(), so dbSync calls have an
@@ -247,11 +395,24 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     // <select> value won't match any new option.
     fileManager.setScanDir("");
 
+    if (!isTauri && !projectPath) {
+      toast.info?.(
+        "Open Project",
+        "Choose a .cffx project file in the browser file picker.",
+      );
+    }
+
     // Load project, optionally from a specific path
     const result = await projectManager.loadProject(projectPath);
     if (!result.project) {
       // Restore previous scanDir on cancel / failure
       fileManager.setScanDir(previousScanDir);
+      if (!isTauri && result.error === "Open cancelled") {
+        toast.info?.(
+          "Open Cancelled",
+          "No project file was selected. Use Open Project and choose a .cffx file.",
+        );
+      }
       if (result.error && result.error !== "Open cancelled") {
         toast.error("Load Failed", result.error);
       }
@@ -351,7 +512,14 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       );
     } else {
       log.debug("No evidence cache, scanning directory...");
-      await fileManager.scanForFiles(initialScanDir);
+      if (isTauri) {
+        await fileManager.scanForFiles(initialScanDir);
+      } else {
+        toast.info?.(
+          "Browser Preview",
+          "Loaded project metadata. Evidence scanning is available in the desktop app.",
+        );
+      }
     }
 
     // ===========================================================================
@@ -409,12 +577,65 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     }
 
     // ===========================================================================
-    // STEP 5: Restore tabs (evidence, documents, entries, processed databases)
+    // STEP 5: Restore supporting project data needed by saved tabs
+    // ===========================================================================
+    if (project.processed_databases) {
+      const pd = project.processed_databases;
+
+      if (pd.cached_databases && pd.cached_databases.length > 0) {
+        processedDbManager.restoreFullState(
+          pd.cached_databases,
+          pd.selected_path,
+          pd.cached_axiom_case_info as
+            | Record<string, AxiomCaseInfo>
+            | undefined,
+          pd.cached_artifact_categories as
+            | Record<string, ArtifactCategorySummary[]>
+            | undefined,
+          pd.detail_view_type,
+        );
+        log.debug(
+          `Restored ${pd.cached_databases.length} processed databases from cache`,
+        );
+        if (pd.detail_view_type) {
+          log.debug(
+            `Restored detail view type: ${pd.detail_view_type}`,
+          );
+        }
+      } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
+        await processedDbManager.restoreFromProject(
+          pd.loaded_paths,
+          pd.selected_path,
+          pd.cached_metadata,
+        );
+      }
+    }
+
+    const docsCache = project.case_documents_cache;
+    let restoredCaseDocuments: CaseDocument[] = [];
+    if (
+      docsCache &&
+      docsCache.valid &&
+      docsCache.documents &&
+      docsCache.documents.length > 0
+    ) {
+      restoredCaseDocuments = docsCache.documents as CaseDocument[];
+      setCaseDocuments(restoredCaseDocuments);
+      // Also restore the search path if we have documents
+      if (docsCache.search_path) {
+        setCaseDocumentsPath(docsCache.search_path);
+      }
+      log.debug(
+        `Restored ${docsCache.documents.length} case documents from cache`,
+      );
+    }
+
+    // ===========================================================================
+    // STEP 6: Restore tabs (evidence, documents, entries, processed databases)
     // ===========================================================================
     if (project.tabs && project.tabs.length > 0) {
       const discoveredFiles = fileManager.discoveredFiles();
       const processedDatabases = processedDbManager.databases();
-      const caseDocsList: CaseDocument[] = [];
 
       // Check if we have new-style tabs (with type field) and setCenterTabs available
       const hasNewStyleTabs = project.tabs.some(
@@ -427,7 +648,7 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
           project.tabs,
           discoveredFiles,
           processedDatabases,
-          caseDocsList,
+          restoredCaseDocuments,
         );
 
         if (restoredCenterTabs.length > 0) {
@@ -435,18 +656,14 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
           log.debug(
             `Restored ${restoredCenterTabs.length} center pane tabs`,
           );
+          const activeTab = resolveActiveCenterTab(
+            restoredCenterTabs,
+            project,
+          );
 
           // Restore active tab and view mode
-          if (
-            project.center_pane_state?.active_tab_id &&
-            setActiveTabId
-          ) {
-            setActiveTabId(project.center_pane_state.active_tab_id);
-          } else if (
-            restoredCenterTabs.length > 0 &&
-            setActiveTabId
-          ) {
-            setActiveTabId(restoredCenterTabs[0].id);
+          if (setActiveTabId) {
+            setActiveTabId(activeTab?.id || restoredCenterTabs[0].id);
           }
 
           if (
@@ -459,14 +676,13 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
             );
           }
 
-          // Set active file for evidence tabs
-          const activeTab =
-            restoredCenterTabs.find(
-              (t) =>
-                t.id === project.center_pane_state?.active_tab_id,
-            ) || restoredCenterTabs[0];
-          if (activeTab?.file) {
-            fileManager.setActiveFile(activeTab.file);
+          // Set active evidence context for evidence tabs and entries inside containers.
+          const activeFile = evidenceFileForCenterTab(
+            activeTab,
+            discoveredFiles,
+          );
+          if (activeFile) {
+            fileManager.setActiveFile(activeFile);
           }
         }
       } else if (setOpenTabs) {
@@ -507,22 +723,21 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
     }
 
     // ===========================================================================
-    // STEP 6: Restore selected container entry (file inside container being viewed)
+    // STEP 7: Restore selected container entry (file inside container being viewed)
     // ===========================================================================
     if (project.ui_state?.selected_entry) {
       const savedEntry = project.ui_state.selected_entry;
-      setSelectedContainerEntry({
-        containerPath: savedEntry.containerPath,
-        entryPath: savedEntry.entryPath,
-        name: savedEntry.name,
-        size: 0, // Will be populated when entry is accessed
-        isDir: false,
-      });
+      setSelectedContainerEntry(
+        restoreSelectedEntry(
+          savedEntry as SelectedEntry,
+          fileManager.discoveredFiles(),
+        ),
+      );
       log.debug(`Restored selected entry: ${savedEntry.name}`);
     }
 
     // ===========================================================================
-    // STEP 7: Restore hash history
+    // STEP 8: Restore hash history
     // ===========================================================================
     if (
       project.hash_history?.files &&
@@ -531,61 +746,6 @@ export async function handleLoadProject(params: HandleLoadProjectParams) {
       hashManager.restoreHashHistory(project.hash_history.files);
       log.debug(
         `Restored hash history for ${Object.keys(project.hash_history.files).length} files`,
-      );
-    }
-
-    // ===========================================================================
-    // STEP 8: Restore processed databases state (includes detail view type)
-    // ===========================================================================
-    if (project.processed_databases) {
-      const pd = project.processed_databases;
-
-      if (pd.cached_databases && pd.cached_databases.length > 0) {
-        processedDbManager.restoreFullState(
-          pd.cached_databases,
-          pd.selected_path,
-          pd.cached_axiom_case_info as
-            | Record<string, AxiomCaseInfo>
-            | undefined,
-          pd.cached_artifact_categories as
-            | Record<string, ArtifactCategorySummary[]>
-            | undefined,
-          pd.detail_view_type, // Restore the detail view type (e.g., 'artifacts', 'timeline')
-        );
-        log.debug(
-          `Restored ${pd.cached_databases.length} processed databases from cache`,
-        );
-        if (pd.detail_view_type) {
-          log.debug(
-            `Restored detail view type: ${pd.detail_view_type}`,
-          );
-        }
-      } else if (pd.loaded_paths && pd.loaded_paths.length > 0) {
-        await processedDbManager.restoreFromProject(
-          pd.loaded_paths,
-          pd.selected_path,
-          pd.cached_metadata,
-        );
-      }
-    }
-
-    // ===========================================================================
-    // STEP 9: Restore case documents cache
-    // ===========================================================================
-    const docsCache = project.case_documents_cache;
-    if (
-      docsCache &&
-      docsCache.valid &&
-      docsCache.documents &&
-      docsCache.documents.length > 0
-    ) {
-      setCaseDocuments(docsCache.documents as CaseDocument[]);
-      // Also restore the search path if we have documents
-      if (docsCache.search_path) {
-        setCaseDocumentsPath(docsCache.search_path);
-      }
-      log.debug(
-        `Restored ${docsCache.documents.length} case documents from cache`,
       );
     }
 

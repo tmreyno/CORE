@@ -220,6 +220,15 @@ impl RawVfs {
         })
     }
 
+    /// Open a raw image in filesystem mode when partitions mount, otherwise
+    /// expose the image in physical mode as a single virtual file.
+    pub fn open_with_physical_fallback(path: &str) -> Result<Self, VfsError> {
+        match Self::open_filesystem(path) {
+            Ok(vfs) if vfs.partition_count() > 0 => Ok(vfs),
+            Ok(_) | Err(_) => Self::open(path),
+        }
+    }
+
     /// Get the current mode
     pub fn mode(&self) -> RawVfsMode {
         self.mode
@@ -390,16 +399,17 @@ impl VirtualFileSystem for RawVfs {
 
                     let total_size = h.total_size();
 
-                    if offset >= total_size {
+                    if offset > total_size {
+                        return Err(VfsError::OutOfBounds { offset, size });
+                    }
+
+                    if offset == total_size || size == 0 {
                         return Ok(Vec::new());
                     }
 
                     h.position = offset;
 
-                    let Some(actual_size) = bounded_physical_read_len(total_size, offset, size)
-                    else {
-                        return Ok(Vec::new());
-                    };
+                    let actual_size = bounded_physical_read_len(total_size, offset, size)?;
                     let mut buf = vec![0u8; actual_size];
 
                     let bytes_read = h
@@ -425,13 +435,21 @@ impl VirtualFileSystem for RawVfs {
     }
 }
 
-fn bounded_physical_read_len(total_size: u64, offset: u64, requested_size: usize) -> Option<usize> {
-    let remaining = total_size.checked_sub(offset)?;
-    if remaining == 0 {
-        return None;
+fn bounded_physical_read_len(
+    total_size: u64,
+    offset: u64,
+    requested_size: usize,
+) -> Result<usize, VfsError> {
+    if offset > total_size {
+        return Err(VfsError::OutOfBounds {
+            offset,
+            size: requested_size,
+        });
     }
+
+    let remaining = total_size - offset;
     let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
-    Some(requested_size.min(remaining))
+    Ok(requested_size.min(remaining))
 }
 
 fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
@@ -452,20 +470,33 @@ fn checked_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
-    fn test_bounded_physical_read_len_rejects_eof() {
-        assert_eq!(bounded_physical_read_len(10, 10, 4), None);
+    fn test_bounded_physical_read_len_allows_exact_eof() {
+        assert_eq!(bounded_physical_read_len(10, 10, 4).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bounded_physical_read_len_rejects_offset_past_eof() {
+        let err = bounded_physical_read_len(10, 11, 4).unwrap_err();
+        assert!(matches!(
+            err,
+            VfsError::OutOfBounds {
+                offset: 11,
+                size: 4
+            }
+        ));
     }
 
     #[test]
     fn test_bounded_physical_read_len_clamps_to_remaining() {
-        assert_eq!(bounded_physical_read_len(10, 8, 5), Some(2));
+        assert_eq!(bounded_physical_read_len(10, 8, 5).unwrap(), 2);
     }
 
     #[test]
     fn test_bounded_physical_read_len_handles_large_remaining() {
-        assert_eq!(bounded_physical_read_len(u64::MAX, 0, 8), Some(8));
+        assert_eq!(bounded_physical_read_len(u64::MAX, 0, 8).unwrap(), 8);
     }
 
     #[test]
@@ -476,5 +507,17 @@ mod tests {
     #[test]
     fn test_checked_seek_position_rejects_overflow() {
         assert!(checked_seek_position(u64::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn open_with_physical_fallback_exposes_unmounted_raw_image() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(b"not a partitioned disk image").unwrap();
+
+        let vfs = RawVfs::open_with_physical_fallback(file.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(vfs.mode(), RawVfsMode::Physical);
+        assert_eq!(vfs.partition_count(), 0);
+        assert_eq!(vfs.readdir("/").unwrap().len(), 1);
     }
 }

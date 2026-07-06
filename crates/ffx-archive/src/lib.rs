@@ -45,7 +45,8 @@ pub use libarchive_backend::{
     detect_format as libarchive_detect_format, is_supported_archive as libarchive_is_supported,
     list_all_entries as libarchive_list_all, list_root as libarchive_list_root,
     quick_summary as libarchive_summary, read_file as libarchive_read_file,
-    read_file_encrypted as libarchive_read_encrypted, ArchiveEntryInfo, LibarchiveHandler,
+    read_file_encrypted as libarchive_read_encrypted,
+    read_file_range as libarchive_read_file_range, ArchiveEntryInfo, LibarchiveHandler,
 };
 pub use sevenz::is_split_archive;
 pub use types::{ArchiveFormat, ArchiveInfo};
@@ -1037,35 +1038,6 @@ fn read_7z_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_checked_native_entry_buffer_allows_small_capacity() {
-        let data = checked_native_entry_buffer(16, "test entry").unwrap();
-        assert!(data.capacity() >= 16);
-    }
-
-    #[test]
-    fn test_checked_native_entry_buffer_rejects_huge_capacity() {
-        assert!(checked_native_entry_buffer(u64::MAX, "test entry").is_err());
-    }
-
-    #[test]
-    fn test_checked_native_entry_size_rejects_configured_limit() {
-        assert!(
-            checked_native_entry_size(MAX_NATIVE_ARCHIVE_ENTRY_BYTES + 1, "test entry").is_err()
-        );
-    }
-
-    #[test]
-    fn test_read_to_end_limited_allows_small_reader() {
-        let data = read_to_end_limited(&b"archive bytes"[..], "test reader").unwrap();
-        assert_eq!(data, b"archive bytes");
-    }
-}
-
 /// Read a single entry from a TAR archive (optionally compressed).
 fn read_tar_entry_native(
     archive_path: &str,
@@ -1170,4 +1142,33 @@ fn read_compressed_stream(
 
     debug!(path = %archive_path, bytes = data.len(), "Read compressed stream (native)");
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checked_native_entry_buffer_allows_small_capacity() {
+        let data = checked_native_entry_buffer(16, "test entry").unwrap();
+        assert!(data.capacity() >= 16);
+    }
+
+    #[test]
+    fn test_checked_native_entry_buffer_rejects_huge_capacity() {
+        assert!(checked_native_entry_buffer(u64::MAX, "test entry").is_err());
+    }
+
+    #[test]
+    fn test_checked_native_entry_size_rejects_configured_limit() {
+        assert!(
+            checked_native_entry_size(MAX_NATIVE_ARCHIVE_ENTRY_BYTES + 1, "test entry").is_err()
+        );
+    }
+
+    #[test]
+    fn test_read_to_end_limited_allows_small_reader() {
+        let data = read_to_end_limited(&b"archive bytes"[..], "test reader").unwrap();
+        assert_eq!(data, b"archive bytes");
+    }
 }

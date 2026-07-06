@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "core-ffx"
-version = "0.1.112"
+version = "0.1.113"
 dependencies = [
  "apple-dmg",
  "async-openai",
@@ -2161,6 +2161,7 @@ dependencies = [
  "ntfs",
  "parking_lot",
  "plist",
+ "quick-xml 0.37.5",
  "rand 0.8.5",
  "rayon",
  "serde",

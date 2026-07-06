@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../utils/platform";
 
 // =============================================================================
 // Types (match Rust merge module)
@@ -216,6 +217,11 @@ export interface MergeResult {
 export async function analyzeProjects(
   cffxPaths: string[],
 ): Promise<ProjectMergeSummary[]> {
+  if (!isTauri) {
+    void cffxPaths;
+    throw new Error("Project merge analysis is available in the desktop app.");
+  }
+
   return invoke<ProjectMergeSummary[]>("project_merge_analyze", {
     cffxPaths,
   });
@@ -230,6 +236,21 @@ export async function executeMerge(
   ownerAssignments?: MergeSourceAssignment[],
   exclusions?: MergeExclusions,
 ): Promise<MergeResult> {
+  if (!isTauri) {
+    void cffxPaths;
+    void newRoot;
+    void ownerAssignments;
+    void exclusions;
+    return {
+      success: false,
+      cffxPath: outputPath || null,
+      ffxdbPath: null,
+      error: "Project merge is available in the desktop app.",
+      stats: null,
+      sources: null,
+    };
+  }
+
   return invoke<MergeResult>("project_merge_execute", {
     cffxPaths,
     outputPath,

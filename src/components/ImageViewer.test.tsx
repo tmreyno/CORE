@@ -4,10 +4,15 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "solid-js/web";
+import { createSignal } from "solid-js";
 import { ImageViewer } from "./ImageViewer";
 import { mockInvoke } from "../__tests__/setup";
+
+vi.mock("../utils/platform", () => ({
+  isTauri: true,
+}));
 
 // Helper to render and return the container
 function renderComponent(component: () => any) {
@@ -23,11 +28,44 @@ const tick = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms));
 // A small 1x1 red PNG as base64
 const MOCK_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+const INLINE_IMAGE_LIMIT = 100 * 1024 * 1024;
+
+function makeChunk(base64 = MOCK_BASE64, totalSize = 1024, offset = 0) {
+  const bytesRead = atob(base64).length;
+  return {
+    path: "source",
+    offset,
+    bytesRead,
+    totalSize,
+    eof: offset + bytesRead >= totalSize,
+    data: base64,
+  };
+}
+
+function mockLocalImageLoad(base64 = MOCK_BASE64, size = 1024, path = "/evidence/photo.jpg") {
+  mockInvoke
+    .mockResolvedValueOnce({
+      path,
+      size,
+      maxInlineBytes: INLINE_IMAGE_LIMIT,
+      supportsRangeReads: true,
+    })
+    .mockResolvedValueOnce(makeChunk(base64, atob(base64).length));
+}
 
 describe("ImageViewer", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     mockInvoke.mockReset();
+    let urlCounter = 0;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => `blob:core-ffx-image-${++urlCounter}`),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
 
   describe("loading state", () => {
@@ -42,38 +80,45 @@ describe("ImageViewer", () => {
       expect(container.textContent).toContain("Loading image...");
     });
 
-    it("calls viewer_read_binary_base64 with the correct path", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+    it("calls ranged binary image reads with the correct path", async () => {
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/photo.jpg");
 
       renderComponent(() => <ImageViewer path="/evidence/photo.jpg" />);
       await tick();
 
-      expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_base64", {
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_get_binary_info", {
         path: "/evidence/photo.jpg",
+      });
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_base64_chunk", {
+        path: "/evidence/photo.jpg",
+        offset: 0,
+        size: 1024,
       });
     });
 
-    it("calls viewer_read_binary_source_base64 when an evidence source is provided", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+    it("calls ranged source image reads when an evidence source is provided", async () => {
       const source = {
         containerPath: "/evidence/image.ad1",
         entryPath: "photos/photo.jpg",
         containerType: "ad1",
-        size: 1024,
+        size: atob(MOCK_BASE64).length,
       };
+      mockInvoke.mockResolvedValueOnce(makeChunk(MOCK_BASE64, source.size));
 
       renderComponent(() => <ImageViewer path="/evidence/photo.jpg" source={source} />);
       await tick();
 
-      expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_source_base64", {
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_read_binary_source_base64_chunk", {
         source,
+        offset: 0,
+        size: source.size,
       });
     });
   });
 
   describe("successful render", () => {
-    it("renders an img element with data URI src", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+    it("renders an img element with a blob URL src", async () => {
+      mockLocalImageLoad();
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.jpg" />
@@ -82,12 +127,12 @@ describe("ImageViewer", () => {
 
       const img = container.querySelector("img");
       expect(img).not.toBeNull();
-      expect(img!.src).toContain("data:image/jpeg;base64,");
-      expect(img!.src).toContain(MOCK_BASE64);
+      expect(img!.src).toContain("blob:core-ffx-image-1");
+      expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     });
 
     it("displays the filename in the toolbar", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/photos/photo.jpg");
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photos/photo.jpg" />
@@ -98,7 +143,7 @@ describe("ImageViewer", () => {
     });
 
     it("shows zoom controls at 100%", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/photo.png");
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.png" />
@@ -109,28 +154,129 @@ describe("ImageViewer", () => {
     });
 
     it("applies correct mime type for png files", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/image.png");
+
+      renderComponent(() => <ImageViewer path="/evidence/image.png" />);
+      await tick();
+
+      expect(URL.createObjectURL).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "image/png" }),
+      );
+    });
+
+    it("applies correct mime type for gif files", async () => {
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/anim.gif");
+
+      renderComponent(() => <ImageViewer path="/evidence/anim.gif" />);
+      await tick();
+
+      expect(URL.createObjectURL).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "image/gif" }),
+      );
+    });
+
+    it("ignores stale image loads when the selected path changes", async () => {
+      let resolveFirst: (value: ReturnType<typeof makeChunk>) => void = () => {};
+      const firstLoad = new Promise<ReturnType<typeof makeChunk>>((resolve) => {
+        resolveFirst = resolve;
+      });
+      const SECOND_BASE64 = "c2Vjb25k";
+      const secondSize = atob(SECOND_BASE64).length;
+      const [path, setPath] = createSignal("/evidence/first.jpg");
+      mockInvoke.mockImplementation((command: string, args: any) => {
+        if (command === "viewer_get_binary_info" && args.path === "/evidence/first.jpg") {
+          return Promise.resolve({
+            path: "/evidence/first.jpg",
+            size: atob(MOCK_BASE64).length,
+            maxInlineBytes: INLINE_IMAGE_LIMIT,
+            supportsRangeReads: true,
+          });
+        }
+        if (command === "viewer_read_binary_base64_chunk" && args.path === "/evidence/first.jpg") {
+          return firstLoad;
+        }
+        if (command === "viewer_get_binary_info" && args.path === "/evidence/second.png") {
+          return Promise.resolve({
+            path: "/evidence/second.png",
+            size: secondSize,
+            maxInlineBytes: INLINE_IMAGE_LIMIT,
+            supportsRangeReads: true,
+          });
+        }
+        if (command === "viewer_read_binary_base64_chunk" && args.path === "/evidence/second.png") {
+          return Promise.resolve(makeChunk(SECOND_BASE64, secondSize));
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
 
       const { container } = renderComponent(() => (
-        <ImageViewer path="/evidence/image.png" />
+        <ImageViewer path={path()} />
       ));
+
+      setPath("/evidence/second.png");
+      await tick();
+      resolveFirst(makeChunk(MOCK_BASE64, atob(MOCK_BASE64).length));
       await tick();
 
       const img = container.querySelector("img");
       expect(img).not.toBeNull();
-      expect(img!.src).toContain("data:image/png;base64,");
+      expect(img!.src).toContain("blob:core-ffx-image-1");
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:core-ffx-image-2");
     });
 
-    it("applies correct mime type for gif files", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+    it("ignores stale image decode errors after the selected path changes", async () => {
+      const firstSize = atob(MOCK_BASE64).length;
+      const SECOND_BASE64 = "c2Vjb25k";
+      const secondSize = atob(SECOND_BASE64).length;
+      const [path, setPath] = createSignal("/evidence/first.jpg");
+      mockInvoke.mockImplementation((command: string, args: any) => {
+        if (command === "viewer_get_binary_info" && args.path === "/evidence/first.jpg") {
+          return Promise.resolve({
+            path: "/evidence/first.jpg",
+            size: firstSize,
+            maxInlineBytes: INLINE_IMAGE_LIMIT,
+            supportsRangeReads: true,
+          });
+        }
+        if (command === "viewer_read_binary_base64_chunk" && args.path === "/evidence/first.jpg") {
+          return Promise.resolve(makeChunk(MOCK_BASE64, firstSize));
+        }
+        if (command === "viewer_get_binary_info" && args.path === "/evidence/second.png") {
+          return Promise.resolve({
+            path: "/evidence/second.png",
+            size: secondSize,
+            maxInlineBytes: INLINE_IMAGE_LIMIT,
+            supportsRangeReads: true,
+          });
+        }
+        if (command === "viewer_read_binary_base64_chunk" && args.path === "/evidence/second.png") {
+          return Promise.resolve(makeChunk(SECOND_BASE64, secondSize));
+        }
+        return Promise.reject(new Error(`Unexpected invoke: ${command}`));
+      });
 
       const { container } = renderComponent(() => (
-        <ImageViewer path="/evidence/anim.gif" />
+        <ImageViewer path={path()} />
       ));
       await tick();
 
-      const img = container.querySelector("img");
-      expect(img!.src).toContain("data:image/gif;base64,");
+      const img = container.querySelector("img")!;
+      expect(img.src).toContain("blob:core-ffx-image-1");
+
+      setPath("/evidence/second.png");
+      await tick(100);
+      const currentImg = container.querySelector("img")!;
+      expect(currentImg.src).toContain("blob:core-ffx-image-2");
+
+      Object.defineProperty(currentImg, "currentSrc", {
+        configurable: true,
+        value: "blob:core-ffx-image-1",
+      });
+      currentImg.dispatchEvent(new Event("error"));
+      await tick();
+
+      expect(container.textContent).not.toContain("Failed to decode image data");
+      expect(container.textContent).not.toContain("Failed to load image");
     });
   });
 
@@ -148,7 +294,14 @@ describe("ImageViewer", () => {
     });
 
     it("shows retry button on error", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("Read error"));
+      mockInvoke
+        .mockResolvedValueOnce({
+          path: "/evidence/corrupt.jpg",
+          size: 1024,
+          maxInlineBytes: INLINE_IMAGE_LIMIT,
+          supportsRangeReads: true,
+        })
+        .mockRejectedValueOnce(new Error("Read error"));
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/corrupt.jpg" />
@@ -158,8 +311,58 @@ describe("ImageViewer", () => {
       expect(container.textContent).toContain("Retry");
     });
 
+    it("rejects oversized source images before full base64 read", async () => {
+      const source = {
+        containerPath: "/evidence/image.ad1",
+        entryPath: "photos/huge.jpg",
+        containerType: "ad1",
+        size: 101 * 1024 * 1024,
+      };
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/huge.jpg" source={source} />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Image is too large for inline preview");
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "viewer_read_binary_source_base64_chunk",
+        expect.anything(),
+      );
+    });
+
+    it("rejects oversized local images before full base64 read", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        path: "/evidence/huge.jpg",
+        size: 101 * 1024 * 1024,
+        maxInlineBytes: INLINE_IMAGE_LIMIT,
+        supportsRangeReads: true,
+      });
+
+      const { container } = renderComponent(() => (
+        <ImageViewer path="/evidence/huge.jpg" />
+      ));
+      await tick();
+
+      expect(container.textContent).toContain("Image is too large for inline preview");
+      expect(mockInvoke).toHaveBeenCalledWith("viewer_get_binary_info", {
+        path: "/evidence/huge.jpg",
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "viewer_read_binary_base64_chunk",
+        expect.anything(),
+      );
+    });
+
     it("retries loading when retry button clicked", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("Temporary error"));
+      mockInvoke
+        .mockResolvedValueOnce({
+          path: "/evidence/photo.jpg",
+          size: 1024,
+          maxInlineBytes: INLINE_IMAGE_LIMIT,
+          supportsRangeReads: true,
+        })
+        .mockRejectedValueOnce(new Error("Temporary error"));
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.jpg" />
@@ -169,7 +372,7 @@ describe("ImageViewer", () => {
       expect(container.textContent).toContain("Failed to load image");
 
       // Now mock success
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad();
       const retryBtn = Array.from(container.querySelectorAll("button")).find(
         (b) => b.textContent?.includes("Retry")
       ) as HTMLButtonElement;
@@ -183,7 +386,7 @@ describe("ImageViewer", () => {
 
   describe("zoom controls", () => {
     it("zoom in increases the displayed percentage", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad();
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.jpg" />
@@ -200,7 +403,7 @@ describe("ImageViewer", () => {
     });
 
     it("zoom out decreases the displayed percentage", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad();
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.jpg" />
@@ -216,7 +419,7 @@ describe("ImageViewer", () => {
     });
 
     it("reset zoom button restores to 100%", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad();
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.jpg" />
@@ -245,7 +448,7 @@ describe("ImageViewer", () => {
 
   describe("optional class", () => {
     it("applies custom class when provided", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad();
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.jpg" class="custom-class" />
@@ -259,7 +462,7 @@ describe("ImageViewer", () => {
 
   describe("limited format support", () => {
     it("shows warning for HEIC files", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/photo.heic");
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.heic" />
@@ -270,7 +473,7 @@ describe("ImageViewer", () => {
     });
 
     it("shows warning for TIFF files", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/scan.tiff");
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/scan.tiff" />
@@ -281,7 +484,7 @@ describe("ImageViewer", () => {
     });
 
     it("does not show warning for standard formats", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/photo.png");
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.png" />
@@ -292,7 +495,7 @@ describe("ImageViewer", () => {
     });
 
     it("shows format-specific error when img decode fails for HEIC", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/photo.heic");
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.heic" />
@@ -310,7 +513,7 @@ describe("ImageViewer", () => {
     });
 
     it("shows generic error when img decode fails for standard format", async () => {
-      mockInvoke.mockResolvedValueOnce(MOCK_BASE64);
+      mockLocalImageLoad(MOCK_BASE64, 1024, "/evidence/photo.png");
 
       const { container } = renderComponent(() => (
         <ImageViewer path="/evidence/photo.png" />

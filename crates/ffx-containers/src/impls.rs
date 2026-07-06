@@ -827,9 +827,7 @@ impl HashableContainer for RawParser {
 impl MountableContainer for RawParser {
     fn mount(&self, path: &Path) -> Result<Box<dyn VirtualFileSystem>, ContainerError> {
         let path_str = path.to_string_lossy();
-        // Try to mount as filesystem first, fallback to physical mode
-        let vfs = crate::raw::vfs::RawVfs::open_filesystem(&path_str)
-            .or_else(|_| crate::raw::vfs::RawVfs::open(&path_str))
+        let vfs = crate::raw::vfs::RawVfs::open_with_physical_fallback(&path_str)
             .map_err(|e| ContainerError::IoError(e.to_string()))?;
         Ok(Box::new(vfs))
     }

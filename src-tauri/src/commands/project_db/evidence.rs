@@ -77,46 +77,68 @@ fn build_computed_hash_record(
 
 /// Insert or update an evidence file record.
 #[tauri::command]
-pub fn project_db_upsert_evidence_file(
+pub async fn project_db_upsert_evidence_file(
     window: tauri::Window,
     file: DbEvidenceFile,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let file = bounded_evidence_file(file);
-    with_project_db(window.label(), |db| db.upsert_evidence_file(&file))
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.upsert_evidence_file(&file))
+    })
+    .await
+    .map_err(|e| format!("Project DB evidence upsert task failed: {e}"))?
 }
 
 /// Batch insert or update evidence files in a single transaction.
 /// Accepts an array of files and inserts them all within one transaction,
 /// reducing IPC overhead from N calls to 1 call.
 #[tauri::command]
-pub fn project_db_batch_upsert_evidence_files(
+pub async fn project_db_batch_upsert_evidence_files(
     window: tauri::Window,
     files: Vec<DbEvidenceFile>,
 ) -> Result<usize, String> {
+    let label = window.label().to_string();
     let files: Vec<_> = files.into_iter().map(bounded_evidence_file).collect();
-    with_project_db(window.label(), |db| db.batch_upsert_evidence_files(&files))
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.batch_upsert_evidence_files(&files))
+    })
+    .await
+    .map_err(|e| format!("Project DB evidence batch upsert task failed: {e}"))?
 }
 
 /// Get all evidence files.
 #[tauri::command]
-pub fn project_db_get_evidence_files(window: tauri::Window) -> Result<Vec<DbEvidenceFile>, String> {
-    with_project_db(window.label(), |db| db.get_evidence_files()).map(|files| {
-        files
-            .into_iter()
-            .take(MAX_EVIDENCE_RESPONSE_ROWS)
-            .map(bounded_evidence_file)
-            .collect()
+pub async fn project_db_get_evidence_files(
+    window: tauri::Window,
+) -> Result<Vec<DbEvidenceFile>, String> {
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.get_evidence_files()).map(|files| {
+            files
+                .into_iter()
+                .take(MAX_EVIDENCE_RESPONSE_ROWS)
+                .map(bounded_evidence_file)
+                .collect()
+        })
     })
+    .await
+    .map_err(|e| format!("Project DB evidence list task failed: {e}"))?
 }
 
 /// Get an evidence file by path.
 #[tauri::command]
-pub fn project_db_get_evidence_file_by_path(
+pub async fn project_db_get_evidence_file_by_path(
     window: tauri::Window,
     path: String,
 ) -> Result<Option<DbEvidenceFile>, String> {
-    with_project_db(window.label(), |db| db.get_evidence_file_by_path(&path))
-        .map(|file| file.map(bounded_evidence_file))
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.get_evidence_file_by_path(&path))
+            .map(|file| file.map(bounded_evidence_file))
+    })
+    .await
+    .map_err(|e| format!("Project DB evidence lookup task failed: {e}"))?
 }
 
 // =============================================================================
@@ -125,9 +147,17 @@ pub fn project_db_get_evidence_file_by_path(
 
 /// Insert a hash record.
 #[tauri::command]
-pub fn project_db_insert_hash(window: tauri::Window, hash: DbProjectHash) -> Result<(), String> {
+pub async fn project_db_insert_hash(
+    window: tauri::Window,
+    hash: DbProjectHash,
+) -> Result<(), String> {
+    let label = window.label().to_string();
     let hash = bounded_hash_record(hash);
-    with_project_db(window.label(), |db| db.insert_hash(&hash))
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.insert_hash(&hash))
+    })
+    .await
+    .map_err(|e| format!("Project DB hash insert task failed: {e}"))?
 }
 
 /// Compute a hash from a local file or container entry and persist it to the
@@ -172,78 +202,104 @@ pub async fn project_db_hash_source_and_insert(
 
 /// Get all hashes for an evidence file.
 #[tauri::command]
-pub fn project_db_get_hashes_for_file(
+pub async fn project_db_get_hashes_for_file(
     window: tauri::Window,
     file_id: String,
 ) -> Result<Vec<DbProjectHash>, String> {
-    with_project_db(window.label(), |db| db.get_hashes_for_file(&file_id)).map(|hashes| {
-        hashes
-            .into_iter()
-            .take(MAX_HASH_RESPONSE_ROWS)
-            .map(bounded_hash_record)
-            .collect()
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.get_hashes_for_file(&file_id)).map(|hashes| {
+            hashes
+                .into_iter()
+                .take(MAX_HASH_RESPONSE_ROWS)
+                .map(bounded_hash_record)
+                .collect()
+        })
     })
+    .await
+    .map_err(|e| format!("Project DB hash list task failed: {e}"))?
 }
 
 /// Get all hashes for a source id.
 #[tauri::command]
-pub fn project_db_get_hashes_for_source(
+pub async fn project_db_get_hashes_for_source(
     window: tauri::Window,
     source_id: String,
 ) -> Result<Vec<DbProjectHash>, String> {
-    with_project_db(window.label(), |db| db.get_hashes_for_source(&source_id)).map(|hashes| {
-        hashes
-            .into_iter()
-            .take(MAX_HASH_RESPONSE_ROWS)
-            .map(bounded_hash_record)
-            .collect()
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.get_hashes_for_source(&source_id)).map(|hashes| {
+            hashes
+                .into_iter()
+                .take(MAX_HASH_RESPONSE_ROWS)
+                .map(bounded_hash_record)
+                .collect()
+        })
     })
+    .await
+    .map_err(|e| format!("Project DB source hash list task failed: {e}"))?
 }
 
 /// Summarize hashes by algorithm.
 #[tauri::command]
-pub fn project_db_summarize_hashes_by_algorithm(
+pub async fn project_db_summarize_hashes_by_algorithm(
     window: tauri::Window,
 ) -> Result<Vec<DbHashAlgorithmSummary>, String> {
-    with_project_db(window.label(), |db| db.summarize_hashes_by_algorithm())
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.summarize_hashes_by_algorithm())
+    })
+    .await
+    .map_err(|e| format!("Project DB hash summary task failed: {e}"))?
 }
 
 /// Get the latest hash for a file/algorithm.
 #[tauri::command]
-pub fn project_db_get_latest_hash(
+pub async fn project_db_get_latest_hash(
     window: tauri::Window,
     file_id: String,
     algorithm: String,
 ) -> Result<Option<DbProjectHash>, String> {
-    with_project_db(window.label(), |db| {
-        db.get_latest_hash(&file_id, &algorithm)
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.get_latest_hash(&file_id, &algorithm))
+            .map(|hash| hash.map(bounded_hash_record))
     })
-    .map(|hash| hash.map(bounded_hash_record))
+    .await
+    .map_err(|e| format!("Project DB latest hash task failed: {e}"))?
 }
 
 /// Get the latest hash for a source id/algorithm.
 #[tauri::command]
-pub fn project_db_get_latest_hash_for_source(
+pub async fn project_db_get_latest_hash_for_source(
     window: tauri::Window,
     source_id: String,
     algorithm: String,
 ) -> Result<Option<DbProjectHash>, String> {
-    with_project_db(window.label(), |db| {
-        db.get_latest_hash_for_source(&source_id, &algorithm)
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| {
+            db.get_latest_hash_for_source(&source_id, &algorithm)
+        })
+        .map(|hash| hash.map(bounded_hash_record))
     })
-    .map(|hash| hash.map(bounded_hash_record))
+    .await
+    .map_err(|e| format!("Project DB latest source hash task failed: {e}"))?
 }
 
 /// Look up latest hash by file path and algorithm.
 #[tauri::command]
-pub fn project_db_lookup_hash_by_path(
+pub async fn project_db_lookup_hash_by_path(
     window: tauri::Window,
     path: String,
     algorithm: String,
 ) -> Result<Option<(String, String)>, String> {
-    with_project_db(window.label(), |db| {
-        db.lookup_hash_by_path(&path, &algorithm)
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.lookup_hash_by_path(&path, &algorithm))
     })
+    .await
+    .map_err(|e| format!("Project DB hash path lookup task failed: {e}"))?
 }
 
 // =============================================================================
@@ -252,35 +308,50 @@ pub fn project_db_lookup_hash_by_path(
 
 /// Insert a verification record.
 #[tauri::command]
-pub fn project_db_insert_verification(
+pub async fn project_db_insert_verification(
     window: tauri::Window,
     v: DbProjectVerification,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let v = bounded_verification_record(v);
-    with_project_db(window.label(), |db| db.insert_verification(&v))
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.insert_verification(&v))
+    })
+    .await
+    .map_err(|e| format!("Project DB verification insert task failed: {e}"))?
 }
 
 /// Get verifications for a hash.
 #[tauri::command]
-pub fn project_db_get_verifications_for_hash(
+pub async fn project_db_get_verifications_for_hash(
     window: tauri::Window,
     hash_id: String,
 ) -> Result<Vec<DbProjectVerification>, String> {
-    with_project_db(window.label(), |db| db.get_verifications_for_hash(&hash_id)).map(|items| {
-        items
-            .into_iter()
-            .take(MAX_VERIFICATION_RESPONSE_ROWS)
-            .map(bounded_verification_record)
-            .collect()
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.get_verifications_for_hash(&hash_id)).map(|items| {
+            items
+                .into_iter()
+                .take(MAX_VERIFICATION_RESPONSE_ROWS)
+                .map(bounded_verification_record)
+                .collect()
+        })
     })
+    .await
+    .map_err(|e| format!("Project DB verification list task failed: {e}"))?
 }
 
 /// Summarize hash verification results by status.
 #[tauri::command]
-pub fn project_db_summarize_verifications_by_result(
+pub async fn project_db_summarize_verifications_by_result(
     window: tauri::Window,
 ) -> Result<Vec<DbVerificationResultSummary>, String> {
-    with_project_db(window.label(), |db| db.summarize_verifications_by_result())
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_project_db(&label, |db| db.summarize_verifications_by_result())
+    })
+    .await
+    .map_err(|e| format!("Project DB verification summary task failed: {e}"))?
 }
 
 fn bounded_evidence_file(mut file: DbEvidenceFile) -> DbEvidenceFile {

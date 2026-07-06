@@ -15,6 +15,7 @@ import { logAuditAction } from "../../utils/telemetry";
 import { logger as appLogger } from "../../utils/logger";
 import { addRecentProject } from "../../components/preferences";
 import { getBasename } from "../../utils/pathUtils";
+import { isTauri } from "../../utils/platform";
 import { dbSync } from "./useProjectDbSync";
 import { seedDatabaseFromProject } from "./useProjectDbRead";
 
@@ -54,6 +55,130 @@ import type {
   ProjectIO,
   ProjectCloseResult,
 } from "./types";
+
+export function uniqueProjectFilePaths(tabs: ProjectTab[]): string[] {
+  return Array.from(new Set(tabs.map(tab => tab.file_path).filter(Boolean)));
+}
+
+type BrowserProjectFile = {
+  path: string;
+  project: FFXProject;
+};
+
+let activeBrowserProjectPickerCancel: (() => void) | null = null;
+const BROWSER_PROJECT_PICKER_CANCEL_GRACE_MS = 1_500;
+
+export function parseBrowserProjectFile(content: string, fallbackPath: string): BrowserProjectFile {
+  const parsed = JSON.parse(content) as Partial<FFXProject>;
+
+  if (!parsed || typeof parsed !== "object" || !parsed.name || !parsed.root_path) {
+    throw new Error("Selected file is not a valid CORE-FFX project");
+  }
+
+  return {
+    path: fallbackPath,
+    project: {
+      ...(parsed as FFXProject),
+      version: typeof parsed.version === "number" ? parsed.version : PROJECT_FILE_VERSION,
+      project_id: parsed.project_id || generateId(),
+      tabs: parsed.tabs || [],
+      users: parsed.users || [],
+      sessions: parsed.sessions || [],
+      activity_log: parsed.activity_log || [],
+      bookmarks: parsed.bookmarks || [],
+      notes: parsed.notes || [],
+      tags: parsed.tags || [],
+      reports: parsed.reports || [],
+      saved_searches: parsed.saved_searches || [],
+      recent_directories: parsed.recent_directories || [],
+      open_directories: parsed.open_directories || [],
+    },
+  };
+}
+
+export function pickBrowserProjectFile(): Promise<BrowserProjectFile | null> {
+  if (typeof document === "undefined") {
+    return Promise.resolve(null);
+  }
+
+  activeBrowserProjectPickerCancel?.();
+
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".cffx,application/json";
+    input.style.display = "none";
+    let settled = false;
+    let focusCheck: number | undefined;
+
+    const cleanup = () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      if (focusCheck !== undefined) {
+        window.clearTimeout(focusCheck);
+      }
+      if (activeBrowserProjectPickerCancel === cancelCurrent) {
+        activeBrowserProjectPickerCancel = null;
+      }
+      input.remove();
+    };
+
+    const finish = (selected: BrowserProjectFile | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(selected);
+    };
+
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    const cancelCurrent = () => {
+      finish(null);
+    };
+
+    function handleWindowFocus() {
+      if (focusCheck !== undefined) {
+        window.clearTimeout(focusCheck);
+      }
+
+      focusCheck = window.setTimeout(() => {
+        if (!input.files?.length) {
+          finish(null);
+        }
+      }, BROWSER_PROJECT_PICKER_CANCEL_GRACE_MS);
+    }
+
+    activeBrowserProjectPickerCancel = cancelCurrent;
+
+    input.addEventListener("cancel", () => {
+      finish(null);
+    }, { once: true });
+
+    input.addEventListener("change", async () => {
+      try {
+        const file = input.files?.[0];
+        if (!file) {
+          finish(null);
+          return;
+        }
+
+        const content = await file.text();
+        const fallbackPath = file.name.endsWith(".cffx") ? file.name : `${file.name}.cffx`;
+        finish(parseBrowserProjectFile(content, fallbackPath));
+      } catch (err) {
+        fail(err);
+      }
+    }, { once: true });
+
+    window.addEventListener("focus", handleWindowFocus);
+    document.body.appendChild(input);
+    input.click();
+  });
+}
 
 /**
  * Create project I/O functions
@@ -184,7 +309,7 @@ export function createProjectIO(
     if (centerTabs.length > 0) {
       // Use new center tabs system
       tabs = centerTabs.map((tab, index) => {
-        const projectTab: ProjectTab = {
+        const projectTab: ProjectTab & Record<string, unknown> = {
           id: tab.id,
           type: tab.type,
           file_path: tab.file?.path || tab.documentPath || tab.entry?.containerPath || tab.processedDb?.path || "",
@@ -203,6 +328,23 @@ export function createProjectIO(
           collection_list_view: tab.collectionListView,
           last_viewed: now,
         };
+
+        if (tab.entry) {
+          projectTab.entry_size = tab.entry.size;
+          projectTab.entry_is_dir = tab.entry.isDir;
+          projectTab.entry_is_vfs_entry = tab.entry.isVfsEntry;
+          projectTab.entry_is_archive_entry = tab.entry.isArchiveEntry;
+          projectTab.entry_is_disk_file = tab.entry.isDiskFile;
+          projectTab.entry_container_type = tab.entry.containerType;
+          projectTab.entry_metadata = tab.entry.metadata;
+          projectTab.entry_data_addr = tab.entry.dataAddr;
+          projectTab.entry_item_addr = tab.entry.itemAddr;
+          projectTab.entry_compressed_size = tab.entry.compressedSize;
+          projectTab.entry_data_end_addr = tab.entry.dataEndAddr;
+          projectTab.entry_metadata_addr = tab.entry.metadataAddr;
+          projectTab.entry_first_child_addr = tab.entry.firstChildAddr;
+        }
+
         return projectTab;
       });
       
@@ -415,7 +557,7 @@ export function createProjectIO(
         view_mode: viewMode,
       } : undefined,
       file_selection: {
-        selected_paths: tabs.filter(t => t.file_path).map(t => t.file_path),
+        selected_paths: uniqueProjectFilePaths(tabs),
         active_path: computedActiveTabPath,
         timestamp: now,
       },
@@ -467,6 +609,11 @@ export function createProjectIO(
    * Check if a project exists for the given root directory
    */
   const checkProjectExists = async (rootPath: string): Promise<string | null> => {
+    if (!isTauri) {
+      void rootPath;
+      return null;
+    }
+
     try {
       return await invoke<string | null>("project_check_exists", { rootPath });
     } catch (e) {
@@ -479,6 +626,12 @@ export function createProjectIO(
    * Get the default project path for a root directory
    */
   const getDefaultProjectPath = async (rootPath: string): Promise<string> => {
+    if (!isTauri) {
+      const trimmed = rootPath.replace(/\/+$/, "");
+      const baseName = trimmed.split(/[\\/]/).filter(Boolean).pop() || "CORE-FFX-Project";
+      return `${baseName}.cffx`;
+    }
+
     return await invoke<string>("project_get_default_path", { rootPath });
   };
 
@@ -508,7 +661,9 @@ export function createProjectIO(
       setters.setCurrentSessionId(proj.current_session_id || null);
       setters.setModified(true);
     });
-    invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+    if (isTauri) {
+      invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+    }
     log.debug(`createProject: Project created, modified=true, name=${proj.name}`);
 
     // Start auto-save if enabled
@@ -583,6 +738,12 @@ export function createProjectIO(
       }
       if (!proj.root_path) {
         return { success: false, error: "No root path specified" };
+      }
+
+      if (!isTauri) {
+        const errorMsg = "Project saving is available in the desktop app. Browser preview can load .cffx files but cannot write them back to disk.";
+        setters.setError(errorMsg);
+        return { success: false, error: errorMsg };
       }
 
       // Deep check for nulls in numeric fields - log any found
@@ -690,6 +851,13 @@ export function createProjectIO(
    * Save project to a new location (Save As)
    */
   const saveProjectAs = async (options: BuildProjectOptions): Promise<ProjectSaveResult> => {
+    if (!isTauri) {
+      return {
+        success: false,
+        error: "Project Save As is available in the desktop app.",
+      };
+    }
+
     const defaultPath = await getDefaultProjectPath(options.rootPath);
     const selected = await save({
       defaultPath,
@@ -712,12 +880,43 @@ export function createProjectIO(
   ): Promise<{ project: FFXProject | null; error?: string; warnings?: string[] }> => {
     log.debug(`loadProject called with customPath=${customPath}`);
     try {
-      setters.setLoading(true);
       let loadPath = customPath;
 
       // If no path provided, show file picker
       if (!loadPath) {
         log.debug("loadProject: No path provided, showing file picker");
+        if (!isTauri) {
+          const selected = await pickBrowserProjectFile();
+
+          if (!selected) {
+            log.debug("loadProject: User cancelled browser file picker");
+            return { project: null, error: "Open cancelled" };
+          }
+
+          loadPath = selected.path;
+          const project = selected.project;
+          const browserProjectPath = selected.path;
+          log.debug(`loadProject: Browser selected ${loadPath}`);
+          setters.setLoading(true);
+
+          batch(() => {
+            setters.setProject(project);
+            setters.setProjectPath(browserProjectPath);
+            setters.setModified(false);
+            setters.setError(null);
+          });
+
+          await startNewSession();
+          autoSave.startAutoSave();
+          addRecentProject(loadPath, project.name);
+          logger.logActivity('project', 'load', `Project loaded: ${project.name}`, loadPath);
+
+          return {
+            project,
+            warnings: ["Loaded in browser preview mode; desktop project database features are unavailable."],
+          };
+        }
+
         const selected = await open({
           filters: [{ name: "CORE-FFX Project", extensions: ["cffx"] }],
           title: "Open Project",
@@ -730,6 +929,14 @@ export function createProjectIO(
         }
         loadPath = selected as string;
         log.debug(`loadProject: User selected ${loadPath}`);
+      }
+
+      setters.setLoading(true);
+
+      if (!isTauri) {
+        const errorMsg = "Browser preview can only open project files through the Open Project file picker.";
+        setters.setError(errorMsg);
+        return { project: null, error: errorMsg };
       }
 
       // Load via Tauri
@@ -776,7 +983,9 @@ export function createProjectIO(
           setters.setModified(false);
           setters.setError(null);
         });
-        invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+        if (isTauri) {
+          invoke("set_project_menu_state", { hasProject: true }).catch(() => {});
+        }
         log.info(`loadProject: batch signal setters took ${(performance.now() - t0).toFixed(1)}ms`);
 
         // Start a new session for this user
@@ -859,27 +1068,35 @@ export function createProjectIO(
       }
 
       emitProgress("checkpoint-db", "running", "Checkpointing the project database WAL.");
-      try {
-        await invoke("project_db_wal_checkpoint");
-        emitProgress("checkpoint-db", "completed", "Project database checkpoint completed.");
-      } catch (err) {
-        emitProgress(
-          "checkpoint-db",
-          "warning",
-          err instanceof Error ? err.message : String(err),
-        );
+      if (!isTauri) {
+        emitProgress("checkpoint-db", "completed", "Project database checkpoint skipped in browser preview.");
+      } else {
+        try {
+          await invoke("project_db_wal_checkpoint");
+          emitProgress("checkpoint-db", "completed", "Project database checkpoint completed.");
+        } catch (err) {
+          emitProgress(
+            "checkpoint-db",
+            "warning",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
 
       emitProgress("close-db", "running", "Closing the project database connection.");
-      try {
-        await invoke("project_db_close");
-        emitProgress("close-db", "completed", "Project database closed.");
-      } catch (err) {
-        emitProgress(
-          "close-db",
-          "warning",
-          err instanceof Error ? err.message : String(err),
-        );
+      if (!isTauri) {
+        emitProgress("close-db", "completed", "Project database close skipped in browser preview.");
+      } else {
+        try {
+          await invoke("project_db_close");
+          emitProgress("close-db", "completed", "Project database closed.");
+        } catch (err) {
+          emitProgress(
+            "close-db",
+            "warning",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
 
       emitProgress("clear-state", "running", "Clearing in-memory project state and UI bindings.");
@@ -890,7 +1107,9 @@ export function createProjectIO(
         setters.setError(null);
         setters.setCurrentSessionId(null);
       });
-      await invoke("set_project_menu_state", { hasProject: false }).catch(() => {});
+      if (isTauri) {
+        await invoke("set_project_menu_state", { hasProject: false }).catch(() => {});
+      }
       emitProgress("clear-state", "completed", "Project state cleared.");
 
       return {

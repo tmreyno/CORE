@@ -13,6 +13,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../utils/platform";
 
 /** Information about a single disk or volume. */
 export interface DriveInfo {
@@ -64,6 +65,10 @@ export interface DriveInfo {
  * @returns Array of drive information objects, one per mounted volume.
  */
 export async function listDrives(): Promise<DriveInfo[]> {
+  if (!isTauri) {
+    return [];
+  }
+
   return invoke<DriveInfo[]>("list_drives");
 }
 
@@ -86,6 +91,15 @@ export interface WritabilityCheck {
  * why the path may not be writable (read-only FS, NTFS on macOS, permissions).
  */
 export async function checkPathWritable(path: string): Promise<WritabilityCheck> {
+  if (!isTauri) {
+    return {
+      writable: false,
+      reason: "Path writability checks are available in the desktop app.",
+      fileSystem: "",
+      isReadOnly: false,
+    };
+  }
+
   return invoke<WritabilityCheck>("check_path_writable", { path });
 }
 
@@ -127,6 +141,15 @@ export interface MountResult {
  * - System boot volume: always refused
  */
 export async function remountReadOnly(mountPoint: string): Promise<MountResult> {
+  if (!isTauri) {
+    return {
+      success: false,
+      message: "Read-only remount is available in the desktop app.",
+      mountPoint,
+      isReadOnly: false,
+    };
+  }
+
   return invoke<MountResult>("remount_read_only", { mountPoint });
 }
 
@@ -137,5 +160,14 @@ export async function remountReadOnly(mountPoint: string): Promise<MountResult> 
  * `remountReadOnly` was called. If it was already read-only, this is a no-op.
  */
 export async function restoreMount(mountPoint: string): Promise<MountResult> {
+  if (!isTauri) {
+    return {
+      success: false,
+      message: "Mount restore is available in the desktop app.",
+      mountPoint,
+      isReadOnly: false,
+    };
+  }
+
   return invoke<MountResult>("restore_mount", { mountPoint });
 }

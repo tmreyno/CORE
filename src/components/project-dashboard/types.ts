@@ -20,6 +20,10 @@ export interface ProjectDashboardProps {
   onExport?: () => void;
   /** Open the report wizard */
   onReport?: () => void;
+  /** Open a saved project from the dashboard empty state */
+  onOpenProject?: () => void;
+  /** Start a new project from the dashboard empty state */
+  onNewProject?: () => void;
 }
 
 export interface StatCardProps {

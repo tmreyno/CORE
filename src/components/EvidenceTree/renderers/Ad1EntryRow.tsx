@@ -69,6 +69,7 @@ export function createAd1SelectedEntry(containerPath: string, entry: TreeEntry):
     size: entry.size,
     isDir: entry.is_dir,
     isVfsEntry: false,
+    containerType: "ad1",
     dataAddr: entry.data_addr,
     itemAddr: entry.item_addr,
     compressedSize: entry.compressed_size,

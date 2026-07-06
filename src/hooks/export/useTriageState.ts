@@ -34,6 +34,7 @@ import type { ExportCommonState } from "./useExportCommon";
 import { dbSync } from "../project/useProjectDbSync";
 import type { DbExportRecord } from "../../types/projectDb";
 import { handleAcquisitionComplete, startAcquisitionRecord } from "./companionHelper";
+import { canUseDesktopExportEngine } from "./desktopRuntimeGuard";
 
 export interface UseTriageStateOptions extends ExportActivityCallbacks {
   toast: ExportToast;
@@ -63,6 +64,8 @@ export function useTriageState(options: UseTriageStateOptions) {
   // ─── Load Profiles ──────────────────────────────────────────────────────
 
   const loadTriageProfiles = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     setTriageProfilesLoading(true);
     try {
       const [profiles, categories] = await getTriageProfiles();
@@ -108,6 +111,8 @@ export function useTriageState(options: UseTriageStateOptions) {
   // ─── Collect Handler ────────────────────────────────────────────────────
 
   const handleTriageCollect = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     const dest = common.destination();
     if (!dest) {
       toast.error("No Destination", "Please select a destination folder");
@@ -289,6 +294,8 @@ export function useTriageState(options: UseTriageStateOptions) {
   // ─── Cancel ─────────────────────────────────────────────────────────────
 
   const handleCancelTriage = async () => {
+    if (!canUseDesktopExportEngine(toast)) return;
+
     try {
       await triageCancel();
       toast.info("Cancelling", "Triage collection will stop after the current file");

@@ -77,13 +77,7 @@ export function buildSaveOptions(params: BuildSaveOptionsParams) {
 
   // Capture selected entry for restoration
   const entry = params.selectedContainerEntry();
-  const selectedEntryData = entry
-    ? {
-        containerPath: entry.containerPath,
-        entryPath: entry.entryPath,
-        name: entry.name,
-      }
-    : null;
+  const selectedEntryData = entry ? { ...entry } : null;
 
   // Convert CenterTabs to serializable format
   const centerTabs: CenterTabForSave[] = params.centerTabs?.()

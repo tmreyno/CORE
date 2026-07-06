@@ -321,6 +321,7 @@ where
             }
         }
 
+        ensure_ad1_segment_bytes_hashed(bytes_processed, total_size)?;
         progress_callback(total_size, total_size);
         let hash = hasher.finalize().to_hex().to_string();
         debug!(hash = %hash, "AD1 segment hash complete (BLAKE3 optimized)");
@@ -378,6 +379,7 @@ where
             }
         }
 
+        ensure_ad1_segment_bytes_hashed(bytes_processed, total_size)?;
         progress_callback(total_size, total_size);
         let hash = format!("{:032x}", hasher.digest128());
         debug!(hash = %hash, "AD1 segment hash complete (XXH3 optimized)");
@@ -493,9 +495,20 @@ where
         .map_err(|_| ContainerError::InternalError("Hash thread panicked".to_string()))?
         .map_err(|e| ContainerError::IoError(format!("Hash error: {e}")))?;
 
+    ensure_ad1_segment_bytes_hashed(bytes_hashed.load(Ordering::Relaxed), total_size)?;
     progress_callback(total_size, total_size);
     debug!(hash = %hash, "AD1 segment hash complete (pipelined)");
     Ok(hash)
+}
+
+fn ensure_ad1_segment_bytes_hashed(actual: u64, expected: u64) -> Result<(), ContainerError> {
+    if actual == expected {
+        return Ok(());
+    }
+
+    Err(ContainerError::IoError(format!(
+        "AD1 segment hash incomplete: expected to hash {expected} bytes, hashed {actual} bytes"
+    )))
 }
 
 /// Hash a single AD1 segment file.
@@ -737,6 +750,38 @@ mod tests {
             "missing segment paths not reported: {}",
             message
         );
+    }
+
+    #[test]
+    fn test_hash_segments_rejects_incomplete_pipelined_read() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("short.ad1");
+        let mut file = File::create(&path).unwrap();
+        file.write_all(b"short segment bytes").unwrap();
+
+        let err = hash_segments_pipelined(
+            vec![path.to_string_lossy().to_string()],
+            HashAlgorithm::Md5,
+            1024,
+            |_, _| {},
+        )
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("AD1 segment hash incomplete"),
+            "unexpected error: {}",
+            message
+        );
+        assert!(
+            message.contains("expected to hash 1024 bytes"),
+            "expected byte count missing from error: {}",
+            message
+        );
+    }
+
+    #[test]
+    fn test_ad1_segment_byte_count_accepts_exact_match() {
+        assert!(ensure_ad1_segment_bytes_hashed(4096, 4096).is_ok());
     }
 
     #[test]

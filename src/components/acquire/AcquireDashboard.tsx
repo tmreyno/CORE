@@ -52,6 +52,7 @@ import {
   ChevronRightIcon,
 } from "../icons";
 import { APP_NAME } from "../../utils/edition";
+import { isTauri } from "../../utils/platform";
 import type { PortableConfig } from "../../api/portable";
 import { checkFullDiskAccess, openFullDiskAccessSettings } from "../../api/fda";
 import type { FullDiskAccessStatus } from "../../api/fda";
@@ -80,6 +81,9 @@ const EvidenceCollectionPanel = lazy(() =>
     default: m.EvidenceCollectionPanel,
   })),
 );
+
+const BROWSER_DASHBOARD_DESTINATION_MESSAGE =
+  "Output folder browsing is available in the desktop app.";
 
 // =============================================================================
 // Types
@@ -212,6 +216,8 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   // Start FDA checks + listeners when a project becomes active
   createEffect(() => {
     if (!props.hasProject()) return;
+    if (!isTauri) return;
+
     // Defer initial check 2s so it doesn't compete with session creation
     // or project setup operations on the Tauri thread pool
     setTimeout(() => recheckFda(), 2000);
@@ -233,6 +239,7 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
 
   // ── Manual destination override (browse button) ──
   const [manualDestination, setManualDestination] = createSignal("");
+  const [destinationMessage, setDestinationMessage] = createSignal("");
 
   // ── Acquisition runner ──
   const effectiveDestination = () =>
@@ -389,6 +396,12 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
   }
 
   async function handleBrowseDestination() {
+    if (!isTauri) {
+      setDestinationMessage(BROWSER_DASHBOARD_DESTINATION_MESSAGE);
+      return;
+    }
+
+    setDestinationMessage("");
     try {
       const selected = await open({ directory: true, title: "Select output folder" });
       if (selected && typeof selected === "string") {
@@ -520,12 +533,13 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
               </div>
             </button>
           </div>
-          <Show when={props.onOpenRecentProject}>
+          <Show when={props.onOpenRecentProject && isTauri}>
             <div class="mt-2 max-w-md w-full">
               <RecentProjectsList
                 onOpenProject={props.onOpenRecentProject!}
                 maxItems={5}
                 compact
+                pathFilter={(path) => path.toLowerCase().endsWith(".acquisition.json")}
               />
             </div>
           </Show>
@@ -599,6 +613,7 @@ const AcquireDashboard: Component<AcquireDashboardProps> = (props) => {
                 onIdentify={() => props.onAction("identify")}
                 onQuickVerify={props.onQuickVerify}
                 destination={effectiveDestination}
+                destinationMessage={destinationMessage}
                 onBrowseDestination={handleBrowseDestination}
                 onSelectSource={handleDriveSelect}
                 selectedPaths={selectedPaths}
@@ -653,6 +668,7 @@ interface SelectionPhaseProps {
   onIdentify: () => void;
   onQuickVerify?: () => void;
   destination: Accessor<string>;
+  destinationMessage: Accessor<string>;
   onBrowseDestination: () => void;
   onSelectSource: (path: string) => void;
   selectedPaths: Accessor<Set<string>>;
@@ -693,6 +709,11 @@ const SelectionPhase: Component<SelectionPhaseProps> = (p) => {
           </button>
         </div>
       </div>
+      <Show when={p.destinationMessage()}>
+        <div class="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-2xs text-warning">
+          {p.destinationMessage()}
+        </div>
+      </Show>
 
       {/* Volatile data toggles */}
       <div class="flex flex-col gap-1.5">
