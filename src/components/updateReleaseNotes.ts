@@ -4,7 +4,7 @@
 // Licensed under MIT License - see LICENSE file for details
 // =============================================================================
 
-import bundledUpdateReview from "../../docs/releases/core-ffx-0.1.112-0.1.117.md?raw";
+import bundledUpdateReview from "../../docs/releases/core-ffx-0.1.112-0.1.118.md?raw";
 
 const releaseOrder = [
   "0.1.112",
@@ -13,6 +13,7 @@ const releaseOrder = [
   "0.1.115",
   "0.1.116",
   "0.1.117",
+  "0.1.118",
 ] as const;
 type BundledReleaseVersion = (typeof releaseOrder)[number];
 
