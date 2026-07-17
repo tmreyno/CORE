@@ -1,6 +1,34 @@
-# CORE-FFX Update Review: 0.1.112 to 0.1.116
+# CORE-FFX Update Review: 0.1.112 to 0.1.118
 
 This review is bundled with CORE-FFX so the in-app update dialog can show release details directly when a new version is available.
+
+<!-- release-note:start 0.1.118 -->
+## CORE-FFX 0.1.118
+
+### System Identity And Evidence Engines
+- **Device and system identity extraction:** Evidence container review now extracts Windows, macOS, and Linux identity artifacts that can identify users, hostnames, operating systems, BIOS/DMI values, hardware serial-related fields, installed software, network configuration, and selected setup/security registry evidence when those artifacts are present.
+- **Right-panel identity summary:** The selected evidence details panel now shows extracted system identity records so users can review and copy available device, user, and system information directly inside CORE-FFX.
+- **Report integration:** Extracted system identity artifacts are included in project reports when available, keeping device and user context with the rest of the case output.
+- **Large source batching:** System identity and binary artifact collection now batches and deduplicates large source sets so expanded driver and system directories stay under backend request limits.
+
+### Viewer And Project Reliability
+- **Evidence switching stability:** Viewer metadata loads are guarded against stale entry and tab switches so a previous evidence container cannot overwrite the active viewer state or leave the viewer locked after rapid switching.
+- **Project action guard:** New Project, Open Project, and setup actions now share an overlap guard so conflicting project actions cannot run at the same time.
+- **Large folder paging:** Expanded VFS partitions and directories now render 100 children at a time, lowering browser workload and lock-up risk when evidence folders contain hundreds or thousands of entries.
+- **AD1 tree reuse:** AD1 expand-all now reuses cached child entries by item-address cache key, avoiding repeated child reloads during repeated expansion.
+
+### Validation
+- **Local gates:** TypeScript checks, frontend tests, Rust formatting, Rust clippy, and Rust library tests passed for the system identity, viewer, and project-action changes.
+- **GitHub gates:** PR #25 passed frontend tests, Rust backend tests on Ubuntu, macOS, and Windows, regression checks, and performance benchmark checks before the app package build stage.
+<!-- release-note:end 0.1.118 -->
+
+<!-- release-note:start 0.1.117 -->
+## CORE-FFX 0.1.117
+
+### Nightly Version Bump
+- **Published nightly update:** Version `0.1.117` was published as a nightly patch bump before the system identity and viewer-stability branch was merged.
+- **Next feature build:** The system identity, viewer switching, project action, and VFS paging changes are carried forward in `0.1.118` so the updater does not reuse the already-published `v0.1.117` tag.
+<!-- release-note:end 0.1.117 -->
 
 <!-- release-note:start 0.1.116 -->
 ## CORE-FFX 0.1.116
@@ -91,8 +119,8 @@ This review is bundled with CORE-FFX so the in-app update dialog can show releas
 - **Package lock refresh:** The top-level npm lockfile version fields now match `package.json` so installer and CI state match the shipped app version.
 
 ### Rust Workspace Lockfile Cleanup
-- **Single Cargo lockfile:** The redundant tracked `src-tauri/Cargo.lock` was removed. The root `Cargo.lock` is now the single Rust workspace lockfile source.
-- **Release workflow reads:** Release workflow plugin-alignment checks now read the root `Cargo.lock` instead of the removed `src-tauri/Cargo.lock`.
+- **Single Cargo lockfile:** The redundant tracked nested Tauri Cargo lockfile was removed. The root `Cargo.lock` is now the single Rust workspace lockfile source.
+- **Release workflow reads:** Release workflow plugin-alignment checks now read the root `Cargo.lock` instead of the removed nested Tauri lockfile.
 - **Cache keys:** Rust cache keys that previously hashed every Cargo lockfile now hash only the root `Cargo.lock`, which matches the workspace layout.
 
 ### Nightly Release Automation

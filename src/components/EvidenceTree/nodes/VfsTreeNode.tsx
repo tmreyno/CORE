@@ -31,8 +31,8 @@ import { formatBytes } from "../../../utils";
 import type { VfsEntry, VfsPartitionInfo, NestedContainerEntry } from "../../../types";
 import { isNestedContainerFile, getNestedContainerType } from "../containerDetection";
 
-const VFS_RENDER_CAP = 200;
-const VFS_RENDER_CAP_STEP = 200;
+const VFS_RENDER_CAP = 100;
+const VFS_RENDER_CAP_STEP = 100;
 
 export interface VfsEntryRowProps {
   entry: VfsEntry;

@@ -9,6 +9,13 @@ import { commands } from "../api/commands";
 import type { TreeEntry, VfsEntry } from "../types";
 import type { SelectedEntry } from "./EvidenceTree/types";
 import { buildEvidenceSourceInput } from "./evidenceSourceInput";
+import { notifyArtifactsUpdated } from "../utils/artifactEvents";
+
+const SYSTEM_IDENTITY_COLLECTION_CHUNK_SIZE = 128;
+const BINARY_ARTIFACT_COLLECTION_CHUNK_SIZE = 128;
+
+const inFlightSystemIdentitySources = new Set<string>();
+const inFlightBinaryArtifactSources = new Set<string>();
 
 export function buildSystemIdentitySourceInput(entry: SelectedEntry): HashSourceInput | null {
   if (!isLikelySystemIdentityEntry(entry)) return null;
@@ -27,12 +34,25 @@ export async function collectSystemIdentityEntries(
     .filter((source): source is HashSourceInput => source !== null);
 
   if (sources.length === 0) return;
-  if (!(await commands.projectDb.isOpen().catch(() => false))) return;
 
-  await commands.artifact.collectSystemIdentitySources({
+  await collectSourceBatch(
     sources,
-    extractor,
-  });
+    inFlightSystemIdentitySources,
+    SYSTEM_IDENTITY_COLLECTION_CHUNK_SIZE,
+    async (chunk) => {
+      const result = await commands.artifact.collectSystemIdentitySources({
+        sources: chunk,
+        evidenceFileId: containerPath,
+        extractor,
+      });
+      if (result.inserted > 0) {
+        notifyArtifactsUpdated({
+          evidenceFileId: containerPath,
+          category: "systeminfo",
+        });
+      }
+    },
+  );
 }
 
 export async function collectBinaryArtifactEntries(
@@ -46,12 +66,19 @@ export async function collectBinaryArtifactEntries(
     .filter((source): source is HashSourceInput => source !== null);
 
   if (sources.length === 0) return;
-  if (!(await commands.projectDb.isOpen().catch(() => false))) return;
 
-  await commands.artifact.collectBinaryArtifactSources({
+  await collectSourceBatch(
     sources,
-    extractor,
-  });
+    inFlightBinaryArtifactSources,
+    BINARY_ARTIFACT_COLLECTION_CHUNK_SIZE,
+    async (chunk) => {
+      await commands.artifact.collectBinaryArtifactSources({
+        sources: chunk,
+        evidenceFileId: containerPath,
+        extractor,
+      });
+    },
+  );
 }
 
 export function buildTreeSystemIdentitySourceInput(
@@ -103,9 +130,11 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
     path.endsWith("/windows/system32/config/system") ||
     path.endsWith("/windows/system32/config/software") ||
     path.endsWith("/windows/system32/config/sam") ||
+    path.endsWith("/windows/system32/config/security") ||
     path.endsWith("/config/system") ||
     path.endsWith("/config/software") ||
-    path.endsWith("/config/sam")
+    path.endsWith("/config/sam") ||
+    path.endsWith("/config/security")
   ) {
     return true;
   }
@@ -175,7 +204,9 @@ export function isLikelySystemIdentityEntry(entry: Pick<SelectedEntry, "entryPat
     path.endsWith("/windows/panther/setupact.log") ||
     path.endsWith("/windows/panther/setuperr.log") ||
     path.endsWith("/windows/inf/setupapi.dev.log") ||
-    path.endsWith("/windows/inf/setupapi.app.log")
+    path.endsWith("/windows/inf/setupapi.app.log") ||
+    path.includes("/windows/system32/sysprep/panther/setupact.log") ||
+    path.includes("/windows/system32/sysprep/panther/setuperr.log")
   ) {
     return true;
   }
@@ -248,4 +279,57 @@ const SYSTEM_IDENTITY_FILE_NAMES = new Set([
 
 function isDirectoryEntry(entry: TreeEntry | VfsEntry): boolean {
   return "is_dir" in entry ? entry.is_dir : entry.isDir;
+}
+
+async function collectSourceBatch(
+  sources: HashSourceInput[],
+  inFlight: Set<string>,
+  chunkSize: number,
+  collect: (sources: HashSourceInput[]) => Promise<void>,
+): Promise<void> {
+  const pendingSources = uniquePendingSources(sources, inFlight);
+  if (pendingSources.length === 0) return;
+
+  const pendingKeys = pendingSources.map(sourceCollectionKey);
+  for (const key of pendingKeys) inFlight.add(key);
+
+  try {
+    if (!(await commands.projectDb.isOpen().catch(() => false))) return;
+
+    for (let start = 0; start < pendingSources.length; start += chunkSize) {
+      await collect(pendingSources.slice(start, start + chunkSize));
+    }
+  } finally {
+    for (const key of pendingKeys) inFlight.delete(key);
+  }
+}
+
+function uniquePendingSources(
+  sources: HashSourceInput[],
+  inFlight: Set<string>,
+): HashSourceInput[] {
+  const seen = new Set<string>();
+  const unique: HashSourceInput[] = [];
+
+  for (const source of sources) {
+    const key = sourceCollectionKey(source);
+    if (seen.has(key) || inFlight.has(key)) continue;
+    seen.add(key);
+    unique.push(source);
+  }
+
+  return unique;
+}
+
+function sourceCollectionKey(source: HashSourceInput): string {
+  return [
+    source.containerType ?? "",
+    source.containerPath ?? "",
+    source.nestedArchivePath ?? "",
+    source.entryPath ?? "",
+    source.path ?? "",
+    source.size ?? "",
+    source.dataAddr ?? "",
+    source.itemAddr ?? "",
+  ].join("\u001f");
 }

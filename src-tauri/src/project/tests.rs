@@ -205,6 +205,38 @@ mod project_tests {
     }
 
     #[test]
+    #[ignore = "set CORE_FFX_SEED_CFFX_PATHS to one or more local seed .cffx paths"]
+    fn test_load_project_with_seed_cffx_paths_from_env() {
+        let paths = std::env::var_os("CORE_FFX_SEED_CFFX_PATHS")
+            .expect("CORE_FFX_SEED_CFFX_PATHS must be set for this ignored smoke test");
+
+        for path in std::env::split_paths(&paths) {
+            let path_str = path
+                .to_str()
+                .unwrap_or_else(|| panic!("seed project path is not UTF-8: {}", path.display()));
+            let result = load_project(path_str);
+
+            assert!(
+                result.success,
+                "seed project load failed for {path_str}: {:?}",
+                result.error
+            );
+
+            let project = result
+                .project
+                .unwrap_or_else(|| panic!("seed project load returned no project for {path_str}"));
+            assert!(
+                !project.name.trim().is_empty(),
+                "seed project name is empty for {path_str}"
+            );
+            assert!(
+                !project.root_path.trim().is_empty(),
+                "seed project root path is empty for {path_str}"
+            );
+        }
+    }
+
+    #[test]
     fn local_project_files_from_env_load() {
         let Ok(paths) = std::env::var("CORE_FFX_PROJECT_LOAD_CHECKS") else {
             return;

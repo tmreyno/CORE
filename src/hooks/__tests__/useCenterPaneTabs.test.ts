@@ -256,7 +256,7 @@ describe("useCenterPaneTabs", () => {
 
       expect(state.tabs()).toHaveLength(1);
       const tab = state.tabs()[0];
-      expect(tab.id).toBe("entry:/evidence/case.e01/file.txt");
+      expect(tab.id).toBe("entry:/evidence/case.e01::/evidence/case.e01/file.txt");
       expect(tab.type).toBe("entry");
       expect(tab.title).toBe("file.txt");
       expect(tab.entry).toBe(entry);
@@ -277,6 +277,29 @@ describe("useCenterPaneTabs", () => {
       const entry = makeEntry({ containerPath: "/evidence/disk.e01" });
       state.openContainerEntry(entry);
       expect(state.tabs()[0].subtitle).toBe("disk.e01");
+    });
+
+    it("keeps matching internal paths from different containers as separate tabs", () => {
+      const firstEntry = makeEntry({
+        containerPath: "/evidence/first.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+      const secondEntry = makeEntry({
+        containerPath: "/evidence/second.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+
+      state.openContainerEntry(firstEntry);
+      state.openContainerEntry(secondEntry);
+
+      expect(state.tabs()).toHaveLength(2);
+      expect(state.tabs().map(tab => tab.id)).toEqual([
+        "entry:/evidence/first.e01::/Windows/System32/config/SYSTEM",
+        "entry:/evidence/second.e01::/Windows/System32/config/SYSTEM",
+      ]);
+      expect(state.activeTab()?.entry?.containerPath).toBe("/evidence/second.e01");
     });
   });
 
@@ -413,6 +436,56 @@ describe("useCenterPaneTabs", () => {
       state.closeTab("evidence:/a.e01");
       expect(state.activeTabId()).toBe("evidence:/b.e01");
       expect(state.tabs()).toHaveLength(1);
+    });
+
+    it("restores info mode when closing an active entry tab back to evidence", () => {
+      const file = makeFile({ path: "/case.e01", filename: "case.e01" });
+      const entry = makeEntry({
+        containerPath: "/case.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+
+      state.openEvidenceFile(file);
+      state.openContainerEntry(entry);
+      expect(state.viewMode()).toBe("document");
+
+      state.closeTab("entry:/case.e01::/Windows/System32/config/SYSTEM");
+
+      expect(state.activeTabId()).toBe("evidence:/case.e01");
+      expect(state.viewMode()).toBe("info");
+    });
+
+    it("restores document mode when closing back to another entry tab", () => {
+      const firstEntry = makeEntry({
+        containerPath: "/first.e01",
+        entryPath: "/Users/alice/NTUSER.DAT",
+        name: "NTUSER.DAT",
+      });
+      const secondEntry = makeEntry({
+        containerPath: "/second.e01",
+        entryPath: "/Windows/System32/config/SYSTEM",
+        name: "SYSTEM",
+      });
+
+      state.openContainerEntry(firstEntry);
+      state.openContainerEntry(secondEntry);
+      expect(state.viewMode()).toBe("document");
+
+      state.closeTab("entry:/second.e01::/Windows/System32/config/SYSTEM");
+
+      expect(state.activeTabId()).toBe("entry:/first.e01::/Users/alice/NTUSER.DAT");
+      expect(state.viewMode()).toBe("document");
+    });
+
+    it("resets to info mode when closing all tabs", () => {
+      state.openExportTab();
+      expect(state.viewMode()).toBe("export");
+
+      state.closeAllTabs();
+
+      expect(state.activeTabId()).toBeNull();
+      expect(state.viewMode()).toBe("info");
     });
 
     it("is a no-op for unknown tab ID", () => {

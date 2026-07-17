@@ -20,6 +20,7 @@ import { QuickActionsBar } from "./components/QuickActionsBar";
 import { AppHeader } from "./components/layout/AppHeader";
 import { useWorkspaceProfiles } from "./hooks/useWorkspaceProfiles";
 import type { DiscoveredFile } from "./types";
+import type { ViewerMetadata } from "./types/viewerMetadata";
 import type { SelectedEntry } from "./components/EvidenceTree";
 import { createPreferences, getPreference, getRecentProjects } from "./components/preferences";
 import { createThemeActions } from "./hooks/useTheme";
@@ -165,7 +166,7 @@ function App() {
   const { leftPanelTab, setLeftPanelTab, leftPanelMode, setLeftPanelMode } = leftPanel;
   
   // Viewer metadata for right panel (emitted by ContainerEntryViewer)
-  const [viewerMetadata, setViewerMetadata] = createSignal<import("./types/viewerMetadata").ViewerMetadata | null>(null);
+  const [viewerMetadata, setViewerMetadata] = createSignal<ViewerMetadata | null>(null);
   
   // Linked data nodes for right panel (emitted by EvidenceCollectionPanel)
   const [linkedDataNodes, setLinkedDataNodes] = createSignal<import("./components/LinkedDataTree").LinkedDataNode[]>([]);
@@ -337,6 +338,37 @@ function App() {
   // Unified Center Pane Tabs - new unified tab management
   // ===========================================================================
   const centerPaneTabs = useCenterPaneTabs();
+  const activeViewerEntryKey = createMemo(() => {
+    const tab = centerPaneTabs.activeTab();
+    if (tab?.type === "entry" && tab.entry) {
+      return `${tab.entry.containerPath}::${tab.entry.entryPath}`;
+    }
+    if (tab?.type === "document" && tab.documentEntry) {
+      return `${tab.documentEntry.containerPath}::${tab.documentEntry.entryPath}`;
+    }
+    return null;
+  });
+
+  const metadataEntryKey = (metadata: ViewerMetadata) => {
+    const path = metadata.fileInfo.path;
+    const containerPath = metadata.fileInfo.containerPath ?? path;
+    return `${containerPath}::${path}`;
+  };
+
+  const setActiveViewerMetadata = (metadata: ViewerMetadata | null) => {
+    if (!metadata) {
+      setViewerMetadata(null);
+      return;
+    }
+
+    const expectedKey = activeViewerEntryKey();
+    if (!expectedKey || metadataEntryKey(metadata) !== expectedKey) {
+      log.debug("Ignoring metadata from inactive viewer tab:", metadata.fileInfo.path);
+      return;
+    }
+
+    setViewerMetadata(metadata);
+  };
   
   // Quick Actions Bar visibility (hidden by default, toggled via title bar button)
   const [showQuickActions, setShowQuickActions] = createSignal(false);
@@ -548,6 +580,12 @@ function App() {
       setLinkedDataNodes([]);
     }
   });
+
+  // Clear viewer metadata immediately when switching between entry/document tabs.
+  createEffect(on(
+    () => activeViewerEntryKey(),
+    () => setViewerMetadata(null),
+  ));
   
   // Auto-verify hashes when a file becomes active (if preference enabled)
   const autoVerifiedFiles = new Set<string>();
@@ -814,9 +852,19 @@ function App() {
   // Loading-wrapped versions of slow project operations
   let projectLoadInProgress = false;
   let projectSetupInProgress = false;
+  const projectActionBusy = () => projectLoadInProgress || projectSetupInProgress;
+  const notifyProjectActionBusy = () => {
+    toast.info(
+      "Project Action In Progress",
+      "Finish or cancel the current project action before starting another.",
+    );
+  };
 
   const handleLoadProject = async (path?: string) => {
-    if (projectLoadInProgress) return;
+    if (projectActionBusy()) {
+      notifyProjectActionBusy();
+      return;
+    }
     projectLoadInProgress = true;
     try {
       if (!path) {
@@ -872,7 +920,10 @@ function App() {
   const handleSaveProjectAs = () =>
     globalLoading.run("Saving project…", () => _handleSaveProjectAs());
   const handleProjectSetupComplete = async (locations: import("./components").ProjectLocations) => {
-    if (projectSetupInProgress) return;
+    if (projectActionBusy()) {
+      notifyProjectActionBusy();
+      return;
+    }
     projectSetupInProgress = true;
     try {
       const canProceed = await closeCurrentProject("new-project");
@@ -883,6 +934,11 @@ function App() {
     }
   };
   const handleNewProject = () => {
+    if (projectActionBusy()) {
+      notifyProjectActionBusy();
+      return;
+    }
+
     if (isAcquireEdition()) {
       setShowAcquireSessionDialog(true);
       return;
@@ -1810,7 +1866,7 @@ function App() {
                         centerPaneTabs.closeTab(tab().id);
                       }}
                       onViewModeChange={setEntryContentViewMode}
-                      onMetadata={setViewerMetadata}
+                      onMetadata={setActiveViewerMetadata}
                       onBookmarkSelection={handleBookmarkSelection}
                       onNoteFromSelection={handleNoteFromSelection}
                       onSearchSelection={handleSearchSelection}
@@ -1824,7 +1880,7 @@ function App() {
                       viewMode={entryContentViewMode()}
                       onBack={() => centerPaneTabs.closeTab(tab().id)}
                       onViewModeChange={setEntryContentViewMode}
-                      onMetadata={setViewerMetadata}
+                      onMetadata={setActiveViewerMetadata}
                       onBookmarkSelection={handleBookmarkSelection}
                       onNoteFromSelection={handleNoteFromSelection}
                       onSearchSelection={handleSearchSelection}

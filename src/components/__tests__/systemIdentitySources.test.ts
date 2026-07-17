@@ -68,6 +68,33 @@ describe("system identity source helpers", () => {
         }),
       ),
     ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "SECURITY",
+          entryPath: "/Windows/System32/config/SECURITY",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("classifies Windows setup and sysprep logs", () => {
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "setupact.log",
+          entryPath: "/Windows/Panther/setupact.log",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isLikelySystemIdentityEntry(
+        entry({
+          name: "setuperr.log",
+          entryPath: "/Windows/System32/Sysprep/Panther/setuperr.log",
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("classifies Linux DMI, account, and network identity sources", () => {
@@ -365,6 +392,7 @@ describe("system identity source helpers", () => {
             itemAddr: undefined,
           },
         ],
+        evidenceFileId: "/case/disk.E01",
         extractor: "test-extractor",
       },
     });
@@ -438,8 +466,81 @@ describe("system identity source helpers", () => {
             itemAddr: undefined,
           },
         ],
+        evidenceFileId: "/case/disk.E01",
         extractor: "test-binary-extractor",
       },
     });
+  });
+
+  it("collects large Windows driver directories in bounded batches", async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_binary_artifact_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    const drivers = Array.from({ length: 260 }, (_, index) =>
+      vfsEntry({
+        name: `driver${index}.sys`,
+        path: `/Partition1_NTFS/Windows/System32/drivers/driver${index}.sys`,
+        size: 4096 + index,
+      }),
+    );
+
+    await collectBinaryArtifactEntries(
+      "/case/disk.E01",
+      drivers,
+      "e01",
+      "test-binary-extractor",
+    );
+
+    const collectCalls = mockInvoke.mock.calls.filter(
+      ([command]) => command === "project_db_collect_binary_artifact_sources",
+    );
+    const batchSizes = collectCalls.map(
+      ([, args]) => (args as any).request.sources.length,
+    );
+
+    expect(batchSizes).toEqual([128, 128, 4]);
+    expect(batchSizes.reduce((total, size) => total + size, 0)).toBe(260);
+    expect(
+      collectCalls.every(([, args]) =>
+        (args as any).request.sources.every((source: any) =>
+          source.entryPath.includes("/Windows/System32/drivers/driver"),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not submit duplicate sources from one collection batch", async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "project_db_is_open") return true;
+      if (command === "project_db_collect_system_identity_sources") {
+        return { scanned: 1, matched: 1, inserted: 1, skipped: 0, errors: [] };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    const source = vfsEntry({
+      name: "SYSTEM",
+      path: "/Partition1_NTFS/Windows/System32/config/SYSTEM",
+      size: 8192,
+    });
+
+    await collectSystemIdentityEntries(
+      "/case/disk.E01",
+      [source, { ...source }],
+      "e01",
+      "test-extractor",
+    );
+
+    const collectCalls = mockInvoke.mock.calls.filter(
+      ([command]) => command === "project_db_collect_system_identity_sources",
+    );
+
+    expect(collectCalls).toHaveLength(1);
+    expect((collectCalls[0][1] as any).request.sources).toHaveLength(1);
   });
 });

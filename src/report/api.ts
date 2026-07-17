@@ -19,6 +19,7 @@ import type {
 } from "../api/commands";
 import { formatBytes } from "../utils";
 import { isTauri } from "../utils/platform";
+import { buildSystemIdentityReportMarkdown } from "../utils/systemIdentitySummary";
 
 export interface ProjectDbReportAppendix {
   appendix_id: string;
@@ -408,6 +409,17 @@ export function buildProjectDbEvidenceAppendices(
     );
   }
 
+  const systemIdentityContent = buildSystemIdentityReportMarkdown(evidence.artifacts);
+  if (systemIdentityContent) {
+    appendices.push(
+      makeAppendix(
+        startIndex + appendices.length,
+        "System Identity Summary",
+        systemIdentityContent,
+      ),
+    );
+  }
+
   const sourceAnalysisContent = buildSourceAnalysisAppendix(evidence);
   if (sourceAnalysisContent) {
     appendices.push(
@@ -785,6 +797,11 @@ function artifactMetadataSummary(metadata: Record<string, string>): string {
     ["system.localGroups", "groups"],
     ["system.adminGroups", "admin groups"],
     ["system.groupMembers", "group members"],
+    ["system.securityHivePresent", "security hive"],
+    ["system.securityAccountSidCount", "security account SIDs"],
+    ["system.securityAccountSids", "security account SID list"],
+    ["system.lsaSecretCount", "LSA secrets"],
+    ["system.lsaSecretsPresent", "LSA secrets present"],
     ["system.driveLetters", "drives"],
     ["system.volumeGuids", "volumes"],
     ["system.driverServiceCount", "driver services"],

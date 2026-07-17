@@ -15,6 +15,7 @@ export default defineConfig({
   test: {
     // Use jsdom for DOM testing
     environment: "jsdom",
+    isolate: true,
     // Ensure solid-js uses browser build
     deps: {
       optimizer: {

@@ -399,7 +399,10 @@ fn build_query(index: &SearchIndex, options: &SearchOptions) -> Result<Box<dyn Q
         // No filters, no query → return all docs
         Ok(Box::new(AllQuery))
     } else if subqueries.len() == 1 {
-        Ok(subqueries.pop().unwrap().1)
+        subqueries
+            .pop()
+            .map(|(_, query)| query)
+            .ok_or_else(|| "Search query builder lost its single filter".to_string())
     } else {
         Ok(Box::new(BooleanQuery::new(subqueries)))
     }

@@ -108,6 +108,11 @@ describe("PartitionNode", () => {
       />
     ));
 
+    expect(container.querySelectorAll("[data-entry-path]").length).toBe(100);
+    expect(container.textContent).toContain("Load more (100 of 250)");
+
+    clickLoadMore(container);
+
     expect(container.querySelectorAll("[data-entry-path]").length).toBe(200);
     expect(container.textContent).toContain("Load more (200 of 250)");
 
@@ -145,6 +150,11 @@ describe("VfsTreeNode", () => {
         onClick={vi.fn()}
       />
     ));
+
+    expect(container.querySelectorAll("[data-entry-path]").length).toBe(101);
+    expect(container.textContent).toContain("Load more (100 of 250)");
+
+    clickLoadMore(container);
 
     expect(container.querySelectorAll("[data-entry-path]").length).toBe(201);
     expect(container.textContent).toContain("Load more (200 of 250)");

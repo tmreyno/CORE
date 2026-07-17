@@ -42,6 +42,17 @@ const waitForInvoke = async (command: string, timeoutMs = 1500) => {
     await tick(25);
   }
 };
+const waitForButtonText = async (container: HTMLElement, text: string, timeoutMs = 1500) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const button = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes(text),
+    );
+    if (button) return button as HTMLButtonElement;
+    await tick(25);
+  }
+  return undefined;
+};
 
 // Base entry factory
 function makeEntry(overrides: Partial<SelectedEntry> = {}): SelectedEntry {
@@ -263,6 +274,7 @@ describe("ContainerEntryViewer", () => {
             containerType: "ad1",
             size: 1024,
           },
+          evidenceFileId: "/evidence/container.ad1",
           extractor: "container-entry-viewer",
         },
       });
@@ -309,6 +321,7 @@ describe("ContainerEntryViewer", () => {
               size: 1024,
             },
           ],
+          evidenceFileId: "/evidence/container.ad1",
           extractor: "container-entry-viewer-system-identity",
         },
       });
@@ -355,6 +368,7 @@ describe("ContainerEntryViewer", () => {
               size: 1024,
             },
           ],
+          evidenceFileId: "/evidence/container.ad1",
           extractor: "container-entry-viewer-binary-artifact",
         },
       });
@@ -1417,6 +1431,91 @@ describe("ContainerEntryViewer", () => {
       expect(lastCall.viewerType).toBe("Spreadsheet");
       dispose();
     });
+
+    it("ignores stale preview metadata after switching entries", async () => {
+      let resolveRead:
+        | ((value: { success: boolean; content: any; error: string | null }) => void)
+        | undefined;
+      let resolveMetadata:
+        | ((value: { success: boolean; metadata: any; error: string | null }) => void)
+        | undefined;
+
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "document_read_source") {
+          return new Promise((resolve) => {
+            resolveRead = resolve;
+          });
+        }
+        if (cmd === "document_get_metadata_source") {
+          return new Promise((resolve) => {
+            resolveMetadata = resolve;
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      const onMetadata = vi.fn();
+      const [entry, setEntry] = createSignal(
+        makeEntry({
+          name: "slow.docx",
+          entryPath: "/files/slow.docx",
+        }),
+      );
+      const [viewMode, setViewMode] = createSignal<"auto" | "hex">("auto");
+
+      const { dispose } = renderComponent(() => (
+        <ContainerEntryViewer
+          entry={entry()}
+          viewMode={viewMode()}
+          onMetadata={onMetadata}
+        />
+      ));
+
+      await tick(100);
+      setViewMode("hex");
+      setEntry(makeEntry({ name: "current.bin", entryPath: "/files/current.bin" }));
+      await tick(100);
+
+      resolveRead?.({
+        success: true,
+        content: {
+          format: "docx",
+          title: "Old Document",
+          author: "Previous",
+          page_count: 1,
+          file_size: 1024,
+          text: "old",
+          html: "<p>old</p>",
+        },
+        error: null,
+      });
+      resolveMetadata?.({
+        success: true,
+        metadata: {
+          format: "docx",
+          title: "Old Document",
+          author: "Previous",
+          subject: null,
+          keywords: [],
+          page_count: 1,
+          file_size: 1024,
+          created: null,
+          modified: null,
+          producer: null,
+          creator: null,
+          encrypted: false,
+          word_count: 1,
+        },
+        error: null,
+      });
+      await tick(100);
+
+      const lastCall = onMetadata.mock.calls[onMetadata.mock.calls.length - 1][0];
+      expect(lastCall.fileInfo.name).toBe("current.bin");
+      expect(lastCall.viewerType).toBe("Hex");
+      expect(lastCall.sections).toEqual([]);
+      dispose();
+    });
   });
 
   describe("close preview", () => {
@@ -1691,6 +1790,42 @@ describe("ContainerEntryViewer", () => {
 
       expect(container.textContent).not.toContain("Extracting file");
       expect(container.textContent).toContain("notes.bin");
+      dispose();
+    });
+
+    it("auto preview reopens after a preview is closed", async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "viewer_get_binary_info_source") return { size: 1024, mimeType: "image/jpeg" };
+        if (cmd === "viewer_read_binary_source_base64_chunk") {
+          return { data: "", offset: 0, length: 0, totalSize: 1024 };
+        }
+        if (cmd === "exif_read_source") return { success: false, data: null, error: "No EXIF" };
+        return null;
+      });
+
+      const entry = makeEntry({
+        name: "photo.jpg",
+        entryPath: "/files/photo.jpg",
+        isArchiveEntry: true,
+      });
+      const [viewMode, setViewMode] = createSignal<"auto" | "hex">("auto");
+      const { container, dispose } = renderComponent(() => (
+        <ContainerEntryViewer
+          entry={entry}
+          viewMode={viewMode()}
+          onViewModeChange={(mode) => setViewMode(mode === "hex" ? "hex" : "auto")}
+        />
+      ));
+
+      const closeButton = await waitForButtonText(container, "Close");
+      expect(closeButton).toBeDefined();
+
+      closeButton!.click();
+      await tick(50);
+      expect(await waitForButtonText(container, "Preview")).toBeDefined();
+
+      setViewMode("auto");
+      expect(await waitForButtonText(container, "Close")).toBeDefined();
       dispose();
     });
 

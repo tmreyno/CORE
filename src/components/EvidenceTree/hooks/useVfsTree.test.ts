@@ -135,6 +135,7 @@ describe("useVfsTree", () => {
             itemAddr: undefined,
           },
         ],
+        evidenceFileId: "/case/disk.E01",
         extractor: "evidence-tree-system-identity",
       },
     });
@@ -174,6 +175,7 @@ describe("useVfsTree", () => {
             itemAddr: undefined,
           },
         ],
+        evidenceFileId: "/case/disk.E01",
         extractor: "evidence-tree-binary-artifact",
       },
     });

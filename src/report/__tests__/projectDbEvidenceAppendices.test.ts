@@ -397,6 +397,51 @@ describe("buildProjectDbEvidenceAppendices", () => {
     expect(appendices[3].content).toContain("0x0-0x10");
   });
 
+  it("adds a dedicated system identity appendix when extracted records are available", () => {
+    const evidence = makeEvidence();
+    evidence.artifacts = [
+      {
+        id: "system-artifact-1",
+        evidenceFileId: "/case/disk.E01",
+        sourceId: "e01:/case/disk.E01:/Windows/System32/config/SOFTWARE",
+        sourceRefJson: JSON.stringify({
+          kind: "vfsEntry",
+          containerPath: "/case/disk.E01",
+          entryPath: "/Windows/System32/config/SOFTWARE",
+          containerType: "e01",
+        }),
+        name: "SOFTWARE",
+        extension: null,
+        size: 65536,
+        mimeType: null,
+        typeDescription: "Windows Registry Hive",
+        category: "systeminfo",
+        confidence: "high",
+        isText: false,
+        contentPreview: null,
+        metadataJson: JSON.stringify({
+          "system.manufacturer": "Dell Inc.",
+          "system.model": "Precision 5680",
+          "system.serialNumber": "ABC1234",
+          "system.activeComputerName": "DESKTOP-CASE01",
+          "system.osName": "Windows 11 Pro",
+          "system.localUsers": "terry; admin",
+          "system.driveLetters": "C:",
+        }),
+        extractedAt: "2026-07-06T10:00:00Z",
+        extractor: "test-system-identity",
+      },
+    ];
+
+    const appendices = buildProjectDbEvidenceAppendices(evidence);
+
+    expect(appendices).toHaveLength(5);
+    expect(appendices[2].title).toBe("System Identity Summary");
+    expect(appendices[2].content).toContain("System identity extraction found 1 artifact");
+    expect(appendices[2].content).toContain("| Serial Number | ABC1234 | 1 |");
+    expect(appendices[2].content).toContain("| Active Computer Name | DESKTOP-CASE01 | 1 |");
+  });
+
   it("returns no appendices for empty project DB evidence", () => {
     const empty = makeEvidence();
     empty.hashAlgorithmSummaries = [];

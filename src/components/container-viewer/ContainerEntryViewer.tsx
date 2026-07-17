@@ -48,6 +48,7 @@ import {
   isLikelyBinaryArtifactEntry,
 } from "../systemIdentitySources";
 import { isTauri } from "../../utils/platform";
+import { notifyArtifactsUpdated } from "../../utils/artifactEvents";
 
 const log = logger.scope("ContainerEntryViewer");
 const BROWSER_ENTRY_VIEW_MESSAGE =
@@ -203,18 +204,27 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
         if (!(await commands.projectDb.isOpen())) return;
         const systemIdentitySource = buildSystemIdentitySourceInput(props.entry);
         if (systemIdentitySource) {
-          await commands.artifact.collectSystemIdentitySources({
+          const result = await commands.artifact.collectSystemIdentitySources({
             sources: [systemIdentitySource],
+            evidenceFileId: props.entry.containerPath,
             extractor: "container-entry-viewer-system-identity",
           });
+          if (result.inserted > 0) {
+            notifyArtifactsUpdated({
+              evidenceFileId: props.entry.containerPath,
+              category: "systeminfo",
+            });
+          }
         } else if (isLikelyBinaryArtifactEntry(props.entry)) {
           await commands.artifact.collectBinaryArtifactSources({
             sources: [source],
+            evidenceFileId: props.entry.containerPath,
             extractor: "container-entry-viewer-binary-artifact",
           });
         } else {
           await commands.artifact.extractSourceAndInsert({
             source,
+            evidenceFileId: props.entry.containerPath,
             extractor: "container-entry-viewer",
           });
         }
@@ -226,7 +236,11 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
 
   const handlePreview = async () => {
     if (props.entry.isDir) return;
-    if (previewPath()) return;
+    if (guardedPreviewPath()) return;
+    if (previewPath()) {
+      previewPathEntryKey = "";
+      setPreviewPath(null);
+    }
 
     const capturedKey = `${props.entry.containerPath}::${props.entry.entryPath}`;
     setPreviewLoading(true);
@@ -296,13 +310,17 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
       }
     } finally {
       if (capturedKey === entryKey()) {
+        isHandlingPreview = false;
         setPreviewLoading(false);
       }
     }
   };
 
   const closePreview = () => {
+    isHandlingPreview = false;
+    previewPathEntryKey = "";
     setPreviewPath(null);
+    setPreviewLoading(false);
     setPreviewError(null);
     setDetectedFormat(null);
     props.onViewModeChange?.("hex");
@@ -403,6 +421,17 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
     void `${props.entry.containerPath}::${props.entry.entryPath}`;
     setViewerSection(null);
   });
+
+  const setViewerSectionForEntry = (
+    expectedEntryKey: string,
+    section: ViewerMetadataSection | null,
+  ) => {
+    if (expectedEntryKey !== entryKey()) {
+      log.debug("Ignoring stale viewer metadata:", expectedEntryKey);
+      return;
+    }
+    setViewerSection(section);
+  };
 
   // Emit viewer metadata to parent for right panel display
   createEffect(() => {
@@ -541,6 +570,7 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
           {/* Preview Mode */}
           <Show when={effectiveMode() === "preview" && guardedPreviewPath() && !previewLoading()}>
             {(() => {
+              const viewerEntryKey = entryKey();
               const path = guardedPreviewPath()!;
               const detected = detectedFormat();
               log.debug("Rendering preview:", {
@@ -559,26 +589,27 @@ export function ContainerEntryViewer(props: ContainerEntryViewerProps) {
                 detectedFormat: detected?.format,
                 detectedViewer: detected?.viewerType,
               });
-              return null;
+              return (
+                <ViewerSwitch
+                  entry={props.entry}
+                  previewPath={path}
+                  detectedFormat={detectedFormat}
+                  onMetadata={(section) => setViewerSectionForEntry(viewerEntryKey, section)}
+                  fileIsPdf={fileIsPdf}
+                  fileIsImage={fileIsImage}
+                  fileIsSpreadsheet={fileIsSpreadsheet}
+                  fileIsOffice={fileIsOffice}
+                  fileIsEmail={fileIsEmail}
+                  fileIsPst={fileIsPst}
+                  fileIsPlist={fileIsPlist}
+                  fileIsBinary={fileIsBinary}
+                  fileIsRegistry={fileIsRegistry}
+                  fileIsDatabase={fileIsDatabase}
+                  fileIsDetectedText={fileIsDetectedText}
+                  fileIsDocument={fileIsDocument}
+                />
+              );
             })()}
-            <ViewerSwitch
-              entry={props.entry}
-              previewPath={guardedPreviewPath()!}
-              detectedFormat={detectedFormat}
-              onMetadata={setViewerSection}
-              fileIsPdf={fileIsPdf}
-              fileIsImage={fileIsImage}
-              fileIsSpreadsheet={fileIsSpreadsheet}
-              fileIsOffice={fileIsOffice}
-              fileIsEmail={fileIsEmail}
-              fileIsPst={fileIsPst}
-              fileIsPlist={fileIsPlist}
-              fileIsBinary={fileIsBinary}
-              fileIsRegistry={fileIsRegistry}
-              fileIsDatabase={fileIsDatabase}
-              fileIsDetectedText={fileIsDetectedText}
-              fileIsDocument={fileIsDocument}
-            />
           </Show>
 
           {/* Hex View */}
