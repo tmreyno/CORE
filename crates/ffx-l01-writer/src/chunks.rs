@@ -53,16 +53,16 @@ pub fn compress_file_data(
     let mut pos = 0;
 
     while pos < data.len() {
-        let end = std::cmp::min(pos + chunk_size, data.len());
+        let end = pos.saturating_add(chunk_size).min(data.len());
         let chunk = &data[pos..end];
 
         let (chunk_bytes, is_compressed) = compress_chunk(chunk, compression_level)?;
 
-        let compressed_size = chunk_bytes.len() as u32;
+        let compressed_size = checked_l01_chunk_size_u32(chunk_bytes.len())?;
         table.add_chunk(offset, compressed_size, is_compressed);
 
         compressed_data.extend_from_slice(&chunk_bytes);
-        offset += compressed_size as u64;
+        offset = checked_l01_chunk_offset_add(offset, compressed_size)?;
         pos = end;
     }
 
@@ -74,12 +74,8 @@ pub fn compress_file_data(
 /// If compression doesn't reduce size, stores the chunk uncompressed.
 /// Returns (compressed_bytes, is_compressed).
 fn compress_chunk(data: &[u8], level: CompressionLevel) -> Result<(Vec<u8>, bool), L01WriteError> {
-    if level == CompressionLevel::None {
-        return Ok((data.to_vec(), false));
-    }
-
     let flate_level = match level {
-        CompressionLevel::None => unreachable!(),
+        CompressionLevel::None => return Ok((data.to_vec(), false)),
         CompressionLevel::Fast => Compression::fast(),
         CompressionLevel::Best => Compression::best(),
     };
@@ -172,7 +168,7 @@ pub fn compress_and_hash_from_reader<R: std::io::Read>(
         chunk_size
     };
 
-    let estimated_chunks = estimated_chunk_count(total_size, chunk_size)?;
+    validate_estimated_chunk_count(total_size, chunk_size)?;
     let mut compressed_data = Vec::with_capacity(prealloc_capacity(total_size));
     let mut table = ChunkTable::new(base_offset);
 
@@ -215,20 +211,17 @@ pub fn compress_and_hash_from_reader<R: std::io::Read>(
 
         let (chunk_bytes, is_compressed) = compress_chunk(chunk, compression_level)?;
 
-        let compressed_size = chunk_bytes.len() as u32;
+        let compressed_size = checked_l01_chunk_size_u32(chunk_bytes.len())?;
         table.add_chunk(offset, compressed_size, is_compressed);
 
         compressed_data.extend_from_slice(&chunk_bytes);
-        offset += compressed_size as u64;
+        offset = checked_l01_chunk_offset_add(offset, compressed_size)?;
         bytes_processed += filled as u64;
 
         if let Some(ref mut f) = progress_fn {
             f(bytes_processed);
         }
     }
-
-    // Pre-size hint was helpful
-    let _ = estimated_chunks;
 
     // Finalize per-file hashes if hashers were provided
     let hash_result = hashers.map(|h| {
@@ -264,6 +257,10 @@ fn estimated_chunk_count(total_size: u64, chunk_size: usize) -> Result<usize, L0
         .map_err(|_| L01WriteError::Internal("L01 chunk count exceeds memory limits".to_string()))
 }
 
+fn validate_estimated_chunk_count(total_size: u64, chunk_size: usize) -> Result<(), L01WriteError> {
+    estimated_chunk_count(total_size, chunk_size).map(|_| ())
+}
+
 fn prealloc_capacity(total_size: u64) -> usize {
     usize::try_from(total_size)
         .unwrap_or(usize::MAX)
@@ -275,6 +272,17 @@ fn bounded_remaining_bytes(total_size: u64, bytes_processed: u64) -> Result<usiz
     usize::try_from(remaining).map_err(|_| {
         L01WriteError::Internal("L01 remaining source range exceeds memory limits".to_string())
     })
+}
+
+fn checked_l01_chunk_size_u32(size: usize) -> Result<u32, L01WriteError> {
+    u32::try_from(size)
+        .map_err(|_| L01WriteError::Internal("L01 chunk size exceeds u32 table field".to_string()))
+}
+
+fn checked_l01_chunk_offset_add(offset: u64, compressed_size: u32) -> Result<u64, L01WriteError> {
+    offset
+        .checked_add(u64::from(compressed_size))
+        .ok_or_else(|| L01WriteError::Internal("L01 chunk offset overflow".to_string()))
 }
 
 #[cfg(test)]
@@ -310,6 +318,15 @@ mod tests {
         assert!(!table.chunks[0].is_compressed);
         assert_eq!(compressed.len(), 1000);
         assert_eq!(compressed, data);
+    }
+
+    #[test]
+    fn test_compress_chunk_none_returns_raw_without_compression() {
+        let data = b"no compression chunk";
+        let (chunk, is_compressed) = compress_chunk(data, CompressionLevel::None).unwrap();
+
+        assert_eq!(chunk, data);
+        assert!(!is_compressed);
     }
 
     #[test]
@@ -437,6 +454,25 @@ mod tests {
         assert!(err
             .to_string()
             .contains("remaining source range exceeds memory limits"));
+    }
+
+    #[test]
+    fn test_checked_l01_chunk_size_u32_rejects_table_overflow() {
+        if usize::BITS <= u32::BITS {
+            return;
+        }
+
+        let too_large = usize::try_from(u64::from(u32::MAX) + 1).unwrap();
+        let err = checked_l01_chunk_size_u32(too_large).unwrap_err();
+
+        assert!(err.to_string().contains("chunk size exceeds u32"));
+    }
+
+    #[test]
+    fn test_checked_l01_chunk_offset_add_rejects_overflow() {
+        let err = checked_l01_chunk_offset_add(u64::MAX, 1).unwrap_err();
+
+        assert!(err.to_string().contains("chunk offset overflow"));
     }
 
     #[test]

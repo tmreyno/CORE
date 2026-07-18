@@ -57,11 +57,20 @@ impl MapEntry {
 
     /// Deserialize from 28 bytes (little-endian).
     pub fn from_bytes(data: &[u8; MAP_ENTRY_SIZE]) -> Self {
+        let mut mapped_offset = [0u8; 8];
+        mapped_offset.copy_from_slice(&data[0..8]);
+        let mut length = [0u8; 8];
+        length.copy_from_slice(&data[8..16]);
+        let mut target_offset = [0u8; 8];
+        target_offset.copy_from_slice(&data[16..24]);
+        let mut target_id = [0u8; 4];
+        target_id.copy_from_slice(&data[24..28]);
+
         Self {
-            mapped_offset: u64::from_le_bytes(data[0..8].try_into().unwrap()),
-            length: u64::from_le_bytes(data[8..16].try_into().unwrap()),
-            target_offset: u64::from_le_bytes(data[16..24].try_into().unwrap()),
-            target_id: u32::from_le_bytes(data[24..28].try_into().unwrap()),
+            mapped_offset: u64::from_le_bytes(mapped_offset),
+            length: u64::from_le_bytes(length),
+            target_offset: u64::from_le_bytes(target_offset),
+            target_id: u32::from_le_bytes(target_id),
         }
     }
 }
@@ -210,11 +219,10 @@ impl MapReader {
         let count = map_data.len() / MAP_ENTRY_SIZE;
         let mut entries = Vec::with_capacity(count);
 
-        for i in 0..count {
-            let start = i * MAP_ENTRY_SIZE;
-            let chunk: [u8; MAP_ENTRY_SIZE] =
-                map_data[start..start + MAP_ENTRY_SIZE].try_into().unwrap();
-            entries.push(MapEntry::from_bytes(&chunk));
+        for chunk in map_data.chunks_exact(MAP_ENTRY_SIZE) {
+            let mut entry_data = [0u8; MAP_ENTRY_SIZE];
+            entry_data.copy_from_slice(chunk);
+            entries.push(MapEntry::from_bytes(&entry_data));
         }
 
         // Sort by mapped_offset for binary search

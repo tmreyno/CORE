@@ -384,6 +384,7 @@ impl DocumentService {
     }
 
     /// Write a forensic report to a document
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     pub fn write_report(
         &self,
         report: &crate::report::ForensicReport,

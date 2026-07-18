@@ -13,6 +13,7 @@ use std::path::Path;
 use super::error::{DocumentError, DocumentResult};
 use super::types::*;
 use super::DocumentFormat;
+#[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
 use crate::report::ForensicReport;
 
 const MAX_HTML_SOURCE_BYTES: u64 = 50 * 1024 * 1024;
@@ -31,13 +32,17 @@ fn ensure_html_size_allowed(size: u64) -> DocumentResult<()> {
 /// HTML document handler
 pub struct HtmlDocument {
     /// Include print-optimized styles
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     print_styles: bool,
 }
 
 impl HtmlDocument {
     /// Create a new HTML document handler
     pub fn new() -> Self {
-        Self { print_styles: true }
+        Self {
+            #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
+            print_styles: true,
+        }
     }
 
     // =========================================================================
@@ -348,6 +353,7 @@ impl HtmlDocument {
     // =========================================================================
 
     /// Write a forensic report to HTML
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     pub fn write_report(
         &self,
         report: &ForensicReport,
@@ -359,6 +365,7 @@ impl HtmlDocument {
     }
 
     /// Render report to HTML string
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     pub fn render_report(&self, report: &ForensicReport) -> String {
         let classification_color = match report.metadata.classification {
             crate::report::Classification::Public => "#28a745",
@@ -612,6 +619,7 @@ tr:nth-child(even) {{
     }
 
     /// Escape HTML special characters
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     fn escape_html(s: &str) -> String {
         s.replace('&', "&amp;")
             .replace('<', "&lt;")

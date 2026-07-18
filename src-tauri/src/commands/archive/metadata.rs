@@ -627,7 +627,13 @@ pub async fn archive_get_tree(
                 debug!("archive_get_tree: trying ZIP fallback for unknown extension");
                 match archive::list_zip_entries(&containerPath) {
                     Ok(entries) => Ok(convert_entries(entries)),
-                    Err(_) => {
+                    Err(error) => {
+                        debug!(
+                            path = %containerPath,
+                            extension = %extension,
+                            error = %error,
+                            "archive_get_tree: ZIP fallback failed for unknown extension"
+                        );
                         // Return empty with helpful message
                         Ok(bounded_archive_tree_entries(vec![ArchiveTreeEntry {
                             path: format!("(Unsupported archive format: .{})", extension),

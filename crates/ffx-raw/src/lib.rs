@@ -218,10 +218,9 @@ impl RawHandle {
                 self.current_file = Some(file);
             }
 
-            let file = self
-                .current_file
-                .as_mut()
-                .expect("current_file set by preceding assignment");
+            let file = self.current_file.as_mut().ok_or_else(|| {
+                ContainerError::IoError(format!("Raw segment {} was not opened", seg_idx))
+            })?;
             file.seek(SeekFrom::Start(seg_offset))
                 .map_err(|e| format!("Seek failed: {}", e))?;
 
@@ -634,9 +633,7 @@ where
                 }
             }
         }
-        // Signal completion
-        let _ = tx.send(None);
-        Ok(())
+        send_hash_completion_signal(&tx)
     });
 
     // Hashing thread: receives buffers and updates hash using StreamingHasher
@@ -926,6 +923,16 @@ fn ensure_verified_byte_count(
     Ok(())
 }
 
+fn send_hash_completion_signal(
+    tx: &mpsc::SyncSender<Option<Vec<u8>>>,
+) -> Result<(), ContainerError> {
+    tx.send(None).map_err(|_| {
+        ContainerError::InternalError(
+            "Hash thread terminated before RAW completion signal".to_string(),
+        )
+    })
+}
+
 fn format_xxh3_digest128(digest: u128) -> String {
     format!("{digest:032x}")
 }
@@ -996,6 +1003,25 @@ mod tests {
         let formatted = format_xxh3_digest128(0x1);
         assert_eq!(formatted, "00000000000000000000000000000001");
         assert_eq!(formatted.len(), 32);
+    }
+
+    #[test]
+    fn send_hash_completion_signal_sends_sentinel() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+
+        send_hash_completion_signal(&tx).expect("completion sentinel should send");
+
+        assert!(rx.recv().expect("sentinel should be queued").is_none());
+    }
+
+    #[test]
+    fn send_hash_completion_signal_reports_closed_receiver() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        drop(rx);
+
+        let err = send_hash_completion_signal(&tx).unwrap_err();
+
+        assert!(err.to_string().contains("completion signal"));
     }
 
     fn write_raw_fixture(data: &[u8]) -> std::path::PathBuf {

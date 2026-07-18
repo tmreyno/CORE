@@ -238,6 +238,16 @@ fn checked_aff4_total_size_add(total: u64, addition: u64, path: &Path) -> Result
     })
 }
 
+fn aff4_logical_entry_name(path: &Path) -> Result<String, String> {
+    let Some(name) = path.file_name().filter(|name| !name.is_empty()) else {
+        return Err(format!(
+            "AFF4 export source path has no file name: {}",
+            path.display()
+        ));
+    };
+    Ok(name.to_string_lossy().to_string())
+}
+
 fn push_aff4_logical_entry(
     entries: &mut Vec<Aff4LogicalEntry>,
     entry: Aff4LogicalEntry,
@@ -446,11 +456,7 @@ pub async fn aff4_create_image(
             let base = path.parent().unwrap_or(&path);
             collect_entries_recursive(&path, base, &mut entries)?;
         } else {
-            let rel = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
+            let rel = aff4_logical_entry_name(&path)?;
             push_aff4_logical_entry(
                 &mut entries,
                 Aff4LogicalEntry::from_source(path.clone(), rel),
@@ -469,18 +475,21 @@ pub async fn aff4_create_image(
     );
 
     // Emit early "preparing" event
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "aff4-export-progress",
-        Aff4ExportProgress {
-            output_path: options.output_path.clone(),
-            phase: "Preparing".to_string(),
-            current_file: String::new(),
-            files_processed: 0,
-            total_files,
-            bytes_processed: 0,
-            total_bytes,
-            percent: 0.0,
-        },
+        window.emit(
+            "aff4-export-progress",
+            Aff4ExportProgress {
+                output_path: options.output_path.clone(),
+                phase: "Preparing".to_string(),
+                current_file: String::new(),
+                files_processed: 0,
+                total_files,
+                bytes_processed: 0,
+                total_bytes,
+                percent: 0.0,
+            },
+        ),
     );
 
     // Check destination has enough free space
@@ -516,18 +525,21 @@ pub async fn aff4_create_image(
     let output_path_for_progress = options.output_path.clone();
     let progress_fn: Box<dyn FnMut(ffx_aff4::Aff4Progress) + Send> =
         Box::new(move |progress: ffx_aff4::Aff4Progress| {
-            let _ = window_clone.emit(
+            crate::eventing::log_emit_result(
                 "aff4-export-progress",
-                Aff4ExportProgress {
-                    output_path: output_path_for_progress.clone(),
-                    phase: phase_to_string(progress.phase).to_string(),
-                    current_file: progress.current_file.clone(),
-                    files_processed: progress.files_processed,
-                    total_files: progress.total_files,
-                    bytes_processed: progress.bytes_processed,
-                    total_bytes: progress.total_bytes,
-                    percent: progress.percent(),
-                },
+                window_clone.emit(
+                    "aff4-export-progress",
+                    Aff4ExportProgress {
+                        output_path: output_path_for_progress.clone(),
+                        phase: phase_to_string(progress.phase).to_string(),
+                        current_file: progress.current_file.clone(),
+                        files_processed: progress.files_processed,
+                        total_files: progress.total_files,
+                        bytes_processed: progress.bytes_processed,
+                        total_bytes: progress.total_bytes,
+                        percent: progress.percent(),
+                    },
+                ),
             );
         });
 
@@ -717,6 +729,21 @@ mod tests {
 
         assert!(err.contains("AFF4 export total size overflow"));
         assert!(err.contains("overflow-source.bin"));
+    }
+
+    #[test]
+    fn aff4_logical_entry_name_rejects_root_path() {
+        let err = aff4_logical_entry_name(Path::new("/")).unwrap_err();
+
+        assert!(err.contains("has no file name"));
+    }
+
+    #[test]
+    fn aff4_logical_entry_name_uses_file_name() {
+        assert_eq!(
+            aff4_logical_entry_name(Path::new("/tmp/source.bin")).unwrap(),
+            "source.bin"
+        );
     }
 
     #[test]

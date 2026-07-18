@@ -13,7 +13,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use ffx_errors::ContainerError;
 
@@ -225,22 +225,47 @@ pub fn extract_ad1_segment_number(filename: &str) -> Option<u32> {
 
 /// Build the path for an AD1 segment given base path and segment number
 pub fn build_ad1_segment_path(base_path: &str, segment_num: u32) -> String {
-    // Handle empty path case
-    if base_path.is_empty() {
+    let Some((parent, stem)) = ad1_segment_base_parts(base_path) else {
+        debug!(
+            base_path,
+            "Cannot build AD1 segment path without a base file name"
+        );
         return String::new();
-    }
-
-    let path = Path::new(base_path);
-    let parent = path.parent().unwrap_or(Path::new("."));
-    let stem = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
+    };
 
     parent
         .join(format!("{}.ad{}", stem, segment_num))
         .to_string_lossy()
         .to_string()
+}
+
+fn ad1_segment_base_parts(base_path: &str) -> Option<(PathBuf, String)> {
+    if base_path.is_empty() {
+        return None;
+    }
+
+    let path = Path::new(base_path);
+    let parent = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let stem = path
+        .file_stem()
+        .filter(|stem| !stem.is_empty())?
+        .to_string_lossy()
+        .to_string();
+
+    Some((parent, stem))
+}
+
+fn segment_metadata_size_or_zero(segment_path: &Path) -> u64 {
+    match fs::metadata(segment_path) {
+        Ok(metadata) => metadata.len(),
+        Err(error) => {
+            warn!(
+                path = %segment_path.display(),
+                "Failed to read segment metadata while discovering AD1 segments: {error}"
+            );
+            0
+        }
+    }
 }
 
 /// Discover AD1 segments starting from the first segment
@@ -250,12 +275,13 @@ pub fn discover_ad1_segments(
     expected_count: u32,
 ) -> (Vec<PathBuf>, Vec<u64>, Vec<String>) {
     debug!(base_path, expected_count, "Discovering AD1 segments");
-    let path = Path::new(base_path);
-    let parent = path.parent().unwrap_or(Path::new("."));
-    let stem = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let Some((parent, stem)) = ad1_segment_base_parts(base_path) else {
+        debug!(
+            base_path,
+            "Cannot discover AD1 segments without a base file name"
+        );
+        return (Vec::new(), Vec::new(), Vec::new());
+    };
 
     let mut paths = Vec::with_capacity(expected_count as usize);
     let mut sizes = Vec::with_capacity(expected_count as usize);
@@ -266,7 +292,7 @@ pub fn discover_ad1_segments(
         let segment_path = parent.join(&segment_name);
 
         if segment_path.exists() {
-            let size = fs::metadata(&segment_path).map(|m| m.len()).unwrap_or(0);
+            let size = segment_metadata_size_or_zero(&segment_path);
             trace!(segment = i, size, "Found AD1 segment");
             paths.push(segment_path);
             sizes.push(size);
@@ -275,9 +301,7 @@ pub fn discover_ad1_segments(
             let segment_name_lower = segment_name.to_lowercase();
             let segment_path_lower = parent.join(&segment_name_lower);
             if segment_path_lower.exists() {
-                let size = fs::metadata(&segment_path_lower)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let size = segment_metadata_size_or_zero(&segment_path_lower);
                 trace!(segment = i, size, "Found AD1 segment (lowercase)");
                 paths.push(segment_path_lower);
                 sizes.push(size);
@@ -607,6 +631,48 @@ mod tests {
         assert_eq!(extract_ad1_segment_number("evidence.ad10"), Some(10));
         assert_eq!(extract_ad1_segment_number("evidence.AD1"), Some(1));
         assert_eq!(extract_ad1_segment_number("evidence.txt"), None);
+    }
+
+    #[test]
+    fn test_build_ad1_segment_path_rejects_missing_base_name() {
+        assert_eq!(build_ad1_segment_path("", 1), "");
+        assert_eq!(build_ad1_segment_path("/", 1), "");
+    }
+
+    #[test]
+    fn test_build_ad1_segment_path_uses_base_stem() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = tmp.path().join("evidence.ad1");
+        let expected = tmp.path().join("evidence.ad2");
+
+        assert_eq!(
+            build_ad1_segment_path(base.to_str().unwrap(), 2),
+            expected.to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn test_discover_ad1_segments_rejects_missing_base_name() {
+        let (paths, sizes, missing) = discover_ad1_segments("/", 3);
+
+        assert!(paths.is_empty());
+        assert!(sizes.is_empty());
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_discover_ad1_segments_finds_existing_segments() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ad1_path = tmp.path().join("case.ad1");
+        let ad2_path = tmp.path().join("case.ad2");
+        std::fs::write(&ad1_path, b"one").unwrap();
+        std::fs::write(&ad2_path, b"two!").unwrap();
+
+        let (paths, sizes, missing) = discover_ad1_segments(ad1_path.to_str().unwrap(), 3);
+
+        assert_eq!(paths, vec![ad1_path, ad2_path]);
+        assert_eq!(sizes, vec![3, 4]);
+        assert_eq!(missing, vec!["case.ad3"]);
     }
 
     #[test]

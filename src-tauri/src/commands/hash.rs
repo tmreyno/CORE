@@ -518,14 +518,17 @@ pub async fn hash_source(
                 } else {
                     100.0
                 };
-                let _ = app.emit(
+                crate::eventing::log_emit_result(
                     "hash-source-progress",
-                    HashSourceProgress {
-                        source_id: source_id.clone(),
-                        current,
-                        total,
-                        percent,
-                    },
+                    app.emit(
+                        "hash-source-progress",
+                        HashSourceProgress {
+                            source_id: source_id.clone(),
+                            current,
+                            total,
+                            percent,
+                        },
+                    ),
                 );
             },
         )
@@ -878,20 +881,23 @@ fn spawn_progress_reporter(
         };
 
         // Emit immediate 0% so the UI shows activity right away
-        let _ = app.emit(
+        crate::eventing::log_emit_result(
             "batch-progress",
-            BatchProgress {
-                path: path.clone(),
-                status: "progress".to_string(),
-                percent: 0.0,
-                files_completed: idx,
-                files_total: num_files,
-                hash: None,
-                algorithm: None,
-                error: None,
-                chunks_processed: Some(0),
-                chunks_total: None,
-            },
+            app.emit(
+                "batch-progress",
+                BatchProgress {
+                    path: path.clone(),
+                    status: "progress".to_string(),
+                    percent: 0.0,
+                    files_completed: idx,
+                    files_total: num_files,
+                    hash: None,
+                    algorithm: None,
+                    error: None,
+                    chunks_processed: Some(0),
+                    chunks_total: None,
+                },
+            ),
         );
 
         loop {
@@ -910,20 +916,23 @@ fn spawn_progress_reporter(
                     || last_emit.elapsed() >= heartbeat_interval;
 
                 if should_emit {
-                    let _ = app.emit(
+                    crate::eventing::log_emit_result(
                         "batch-progress",
-                        BatchProgress {
-                            path: path.clone(),
-                            status: "progress".to_string(),
-                            percent: percent_f64.min(100.0),
-                            files_completed: idx,
-                            files_total: num_files,
-                            hash: None,
-                            algorithm: None,
-                            error: None,
-                            chunks_processed: Some(current),
-                            chunks_total: Some(total),
-                        },
+                        app.emit(
+                            "batch-progress",
+                            BatchProgress {
+                                path: path.clone(),
+                                status: "progress".to_string(),
+                                percent: percent_f64.min(100.0),
+                                files_completed: idx,
+                                files_total: num_files,
+                                hash: None,
+                                algorithm: None,
+                                error: None,
+                                chunks_processed: Some(current),
+                                chunks_total: Some(total),
+                            },
+                        ),
                     );
                     last_percent_key = percent_key;
                     last_emit = std::time::Instant::now();
@@ -932,26 +941,40 @@ fn spawn_progress_reporter(
                 // Total not yet set — still emit heartbeat so frontend knows we're alive
                 // Use shorter interval during startup (file open phase)
                 if last_emit.elapsed() >= startup_heartbeat {
-                    let _ = app.emit(
+                    crate::eventing::log_emit_result(
                         "batch-progress",
-                        BatchProgress {
-                            path: path.clone(),
-                            status: "progress".to_string(),
-                            percent: 0.0,
-                            files_completed: idx,
-                            files_total: num_files,
-                            hash: None,
-                            algorithm: None,
-                            error: None,
-                            chunks_processed: None,
-                            chunks_total: None,
-                        },
+                        app.emit(
+                            "batch-progress",
+                            BatchProgress {
+                                path: path.clone(),
+                                status: "progress".to_string(),
+                                percent: 0.0,
+                                files_completed: idx,
+                                files_total: num_files,
+                                hash: None,
+                                algorithm: None,
+                                error: None,
+                                chunks_processed: None,
+                                chunks_total: None,
+                            },
+                        ),
                     );
                     last_emit = std::time::Instant::now();
                 }
             }
         }
     })
+}
+
+fn join_progress_reporter(progress_thread: std::thread::JoinHandle<()>, path: &str) -> bool {
+    let panicked = progress_thread.join().is_err();
+    if panicked {
+        warn!(
+            path = %path,
+            "Hash progress reporter thread panicked"
+        );
+    }
+    panicked
 }
 
 /// Storage classification for I/O scheduling in batch hash operations.
@@ -1335,23 +1358,26 @@ pub async fn batch_hash(
     }
 
     // Emit drive detection summary to frontend
-    let _ = app.emit(
+    crate::eventing::log_emit_result(
         "batch-drive-info",
-        BatchDriveInfo {
-            drives: drive_classes
-                .iter()
-                .map(|(mount, class)| {
-                    let effective = resolve_batch_hash_concurrency(*class, &overrides);
-                    DriveDetection {
-                        mount_point: mount.clone(),
-                        storage_class: class.label().to_string(),
-                        concurrency: effective,
-                        file_count: file_mounts.iter().filter(|m| *m == mount).count(),
-                    }
-                })
-                .collect(),
-            total_files: num_files,
-        },
+        app.emit(
+            "batch-drive-info",
+            BatchDriveInfo {
+                drives: drive_classes
+                    .iter()
+                    .map(|(mount, class)| {
+                        let effective = resolve_batch_hash_concurrency(*class, &overrides);
+                        DriveDetection {
+                            mount_point: mount.clone(),
+                            storage_class: class.label().to_string(),
+                            concurrency: effective,
+                            file_count: file_mounts.iter().filter(|m| *m == mount).count(),
+                        }
+                    })
+                    .collect(),
+                total_files: num_files,
+            },
+        ),
     );
 
     debug!(
@@ -1380,20 +1406,23 @@ pub async fn batch_hash(
 
         // Emit progress: queued (only for small batches to avoid IPC flood)
         if emit_queued {
-            let _ = app.emit(
+            crate::eventing::log_emit_result(
                 "batch-progress",
-                BatchProgress {
-                    path: path.clone(),
-                    status: "queued".to_string(),
-                    percent: 0.0,
-                    files_completed: 0,
-                    files_total: num_files,
-                    hash: None,
-                    algorithm: None,
-                    error: None,
-                    chunks_processed: None,
-                    chunks_total: None,
-                },
+                app.emit(
+                    "batch-progress",
+                    BatchProgress {
+                        path: path.clone(),
+                        status: "queued".to_string(),
+                        percent: 0.0,
+                        files_completed: 0,
+                        files_total: num_files,
+                        hash: None,
+                        algorithm: None,
+                        error: None,
+                        chunks_processed: None,
+                        chunks_total: None,
+                    },
+                ),
             );
         }
 
@@ -1409,20 +1438,23 @@ pub async fn batch_hash(
                 Ok(p) => p,
                 Err(e) => {
                     let err_msg = format!("Semaphore error: {}", e);
-                    let _ = app_clone.emit(
+                    crate::eventing::log_emit_result(
                         "batch-progress",
-                        BatchProgress {
-                            path: path.clone(),
-                            status: "error".to_string(),
-                            percent: 0.0,
-                            files_completed: idx,
-                            files_total: num_files,
-                            hash: None,
-                            algorithm: None,
-                            error: Some(err_msg.clone()),
-                            chunks_processed: None,
-                            chunks_total: None,
-                        },
+                        app_clone.emit(
+                            "batch-progress",
+                            BatchProgress {
+                                path: path.clone(),
+                                status: "error".to_string(),
+                                percent: 0.0,
+                                files_completed: idx,
+                                files_total: num_files,
+                                hash: None,
+                                algorithm: None,
+                                error: Some(err_msg.clone()),
+                                chunks_processed: None,
+                                chunks_total: None,
+                            },
+                        ),
                     );
                     return BatchHashResult {
                         path,
@@ -1439,20 +1471,23 @@ pub async fn batch_hash(
             debug!(idx = idx + 1, total = num_files, path = %path, "File started");
 
             // Emit progress: started
-            let _ = app_clone.emit(
+            crate::eventing::log_emit_result(
                 "batch-progress",
-                BatchProgress {
-                    path: path.clone(),
-                    status: "started".to_string(),
-                    percent: 0.0,
-                    files_completed: idx,
-                    files_total: num_files,
-                    hash: None,
-                    algorithm: None,
-                    error: None,
-                    chunks_processed: None,
-                    chunks_total: None,
-                },
+                app_clone.emit(
+                    "batch-progress",
+                    BatchProgress {
+                        path: path.clone(),
+                        status: "started".to_string(),
+                        percent: 0.0,
+                        files_completed: idx,
+                        files_total: num_files,
+                        hash: None,
+                        algorithm: None,
+                        error: None,
+                        chunks_processed: None,
+                        chunks_total: None,
+                    },
+                ),
             );
 
             let path_for_hash = path.clone();
@@ -1586,7 +1621,7 @@ pub async fn batch_hash(
 
                 // Stop progress thread
                 done_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                let _ = progress_thread.join();
+                join_progress_reporter(progress_thread, &path_for_hash);
 
                 let duration = start_time.elapsed();
                 let duration_ms = duration.as_millis() as u64;
@@ -1605,20 +1640,23 @@ pub async fn batch_hash(
                 Err(e) => {
                     let err_msg = format!("Internal hash error: {}", e);
                     debug!(error = %err_msg, "spawn_blocking failed");
-                    let _ = app_clone.emit(
+                    crate::eventing::log_emit_result(
                         "batch-progress",
-                        BatchProgress {
-                            path: path_for_error.clone(),
-                            status: "error".to_string(),
-                            percent: 0.0,
-                            files_completed: idx + 1,
-                            files_total: num_files,
-                            hash: None,
-                            algorithm: None,
-                            error: Some(err_msg.clone()),
-                            chunks_processed: None,
-                            chunks_total: None,
-                        },
+                        app_clone.emit(
+                            "batch-progress",
+                            BatchProgress {
+                                path: path_for_error.clone(),
+                                status: "error".to_string(),
+                                percent: 0.0,
+                                files_completed: idx + 1,
+                                files_total: num_files,
+                                hash: None,
+                                algorithm: None,
+                                error: Some(err_msg.clone()),
+                                chunks_processed: None,
+                                chunks_total: None,
+                            },
+                        ),
                     );
                     return BatchHashResult {
                         path: path_for_error,
@@ -1636,20 +1674,23 @@ pub async fn batch_hash(
             let batch_result = match result {
                 Ok(hash) => {
                     info!(idx = idx + 1, path = %path, hash_prefix = %&hash[..8.min(hash.len())], algorithm = %algo, "[HASH-DIAG] File completed — emitting batch-progress completed");
-                    let _ = app_clone.emit(
+                    crate::eventing::log_emit_result(
                         "batch-progress",
-                        BatchProgress {
-                            path: path.clone(),
-                            status: "completed".to_string(),
-                            percent: 100.0,
-                            files_completed: idx + 1,
-                            files_total: num_files,
-                            hash: Some(hash.clone()),
-                            algorithm: Some(display_algo.clone()),
-                            error: None,
-                            chunks_processed: None,
-                            chunks_total: None,
-                        },
+                        app_clone.emit(
+                            "batch-progress",
+                            BatchProgress {
+                                path: path.clone(),
+                                status: "completed".to_string(),
+                                percent: 100.0,
+                                files_completed: idx + 1,
+                                files_total: num_files,
+                                hash: Some(hash.clone()),
+                                algorithm: Some(display_algo.clone()),
+                                error: None,
+                                chunks_processed: None,
+                                chunks_total: None,
+                            },
+                        ),
                     );
                     BatchHashResult {
                         path,
@@ -1663,20 +1704,23 @@ pub async fn batch_hash(
                 }
                 Err(e) => {
                     info!(idx = idx + 1, path = %path, error = %e, "[HASH-DIAG] File error — emitting batch-progress error");
-                    let _ = app_clone.emit(
+                    crate::eventing::log_emit_result(
                         "batch-progress",
-                        BatchProgress {
-                            path: path.clone(),
-                            status: "error".to_string(),
-                            percent: 0.0,
-                            files_completed: idx + 1,
-                            files_total: num_files,
-                            hash: None,
-                            algorithm: None,
-                            error: Some(e.clone()),
-                            chunks_processed: None,
-                            chunks_total: None,
-                        },
+                        app_clone.emit(
+                            "batch-progress",
+                            BatchProgress {
+                                path: path.clone(),
+                                status: "error".to_string(),
+                                percent: 0.0,
+                                files_completed: idx + 1,
+                                files_total: num_files,
+                                hash: None,
+                                algorithm: None,
+                                error: Some(e.clone()),
+                                chunks_processed: None,
+                                chunks_total: None,
+                            },
+                        ),
                     );
                     BatchHashResult {
                         path,
@@ -1875,6 +1919,20 @@ mod tests {
     #[test]
     fn progress_counter_value_saturates_large_values() {
         assert_eq!(progress_counter_value(u64::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn join_progress_reporter_reports_clean_exit() {
+        let handle = std::thread::spawn(|| {});
+
+        assert!(!join_progress_reporter(handle, "/tmp/evidence.bin"));
+    }
+
+    #[test]
+    fn join_progress_reporter_reports_panic() {
+        let handle = std::thread::spawn(|| panic!("progress reporter failed"));
+
+        assert!(join_progress_reporter(handle, "/tmp/evidence.bin"));
     }
 
     #[test]

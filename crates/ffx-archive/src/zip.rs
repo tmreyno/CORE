@@ -34,6 +34,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use super::detection::ZIP_EOCD_SIG;
 use ffx_errors::ContainerError;
+use tracing::debug;
 
 // =============================================================================
 // ZIP Metadata
@@ -122,7 +123,17 @@ pub fn parse_metadata(path: &str) -> Result<ZipMetadata, ContainerError> {
 
     // Check for AES encryption by scanning Central Directory for extra field 0x9901
     let aes_encrypted = if let (Some(offset), Some(size)) = (cd_offset, cd_size) {
-        check_aes(&mut file, offset, size).unwrap_or(false)
+        match check_aes(&mut file, offset, size) {
+            Ok(aes_encrypted) => aes_encrypted,
+            Err(err) => {
+                debug!(
+                    path = %path,
+                    error = %err,
+                    "Failed to inspect ZIP central directory for AES metadata"
+                );
+                false
+            }
+        }
     } else {
         false
     };

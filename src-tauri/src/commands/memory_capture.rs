@@ -51,6 +51,34 @@ fn read_process_output_with_limit<R: std::io::Read>(reader: R) -> String {
     output
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
+fn remove_partial_memory_capture(output_path: &str) -> bool {
+    match std::fs::remove_file(output_path) {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            warn!(
+                %error,
+                path = %output_path,
+                "Failed to remove partial memory capture"
+            );
+            false
+        }
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn log_memory_capture_child_kill_result(result: std::io::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => false,
+        Err(error) => {
+            warn!(%error, "Failed to kill memory capture process");
+            false
+        }
+    }
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -429,14 +457,17 @@ mod linux {
         let start_time = std::time::Instant::now();
 
         // Emit initial progress
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "memory-capture-progress",
-            MemoryCaptureProgress {
-                bytes_captured: 0,
-                total_bytes: 0,
-                percent: 0.0,
-                phase: "parsing".to_string(),
-            },
+            window.emit(
+                "memory-capture-progress",
+                MemoryCaptureProgress {
+                    bytes_captured: 0,
+                    total_bytes: 0,
+                    percent: 0.0,
+                    phase: "parsing".to_string(),
+                },
+            ),
         );
 
         // 1. Parse /proc/iomem for System RAM ranges
@@ -494,7 +525,7 @@ mod linux {
         for range in &ram_ranges {
             if MEMORY_CANCEL_FLAG.load(Ordering::Relaxed) {
                 // Clean up partial file
-                let _ = std::fs::remove_file(output_path);
+                remove_partial_memory_capture(output_path);
                 return Err("Memory capture cancelled.".to_string());
             }
 
@@ -517,7 +548,7 @@ mod linux {
                 let mut remaining = range_size;
                 while remaining > 0 {
                     if MEMORY_CANCEL_FLAG.load(Ordering::Relaxed) {
-                        let _ = std::fs::remove_file(output_path);
+                        remove_partial_memory_capture(output_path);
                         return Err("Memory capture cancelled.".to_string());
                     }
 
@@ -554,14 +585,17 @@ mod linux {
                     // Emit progress at 0.5% granularity
                     let percent = (bytes_captured as f64 / total_bytes as f64 * 100.0).min(100.0);
                     if percent - last_percent >= 0.5 || remaining == 0 {
-                        let _ = window.emit(
+                        crate::eventing::log_emit_result(
                             "memory-capture-progress",
-                            MemoryCaptureProgress {
-                                bytes_captured,
-                                total_bytes,
-                                percent,
-                                phase: "capturing".to_string(),
-                            },
+                            window.emit(
+                                "memory-capture-progress",
+                                MemoryCaptureProgress {
+                                    bytes_captured,
+                                    total_bytes,
+                                    percent,
+                                    phase: "capturing".to_string(),
+                                },
+                            ),
                         );
                         last_percent = percent;
                     }
@@ -608,14 +642,17 @@ mod linux {
         output.flush().map_err(|e| format!("Flush error: {}", e))?;
 
         // Final progress
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "memory-capture-progress",
-            MemoryCaptureProgress {
-                bytes_captured,
-                total_bytes,
-                percent: 100.0,
-                phase: "complete".to_string(),
-            },
+            window.emit(
+                "memory-capture-progress",
+                MemoryCaptureProgress {
+                    bytes_captured,
+                    total_bytes,
+                    percent: 100.0,
+                    phase: "complete".to_string(),
+                },
+            ),
         );
 
         let duration = start_time.elapsed().as_secs_f64();
@@ -680,14 +717,17 @@ mod windows_capture {
         info!("Using WinPmem at: {}", tool_path.display());
 
         // Emit initial progress
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "memory-capture-progress",
-            MemoryCaptureProgress {
-                bytes_captured: 0,
-                total_bytes: 0,
-                percent: 0.0,
-                phase: "starting WinPmem".to_string(),
-            },
+            window.emit(
+                "memory-capture-progress",
+                MemoryCaptureProgress {
+                    bytes_captured: 0,
+                    total_bytes: 0,
+                    percent: 0.0,
+                    phase: "starting WinPmem".to_string(),
+                },
+            ),
         );
 
         // Get total memory for progress estimation
@@ -708,8 +748,8 @@ mod windows_capture {
 
         loop {
             if MEMORY_CANCEL_FLAG.load(Ordering::Relaxed) {
-                let _ = child.kill();
-                let _ = std::fs::remove_file(output_path);
+                log_memory_capture_child_kill_result(child.kill());
+                remove_partial_memory_capture(output_path);
                 return Err("Memory capture cancelled.".to_string());
             }
 
@@ -735,14 +775,17 @@ mod windows_capture {
                             0.0
                         };
                         if percent - last_percent >= 0.5 {
-                            let _ = window.emit(
+                            crate::eventing::log_emit_result(
                                 "memory-capture-progress",
-                                MemoryCaptureProgress {
-                                    bytes_captured: written,
-                                    total_bytes: total_memory,
-                                    percent,
-                                    phase: "capturing".to_string(),
-                                },
+                                window.emit(
+                                    "memory-capture-progress",
+                                    MemoryCaptureProgress {
+                                        bytes_captured: written,
+                                        total_bytes: total_memory,
+                                        percent,
+                                        phase: "capturing".to_string(),
+                                    },
+                                ),
                             );
                             last_percent = percent;
                         }
@@ -760,14 +803,17 @@ mod windows_capture {
 
         // Compute hashes if requested
         let (hash_md5, hash_sha256) = if compute_hashes {
-            let _ = window.emit(
+            crate::eventing::log_emit_result(
                 "memory-capture-progress",
-                MemoryCaptureProgress {
-                    bytes_captured,
-                    total_bytes: bytes_captured,
-                    percent: 100.0,
-                    phase: "hashing".to_string(),
-                },
+                window.emit(
+                    "memory-capture-progress",
+                    MemoryCaptureProgress {
+                        bytes_captured,
+                        total_bytes: bytes_captured,
+                        percent: 100.0,
+                        phase: "hashing".to_string(),
+                    },
+                ),
             );
             compute_file_hashes(output_path)?
         } else {
@@ -775,14 +821,17 @@ mod windows_capture {
         };
 
         // Final progress
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "memory-capture-progress",
-            MemoryCaptureProgress {
-                bytes_captured,
-                total_bytes: bytes_captured,
-                percent: 100.0,
-                phase: "complete".to_string(),
-            },
+            window.emit(
+                "memory-capture-progress",
+                MemoryCaptureProgress {
+                    bytes_captured,
+                    total_bytes: bytes_captured,
+                    percent: 100.0,
+                    phase: "complete".to_string(),
+                },
+            ),
         );
 
         let duration = start_time.elapsed().as_secs_f64();
@@ -917,5 +966,30 @@ mod tests {
             PROCESS_OUTPUT_MAX_BYTES as usize
         );
         assert!(output.ends_with("[process output truncated]"));
+    }
+
+    #[test]
+    fn remove_partial_memory_capture_removes_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        assert!(remove_partial_memory_capture(path.to_str().unwrap()));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn remove_partial_memory_capture_tolerates_missing_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("missing-memory-capture.bin");
+
+        assert!(!remove_partial_memory_capture(path.to_str().unwrap()));
+    }
+
+    #[test]
+    fn log_memory_capture_child_kill_result_classifies_result() {
+        assert!(log_memory_capture_child_kill_result(Ok(())));
+        assert!(!log_memory_capture_child_kill_result(Err(
+            std::io::Error::from(std::io::ErrorKind::InvalidInput)
+        )));
     }
 }

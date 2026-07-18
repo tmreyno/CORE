@@ -56,6 +56,16 @@ fn checked_l01_entry_count_add(count: &mut usize, path: &Path) -> Result<(), Str
     Ok(())
 }
 
+fn l01_logical_entry_name(path: &Path) -> Result<String, String> {
+    let Some(name) = path.file_name().filter(|name| !name.is_empty()) else {
+        return Err(format!(
+            "L01 export source path has no file or directory name: {}",
+            path.display()
+        ));
+    };
+    Ok(name.to_string_lossy().to_string())
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -581,11 +591,7 @@ pub async fn l01_create_image(
         let path = PathBuf::from(path_str);
         if path.is_dir() {
             // Add the directory entry itself, then walk its contents under it
-            let dir_name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
+            let dir_name = l01_logical_entry_name(&path)?;
             checked_l01_entry_count_add(&mut planned_entry_count, &path)?;
             let parent_id = writer.add_directory(dir_name, 0);
 
@@ -607,11 +613,7 @@ pub async fn l01_create_image(
             // Add a single file
             let metadata = std::fs::metadata(&path)
                 .map_err(|e| format!("Failed to read metadata for {}: {}", path_str, e))?;
-            let file_name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
+            let file_name = l01_logical_entry_name(&path)?;
             checked_l01_entry_count_add(&mut planned_entry_count, &path)?;
             writer.add_file(file_name, metadata.len(), path.clone(), 0);
             debug!("Added file {} ({} bytes)", path_str, metadata.len());
@@ -637,7 +639,10 @@ pub async fn l01_create_image(
             percent: 0.0,
             phase: L01WritePhase::Preparing,
         };
-        let _ = window.emit("l01-export-progress", &early_progress);
+        crate::eventing::log_emit_result(
+            "l01-export-progress",
+            window.emit("l01-export-progress", &early_progress),
+        );
     }
 
     // Check destination has enough free space
@@ -660,7 +665,10 @@ pub async fn l01_create_image(
     // Set up progress callback
     let window_clone = window.clone();
     let progress_fn = Box::new(move |progress: L01WriteProgress| {
-        let _ = window_clone.emit("l01-export-progress", &progress);
+        crate::eventing::log_emit_result(
+            "l01-export-progress",
+            window_clone.emit("l01-export-progress", &progress),
+        );
     });
 
     // Run the write operation in a blocking task
@@ -896,6 +904,21 @@ mod tests {
 
         assert!(err.contains("expanded to more than"));
         assert_eq!(count, MAX_L01_LOGICAL_ENTRIES);
+    }
+
+    #[test]
+    fn test_l01_logical_entry_name_rejects_root_path() {
+        let err = l01_logical_entry_name(Path::new("/")).unwrap_err();
+
+        assert!(err.contains("has no file or directory name"));
+    }
+
+    #[test]
+    fn test_l01_logical_entry_name_uses_file_name() {
+        assert_eq!(
+            l01_logical_entry_name(Path::new("/tmp/source.bin")).unwrap(),
+            "source.bin"
+        );
     }
 
     #[test]

@@ -75,9 +75,11 @@ fn test_encrypted_archive() {
     let sz = SevenZip::new().unwrap();
 
     // Create encrypted archive
-    let mut opts = CompressOptions::default();
-    opts.password = Some(password.to_string());
-    opts.num_threads = 2;
+    let opts = CompressOptions {
+        password: Some(password.to_string()),
+        num_threads: 2,
+        ..Default::default()
+    };
 
     let result = sz.create_archive(
         archive_path.to_str().unwrap(),
@@ -121,8 +123,10 @@ fn test_wrong_password_fails() {
     let sz = SevenZip::new().unwrap();
 
     // Create encrypted archive
-    let mut opts = CompressOptions::default();
-    opts.password = Some("correct_password".to_string());
+    let opts = CompressOptions {
+        password: Some("correct_password".to_string()),
+        ..Default::default()
+    };
 
     sz.create_archive(
         archive_path.to_str().unwrap(),
@@ -460,10 +464,12 @@ fn test_compress_options() {
     let sz = SevenZip::new().unwrap();
 
     // Test with custom options
-    let mut opts = CompressOptions::default();
-    opts.num_threads = 2;
-    opts.solid = true;
-    opts.dict_size = 16 * 1024 * 1024; // 16MB
+    let opts = CompressOptions {
+        num_threads: 2,
+        solid: true,
+        dict_size: 16 * 1024 * 1024, // 16MB
+        ..Default::default()
+    };
 
     let result = sz.create_archive(
         archive_path.to_str().unwrap(),
@@ -608,9 +614,11 @@ fn test_split_archive_creation() {
     let sz = SevenZip::new().unwrap();
 
     // Create split archive with 1MB segments
-    let mut opts = StreamOptions::default();
-    opts.split_size = 1_000_000; // 1MB per volume
-    opts.chunk_size = 64_000; // 64KB chunks
+    let opts = StreamOptions {
+        split_size: 1_000_000, // 1MB per volume
+        chunk_size: 64_000,    // 64KB chunks
+        ..Default::default()
+    };
 
     let result = sz.create_archive_streaming(
         &archive_path,
@@ -701,9 +709,11 @@ fn test_streaming_with_password() {
     let sz = SevenZip::new().unwrap();
 
     // Create encrypted archive with streaming
-    let mut opts = StreamOptions::default();
-    opts.password = Some(password.to_string());
-    opts.num_threads = 2;
+    let opts = StreamOptions {
+        password: Some(password.to_string()),
+        num_threads: 2,
+        ..Default::default()
+    };
 
     let result = sz.create_archive_streaming(
         &archive_path,
@@ -761,8 +771,10 @@ fn test_incompressible_data_detection() {
 
     // Test with auto-detection (should be fast)
     let archive_path2 = temp.path().join("test2.7z");
-    let mut opts = CompressOptions::default();
-    opts.auto_detect_incompressible = true;
+    let opts = CompressOptions {
+        auto_detect_incompressible: true,
+        ..Default::default()
+    };
 
     let start = std::time::Instant::now();
     sz.create_archive(
@@ -887,5 +899,5 @@ fn test_compressoptions_builder_pattern() {
 
     assert_eq!(opts.num_threads, 4);
     assert_eq!(opts.password, Some("test123".to_string()));
-    assert_eq!(opts.auto_detect_incompressible, true);
+    assert!(opts.auto_detect_incompressible);
 }

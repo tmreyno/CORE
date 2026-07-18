@@ -39,6 +39,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, RwLock};
 
 use super::handle::EwfHandle;
+use super::types::{checked_volume_media_size, VolumeSection};
 use ffx_common::filesystem::{
     detect_partition_table, mount_filesystem, BlockDevice, BlockReader, PartitionEntry,
     PartitionTable, SeekableBlockDevice,
@@ -221,7 +222,7 @@ impl EwfVfs {
                 let h = handle
                     .read()
                     .map_err(|e| VfsError::Internal(e.to_string()))?;
-                h.volume.sector_count * h.volume.bytes_per_sector as u64
+                ewf_media_size_for_vfs(&h.volume)?
             };
 
             tracing::debug!("Trying whole-disk mount: size={}", disk_size);
@@ -287,7 +288,7 @@ impl EwfVfs {
             .handle
             .read()
             .map_err(|e| VfsError::Internal(e.to_string()))?;
-        Ok(handle.volume.sector_count * handle.volume.bytes_per_sector as u64)
+        ewf_media_size_for_vfs(&handle.volume)
     }
 
     /// Get the size of a specific partition by mount name
@@ -459,8 +460,7 @@ impl VirtualFileSystem for EwfVfs {
                         .write()
                         .map_err(|e| VfsError::Internal(e.to_string()))?;
 
-                    let total_size =
-                        handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
+                    let total_size = ewf_media_size_for_vfs(&handle.volume)?;
 
                     let actual_size = bounded_ewf_read_len(total_size, offset, size)?;
                     if actual_size == 0 {
@@ -496,8 +496,7 @@ impl VirtualFileSystem for EwfVfs {
                         .write()
                         .map_err(|e| VfsError::Internal(e.to_string()))?;
 
-                    let total_size =
-                        handle.volume.sector_count * handle.volume.bytes_per_sector as u64;
+                    let total_size = ewf_media_size_for_vfs(&handle.volume)?;
 
                     let actual_size = bounded_ewf_read_len(total_size, offset, size)?;
                     if actual_size == 0 {
@@ -544,7 +543,7 @@ impl BlockDevice for EwfBlockDevice {
     fn size(&self) -> u64 {
         let handle = self.handle.read().ok();
         match handle {
-            Some(h) => h.volume.sector_count * h.volume.bytes_per_sector as u64,
+            Some(h) => checked_volume_media_size(&h.volume).unwrap_or(0),
             None => 0,
         }
     }
@@ -578,7 +577,7 @@ impl Read for EwfBlockReader {
 
         let len = data.len().min(buf.len());
         buf[..len].copy_from_slice(&data[..len]);
-        self.position += len as u64;
+        self.position = checked_ewf_read_advance(self.position, len)?;
         Ok(len)
     }
 }
@@ -590,7 +589,7 @@ impl Seek for EwfBlockReader {
                 .handle
                 .read()
                 .map_err(|e| std::io::Error::other(e.to_string()))?;
-            handle.volume.sector_count * handle.volume.bytes_per_sector as u64
+            ewf_media_size_for_io(&handle.volume)?
         };
 
         let new_pos = match pos {
@@ -605,6 +604,14 @@ impl Seek for EwfBlockReader {
 
 impl BlockReader for EwfBlockReader {}
 
+fn ewf_media_size_for_vfs(volume: &VolumeSection) -> Result<u64, VfsError> {
+    checked_volume_media_size(volume).map_err(|e| VfsError::IoError(e.to_string()))
+}
+
+fn ewf_media_size_for_io(volume: &VolumeSection) -> std::io::Result<u64> {
+    checked_volume_media_size(volume).map_err(std::io::Error::other)
+}
+
 fn checked_ewf_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
     if delta >= 0 {
         base.checked_add(delta as u64).ok_or_else(|| {
@@ -615,6 +622,21 @@ fn checked_ewf_seek_position(base: u64, delta: i64) -> std::io::Result<u64> {
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "EWF seek before start")
         })
     }
+}
+
+fn checked_ewf_read_advance(base: u64, len: usize) -> std::io::Result<u64> {
+    let len = u64::try_from(len).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "EWF read length exceeds 64-bit position",
+        )
+    })?;
+    base.checked_add(len).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "EWF read position overflow",
+        )
+    })
 }
 
 fn bounded_ewf_read_len(
@@ -766,6 +788,16 @@ mod tests {
     fn test_checked_ewf_seek_position_allows_valid_offsets() {
         assert_eq!(checked_ewf_seek_position(10, -5).unwrap(), 5);
         assert_eq!(checked_ewf_seek_position(10, 5).unwrap(), 15);
+    }
+
+    #[test]
+    fn test_checked_ewf_read_advance_rejects_overflow() {
+        assert!(checked_ewf_read_advance(u64::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn test_checked_ewf_read_advance_allows_valid_offsets() {
+        assert_eq!(checked_ewf_read_advance(10, 5).unwrap(), 15);
     }
 
     #[test]

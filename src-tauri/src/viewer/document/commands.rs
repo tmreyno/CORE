@@ -1129,6 +1129,18 @@ fn materialized_source_cache_get(
     None
 }
 
+fn remove_materialized_source_cache_file(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => tracing::warn!(
+            "Failed to remove materialized source cache file {}: {}",
+            path.display(),
+            error
+        ),
+    }
+}
+
 fn materialized_source_cache_insert(
     cache: &LazyLock<Mutex<HashMap<String, PathBuf>>>,
     max_entries: usize,
@@ -1143,7 +1155,7 @@ fn materialized_source_cache_insert(
         let keys: Vec<String> = cache.keys().take(remove_count).cloned().collect();
         for key in keys {
             if let Some(path) = cache.remove(&key) {
-                let _ = fs::remove_file(path);
+                remove_materialized_source_cache_file(&path);
             }
         }
     }
@@ -1484,6 +1496,16 @@ mod tests {
     use super::*;
     use crate::common::{EvidenceSourceError, EvidenceSourceRef, EvidenceSourceResult};
     use rusqlite::Connection;
+
+    #[test]
+    fn remove_materialized_source_cache_file_removes_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        remove_materialized_source_cache_file(&path);
+
+        assert!(!path.exists());
+    }
 
     struct ChunkedByteSource {
         source_ref: EvidenceSourceRef,

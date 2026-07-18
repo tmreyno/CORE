@@ -39,15 +39,38 @@ const REPORT_TRUNCATED_SUFFIX: &str = "... [truncated]";
 
 /// State wrapper for the report generator
 pub struct ReportState {
-    generator: Mutex<ReportGenerator>,
+    generator: Mutex<Option<ReportGenerator>>,
+    init_error: Option<String>,
 }
 
 impl ReportState {
     pub fn new() -> Result<Self, String> {
         let generator = ReportGenerator::new().map_err(|e| e.to_string())?;
         Ok(Self {
-            generator: Mutex::new(generator),
+            generator: Mutex::new(Some(generator)),
+            init_error: None,
         })
+    }
+
+    fn unavailable(error: String) -> Self {
+        Self {
+            generator: Mutex::new(None),
+            init_error: Some(error),
+        }
+    }
+
+    fn with_generator<T>(
+        &self,
+        action: impl FnOnce(&ReportGenerator) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let generator = self.generator.lock();
+        let Some(generator) = generator.as_ref() else {
+            return Err(self.init_error.clone().unwrap_or_else(|| {
+                "Report generator is unavailable because initialization failed".to_string()
+            }));
+        };
+
+        action(generator)
     }
 }
 
@@ -55,13 +78,7 @@ impl Default for ReportState {
     fn default() -> Self {
         Self::new().unwrap_or_else(|e| {
             tracing::error!("Failed to create report state: {}", e);
-            // Create with a placeholder generator that will error on use
-            Self {
-                generator: Mutex::new(
-                    ReportGenerator::new()
-                        .expect("Report generator fallback also failed - fonts may be missing"),
-                ),
-            }
+            Self::unavailable(e)
         })
     }
 }
@@ -74,11 +91,11 @@ pub async fn generate_report(
     output_path: String,
     state: State<'_, ReportState>,
 ) -> Result<String, String> {
-    let generator = state.generator.lock();
-
-    generator
-        .generate(&report, format, &output_path)
-        .map_err(|e| e.to_string())?;
+    state.with_generator(|generator| {
+        generator
+            .generate(&report, format, &output_path)
+            .map_err(|e| e.to_string())
+    })?;
 
     Ok(output_path)
 }
@@ -89,9 +106,7 @@ pub async fn preview_report(
     report: ForensicReport,
     state: State<'_, ReportState>,
 ) -> Result<String, String> {
-    let generator = state.generator.lock();
-
-    Ok(generator.render_preview_html(&report))
+    state.with_generator(|generator| Ok(generator.render_preview_html(&report)))
 }
 
 /// Get available output formats
@@ -1081,7 +1096,7 @@ pub fn create_evidence_from_container(
 
 /// Get a report template for different investigation types
 #[tauri::command]
-pub fn get_report_template(investigation_type: String) -> ForensicReport {
+pub fn get_report_template(investigation_type: String) -> Result<ForensicReport, String> {
     let mut builder = ForensicReport::builder().case_number("").examiner_name("");
 
     // Add type-specific methodology
@@ -1132,15 +1147,18 @@ The examination process included:
 
     builder = builder.methodology(methodology);
 
-    builder
-        .build()
-        .expect("report template builder should include required case and examiner fields")
+    builder.build()
 }
 
 #[cfg(feature = "ai-assistant")]
 pub mod ai_commands {
     use crate::report::ai::{AiAssistant, AiProvider};
     use crate::report::NarrativeType;
+
+    const OPENAI_PROVIDER_ID: &str = "openai";
+    const OLLAMA_PROVIDER_ID: &str = "ollama";
+    const DEFAULT_OPENAI_MODEL: &str = "gpt-5";
+    const DEFAULT_OLLAMA_MODEL: &str = "llama3.2";
 
     /// AI provider info for frontend
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1158,29 +1176,29 @@ pub mod ai_commands {
     pub fn get_ai_providers() -> Vec<AiProviderInfo> {
         vec![
             AiProviderInfo {
-                id: "openai".to_string(),
+                id: OPENAI_PROVIDER_ID.to_string(),
                 name: "OpenAI".to_string(),
                 description:
                     "Recommended for the strongest report-writing quality via the Responses API. Uses a typed key or OPENAI_API_KEY."
                         .to_string(),
                 requires_api_key: true,
-                default_model: "gpt-5".to_string(),
+                default_model: DEFAULT_OPENAI_MODEL.to_string(),
                 available_models: vec![
-                    "gpt-5".to_string(),
+                    DEFAULT_OPENAI_MODEL.to_string(),
                     "gpt-5-mini".to_string(),
                     "gpt-4.1".to_string(),
                     "gpt-4.1-mini".to_string(),
                 ],
             },
             AiProviderInfo {
-                id: "ollama".to_string(),
+                id: OLLAMA_PROVIDER_ID.to_string(),
                 name: "Ollama (Local)".to_string(),
                 description: "Run local models on the workstation with Ollama installed."
                     .to_string(),
                 requires_api_key: false,
-                default_model: "llama3.2".to_string(),
+                default_model: DEFAULT_OLLAMA_MODEL.to_string(),
                 available_models: vec![
-                    "llama3.2".to_string(),
+                    DEFAULT_OLLAMA_MODEL.to_string(),
                     "llama3.1".to_string(),
                     "mistral".to_string(),
                     "codellama".to_string(),
@@ -1200,33 +1218,60 @@ pub mod ai_commands {
         model: String,
         api_key: Option<String>,
     ) -> Result<String, String> {
-        let narrative_type = match narrative_type.as_str() {
-            "executive_summary" => NarrativeType::ExecutiveSummary,
-            "finding" => NarrativeType::FindingDescription,
-            "timeline" => NarrativeType::TimelineNarrative,
-            "evidence" => NarrativeType::EvidenceDescription,
-            "methodology" => NarrativeType::Methodology,
-            "conclusion" => NarrativeType::Conclusion,
-            _ => return Err(format!("Unknown narrative type: {}", narrative_type)),
-        };
+        let context = context.trim();
+        if context.is_empty() {
+            return Err("AI narrative context cannot be empty".to_string());
+        }
 
-        let provider_enum = match provider.as_str() {
-            "ollama" => AiProvider::Ollama {
-                model: model.clone(),
-                base_url: None,
-            },
-            "openai" => AiProvider::OpenAi {
-                model: model.clone(),
-                api_key,
-            },
-            _ => return Err(format!("Unknown provider: {}", provider)),
-        };
+        let narrative_type = parse_narrative_type(&narrative_type)?;
+        let provider_enum = ai_provider_from_request(&provider, &model, api_key)?;
 
         let ai = AiAssistant::new(provider_enum);
 
-        ai.generate_narrative(&context, narrative_type)
+        ai.generate_narrative(context, narrative_type)
             .await
             .map_err(|e| e.to_string())
+    }
+
+    fn parse_narrative_type(narrative_type: &str) -> Result<NarrativeType, String> {
+        match narrative_type.trim() {
+            "executive_summary" => Ok(NarrativeType::ExecutiveSummary),
+            "finding" => Ok(NarrativeType::FindingDescription),
+            "timeline" => Ok(NarrativeType::TimelineNarrative),
+            "evidence" => Ok(NarrativeType::EvidenceDescription),
+            "methodology" => Ok(NarrativeType::Methodology),
+            "conclusion" => Ok(NarrativeType::Conclusion),
+            other => Err(format!("Unknown narrative type: {}", other)),
+        }
+    }
+
+    fn ai_provider_from_request(
+        provider: &str,
+        model: &str,
+        api_key: Option<String>,
+    ) -> Result<AiProvider, String> {
+        let provider = provider.trim();
+        let model = model.trim();
+
+        match provider {
+            OLLAMA_PROVIDER_ID => Ok(AiProvider::Ollama {
+                model: model_or_default(model, DEFAULT_OLLAMA_MODEL),
+                base_url: None,
+            }),
+            OPENAI_PROVIDER_ID => Ok(AiProvider::OpenAi {
+                model: model_or_default(model, DEFAULT_OPENAI_MODEL),
+                api_key,
+            }),
+            other => Err(format!("Unknown provider: {}", other)),
+        }
+    }
+
+    fn model_or_default(model: &str, default_model: &str) -> String {
+        if model.is_empty() {
+            default_model.to_string()
+        } else {
+            model.to_string()
+        }
     }
 
     /// Check if Ollama is running and accessible
@@ -1250,11 +1295,84 @@ pub mod ai_commands {
     pub fn is_ai_available() -> bool {
         true
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn ai_provider_metadata_matches_default_models() {
+            let providers = get_ai_providers();
+
+            let openai = providers
+                .iter()
+                .find(|provider| provider.id == OPENAI_PROVIDER_ID)
+                .expect("OpenAI provider should be advertised");
+            assert_eq!(openai.default_model, DEFAULT_OPENAI_MODEL);
+            assert!(openai.requires_api_key);
+
+            let ollama = providers
+                .iter()
+                .find(|provider| provider.id == OLLAMA_PROVIDER_ID)
+                .expect("Ollama provider should be advertised");
+            assert_eq!(ollama.default_model, DEFAULT_OLLAMA_MODEL);
+            assert!(!ollama.requires_api_key);
+        }
+
+        #[test]
+        fn ai_provider_from_request_defaults_blank_models() {
+            let provider = ai_provider_from_request(OLLAMA_PROVIDER_ID, "  ", None).unwrap();
+            match provider {
+                AiProvider::Ollama { model, base_url } => {
+                    assert_eq!(model, DEFAULT_OLLAMA_MODEL);
+                    assert!(base_url.is_none());
+                }
+                _ => panic!("expected Ollama provider"),
+            }
+
+            let provider = ai_provider_from_request(OPENAI_PROVIDER_ID, "", None).unwrap();
+            match provider {
+                AiProvider::OpenAi { model, api_key } => {
+                    assert_eq!(model, DEFAULT_OPENAI_MODEL);
+                    assert!(api_key.is_none());
+                }
+                _ => panic!("expected OpenAI provider"),
+            }
+        }
+
+        #[test]
+        fn parse_narrative_type_trims_input() {
+            assert!(matches!(
+                parse_narrative_type(" methodology ").unwrap(),
+                NarrativeType::Methodology
+            ));
+        }
+
+        #[tokio::test]
+        async fn generate_ai_narrative_rejects_empty_context_before_provider_call() {
+            let result = generate_ai_narrative(
+                "   ".to_string(),
+                "executive_summary".to_string(),
+                OLLAMA_PROVIDER_ID.to_string(),
+                DEFAULT_OLLAMA_MODEL.to_string(),
+                None,
+            )
+            .await;
+
+            assert_eq!(
+                result.unwrap_err(),
+                "AI narrative context cannot be empty".to_string()
+            );
+        }
+    }
 }
 
 #[cfg(not(feature = "ai-assistant"))]
 pub mod ai_commands {
-    /// AI provider info for frontend (stub)
+    const AI_FEATURE_DISABLED_MESSAGE: &str =
+        "AI assistant is not enabled in this application build.";
+
+    /// AI provider info for frontend.
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     pub struct AiProviderInfo {
         pub id: String,
@@ -1271,13 +1389,13 @@ pub mod ai_commands {
         false
     }
 
-    /// Get available AI providers (stub - returns empty)
+    /// Get available AI providers for a build without AI support.
     #[tauri::command]
     pub fn get_ai_providers() -> Vec<AiProviderInfo> {
         vec![]
     }
 
-    /// Generate AI narrative (stub - returns error)
+    /// Reject AI narrative generation for a build without AI support.
     #[tauri::command]
     pub async fn generate_ai_narrative(
         _context: String,
@@ -1286,13 +1404,43 @@ pub mod ai_commands {
         _model: String,
         _api_key: Option<String>,
     ) -> Result<String, String> {
-        Err("AI assistant is not enabled. Rebuild with 'ai-assistant' feature.".to_string())
+        Err(format!(
+            "{} Rebuild with the 'ai-assistant' feature to enable report narrative generation.",
+            AI_FEATURE_DISABLED_MESSAGE
+        ))
     }
 
-    /// Check if Ollama is running (stub - returns false)
+    /// Report Ollama as disconnected when the AI feature is unavailable.
     #[tauri::command]
     pub async fn check_ollama_connection() -> Result<bool, String> {
         Ok(false)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn ai_feature_disabled_surface_is_consistent() {
+            assert!(!is_ai_available());
+            assert!(get_ai_providers().is_empty());
+        }
+
+        #[tokio::test]
+        async fn disabled_ai_generation_returns_actionable_error() {
+            let error = generate_ai_narrative(
+                "facts".to_string(),
+                "executive_summary".to_string(),
+                "ollama".to_string(),
+                "llama3.2".to_string(),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+            assert!(error.contains("AI assistant is not enabled"));
+            assert!(error.contains("ai-assistant"));
+        }
     }
 }
 
@@ -1340,10 +1488,11 @@ pub async fn export_evidence_collection(
                 report_type: Some("evidence_collection".to_string()),
                 ..Default::default()
             };
-            let generator = state.generator.lock();
-            generator
-                .generate(&report, super::OutputFormat::Pdf, &output_path)
-                .map_err(|e| e.to_string())?;
+            state.with_generator(|generator| {
+                generator
+                    .generate(&report, super::OutputFormat::Pdf, &output_path)
+                    .map_err(|e| e.to_string())
+            })?;
         }
         _ => {
             return Err(format!(
@@ -2552,7 +2701,7 @@ mod tests {
 
     #[test]
     fn test_get_report_template_computer() {
-        let report = get_report_template("computer".to_string());
+        let report = get_report_template("computer".to_string()).unwrap();
         let methodology = report.methodology.unwrap();
         assert!(methodology.contains("forensically sound"));
         assert!(methodology.contains("write-blocking"));
@@ -2560,7 +2709,7 @@ mod tests {
 
     #[test]
     fn test_get_report_template_mobile() {
-        let report = get_report_template("mobile".to_string());
+        let report = get_report_template("mobile".to_string()).unwrap();
         let methodology = report.methodology.unwrap();
         assert!(methodology.contains("mobile device"));
         assert!(methodology.contains("airplane mode"));
@@ -2568,7 +2717,7 @@ mod tests {
 
     #[test]
     fn test_get_report_template_network() {
-        let report = get_report_template("network".to_string());
+        let report = get_report_template("network".to_string()).unwrap();
         let methodology = report.methodology.unwrap();
         assert!(methodology.contains("network forensic"));
         assert!(methodology.contains("Packet capture"));
@@ -2576,7 +2725,7 @@ mod tests {
 
     #[test]
     fn test_get_report_template_unknown_type_uses_generic() {
-        let report = get_report_template("other".to_string());
+        let report = get_report_template("other".to_string()).unwrap();
         let methodology = report.methodology.unwrap();
         assert!(methodology.contains("forensically sound"));
         assert!(!methodology.contains("write-blocking"));
@@ -2585,7 +2734,7 @@ mod tests {
 
     #[test]
     fn test_get_report_template_has_metadata() {
-        let report = get_report_template("computer".to_string());
+        let report = get_report_template("computer".to_string()).unwrap();
         assert!(report
             .metadata
             .title

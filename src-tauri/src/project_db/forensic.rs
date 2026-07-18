@@ -9,7 +9,7 @@
 
 use super::database::ProjectDatabase;
 use super::types::*;
-use rusqlite::{params, Result as SqlResult};
+use rusqlite::{params, OptionalExtension, Result as SqlResult};
 
 impl ProjectDatabase {
     // ========================================================================
@@ -165,7 +165,7 @@ impl ProjectDatabase {
                 params![item.id],
                 |row| row.get(0),
             )
-            .ok();
+            .optional()?;
         if let Some(ref status) = existing_status {
             if status != "draft" {
                 return Err(rusqlite::Error::QueryReturnedNoRows); // Reject mutation on non-draft item

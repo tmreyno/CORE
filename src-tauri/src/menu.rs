@@ -625,7 +625,7 @@ fn emit_to_focused_window<R: Runtime>(app: &AppHandle<R>, action: &str) {
     let focused = windows.values().find(|w| w.is_focused().unwrap_or(false));
 
     if let Some(window) = focused.or_else(|| windows.values().next()) {
-        let _ = window.emit("menu-action", action);
+        crate::eventing::log_emit_result("menu-action", window.emit("menu-action", action));
     }
 }
 

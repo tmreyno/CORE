@@ -94,10 +94,18 @@ impl Database {
     pub fn new(db_path: &PathBuf) -> SqlResult<Self> {
         // Ensure parent directory exists
         if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).ok();
+            std::fs::create_dir_all(parent)
+                .map_err(|_| rusqlite::Error::InvalidPath(parent.to_path_buf()))?;
         }
 
-        let conn = Connection::open(db_path)?;
+        Self::from_connection(Connection::open(db_path)?)
+    }
+
+    fn new_in_memory() -> SqlResult<Self> {
+        Self::from_connection(Connection::open_in_memory()?)
+    }
+
+    fn from_connection(conn: Connection) -> SqlResult<Self> {
         let db = Database {
             conn: Mutex::new(conn),
         };
@@ -584,7 +592,7 @@ impl Database {
 
 use std::sync::OnceLock;
 
-static DB: OnceLock<Database> = OnceLock::new();
+static DB: OnceLock<Result<Database, String>> = OnceLock::new();
 
 fn migrate_legacy_global_db_if_needed(db_path: &Path) {
     if crate::commands::portable::get_config().is_some() {
@@ -648,7 +656,7 @@ fn migrate_legacy_global_db_if_needed(db_path: &Path) {
 }
 
 /// Get the global database instance, initializing if needed
-pub fn get_db() -> &'static Database {
+pub fn get_db() -> Result<&'static Database, String> {
     DB.get_or_init(|| {
         let db_path = crate::app_paths::global_db_path();
 
@@ -656,15 +664,36 @@ pub fn get_db() -> &'static Database {
 
         tracing::info!("Initializing database at: {:?}", db_path);
 
-        Database::new(&db_path).expect("Failed to initialize database")
+        match Database::new(&db_path) {
+            Ok(db) => Ok(db),
+            Err(err) => {
+                tracing::error!(
+                    path = %db_path.display(),
+                    error = %err,
+                    "Failed to initialize persistent database; using in-memory fallback"
+                );
+                Database::new_in_memory().map_err(|fallback_err| {
+                    format!(
+                        "Failed to initialize persistent database at {} ({err}); \
+                         in-memory fallback also failed: {fallback_err}",
+                        db_path.display()
+                    )
+                })
+            }
+        }
     })
+    .as_ref()
+    .map_err(|err| err.clone())
 }
 
 /// Initialize database with a custom path (for testing or app-provided path)
 pub fn init_db(db_path: PathBuf) -> SqlResult<()> {
     let db = Database::new(&db_path)?;
-    let _ = DB.set(db);
-    Ok(())
+    DB.set(Ok(db)).map_err(|_| {
+        rusqlite::Error::InvalidParameterName(
+            "global database has already been initialized".to_string(),
+        )
+    })
 }
 
 // ============================================================================

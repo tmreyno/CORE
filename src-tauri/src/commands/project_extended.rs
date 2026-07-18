@@ -199,7 +199,7 @@ pub async fn project_compare(
     project_a: FFXProject,
     project_b: FFXProject,
 ) -> Result<ProjectComparison, String> {
-    Ok(compare_projects(&project_a, &project_b))
+    compare_projects(&project_a, &project_b)
 }
 
 #[tauri::command]

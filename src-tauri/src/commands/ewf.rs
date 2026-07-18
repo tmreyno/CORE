@@ -49,14 +49,17 @@ pub async fn e01_v3_verify(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mut progress_cb = |current: u64, total: u64| {
             let percent = (current as f64 / total as f64) * 100.0;
-            let _ = app.emit(
+            crate::eventing::log_emit_result(
                 "verify-progress",
-                VerifyProgress {
-                    path: path_for_closure.clone(),
-                    current,
-                    total,
-                    percent,
-                },
+                app.emit(
+                    "verify-progress",
+                    VerifyProgress {
+                        path: path_for_closure.clone(),
+                        current,
+                        total,
+                        percent,
+                    },
+                ),
             );
         };
 

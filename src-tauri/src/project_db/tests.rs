@@ -353,6 +353,20 @@ fn test_db_creation() {
 }
 
 #[test]
+fn test_db_creation_reports_parent_directory_failure() {
+    let dir = TempDir::new().unwrap();
+    let parent_file = dir.path().join("not-a-directory");
+    std::fs::write(&parent_file, b"file").unwrap();
+    let db_path = parent_file.join("case.ffxdb");
+
+    match ProjectDatabase::open(&db_path) {
+        Err(rusqlite::Error::InvalidPath(path)) => assert_eq!(path, parent_file),
+        Err(other) => panic!("expected InvalidPath for blocked parent directory, got {other:?}"),
+        Ok(_) => panic!("expected InvalidPath for blocked parent directory, got success"),
+    }
+}
+
+#[test]
 fn test_db_path_derivation() {
     let path = std::path::Path::new("/case/folder/myproject.cffx");
     let db_path = ProjectDatabase::db_path_for_project(path);

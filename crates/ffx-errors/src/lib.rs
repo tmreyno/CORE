@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_vfs_error_io() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "disk error");
+        let io_err = std::io::Error::other("disk error");
         let vfs_err = VfsError::from(io_err);
         match vfs_err {
             VfsError::IoError(msg) => assert!(msg.contains("disk error")),

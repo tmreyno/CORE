@@ -34,7 +34,8 @@ impl ProjectDatabase {
 
         // Ensure parent directory exists
         if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).ok();
+            std::fs::create_dir_all(parent)
+                .map_err(|_| rusqlite::Error::InvalidPath(parent.to_path_buf()))?;
         }
 
         let conn = Connection::open(db_path)?;

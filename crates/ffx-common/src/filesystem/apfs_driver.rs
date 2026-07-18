@@ -171,6 +171,12 @@ fn read_le_u16_at(buf: &[u8], start: usize) -> Option<u16> {
     ))
 }
 
+fn read_le_u32_at(buf: &[u8], start: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(
+        checked_slice(buf, start, 4)?.try_into().ok()?,
+    ))
+}
+
 fn read_le_u64_at(buf: &[u8], start: usize) -> Option<u64> {
     Some(u64::from_le_bytes(
         checked_slice(buf, start, 8)?.try_into().ok()?,
@@ -527,11 +533,16 @@ impl ApfsDriver {
         }
 
         Ok(ObjPhysHeader {
-            cksum: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
-            oid: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
-            xid: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
-            obj_type: u32::from_le_bytes(buf[24..28].try_into().unwrap()),
-            obj_subtype: u32::from_le_bytes(buf[28..32].try_into().unwrap()),
+            cksum: read_le_u64_at(buf, 0)
+                .ok_or_else(|| VfsError::IoError("APFS object checksum out of range".into()))?,
+            oid: read_le_u64_at(buf, 8)
+                .ok_or_else(|| VfsError::IoError("APFS object oid out of range".into()))?,
+            xid: read_le_u64_at(buf, 16)
+                .ok_or_else(|| VfsError::IoError("APFS object xid out of range".into()))?,
+            obj_type: read_le_u32_at(buf, 24)
+                .ok_or_else(|| VfsError::IoError("APFS object type out of range".into()))?,
+            obj_subtype: read_le_u32_at(buf, 28)
+                .ok_or_else(|| VfsError::IoError("APFS object subtype out of range".into()))?,
         })
     }
 
@@ -552,7 +563,8 @@ impl ApfsDriver {
             )));
         }
 
-        let block_size = u32::from_le_bytes(header_buf[36..40].try_into().unwrap());
+        let block_size = read_le_u32_at(&header_buf, 36)
+            .ok_or_else(|| VfsError::IoError("APFS block size out of range".into()))?;
         if block_size == 0 || block_size > 65536 {
             return Err(VfsError::IoError(format!(
                 "Invalid APFS block size: {}",
@@ -589,19 +601,24 @@ impl ApfsDriver {
             )));
         }
 
-        let magic = u32::from_le_bytes(buf[32..36].try_into().unwrap());
-        let block_count = u64::from_le_bytes(buf[40..48].try_into().unwrap());
-        let max_file_systems = u32::from_le_bytes(buf[100..104].try_into().unwrap());
-        let omap_oid = u64::from_le_bytes(buf[160..168].try_into().unwrap());
+        let magic = read_le_u32_at(&buf, 32)
+            .ok_or_else(|| VfsError::IoError("APFS container magic out of range".into()))?;
+        let block_count = read_le_u64_at(&buf, 40)
+            .ok_or_else(|| VfsError::IoError("APFS block count out of range".into()))?;
+        let max_file_systems = read_le_u32_at(&buf, 100)
+            .ok_or_else(|| VfsError::IoError("APFS max filesystem count out of range".into()))?;
+        let omap_oid = read_le_u64_at(&buf, 160)
+            .ok_or_else(|| VfsError::IoError("APFS object map oid out of range".into()))?;
 
         // Read volume OIDs (up to 100 volumes, starting at offset 168)
         let mut fs_oid = Vec::new();
         for i in 0..std::cmp::min(max_file_systems as usize, 100) {
             let oid_offset = 168 + i * 8;
             if oid_offset + 8 <= buf.len() {
-                let oid = u64::from_le_bytes(buf[oid_offset..oid_offset + 8].try_into().unwrap());
-                if oid != 0 {
-                    fs_oid.push(oid);
+                if let Some(oid) = read_le_u64_at(&buf, oid_offset) {
+                    if oid != 0 {
+                        fs_oid.push(oid);
+                    }
                 }
             }
         }
@@ -670,7 +687,8 @@ impl ApfsDriver {
         }
 
         let header = Self::parse_obj_header(buf)?;
-        let tree_oid = u64::from_le_bytes(buf[48..56].try_into().unwrap());
+        let tree_oid = read_le_u64_at(buf, 48)
+            .ok_or_else(|| VfsError::IoError("APFS object map tree oid out of range".into()))?;
 
         Ok(OmapPhys { header, tree_oid })
     }
@@ -762,7 +780,9 @@ impl ApfsDriver {
 
         // If not found in leaf, try last child in index nodes
         if !is_leaf && !kvlocs.is_empty() {
-            let last = kvlocs.last().unwrap();
+            let Some(last) = kvlocs.last() else {
+                return Err(VfsError::NotFound(format!("OID {} not found", target_oid)));
+            };
             let Some(val_offset) =
                 checked_value_offset(block_size as usize, last.val_offset, last.val_len)
             else {
@@ -792,17 +812,36 @@ impl ApfsDriver {
 
         Ok(BtreeNodePhys {
             header,
-            flags: u16::from_le_bytes(buf[32..34].try_into().unwrap()),
-            level: u16::from_le_bytes(buf[34..36].try_into().unwrap()),
-            nkeys: u32::from_le_bytes(buf[36..40].try_into().unwrap()),
-            table_space_offset: u16::from_le_bytes(buf[40..42].try_into().unwrap()),
-            table_space_len: u16::from_le_bytes(buf[42..44].try_into().unwrap()),
-            free_space_offset: u16::from_le_bytes(buf[44..46].try_into().unwrap()),
-            free_space_len: u16::from_le_bytes(buf[46..48].try_into().unwrap()),
-            key_free_list_offset: u16::from_le_bytes(buf[48..50].try_into().unwrap()),
-            key_free_list_len: u16::from_le_bytes(buf[50..52].try_into().unwrap()),
-            val_free_list_offset: u16::from_le_bytes(buf[52..54].try_into().unwrap()),
-            val_free_list_len: u16::from_le_bytes(buf[54..56].try_into().unwrap()),
+            flags: read_le_u16_at(buf, 32)
+                .ok_or_else(|| VfsError::IoError("APFS B-tree flags out of range".into()))?,
+            level: read_le_u16_at(buf, 34)
+                .ok_or_else(|| VfsError::IoError("APFS B-tree level out of range".into()))?,
+            nkeys: read_le_u32_at(buf, 36)
+                .ok_or_else(|| VfsError::IoError("APFS B-tree key count out of range".into()))?,
+            table_space_offset: read_le_u16_at(buf, 40).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree table-space offset out of range".into())
+            })?,
+            table_space_len: read_le_u16_at(buf, 42).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree table-space length out of range".into())
+            })?,
+            free_space_offset: read_le_u16_at(buf, 44).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree free-space offset out of range".into())
+            })?,
+            free_space_len: read_le_u16_at(buf, 46).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree free-space length out of range".into())
+            })?,
+            key_free_list_offset: read_le_u16_at(buf, 48).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree key free-list offset out of range".into())
+            })?,
+            key_free_list_len: read_le_u16_at(buf, 50).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree key free-list length out of range".into())
+            })?,
+            val_free_list_offset: read_le_u16_at(buf, 52).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree value free-list offset out of range".into())
+            })?,
+            val_free_list_len: read_le_u16_at(buf, 54).ok_or_else(|| {
+                VfsError::IoError("APFS B-tree value free-list length out of range".into())
+            })?,
         })
     }
 
@@ -866,11 +905,16 @@ impl ApfsDriver {
             )));
         }
 
-        let magic = u32::from_le_bytes(buf[32..36].try_into().unwrap());
-        let vol_index = u32::from_le_bytes(buf[36..40].try_into().unwrap());
-        let omap_oid = u64::from_le_bytes(buf[80..88].try_into().unwrap());
-        let root_tree_oid = u64::from_le_bytes(buf[88..96].try_into().unwrap());
-        let root_tree_type = u32::from_le_bytes(buf[96..100].try_into().unwrap());
+        let magic = read_le_u32_at(buf, 32)
+            .ok_or_else(|| VfsError::IoError("APFS volume magic out of range".into()))?;
+        let vol_index = read_le_u32_at(buf, 36)
+            .ok_or_else(|| VfsError::IoError("APFS volume index out of range".into()))?;
+        let omap_oid = read_le_u64_at(buf, 80)
+            .ok_or_else(|| VfsError::IoError("APFS volume object map oid out of range".into()))?;
+        let root_tree_oid = read_le_u64_at(buf, 88)
+            .ok_or_else(|| VfsError::IoError("APFS root tree oid out of range".into()))?;
+        let root_tree_type = read_le_u32_at(buf, 96)
+            .ok_or_else(|| VfsError::IoError("APFS root tree type out of range".into()))?;
 
         // Volume name is at offset 754 (256 bytes max)
         let name_start = 754;
@@ -936,8 +980,9 @@ impl ApfsDriver {
             }
 
             // Catalog key: obj_id (8) + type (1)
-            let obj_id =
-                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let Some(obj_id) = read_le_u64_at(node_buf, key_offset) else {
+                continue;
+            };
             let rec_type = node_buf[key_offset + 8];
 
             // Clear high bits that indicate type
@@ -964,9 +1009,9 @@ impl ApfsDriver {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
-                    let child_addr = u64::from_le_bytes(
-                        node_buf[val_offset..val_offset + 8].try_into().unwrap(),
-                    );
+                    let Some(child_addr) = read_le_u64_at(node_buf, val_offset) else {
+                        continue;
+                    };
                     if let Ok(child_buf) = self.read_block(child_addr) {
                         self.traverse_catalog_tree(&child_buf, parent_id, entries)?;
                     }
@@ -983,9 +1028,14 @@ impl ApfsDriver {
             return Err(VfsError::IoError("Buffer too small for drec".into()));
         }
 
-        let file_id = u64::from_le_bytes(buf[0..8].try_into().unwrap());
-        let date_added = u64::from_le_bytes(buf[8..16].try_into().unwrap());
-        let flags = u16::from_le_bytes(buf[16..18].try_into().unwrap());
+        let file_id = read_le_u64_at(buf, 0).ok_or_else(|| {
+            VfsError::IoError("APFS directory record file id out of range".into())
+        })?;
+        let date_added = read_le_u64_at(buf, 8).ok_or_else(|| {
+            VfsError::IoError("APFS directory record date added out of range".into())
+        })?;
+        let flags = read_le_u16_at(buf, 16)
+            .ok_or_else(|| VfsError::IoError("APFS directory record flags out of range".into()))?;
         let d_type = (flags & DREC_TYPE_MASK) as u8;
 
         // Name follows at offset 18 (null-terminated UTF-8)
@@ -1034,8 +1084,9 @@ impl ApfsDriver {
                 continue;
             }
 
-            let obj_id =
-                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let Some(obj_id) = read_le_u64_at(node_buf, key_offset) else {
+                continue;
+            };
             let rec_type = node_buf[key_offset + 8];
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
@@ -1057,9 +1108,9 @@ impl ApfsDriver {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
-                    let child_addr = u64::from_le_bytes(
-                        node_buf[val_offset..val_offset + 8].try_into().unwrap(),
-                    );
+                    let Some(child_addr) = read_le_u64_at(node_buf, val_offset) else {
+                        continue;
+                    };
                     if let Ok(child_buf) = self.read_block(child_addr) {
                         if let Ok(inode) = self.find_inode_in_tree(&child_buf, target_id) {
                             return Ok(inode);
@@ -1079,18 +1130,30 @@ impl ApfsDriver {
         }
 
         Ok(InodeRecord {
-            parent_id: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
-            private_id: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
-            create_time: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
-            mod_time: u64::from_le_bytes(buf[24..32].try_into().unwrap()),
-            change_time: u64::from_le_bytes(buf[32..40].try_into().unwrap()),
-            access_time: u64::from_le_bytes(buf[40..48].try_into().unwrap()),
-            flags: u64::from_le_bytes(buf[48..56].try_into().unwrap()),
-            nchildren: u32::from_le_bytes(buf[56..60].try_into().unwrap()),
-            bsd_flags: u32::from_le_bytes(buf[68..72].try_into().unwrap()),
-            uid: u32::from_le_bytes(buf[72..76].try_into().unwrap()),
-            gid: u32::from_le_bytes(buf[76..80].try_into().unwrap()),
-            mode: u16::from_le_bytes(buf[80..82].try_into().unwrap()),
+            parent_id: read_le_u64_at(buf, 0)
+                .ok_or_else(|| VfsError::IoError("APFS inode parent id out of range".into()))?,
+            private_id: read_le_u64_at(buf, 8)
+                .ok_or_else(|| VfsError::IoError("APFS inode private id out of range".into()))?,
+            create_time: read_le_u64_at(buf, 16)
+                .ok_or_else(|| VfsError::IoError("APFS inode create time out of range".into()))?,
+            mod_time: read_le_u64_at(buf, 24)
+                .ok_or_else(|| VfsError::IoError("APFS inode modify time out of range".into()))?,
+            change_time: read_le_u64_at(buf, 32)
+                .ok_or_else(|| VfsError::IoError("APFS inode change time out of range".into()))?,
+            access_time: read_le_u64_at(buf, 40)
+                .ok_or_else(|| VfsError::IoError("APFS inode access time out of range".into()))?,
+            flags: read_le_u64_at(buf, 48)
+                .ok_or_else(|| VfsError::IoError("APFS inode flags out of range".into()))?,
+            nchildren: read_le_u32_at(buf, 56)
+                .ok_or_else(|| VfsError::IoError("APFS inode child count out of range".into()))?,
+            bsd_flags: read_le_u32_at(buf, 68)
+                .ok_or_else(|| VfsError::IoError("APFS inode BSD flags out of range".into()))?,
+            uid: read_le_u32_at(buf, 72)
+                .ok_or_else(|| VfsError::IoError("APFS inode uid out of range".into()))?,
+            gid: read_le_u32_at(buf, 76)
+                .ok_or_else(|| VfsError::IoError("APFS inode gid out of range".into()))?,
+            mode: read_le_u16_at(buf, 80)
+                .ok_or_else(|| VfsError::IoError("APFS inode mode out of range".into()))?,
             name: None,
         })
     }
@@ -1129,8 +1192,9 @@ impl ApfsDriver {
                 continue;
             }
 
-            let obj_id =
-                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let Some(obj_id) = read_le_u64_at(node_buf, key_offset) else {
+                continue;
+            };
             let rec_type = node_buf[key_offset + 8];
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
@@ -1144,9 +1208,9 @@ impl ApfsDriver {
                         continue;
                     };
                     if has_buffer_range(node_buf, val_offset, 24) {
-                        let size = u64::from_le_bytes(
-                            node_buf[val_offset..val_offset + 8].try_into().unwrap(),
-                        );
+                        let Some(size) = read_le_u64_at(node_buf, val_offset) else {
+                            continue;
+                        };
                         return Ok(size);
                     }
                 }
@@ -1157,9 +1221,9 @@ impl ApfsDriver {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
-                    let child_addr = u64::from_le_bytes(
-                        node_buf[val_offset..val_offset + 8].try_into().unwrap(),
-                    );
+                    let Some(child_addr) = read_le_u64_at(node_buf, val_offset) else {
+                        continue;
+                    };
                     if let Ok(child_buf) = self.read_block(child_addr) {
                         if let Ok(size) = self.find_dstream_size(&child_buf, target_id) {
                             return Ok(size);
@@ -1413,8 +1477,9 @@ impl ApfsDriver {
                 continue;
             }
 
-            let obj_id =
-                u64::from_le_bytes(node_buf[key_offset..key_offset + 8].try_into().unwrap());
+            let Some(obj_id) = read_le_u64_at(node_buf, key_offset) else {
+                continue;
+            };
             let rec_type = node_buf[key_offset + 8];
             let inode_id = obj_id & 0x0FFFFFFFFFFFFFFF;
 
@@ -1422,12 +1487,8 @@ impl ApfsDriver {
                 // File extent key: [obj_id(8)] [type(1)] [pad(3)] [logical_offset(8)]
                 if rec_type == J_FILE_EXTENT_TYPE && inode_id == target_id {
                     // Parse logical offset from key (offset 12, 8 bytes)
-                    let logical_offset = if key_offset + 20 <= node_buf.len() {
-                        u64::from_le_bytes(
-                            node_buf[key_offset + 12..key_offset + 20]
-                                .try_into()
-                                .unwrap(),
-                        )
+                    let logical_offset = if has_buffer_range(node_buf, key_offset + 12, 8) {
+                        read_le_u64_at(node_buf, key_offset + 12).unwrap_or(0)
                     } else {
                         0
                     };
@@ -1442,16 +1503,12 @@ impl ApfsDriver {
                     };
                     if has_buffer_range(node_buf, val_offset, 24) {
                         // Skip 8-byte flags field
-                        let phys_block = u64::from_le_bytes(
-                            node_buf[val_offset + 8..val_offset + 16]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        let length = u64::from_le_bytes(
-                            node_buf[val_offset + 16..val_offset + 24]
-                                .try_into()
-                                .unwrap(),
-                        );
+                        let Some(phys_block) = read_le_u64_at(node_buf, val_offset + 8) else {
+                            continue;
+                        };
+                        let Some(length) = read_le_u64_at(node_buf, val_offset + 16) else {
+                            continue;
+                        };
                         extents.push((logical_offset, phys_block, length));
                     }
                 }
@@ -1463,11 +1520,11 @@ impl ApfsDriver {
                     continue;
                 };
                 if has_buffer_range(node_buf, val_offset, 8) {
-                    let child_addr = u64::from_le_bytes(
-                        node_buf[val_offset..val_offset + 8].try_into().unwrap(),
-                    );
+                    let Some(child_addr) = read_le_u64_at(node_buf, val_offset) else {
+                        continue;
+                    };
                     if let Ok(child_buf) = self.read_block(child_addr) {
-                        let _ = self.find_file_extents(&child_buf, target_id, extents);
+                        self.find_file_extents(&child_buf, target_id, extents)?;
                     }
                 }
             }
@@ -1581,6 +1638,15 @@ mod tests {
     }
 
     #[test]
+    fn test_apfs_little_endian_readers_reject_short_ranges() {
+        let bytes = [1u8, 2, 3, 4, 5, 6, 7];
+
+        assert_eq!(read_le_u16_at(&bytes, 6), None);
+        assert_eq!(read_le_u32_at(&bytes, 4), None);
+        assert_eq!(read_le_u64_at(&bytes, 0), None);
+    }
+
+    #[test]
     fn test_bounded_apfs_file_read_allows_exact_eof_and_zero_size() {
         assert_eq!(bounded_apfs_file_read(128, 128, 16).unwrap(), None);
         assert_eq!(bounded_apfs_file_read(128, 0, 0).unwrap(), None);
@@ -1655,6 +1721,73 @@ mod tests {
             .expect_err("APFS container size overflow should be rejected");
 
         assert!(matches!(err, VfsError::Internal(_)));
+    }
+
+    #[test]
+    fn test_parse_btree_node_rejects_short_buffer() {
+        let err = ApfsDriver::parse_btree_node(&[0u8; 55])
+            .expect_err("short APFS B-tree node should be rejected");
+
+        assert!(matches!(err, VfsError::IoError(message) if message.contains("B-tree node")));
+    }
+
+    #[test]
+    fn test_parse_drec_value_rejects_short_buffer() {
+        let device: Arc<dyn super::super::traits::SeekableBlockDevice> =
+            Arc::new(MockBlockDevice {
+                data: vec![0; 4096],
+            });
+        let driver = ApfsDriver {
+            info: FilesystemInfo {
+                fs_type: FilesystemType::Apfs,
+                label: Some("test".to_string()),
+                total_size: 4096,
+                free_space: None,
+                cluster_size: 4096,
+            },
+            device,
+            offset: 0,
+            container: NxSuperblock {
+                header: ObjPhysHeader {
+                    cksum: 0,
+                    oid: 0,
+                    xid: 0,
+                    obj_type: OBJECT_TYPE_NX_SUPERBLOCK,
+                    obj_subtype: 0,
+                },
+                magic: APFS_CONTAINER_MAGIC,
+                block_size: 4096,
+                block_count: 1,
+                max_file_systems: 1,
+                omap_oid: 0,
+                fs_oid: vec![1],
+            },
+            volume: ApfsSuperblock {
+                header: ObjPhysHeader {
+                    cksum: 0,
+                    oid: 0,
+                    xid: 0,
+                    obj_type: OBJECT_TYPE_FS,
+                    obj_subtype: 0,
+                },
+                magic: APFS_VOLUME_MAGIC,
+                vol_index: 0,
+                omap_oid: 0,
+                root_tree_oid: 0,
+                root_tree_type: 0,
+                vol_name: "test".to_string(),
+            },
+            block_size: 4096,
+            dir_cache: RwLock::new(HashMap::new()),
+            inode_cache: RwLock::new(HashMap::new()),
+            size_cache: RwLock::new(HashMap::new()),
+        };
+
+        let err = driver
+            .parse_drec_value(&[0u8; 17])
+            .expect_err("short APFS directory record should be rejected");
+
+        assert!(matches!(err, VfsError::IoError(message) if message.contains("drec")));
     }
 
     #[test]

@@ -8,14 +8,18 @@
 //
 // Discovery order:
 //   1. LIBEWF_DIR env var → link directly
-//   2. pkg-config → system-installed libewf (Homebrew, apt, etc.)
-//   3. Common library paths (/opt/homebrew/lib, /usr/local/lib)
-//   4. Stub fallback → compiles stub.c providing all FFI symbols
+//   2. Pre-built libraries in repo → static libewf
+//   3. pkg-config → system-installed libewf (Homebrew, apt, etc.)
+//   4. Common library paths (/opt/homebrew/lib, /usr/local/lib)
+//   5. Stub fallback → compiles stub.c providing all FFI symbols
 //      (EWF C-library features return errors at runtime; pure-Rust
 //       EWF reader and L01 writer are unaffected)
 
-fn main() {
+fn main() -> Result<(), String> {
     println!("cargo:rerun-if-changed=src/stub.c");
+    println!("cargo:rerun-if-changed=prebuilt/linux-x64/libewf.a");
+    println!("cargo:rerun-if-changed=prebuilt/macos-arm64/libewf.a");
+    println!("cargo:rerun-if-changed=prebuilt/windows-x64-msvc/ewf.lib");
     println!("cargo:rerun-if-env-changed=LIBEWF_DIR");
     println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
 
@@ -25,40 +29,32 @@ fn main() {
     let is_windows_target = target.contains("windows");
     let is_macos_target = target.contains("apple");
     let _is_linux_target = target.contains("linux") && !target.contains("android");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .map_err(|e| format!("CARGO_MANIFEST_DIR is not set for libewf-ffi build: {e}"))?;
+    let manifest_path = std::path::PathBuf::from(&manifest_dir);
 
     // --- Step 1: Explicit LIBEWF_DIR ---
     if let Ok(libewf_dir) = std::env::var("LIBEWF_DIR") {
+        let libewf_path = std::path::Path::new(&libewf_dir);
         println!("cargo:warning=Using LIBEWF_DIR={}", libewf_dir);
         println!("cargo:rustc-link-search=native={}", libewf_dir);
-        if is_windows_target {
-            // On Windows, always link ewf as static (merged .lib from prebuild)
+        if is_windows_target || libewf_path.join("libewf.a").exists() {
             println!("cargo:rustc-link-lib=static=ewf");
         } else {
             println!("cargo:rustc-link-lib=ewf");
         }
         link_system_deps_for_target(&target);
-        return;
+        return Ok(());
     }
 
-    // --- Step 2: pkg-config (only when not cross-compiling) ---
-    // When cross-compiling, pkg-config would find host libraries, not target ones.
-    if !is_cross && pkg_config::Config::new().probe("libewf").is_ok() {
-        println!("cargo:warning=Found libewf via pkg-config");
-        link_system_deps_for_target(&target);
-        return;
-    }
-
-    // --- Step 3a: Pre-built libraries in repo (CI + cross-compilation) ---
+    // --- Step 2: Pre-built libraries in repo (CI + release/local packaging) ---
     {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let manifest_path = std::path::PathBuf::from(&manifest_dir);
-
         // Determine platform-specific prebuilt directory and library name
-        let (prebuilt_subdir, lib_name) = if is_windows_target {
+        let (prebuilt_subdir, lib_name) = if is_windows_target && target.contains("msvc") {
             ("windows-x64-msvc", "ewf.lib")
-        } else if is_macos_target {
+        } else if is_macos_target && target.contains("aarch64") {
             ("macos-arm64", "libewf.a")
-        } else if _is_linux_target {
+        } else if _is_linux_target && target.contains("x86_64") {
             ("linux-x64", "libewf.a")
         } else {
             ("", "")
@@ -74,12 +70,20 @@ fn main() {
                 println!("cargo:rustc-link-search=native={}", prebuilt_dir.display());
                 println!("cargo:rustc-link-lib=static=ewf");
                 link_system_deps_prebuilt(&prebuilt_dir, &target);
-                return;
+                return Ok(());
             }
         }
     }
 
-    // --- Step 3b: Common library paths (only for native builds) ---
+    // --- Step 3: pkg-config (only when not cross-compiling) ---
+    // When cross-compiling, pkg-config would find host libraries, not target ones.
+    if !is_cross && pkg_config::Config::new().probe("libewf").is_ok() {
+        println!("cargo:warning=Found libewf via pkg-config");
+        link_system_deps_for_target(&target);
+        return Ok(());
+    }
+
+    // --- Step 4: Common library paths (only for native builds) ---
     if !is_cross {
         let search_paths: &[&str] = if is_macos_target {
             &[
@@ -104,16 +108,13 @@ fn main() {
                 println!("cargo:rustc-link-search=native={}", dir);
                 println!("cargo:rustc-link-lib=ewf");
                 link_system_deps_for_target(&target);
-                return;
+                return Ok(());
             }
         }
     }
 
-    // --- Step 4: Stub fallback (all platforms) ---
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let stub_path = std::path::PathBuf::from(&manifest_dir)
-        .join("src")
-        .join("stub.c");
+    // --- Step 5: Stub fallback (all platforms) ---
+    let stub_path = manifest_path.join("src").join("stub.c");
 
     if stub_path.exists() {
         println!(
@@ -126,9 +127,13 @@ fn main() {
             .warnings(false)
             .compile("ewf");
     } else {
-        println!("cargo:warning=libewf not found and stub.c missing!");
-        println!("cargo:rustc-link-lib=ewf");
+        return Err(format!(
+            "libewf was not found and fallback stub.c is missing at {}",
+            stub_path.display()
+        ));
     }
+
+    Ok(())
 }
 
 /// Link transitive system dependencies based on TARGET (not host).

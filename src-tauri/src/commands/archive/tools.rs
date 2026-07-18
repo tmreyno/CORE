@@ -41,13 +41,16 @@ pub async fn test_7z_archive(
         let sz = SevenZip::new().map_err(|e| format!("Failed to initialize 7z library: {}", e))?;
 
         // Emit starting status
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "archive-test-progress",
-            serde_json::json!({
-                "archive_path": archive_path_clone,
-                "status": "Testing archive integrity...",
-                "percent": 0.0,
-            }),
+            window_clone.emit(
+                "archive-test-progress",
+                serde_json::json!({
+                    "archive_path": archive_path_clone,
+                    "status": "Testing archive integrity...",
+                    "percent": 0.0,
+                }),
+            ),
         );
 
         // Test archive
@@ -59,13 +62,16 @@ pub async fn test_7z_archive(
         .map_err(|e| format!("Archive test failed: {}", e))?;
 
         // Emit completion
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "archive-test-progress",
-            serde_json::json!({
-                "archive_path": archive_path_clone,
-                "status": "Archive is valid",
-                "percent": 100.0,
-            }),
+            window_clone.emit(
+                "archive-test-progress",
+                serde_json::json!({
+                    "archive_path": archive_path_clone,
+                    "status": "Archive is valid",
+                    "percent": 100.0,
+                }),
+            ),
         );
 
         info!("Archive test passed: {}", archive_path);
@@ -91,12 +97,15 @@ pub async fn repair_7z_archive(
         let sz = SevenZip::new().map_err(|e| format!("Failed to initialize 7z library: {}", e))?;
 
         // Emit start status
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "archive-repair-progress",
-            serde_json::json!({
-                "percent": 0.0,
-                "status": "Repairing archive...",
-            }),
+            window_clone.emit(
+                "archive-repair-progress",
+                serde_json::json!({
+                    "percent": 0.0,
+                    "status": "Repairing archive...",
+                }),
+            ),
         );
 
         // Repair archive
@@ -108,12 +117,15 @@ pub async fn repair_7z_archive(
         .map_err(|e| format!("Archive repair failed: {}", e))?;
 
         // Emit completion
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "archive-repair-progress",
-            serde_json::json!({
-                "percent": 100.0,
-                "status": "Archive repaired successfully",
-            }),
+            window_clone.emit(
+                "archive-repair-progress",
+                serde_json::json!({
+                    "percent": 100.0,
+                    "status": "Archive repaired successfully",
+                }),
+            ),
         );
 
         info!("Archive repaired successfully: {}", repaired_clone);
@@ -289,12 +301,15 @@ pub async fn extract_split_7z_archive(
 
     tauri::async_runtime::spawn_blocking(move || {
         // Emit start status
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "split-extract-progress",
-            serde_json::json!({
-                "status": "Extracting split archive...",
-                "percent": 0.0,
-            }),
+            window_clone.emit(
+                "split-extract-progress",
+                serde_json::json!({
+                    "status": "Extracting split archive...",
+                    "percent": 0.0,
+                }),
+            ),
         );
 
         // Extract split archive (simple version without progress callback)
@@ -302,12 +317,15 @@ pub async fn extract_split_7z_archive(
             .map_err(|e| format!("Split archive extraction failed: {}", e))?;
 
         // Emit completion
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "split-extract-progress",
-            serde_json::json!({
-                "status": "Split archive extracted successfully",
-                "percent": 100.0,
-            }),
+            window_clone.emit(
+                "split-extract-progress",
+                serde_json::json!({
+                    "status": "Split archive extracted successfully",
+                    "percent": 100.0,
+                }),
+            ),
         );
 
         Ok(output_clone)

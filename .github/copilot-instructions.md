@@ -2433,8 +2433,8 @@ Each library's `build.rs` follows a priority chain:
 
 **libewf-ffi/build.rs:**
 1. `LIBEWF_DIR` env var → link directly (CI sets this to `prebuilt/windows-x64-msvc/`)
-2. pkg-config → system-installed libewf (Homebrew on macOS dev)
-3. `prebuilt/<platform>/` directory → CI-built static libs
+2. `prebuilt/<platform>/` directory → CI-built static libs
+3. pkg-config → system-installed libewf (Homebrew on macOS dev)
 4. Common library paths (`/opt/homebrew/lib`, `/usr/local/lib`)
 5. Stub fallback → compiles `stub.c` (EWF C-library features disabled; pure-Rust reader still works)
 
@@ -2455,6 +2455,10 @@ Each library's `build.rs` follows a priority chain:
 ### Rebuilding Pre-built Libraries
 
 Use the `prebuild-native-deps.yml` workflow to rebuild libraries:
+
+`libewf-ffi` targets libewf 20251220 APIs. That version comes from libyal HEAD,
+not the older 20240506 release tarball, so macOS/Linux libewf prebuilds must use
+the workflow's HEAD source path.
 
 ```bash
 # Rebuild all platforms (creates PR with updated .a/.lib files)
@@ -2589,8 +2593,8 @@ Manual `workflow_dispatch` with inputs for platform selection and individual lib
 
 | Job | Runner | Libraries Built |
 |-----|--------|-----------------|
-| `prebuild-macos` | `macos-14` (ARM64) | libarchive, sevenzip-ffi, libewf (from Homebrew source) |
-| `prebuild-linux` | `ubuntu-22.04` | libarchive (CMake), sevenzip-ffi, libewf (from source tarball) |
+| `prebuild-macos` | `macos-14` (ARM64) | libarchive, sevenzip-ffi, libewf 20251220 (from libyal HEAD) |
+| `prebuild-linux` | `ubuntu-22.04` | libarchive (CMake), sevenzip-ffi, libewf 20251220 (from libyal HEAD) |
 | `prebuild-windows` | `windows-latest` | libarchive (vcpkg), sevenzip-ffi (CMake/VS2022), libewf (MSBuild static + lib.exe merge) |
 | `create-pr` | `ubuntu-latest` | Downloads artifacts → commits → opens PR |
 

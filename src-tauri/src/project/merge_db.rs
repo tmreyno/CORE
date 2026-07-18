@@ -10,6 +10,41 @@ use super::merge_types::{MergeExclusions, MergeStats};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
+pub(super) fn copy_optional_sqlite_sidecar(
+    source: &Path,
+    dest: &Path,
+    label: &str,
+) -> Result<bool, String> {
+    if !source.exists() {
+        return Ok(false);
+    }
+
+    std::fs::copy(source, dest).map_err(|error| {
+        format!(
+            "Failed to copy {label} sidecar {} to {}: {error}",
+            source.display(),
+            dest.display()
+        )
+    })?;
+
+    Ok(true)
+}
+
+pub(super) fn sqlite_wal_has_data(wal_path: &Path, label: &str) -> Result<bool, String> {
+    if !wal_path.exists() {
+        return Ok(false);
+    }
+
+    let metadata = wal_path.metadata().map_err(|error| {
+        format!(
+            "Failed to inspect {label} WAL {}: {error}",
+            wal_path.display()
+        )
+    })?;
+
+    Ok(metadata.len() > 0)
+}
+
 /// Map a table name to its merge category.
 /// Categories allow users to skip entire groups of related tables at once.
 fn table_category(table: &str) -> &str {
@@ -298,12 +333,28 @@ fn optional_source_column_expr_or(
 
 fn source_table_has_column(conn: &rusqlite::Connection, table: &str, column: &str) -> bool {
     let escaped_table = table.replace('\'', "''");
-    conn.prepare(&format!("PRAGMA source.table_info('{escaped_table}')"))
-        .and_then(|mut stmt| {
-            stmt.query_map([], |row| row.get::<_, String>(1))
-                .map(|rows| rows.filter_map(|row| row.ok()).any(|name| name == column))
-        })
-        .unwrap_or(false)
+    let pragma = format!("PRAGMA source.table_info('{escaped_table}')");
+    match conn.prepare(&pragma).and_then(|mut stmt| {
+        stmt.query_map([], |row| row.get::<_, String>(1))
+            .map(|rows| {
+                rows.filter_map(|row| match row {
+                    Ok(name) => Some(name),
+                    Err(error) => {
+                        warn!(
+                            "merge: failed to read source column metadata for {table}.{column}: {error}"
+                        );
+                        None
+                    }
+                })
+                .any(|name| name == column)
+            })
+    }) {
+        Ok(has_column) => has_column,
+        Err(error) => {
+            warn!("merge: failed to inspect source table {table} for column {column}: {error}");
+            false
+        }
+    }
 }
 
 /// Merge multiple .ffxdb databases into one using SQLite ATTACH + INSERT OR IGNORE.
@@ -425,8 +476,7 @@ pub fn merge_databases(
         // the attached database may fail to read WAL data if the WAL file can't be replayed
         // (e.g., permissions, external volume, or stale SHM).
         let wal_path = source_path.with_extension("ffxdb-wal");
-        let has_active_wal =
-            wal_path.exists() && wal_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
+        let has_active_wal = sqlite_wal_has_data(&wal_path, "source database")?;
 
         let attach_path = if has_active_wal {
             info!(
@@ -456,8 +506,8 @@ pub fn merge_databases(
                         continue;
                     }
                     let shm_path = source_path.with_extension("ffxdb-shm");
-                    if shm_path.exists() {
-                        let _ = std::fs::copy(&shm_path, &temp_shm);
+                    if let Err(error) = copy_optional_sqlite_sidecar(&shm_path, &temp_shm, "SHM") {
+                        warn!("{error}");
                     }
 
                     // Open the temp copy read-write to force WAL checkpoint, then close
@@ -467,7 +517,15 @@ pub fn merge_databases(
                         if let Ok(temp_conn) =
                             rusqlite::Connection::open_with_flags(&temp_db, flags)
                         {
-                            let _ = temp_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+                            if let Err(error) =
+                                temp_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                            {
+                                warn!(
+                                    "Failed to checkpoint temp WAL for {}: {}",
+                                    source_path.display(),
+                                    error
+                                );
+                            }
                         }
                     }
 
@@ -516,18 +574,16 @@ pub fn merge_databases(
                     |row| row.get::<_, i64>(0),
                 )
                 .map(|c| c > 0)
-                .unwrap_or(false);
+                .map_err(|error| {
+                    format!(
+                        "Failed to inspect source table {} in {}: {}",
+                        table_name, attach_path, error
+                    )
+                })?;
 
             if !table_exists {
                 continue;
             }
-
-            // Count rows before merge for stats
-            let count_before: i64 = conn
-                .query_row(&format!("SELECT COUNT(*) FROM {}", table_name), [], |row| {
-                    row.get(0)
-                })
-                .unwrap_or(0);
 
             // Build effective SQL — apply item-level exclusion filters when needed
             let effective_sql: String = match *table_name {
@@ -659,8 +715,6 @@ pub fn merge_databases(
                     warn!("  {} → merge error (continuing): {}", table_name, e);
                 }
             }
-
-            let _ = count_before; // Used for logging context
         }
 
         // Detach source
@@ -1043,6 +1097,36 @@ mod tests {
             "#
         ))
         .expect("create source evidence_collections");
+    }
+
+    #[test]
+    fn copy_optional_sqlite_sidecar_skips_missing_source() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let source = temp.path().join("missing.ffxdb-shm");
+        let dest = temp.path().join("dest.ffxdb-shm");
+
+        let copied =
+            copy_optional_sqlite_sidecar(&source, &dest, "SHM").expect("missing sidecar is ok");
+
+        assert!(!copied);
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn copy_optional_sqlite_sidecar_reports_copy_failure() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let source = temp.path().join("source.ffxdb-shm");
+        let blocked_dir = temp.path().join("blocked");
+        let dest = blocked_dir.join("dest.ffxdb-shm");
+        std::fs::write(&source, b"sidecar").expect("write source");
+        std::fs::write(&blocked_dir, b"not a directory").expect("write blocked path");
+
+        let error = copy_optional_sqlite_sidecar(&source, &dest, "SHM")
+            .expect_err("blocked destination should report an error");
+
+        assert!(error.contains("Failed to copy SHM sidecar"));
+        assert!(error.contains("source.ffxdb-shm"));
+        assert!(error.contains("dest.ffxdb-shm"));
     }
 
     #[test]

@@ -14,10 +14,11 @@
 //! on first use and can be explicitly evicted with `vfs_close_container`.
 
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::{Arc, LazyLock};
 
 use parking_lot::RwLock as PLRwLock;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::common::vfs::{DirEntry, FileAttr, VirtualFileSystem};
 use crate::ewf;
@@ -52,6 +53,46 @@ fn checked_vfs_read_size(file_size: u64, offset: u64, requested: usize) -> Resul
     let remaining = file_size - offset;
     usize::try_from(remaining.min(requested as u64))
         .map_err(|_| "VFS read range is too large for this platform".to_string())
+}
+
+fn detector_matches<E>(path: &str, format: &str, result: Result<bool, E>) -> bool
+where
+    E: Display,
+{
+    match result {
+        Ok(matches) => matches,
+        Err(err) => {
+            debug!(
+                path = %path,
+                format = %format,
+                error = %err,
+                "VFS detector failed; treating as no match"
+            );
+            false
+        }
+    }
+}
+
+fn root_entries_or_empty<E>(
+    container_path: &str,
+    backend: &str,
+    result: Result<Vec<DirEntry>, E>,
+) -> Vec<DirEntry>
+where
+    E: Display,
+{
+    match result {
+        Ok(entries) => entries,
+        Err(error) => {
+            warn!(
+                path = %container_path,
+                backend = %backend,
+                error = %error,
+                "Failed to read VFS root; falling back to physical mode"
+            );
+            Vec::new()
+        }
+    }
 }
 
 fn ensure_vfs_read_len(actual: usize, expected: usize, file_path: &str) -> Result<(), String> {
@@ -172,9 +213,9 @@ fn get_or_open_vfs(container_path: &str) -> Result<Arc<PooledVfs>, String> {
     }
 
     // Slow path: open the container and insert into pool
-    let container_type = if ewf::is_ewf(container_path).unwrap_or(false) {
+    let container_type = if detector_matches(container_path, "EWF", ewf::is_ewf(container_path)) {
         "e01"
-    } else if raw::is_raw(container_path).unwrap_or(false) {
+    } else if detector_matches(container_path, "raw", raw::is_raw(container_path)) {
         "raw"
     } else {
         return Err(format!("Unsupported container type: {}", container_path));
@@ -302,9 +343,9 @@ pub async fn vfs_mount_image(
     debug!("[vfs_mount_image] Starting mount for: {}", containerPath);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let container_type = if ewf::is_ewf(&containerPath).unwrap_or(false) {
+        let container_type = if detector_matches(&containerPath, "EWF", ewf::is_ewf(&containerPath)) {
             "e01"
-        } else if raw::is_raw(&containerPath).unwrap_or(false) {
+        } else if detector_matches(&containerPath, "raw", raw::is_raw(&containerPath)) {
             "raw"
         } else {
             return Err(format!("Unsupported container type for VFS: {}", containerPath));
@@ -324,7 +365,11 @@ pub async fn vfs_mount_image(
                     debug!("[vfs_mount_image] Disk size from vfs.disk_size(): {} bytes", disk_size);
 
                     // Get partitions from readdir
-                    let root_entries = vfs.readdir("/").unwrap_or_default();
+                    let root_entries = root_entries_or_empty(
+                        &containerPath,
+                        "EWF filesystem",
+                        vfs.readdir("/"),
+                    );
                     debug!("[vfs_mount_image] Root entries count: {}", root_entries.len());
                     for entry in &root_entries {
                         debug!("[vfs_mount_image] Root entry: {} (is_dir: {})", entry.name, entry.is_directory);
@@ -423,8 +468,11 @@ pub async fn vfs_mount_image(
             // Raw image
             match raw::vfs::RawVfs::open_filesystem(&containerPath) {
                 Ok(vfs) => {
-                    let parts: Vec<VfsPartitionInfo> = vfs.readdir("/")
-                        .unwrap_or_default()
+                    let parts: Vec<VfsPartitionInfo> = root_entries_or_empty(
+                            &containerPath,
+                            "raw filesystem",
+                            vfs.readdir("/"),
+                        )
                         .iter()
                         .enumerate()
                         .filter(|(_, e)| e.is_directory)
@@ -709,11 +757,11 @@ mod tests {
             .to_str()
             .unwrap_or_else(|| panic!("seed VFS image path is not UTF-8: {}", path.display()));
 
-        if ewf::is_ewf(path_str).unwrap_or(false) {
+        if detector_matches(path_str, "EWF", ewf::is_ewf(path_str)) {
             let vfs = ewf::vfs::EwfVfs::open(path_str)
                 .unwrap_or_else(|err| panic!("failed to open seed EWF image {path_str}: {err:?}"));
             assert_seed_vfs_lists_and_reads(&vfs, path_str);
-        } else if raw::is_raw(path_str).unwrap_or(false) {
+        } else if detector_matches(path_str, "raw", raw::is_raw(path_str)) {
             let vfs = raw::vfs::RawVfs::open_with_physical_fallback(path_str)
                 .unwrap_or_else(|err| panic!("failed to open seed raw image {path_str}: {err:?}"));
             assert_seed_vfs_lists_and_reads(&vfs, path_str);

@@ -21,7 +21,7 @@ use std::io::ErrorKind;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use tracing::debug;
+use tracing::{debug, warn};
 use zip::ZipArchive;
 
 use super::types::ArchiveFormat;
@@ -35,6 +35,19 @@ fn add_extracted_bytes(total: u64, bytes: u64, path: &str) -> Result<u64, String
             bytes, path, total
         )
     })
+}
+
+fn remove_partial_extraction_output(path: &Path, context: &str) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => warn!(
+            "Failed to remove partial archive extraction output after {} ({}): {}",
+            context,
+            path.display(),
+            error
+        ),
+    }
 }
 
 fn archive_entry_output_path(
@@ -173,7 +186,7 @@ pub fn extract_zip(archive_path: &str, output_dir: &str) -> Result<ExtractResult
                             debug!(path = %dest_path.display(), bytes = bytes_written, "Extracted file");
                         }
                         Err(error) => {
-                            let _ = fs::remove_file(&dest_path);
+                            remove_partial_extraction_output(&dest_path, "byte count overflow");
                             result.failed_files.push(ExtractError {
                                 path: entry.name().to_string(),
                                 error,
@@ -320,7 +333,10 @@ where
             }) {
                 Ok(bytes_for_file) => {
                     if let Some(error) = progress_error {
-                        let _ = fs::remove_file(&dest_path);
+                        remove_partial_extraction_output(
+                            &dest_path,
+                            "progress byte count overflow",
+                        );
                         result.failed_files.push(ExtractError {
                             path: entry.name().to_string(),
                             error,
@@ -335,7 +351,7 @@ where
                             debug!(path = %dest_path.display(), bytes = bytes_for_file, "Extracted file");
                         }
                         Err(error) => {
-                            let _ = fs::remove_file(&dest_path);
+                            remove_partial_extraction_output(&dest_path, "byte count overflow");
                             result.failed_files.push(ExtractError {
                                 path: entry.name().to_string(),
                                 error,
@@ -495,7 +511,7 @@ where
     })();
 
     if copy_result.is_err() && created_output {
-        let _ = fs::remove_file(dest_path);
+        remove_partial_extraction_output(dest_path, "failed copy");
     }
 
     copy_result
@@ -537,16 +553,22 @@ pub fn extract_zip_entry(
 
     // Find the entry index first (without holding a mutable borrow)
     let entry_index = (0..archive.len())
-        .find(|&i| {
-            archive
-                .by_index(i)
-                .map(|e| {
-                    let name = e.name();
-                    name == normalized_entry
-                        || name == with_slash
-                        || name.trim_end_matches('/') == normalized_entry
-                })
-                .unwrap_or(false)
+        .find(|&i| match archive.by_index(i) {
+            Ok(e) => {
+                let name = e.name();
+                name == normalized_entry
+                    || name == with_slash
+                    || name.trim_end_matches('/') == normalized_entry
+            }
+            Err(err) => {
+                debug!(
+                    archive_path = %archive_path,
+                    index = i,
+                    error = %err,
+                    "Failed to inspect ZIP entry while locating extraction target"
+                );
+                false
+            }
         })
         .ok_or_else(|| format!("Entry not found in archive: {}", entry_path))?;
 
@@ -1139,6 +1161,16 @@ mod tests {
         let err = add_extracted_bytes(committed_bytes, 64, "entry.bin").unwrap_err();
 
         assert!(err.contains("entry.bin"), "unexpected: {}", err);
+    }
+
+    #[test]
+    fn remove_partial_extraction_output_removes_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        remove_partial_extraction_output(&path, "test");
+
+        assert!(!path.exists());
     }
 
     #[test]

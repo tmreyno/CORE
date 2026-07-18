@@ -10,6 +10,7 @@
 //! archives, forensic images within archives, etc.). Uses temp directory caching
 //! to avoid repeated extraction of the same nested container.
 
+use std::fmt::Display;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -20,6 +21,62 @@ use crate::archive;
 use crate::common::sanitize_filename;
 use crate::common::vfs::VirtualFileSystem;
 use crate::{ad1, ewf, raw, ufed};
+
+fn remove_nested_temp_path(path: &Path, context: &str) {
+    let result = if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+
+    match result {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => warn!(
+            "Failed to remove nested container temp path after {} ({}): {}",
+            context,
+            path.display(),
+            error
+        ),
+    }
+}
+
+fn detector_matches<E>(path: &str, format: &str, result: Result<bool, E>) -> bool
+where
+    E: Display,
+{
+    match result {
+        Ok(matches) => matches,
+        Err(err) => {
+            debug!(
+                path = %path,
+                format = %format,
+                error = %err,
+                "Nested container parent detector failed; treating as no match"
+            );
+            false
+        }
+    }
+}
+
+fn format_nested_unix_timestamp(
+    timestamp: i64,
+    source_type: &str,
+    entry_path: &str,
+) -> Option<String> {
+    match chrono::DateTime::from_timestamp(timestamp, 0) {
+        Some(datetime) => Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string()),
+        None => {
+            warn!(
+                source_type,
+                entry_path,
+                timestamp,
+                "Nested container entry has an out-of-range modification timestamp"
+            );
+            None
+        }
+    }
+}
 
 /// Nested container entry information
 /// Unified type that works for any nested container type (archive, AD1, forensic image)
@@ -350,7 +407,7 @@ fn copy_chunked_to_file(
     })();
 
     if copy_result.is_err() {
-        let _ = std::fs::remove_file(output_path);
+        remove_nested_temp_path(output_path, "failed extraction");
     }
 
     copy_result
@@ -527,10 +584,10 @@ pub(crate) fn get_or_create_nested_temp(
 
     // Extract the nested container based on parent container type
     // First check by file format (more reliable than extension alone)
-    let is_ewf = ewf::is_ewf(parent_path).unwrap_or(false);
-    let is_l01 = ewf::is_l01_file(parent_path).unwrap_or(false);
-    let is_raw = raw::is_raw(parent_path).unwrap_or(false);
-    let is_ad1 = ad1::is_ad1(parent_path).unwrap_or(false);
+    let is_ewf = detector_matches(parent_path, "EWF", ewf::is_ewf(parent_path));
+    let is_l01 = detector_matches(parent_path, "L01", ewf::is_l01_file(parent_path));
+    let is_raw = detector_matches(parent_path, "raw", raw::is_raw(parent_path));
+    let is_ad1 = detector_matches(parent_path, "AD1", ad1::is_ad1(parent_path));
     let is_ufed = ufed::is_ufed(parent_path);
 
     let parent_ext = std::path::Path::new(parent_path)
@@ -611,11 +668,7 @@ pub(crate) fn get_or_create_nested_temp(
                 if let Some(old_path) = cache.remove(key) {
                     // Best-effort cleanup of evicted temp files
                     let p = std::path::Path::new(&old_path);
-                    if p.is_dir() {
-                        let _ = std::fs::remove_dir_all(p);
-                    } else {
-                        let _ = std::fs::remove_file(p);
-                    }
+                    remove_nested_temp_path(p, "cache eviction");
                 }
             }
             info!(
@@ -906,10 +959,10 @@ pub async fn nested_container_get_tree(
                         size: entry.size,
                         hash: entry.md5_hash.clone().or(entry.sha1_hash.clone()),
                         modified: if entry.modification_time != 0 {
-                            Some(
-                                chrono::DateTime::from_timestamp(entry.modification_time, 0)
-                                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                                    .unwrap_or_default(),
+                            format_nested_unix_timestamp(
+                                entry.modification_time,
+                                "l01",
+                                &entry.path,
                             )
                         } else {
                             None
@@ -932,10 +985,8 @@ pub async fn nested_container_get_tree(
                             is_dir: e.is_dir,
                             size: e.size,
                             hash: None,
-                            modified: e.mtime.map(|t| {
-                                chrono::DateTime::from_timestamp(t, 0)
-                                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                                    .unwrap_or_default()
+                            modified: e.mtime.and_then(|timestamp| {
+                                format_nested_unix_timestamp(timestamp, &nested_type, &e.path)
                             }),
                             source_type: nested_type.clone(),
                             is_nested_container: is_container_filename(&e.name),
@@ -1038,9 +1089,7 @@ pub async fn nested_container_clear_cache() -> Result<usize, String> {
 
         // Delete temp files
         for (_key, path) in cache.iter() {
-            if let Err(e) = std::fs::remove_file(path) {
-                warn!("Failed to remove temp file {}: {}", path, e);
-            }
+            remove_nested_temp_path(Path::new(path), "cache clear");
         }
 
         cache.clear();
@@ -1058,6 +1107,44 @@ mod tests {
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
+
+    #[test]
+    fn remove_nested_temp_path_removes_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        remove_nested_temp_path(&path, "test");
+
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn remove_nested_temp_path_removes_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("nested-cache");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("entry.bin"), b"nested").unwrap();
+
+        remove_nested_temp_path(&path, "test");
+
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn format_nested_unix_timestamp_formats_valid_timestamp() {
+        assert_eq!(
+            format_nested_unix_timestamp(0, "test", "entry.bin"),
+            Some("1970-01-01 00:00:00".to_string())
+        );
+    }
+
+    #[test]
+    fn format_nested_unix_timestamp_rejects_out_of_range_timestamp() {
+        assert_eq!(
+            format_nested_unix_timestamp(i64::MAX, "test", "entry.bin"),
+            None
+        );
+    }
 
     struct MockVfs {
         data: Vec<u8>,

@@ -140,9 +140,9 @@ jobs:
           # Check if pre-built libarchive exists
           if [ -f "patches/libarchive2-sys/prebuilt/macos-universal/libarchive.a" ]; then
             echo "✅ Pre-built libarchive.a found — skipping brew install libarchive"
-            brew install libb2 pkg-config cmake
+            brew install libb2 pkg-config cmake autoconf automake libtool
           else
-            brew install libarchive libb2 pkg-config cmake
+            brew install libarchive libb2 pkg-config cmake autoconf automake libtool
             # Make libarchive visible to pkg-config (Homebrew keg-only)
             echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
             # Make sure linker can find libarchive
@@ -159,8 +159,10 @@ jobs:
             echo "✅ Using pre-built libewf.a ($(ls -lh "$PREBUILT" | awk '{print $5}'))"
           else
             echo "ℹ️  No pre-built libewf — building from source..."
-            curl -sL "https://github.com/libyal/libewf/releases/download/20240506/libewf-experimental-20240506.tar.gz" | tar xzf -
-            cd libewf-20240506
+            git clone --depth 1 --branch main https://github.com/libyal/libewf.git libewf-head
+            cd libewf-head
+            ./synclibs.sh
+            ./autogen.sh
 
             ./configure \
               --prefix=/tmp/libewf-install \

@@ -62,10 +62,7 @@ fn parse_datetime_string(s: &str) -> Result<DateTime<Utc>, String> {
 
     // 6-7. Date only (zero-padded and non-padded)
     if let Ok(nd) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Ok(nd
-            .and_hms_opt(0, 0, 0)
-            .expect("midnight is valid")
-            .and_utc());
+        return date_at_midnight_utc(nd, s);
     }
 
     // 8-9. US-style date / datetime (common in some forensic tools)
@@ -73,16 +70,24 @@ fn parse_datetime_string(s: &str) -> Result<DateTime<Utc>, String> {
         return Ok(ndt.and_utc());
     }
     if let Ok(nd) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
-        return Ok(nd
-            .and_hms_opt(0, 0, 0)
-            .expect("midnight is valid")
-            .and_utc());
+        return date_at_midnight_utc(nd, s);
     }
 
     Err(format!(
         "Invalid datetime '{}': no recognized format matched",
         s
     ))
+}
+
+fn date_at_midnight_utc(nd: NaiveDate, source: &str) -> Result<DateTime<Utc>, String> {
+    nd.and_hms_opt(0, 0, 0)
+        .map(|datetime| datetime.and_utc())
+        .ok_or_else(|| {
+            format!(
+                "Invalid datetime '{}': could not construct midnight",
+                source
+            )
+        })
 }
 
 /// Flexible datetime deserializer that handles ISO strings and forensic date formats

@@ -9,6 +9,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 
 use blake2::Blake2b512;
 use blake3::Hasher as Blake3Hasher;
@@ -38,7 +39,7 @@ pub fn info(path: &str) -> Result<EwfInfo, ContainerError> {
     debug!("Getting EWF info");
     let handle = EwfHandle::open(path)?;
     let volume = handle.get_volume_info();
-    let total_size = volume.sector_count * volume.bytes_per_sector as u64;
+    let total_size = checked_volume_media_size(volume)?;
 
     debug!(
         total_size,
@@ -48,7 +49,7 @@ pub fn info(path: &str) -> Result<EwfInfo, ContainerError> {
     );
 
     // Get segment file names
-    let segment_count = handle.file_pool.get_file_count() as u32;
+    let segment_count = u32::try_from(handle.file_pool.get_file_count()).unwrap_or(u32::MAX);
     let segment_files = if segment_count > 1 {
         let paths = discover_e01_segments(path).unwrap_or_default();
         let names: Vec<String> = paths
@@ -135,7 +136,7 @@ pub fn info(path: &str) -> Result<EwfInfo, ContainerError> {
     Ok(EwfInfo {
         format_version: "EWF1".to_string(),
         segment_count,
-        chunk_count: handle.get_chunk_count() as u32,
+        chunk_count: u32::try_from(handle.get_chunk_count()).unwrap_or(u32::MAX),
         sector_count: volume.sector_count,
         bytes_per_sector: volume.bytes_per_sector,
         sectors_per_chunk: volume.sectors_per_chunk,
@@ -224,7 +225,7 @@ pub fn get_stats(path: &str) -> Result<super::types::EwfStats, ContainerError> {
     let volume = handle.get_volume_info();
 
     // Calculate total uncompressed size
-    let total_size = volume.sector_count * volume.bytes_per_sector as u64;
+    let total_size = checked_volume_media_size(volume)?;
 
     // Calculate total compressed size from all segments
     let compressed_size: u64 = handle.segments.iter().map(|s| s.file_size).sum();
@@ -250,8 +251,8 @@ pub fn get_stats(path: &str) -> Result<super::types::EwfStats, ContainerError> {
     let format_variant = detect_ewf_variant(path)?;
 
     Ok(super::types::EwfStats {
-        total_chunks: handle.get_chunk_count() as u64,
-        total_segments: handle.file_pool.get_file_count() as u32,
+        total_chunks: saturating_usize_to_u64(handle.get_chunk_count()),
+        total_segments: u32::try_from(handle.file_pool.get_file_count()).unwrap_or(u32::MAX),
         total_size,
         compressed_size,
         compression_ratio,
@@ -442,23 +443,22 @@ where
     let output_path = Path::new(output_dir).join(format!("{}.raw", stem));
     let mut output = File::create(&output_path)?;
 
-    let total_bytes = volume.sector_count * volume.bytes_per_sector as u64;
+    let total_bytes = checked_volume_media_size(volume)?;
     let mut bytes_written = 0u64;
     let mut last_report = 0u64;
-    let report_interval = total_bytes / 100; // Report every 1%
+    let report_interval = (total_bytes / 100).max(1); // Report every 1%
 
     for i in 0..chunk_count {
         let chunk_data = handle.read_chunk_no_cache(i)?;
 
-        let bytes_to_write = if bytes_written + chunk_data.len() as u64 > total_bytes {
-            (total_bytes - bytes_written) as usize
-        } else {
-            chunk_data.len()
-        };
+        let remaining = total_bytes.saturating_sub(bytes_written);
+        let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
+        let bytes_to_write = chunk_data.len().min(remaining);
 
         output.write_all(&chunk_data[..bytes_to_write])?;
 
-        bytes_written += bytes_to_write as u64;
+        bytes_written =
+            checked_volume_byte_add(bytes_written, bytes_to_write, "extracted byte count")?;
 
         // Report progress at intervals
         if bytes_written - last_report >= report_interval || bytes_written >= total_bytes {
@@ -509,7 +509,6 @@ where
     F: FnMut(u64, u64),
 {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::mpsc;
     use std::sync::Arc;
     use std::thread;
 
@@ -521,10 +520,10 @@ where
         let handle = EwfHandle::open(path)?;
         let cc = handle.get_chunk_count();
         let volume = handle.get_volume_info();
-        let cs = (volume.sectors_per_chunk as usize) * (volume.bytes_per_sector as usize);
+        let cs = checked_volume_chunk_size(volume)?;
         // Total media size — hash must cover exactly this many bytes.
         // Without truncation, the last chunk's padding produces a wrong hash.
-        let tb = volume.sector_count * volume.bytes_per_sector as u64;
+        let tb = checked_volume_media_size(volume)?;
         (cc, cs, tb)
     };
 
@@ -556,13 +555,13 @@ where
         let mut handle = match EwfHandle::open(&path_str) {
             Ok(h) => h,
             Err(e) => {
-                let _ = tx.send(Err(e));
+                send_ewf_worker_error(&tx, e, "hash I/O");
                 return;
             }
         };
 
         for batch_start in (0..chunk_count).step_by(batch_size) {
-            let batch_end = (batch_start + batch_size).min(chunk_count);
+            let batch_end = batch_start.saturating_add(batch_size).min(chunk_count);
             let actual_batch_size = batch_end - batch_start;
 
             // Read chunks sequentially (minimizes seeks within segment)
@@ -578,7 +577,7 @@ where
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(e));
+                    send_ewf_worker_error(&tx, e, "hash I/O");
                     return;
                 }
             }
@@ -645,7 +644,10 @@ where
     // Process batches as they arrive
     while let Ok(batch_result) = rx.recv() {
         let processed = chunks_processed.load(Ordering::Relaxed);
-        progress_callback(processed as u64, chunk_count as u64);
+        progress_callback(
+            saturating_usize_to_u64(processed),
+            saturating_usize_to_u64(chunk_count),
+        );
 
         match batch_result {
             Ok(batch_chunks) => {
@@ -656,15 +658,24 @@ where
                     let mut combined = Vec::new();
                     for chunk in &batch_chunks {
                         if total_data_bytes > 0 {
-                            let remaining = total_data_bytes.saturating_sub(bytes_hashed) as usize;
+                            let remaining = total_data_bytes.saturating_sub(bytes_hashed);
+                            let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
                             if remaining == 0 {
                                 break;
                             }
                             let bytes_to_use = chunk.len().min(remaining);
                             combined.extend_from_slice(&chunk[..bytes_to_use]);
-                            bytes_hashed += bytes_to_use as u64;
+                            bytes_hashed = checked_volume_byte_add(
+                                bytes_hashed,
+                                bytes_to_use,
+                                "hashed byte count",
+                            )?;
                         } else {
-                            bytes_hashed += chunk.len() as u64;
+                            bytes_hashed = checked_volume_byte_add(
+                                bytes_hashed,
+                                chunk.len(),
+                                "hashed byte count",
+                            )?;
                             combined.extend_from_slice(chunk);
                         }
                     }
@@ -676,15 +687,24 @@ where
                     for chunk_data in &batch_chunks {
                         // Truncate at media boundary
                         let data_to_hash: &[u8] = if total_data_bytes > 0 {
-                            let remaining = total_data_bytes.saturating_sub(bytes_hashed) as usize;
+                            let remaining = total_data_bytes.saturating_sub(bytes_hashed);
+                            let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
                             if remaining == 0 {
                                 break;
                             }
                             let bytes_to_use = chunk_data.len().min(remaining);
-                            bytes_hashed += bytes_to_use as u64;
+                            bytes_hashed = checked_volume_byte_add(
+                                bytes_hashed,
+                                bytes_to_use,
+                                "hashed byte count",
+                            )?;
                             &chunk_data[..bytes_to_use]
                         } else {
-                            bytes_hashed += chunk_data.len() as u64;
+                            bytes_hashed = checked_volume_byte_add(
+                                bytes_hashed,
+                                chunk_data.len(),
+                                "hashed byte count",
+                            )?;
                             chunk_data
                         };
 
@@ -709,7 +729,7 @@ where
                 }
             }
             Err(e) => {
-                let _ = io_handle.join();
+                join_ewf_worker_after_error(io_handle, "hash I/O");
                 return Err(e);
             }
         }
@@ -720,7 +740,10 @@ where
         .map_err(|_| ContainerError::ParseError("I/O thread panicked".into()))?;
 
     ensure_ewf_media_bytes_hashed(bytes_hashed, total_data_bytes)?;
-    progress_callback(chunk_count as u64, chunk_count as u64);
+    progress_callback(
+        saturating_usize_to_u64(chunk_count),
+        saturating_usize_to_u64(chunk_count),
+    );
 
     // Return hash result
     if let Some(hasher) = md5_hasher {
@@ -756,7 +779,6 @@ fn verify_with_progress_parallel_chunks<F>(
 where
     F: FnMut(u64, u64),
 {
-    use std::sync::mpsc;
     use std::thread;
 
     debug!(path = %path, "Starting parallel chunk verification");
@@ -764,7 +786,7 @@ where
     let handle = EwfHandle::open(path)?;
     let chunk_count = handle.get_chunk_count();
     let volume = handle.get_volume_info();
-    let total_data_bytes = volume.sector_count * volume.bytes_per_sector as u64;
+    let total_data_bytes = checked_volume_media_size(volume)?;
     debug!(chunk_count, total_data_bytes, "EWF chunk count");
 
     // Create hasher based on algorithm
@@ -813,13 +835,13 @@ where
         let mut handles = match handles_result {
             Ok(h) => h,
             Err(e) => {
-                let _ = tx.send(Err(e));
+                send_ewf_worker_error(&tx, e, "decompression");
                 return;
             }
         };
 
         for batch_start in (0..chunk_count).step_by(batch_size) {
-            let batch_end = (batch_start + batch_size).min(chunk_count);
+            let batch_end = batch_start.saturating_add(batch_size).min(chunk_count);
             let batch_chunk_count = batch_end - batch_start;
 
             let thread_results: Vec<ChunkThreadResult> = handles
@@ -829,7 +851,9 @@ where
                     let chunks_for_thread = batch_chunk_count.div_ceil(num_threads);
                     let mut chunks = Vec::with_capacity(chunks_for_thread);
 
-                    for chunk_idx in (batch_start + thread_id..batch_end).step_by(num_threads) {
+                    for chunk_idx in
+                        (batch_start.saturating_add(thread_id)..batch_end).step_by(num_threads)
+                    {
                         match thread_handle.read_chunk_no_cache(chunk_idx) {
                             Ok(chunk_data) => {
                                 chunks.push((chunk_idx, chunk_data));
@@ -849,7 +873,7 @@ where
                 match result {
                     Ok(mut thread_chunks) => indexed_chunks.append(&mut thread_chunks),
                     Err(e) => {
-                        let _ = tx.send(Err(e));
+                        send_ewf_worker_error(&tx, e, "decompression");
                         return;
                     }
                 }
@@ -911,22 +935,34 @@ where
 
     while let Ok(batch_result) = rx.recv() {
         let decompressed = decompressed_chunks.load(std::sync::atomic::Ordering::Relaxed);
-        progress_callback(decompressed as u64, chunk_count as u64);
+        progress_callback(
+            saturating_usize_to_u64(decompressed),
+            saturating_usize_to_u64(chunk_count),
+        );
 
         match batch_result {
             Ok((batch_start, batch_chunks)) => {
                 for (relative_idx, chunk_data) in batch_chunks.iter().enumerate() {
-                    let _chunk_idx = batch_start + relative_idx;
+                    let _chunk_idx = batch_start.saturating_add(relative_idx);
                     let data_to_hash: &[u8] = if total_data_bytes > 0 {
-                        let remaining = total_data_bytes.saturating_sub(bytes_hashed) as usize;
+                        let remaining = total_data_bytes.saturating_sub(bytes_hashed);
+                        let remaining = usize::try_from(remaining).unwrap_or(usize::MAX);
                         if remaining == 0 {
                             break;
                         }
                         let bytes_to_use = chunk_data.len().min(remaining);
-                        bytes_hashed += bytes_to_use as u64;
+                        bytes_hashed = checked_volume_byte_add(
+                            bytes_hashed,
+                            bytes_to_use,
+                            "hashed byte count",
+                        )?;
                         &chunk_data[..bytes_to_use]
                     } else {
-                        bytes_hashed += chunk_data.len() as u64;
+                        bytes_hashed = checked_volume_byte_add(
+                            bytes_hashed,
+                            chunk_data.len(),
+                            "hashed byte count",
+                        )?;
                         chunk_data
                     };
 
@@ -952,7 +988,7 @@ where
                 }
             }
             Err(e) => {
-                let _ = decompression_handle.join();
+                join_ewf_worker_after_error(decompression_handle, "decompression");
                 return Err(e);
             }
         }
@@ -963,7 +999,10 @@ where
         .map_err(|_| ContainerError::ParseError("Decompression thread panicked".into()))?;
 
     ensure_ewf_media_bytes_hashed(bytes_hashed, total_data_bytes)?;
-    progress_callback(chunk_count as u64, chunk_count as u64);
+    progress_callback(
+        saturating_usize_to_u64(chunk_count),
+        saturating_usize_to_u64(chunk_count),
+    );
 
     // Return hash result
     if let Some(hasher) = md5_hasher {
@@ -1003,6 +1042,25 @@ fn ensure_ewf_media_bytes_hashed(
         )));
     }
     Ok(())
+}
+
+fn send_ewf_worker_error<T>(
+    tx: &mpsc::SyncSender<Result<T, ContainerError>>,
+    error: ContainerError,
+    worker: &'static str,
+) {
+    if tx.send(Err(error)).is_err() {
+        debug!(
+            worker,
+            "EWF worker result receiver closed before error could be delivered"
+        );
+    }
+}
+
+fn join_ewf_worker_after_error<T>(handle: std::thread::JoinHandle<T>, worker: &'static str) {
+    if handle.join().is_err() {
+        debug!(worker, "EWF worker panicked while propagating error");
+    }
 }
 
 // =============================================================================
@@ -1073,6 +1131,42 @@ mod tests {
             "unexpected error: {}",
             err
         );
+    }
+
+    #[test]
+    fn send_ewf_worker_error_delivers_error_when_receiver_open() {
+        let (tx, rx) = mpsc::sync_channel::<Result<Vec<u8>, ContainerError>>(1);
+
+        send_ewf_worker_error(
+            &tx,
+            ContainerError::IoError("worker failed".to_string()),
+            "test",
+        );
+
+        let err = rx
+            .recv()
+            .expect("worker result should be sent")
+            .unwrap_err();
+        assert!(err.to_string().contains("worker failed"));
+    }
+
+    #[test]
+    fn send_ewf_worker_error_tolerates_closed_receiver() {
+        let (tx, rx) = mpsc::sync_channel::<Result<Vec<u8>, ContainerError>>(1);
+        drop(rx);
+
+        send_ewf_worker_error(
+            &tx,
+            ContainerError::IoError("worker failed".to_string()),
+            "test",
+        );
+    }
+
+    #[test]
+    fn join_ewf_worker_after_error_tolerates_worker_panic() {
+        let handle = std::thread::spawn(|| panic!("worker panic after error"));
+
+        join_ewf_worker_after_error(handle, "test");
     }
 
     #[test]

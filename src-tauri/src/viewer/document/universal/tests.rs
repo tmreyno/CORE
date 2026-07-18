@@ -415,9 +415,8 @@ fn test_magic_new_variants() {
 fn test_rtf_magic_detection() {
     // RTF files start with {\rtf — should NOT be detected as JSON
     use std::io::Write;
-    let dir = std::env::temp_dir().join("test_rtf_magic");
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join("test.dat"); // no .rtf extension to force magic detection
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("test.dat"); // no .rtf extension to force magic detection
     let mut file = std::fs::File::create(&path).unwrap();
     file.write_all(br"{\rtf1\ansi Hello World}").unwrap();
     drop(file);
@@ -428,9 +427,6 @@ fn test_rtf_magic_detection() {
         Some(UniversalFormat::Rtf),
         "RTF should be detected by magic bytes, not as JSON"
     );
-
-    let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_dir(&dir);
 }
 
 #[test]

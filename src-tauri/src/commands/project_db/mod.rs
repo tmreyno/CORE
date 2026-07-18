@@ -130,11 +130,6 @@ fn project_db_open_blocking(label: String, cffx_path: String) -> Result<String, 
     let db_path_str = db_path.to_string_lossy().to_string();
     info!(window = %label, "Project DB opened: {} (new: {})", db_path_str, is_new);
 
-    // Start project-scoped audit logging alongside the project files
-    if let Some(project_dir) = db_path.parent() {
-        crate::logging::set_project_log_dir(project_dir);
-    }
-
     // Store keyed by the calling window's label
     let old_db = {
         let mut guard = PROJECT_DBS.lock();
@@ -158,6 +153,12 @@ fn project_db_open_blocking(label: String, cffx_path: String) -> Result<String, 
                 );
             }
         }
+    }
+
+    // Start project-scoped audit logging alongside the new project files after
+    // any previous project DB has been checkpointed under its own audit log.
+    if let Some(project_dir) = db_path.parent() {
+        crate::logging::set_project_log_dir(project_dir);
     }
 
     Ok(db_path_str)
@@ -298,8 +299,18 @@ fn repair_existing_project_db_paths(
             Ok(repaired)
         }
         Err(err) => {
-            let _ = conn.execute_batch("ROLLBACK");
+            rollback_project_db_transaction(&conn, "existing project DB path repair");
             Err(err)
+        }
+    }
+}
+
+fn rollback_project_db_transaction(conn: &rusqlite::Connection, context: &str) -> bool {
+    match conn.execute_batch("ROLLBACK") {
+        Ok(()) => true,
+        Err(error) => {
+            warn!("Failed to rollback {context}: {error}");
+            false
         }
     }
 }
@@ -329,6 +340,21 @@ mod tests {
     use super::*;
     use crate::project::{CachedDiscoveredFile, EvidenceCache, FFXProject};
     use crate::project_db::{DbEvidenceFile, DbProjectHash};
+
+    #[test]
+    fn rollback_project_db_transaction_reports_clean_rollback() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+        assert!(rollback_project_db_transaction(&conn, "test rollback"));
+    }
+
+    #[test]
+    fn rollback_project_db_transaction_reports_failure() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+
+        assert!(!rollback_project_db_transaction(&conn, "test rollback"));
+    }
 
     #[test]
     fn db_migration_project_loader_resolves_relative_evidence_paths() {

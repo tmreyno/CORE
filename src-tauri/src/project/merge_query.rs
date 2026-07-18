@@ -16,14 +16,20 @@ pub(super) fn count_ffxdb_table(conn: &rusqlite::Connection, table: &str) -> usi
         return 0;
     }
 
-    let table_exists = conn
+    let table_exists = match conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
             [table],
             |row| row.get::<_, i64>(0),
         )
         .map(|count| count > 0)
-        .unwrap_or(false);
+    {
+        Ok(exists) => exists,
+        Err(error) => {
+            warn!("merge: table existence check for {table} failed: {error}");
+            return 0;
+        }
+    };
 
     if !table_exists {
         return 0;

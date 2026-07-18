@@ -148,10 +148,9 @@ impl Seek for MultiFileReader {
                     self.current_index = i;
                 }
                 let pos_in_file = new_pos - cumulative;
-                self.current_file
-                    .as_mut()
-                    .expect("current_file set when entering this branch")
-                    .seek(SeekFrom::Start(pos_in_file))?;
+                if let Some(file) = self.current_file.as_mut() {
+                    file.seek(SeekFrom::Start(pos_in_file))?;
+                }
                 self.current_pos_in_file = pos_in_file;
                 self.total_pos = new_pos;
                 return Ok(new_pos);
@@ -163,10 +162,9 @@ impl Seek for MultiFileReader {
         if let Some((path, _)) = self.files.last() {
             self.current_index = self.files.len() - 1;
             self.current_file = Some(BufReader::new(File::open(path)?));
-            self.current_file
-                .as_mut()
-                .expect("just assigned current_file above")
-                .seek(SeekFrom::End(0))?;
+            if let Some(file) = self.current_file.as_mut() {
+                file.seek(SeekFrom::End(0))?;
+            }
         }
         self.total_pos = self.total_size;
         Ok(self.total_size)
@@ -421,6 +419,18 @@ pub struct SevenZipMetadata {
     pub encrypted: bool,
 }
 
+fn read_header_u32(header: &[u8; 32], start: usize) -> u32 {
+    let mut bytes = [0u8; 4];
+    bytes.copy_from_slice(&header[start..start + 4]);
+    u32::from_le_bytes(bytes)
+}
+
+fn read_header_u64(header: &[u8; 32], start: usize) -> u64 {
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&header[start..start + 8]);
+    u64::from_le_bytes(bytes)
+}
+
 /// Parse 7-Zip Start Header and Next Header metadata
 ///
 /// Returns metadata structure with header offsets, version, CRC validation, and encryption status.
@@ -443,23 +453,19 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
 
     // Parse Start Header CRC (4 bytes at offset 8)
     // This CRC covers bytes 0x0C to 0x1F (20 bytes: next header offset, size, and CRC)
-    let stored_start_crc =
-        u32::from_le_bytes(header[8..12].try_into().expect("4-byte slice for u32"));
+    let stored_start_crc = read_header_u32(&header, 8);
     let computed_start_crc = crc32(&header[12..32]);
     let start_header_crc_valid = Some(stored_start_crc == computed_start_crc);
 
     // Parse Next Header Offset (8 bytes at offset 0x0C)
     // This is relative to byte 0x20 (end of signature header)
-    let next_offset_relative =
-        u64::from_le_bytes(header[12..20].try_into().expect("8-byte slice for u64"));
+    let next_offset_relative = read_header_u64(&header, 12);
 
     // Parse Next Header Size (8 bytes at offset 0x14)
-    let next_size = u64::from_le_bytes(header[20..28].try_into().expect("8-byte slice for u64"));
+    let next_size = read_header_u64(&header, 20);
 
     // Parse Next Header CRC (4 bytes at offset 0x1C)
-    let next_header_crc = Some(u32::from_le_bytes(
-        header[28..32].try_into().expect("4-byte slice for u32"),
-    ));
+    let next_header_crc = Some(read_header_u32(&header, 28));
 
     // Calculate absolute offset: 0x20 (32) + relative offset
     let absolute_offset = checked_next_header_offset(next_offset_relative);
@@ -477,7 +483,18 @@ pub fn parse_metadata(path: &str) -> Result<SevenZipMetadata, ContainerError> {
                         "7z has EncodedHeader - metadata may be encrypted"
                     );
                     // Try to detect AES in the encoded header stream info
-                    encrypted = detect_encryption(&mut file, absolute_offset).unwrap_or(false);
+                    encrypted = match detect_encryption(&mut file, absolute_offset) {
+                        Ok(encrypted) => encrypted,
+                        Err(err) => {
+                            debug!(
+                                path = %path,
+                                next_header_offset = absolute_offset,
+                                error = %err,
+                                "Failed to inspect 7z encoded header encryption metadata"
+                            );
+                            false
+                        }
+                    };
                 }
             }
         }
@@ -514,7 +531,9 @@ fn detect_encryption(file: &mut File, next_header_offset: u64) -> Result<bool, C
 
     // Read first chunk of encoded header to look for AES codec markers
     let mut buf = [0u8; 256];
-    let bytes_read = file.read(&mut buf).unwrap_or(0);
+    let bytes_read = file
+        .read(&mut buf)
+        .map_err(|e| format!("Failed to read encoded 7z header: {e}"))?;
 
     if bytes_read == 0 {
         return Ok(false);
@@ -653,6 +672,16 @@ mod tests {
     #[test]
     fn test_checked_next_header_offset_valid() {
         assert_eq!(checked_next_header_offset(0), Some(32));
+    }
+
+    #[test]
+    fn test_read_header_little_endian_fields() {
+        let mut header = [0u8; 32];
+        header[8..12].copy_from_slice(&0xAABBCCDDu32.to_le_bytes());
+        header[12..20].copy_from_slice(&0x0102_0304_0506_0708u64.to_le_bytes());
+
+        assert_eq!(read_header_u32(&header, 8), 0xAABBCCDD);
+        assert_eq!(read_header_u64(&header, 12), 0x0102_0304_0506_0708);
     }
 
     #[test]

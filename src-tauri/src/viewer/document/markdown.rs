@@ -13,6 +13,7 @@ use std::path::Path;
 use super::error::{DocumentError, DocumentResult};
 use super::types::*;
 use super::DocumentFormat;
+#[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
 use crate::report::ForensicReport;
 
 const MAX_MARKDOWN_SOURCE_BYTES: u64 = 50 * 1024 * 1024;
@@ -367,6 +368,7 @@ impl MarkdownDocument {
     // =========================================================================
 
     /// Write a forensic report to Markdown
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     pub fn write_report(
         &self,
         report: &ForensicReport,
@@ -378,6 +380,7 @@ impl MarkdownDocument {
     }
 
     /// Render report to Markdown string
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     pub fn render_report(&self, report: &ForensicReport) -> String {
         let mut md = String::new();
 
@@ -578,6 +581,7 @@ impl MarkdownDocument {
     }
 
     /// Escape YAML special characters
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     fn escape_yaml(s: &str) -> String {
         s.replace('"', "\\\"")
     }

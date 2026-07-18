@@ -64,7 +64,9 @@ static UFED_DETECTOR: OnceLock<Box<UfedDetector>> = OnceLock::new();
 /// Register a UFED-in-ZIP detector function.
 /// Called by the host app shim to inject the real `ufed::detect_in_zip`.
 pub fn register_ufed_detector(detector: Box<UfedDetector>) {
-    let _ = UFED_DETECTOR.set(detector);
+    if UFED_DETECTOR.set(detector).is_err() {
+        debug!("UFED detector bridge already registered; keeping existing detector");
+    }
 }
 
 /// Detect UFED content in a ZIP archive using the registered detector.
@@ -406,7 +408,14 @@ pub fn info(path: &str) -> Result<ArchiveInfo, ContainerError> {
     let (entry_count, central_dir_offset, central_dir_size, mut encrypted_headers, aes_encrypted) =
         match format {
             ArchiveFormat::Zip | ArchiveFormat::Zip64 => {
-                let meta = zip::parse_metadata(path).unwrap_or_default();
+                let meta = zip::parse_metadata(path).unwrap_or_else(|err| {
+                    debug!(
+                        path = %path,
+                        error = %err,
+                        "Failed to parse ZIP metadata; using archive info defaults"
+                    );
+                    zip::ZipMetadata::default()
+                });
                 (
                     meta.entry_count,
                     meta.central_dir_offset,
@@ -427,7 +436,14 @@ pub fn info(path: &str) -> Result<ArchiveInfo, ContainerError> {
         sevenz_encrypted,
     ) = match format {
         ArchiveFormat::SevenZip => {
-            let meta = sevenz::parse_metadata(path).unwrap_or_default();
+            let meta = sevenz::parse_metadata(path).unwrap_or_else(|err| {
+                debug!(
+                    path = %path,
+                    error = %err,
+                    "Failed to parse 7z metadata; using archive info defaults"
+                );
+                sevenz::SevenZipMetadata::default()
+            });
             (
                 meta.next_header_offset,
                 meta.next_header_size,
@@ -942,15 +958,22 @@ fn read_zip_entry_native(archive_path: &str, entry_path: &str) -> Result<Vec<u8>
     let with_slash = format!("{}/", entry_path);
 
     let entry_index = (0..archive.len())
-        .find(|&i| {
-            archive
-                .by_index(i)
-                .map(|e: ::zip::read::ZipFile| {
-                    let name = e.name().replace('\\', "/");
-                    let name = name.trim_start_matches('/').trim_end_matches('/');
-                    name == entry_path || e.name() == with_slash
-                })
-                .unwrap_or(false)
+        .find(|&i| match archive.by_index(i) {
+            Ok(e) => {
+                let name = e.name().replace('\\', "/");
+                let name = name.trim_start_matches('/').trim_end_matches('/');
+                name == entry_path || e.name() == with_slash
+            }
+            Err(err) => {
+                debug!(
+                    archive_path = %archive_path,
+                    index = i,
+                    requested_path = %entry_path,
+                    error = %err,
+                    "Failed to inspect ZIP entry while locating native read target"
+                );
+                false
+            }
         })
         .ok_or_else(|| ContainerError::from(format!("Entry not found in ZIP: {}", entry_path)))?;
 
@@ -1077,15 +1100,24 @@ fn read_tar_entry_native(
 fn read_from_tar<R: Read>(reader: R, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
     let mut archive = ::tar::Archive::new(reader);
 
-    for entry_result in archive
+    for (index, entry_result) in archive
         .entries()
         .map_err(|e| format!("Failed to list TAR entries: {}", e))?
+        .enumerate()
     {
         let mut entry = entry_result.map_err(|e| format!("Failed to read TAR entry: {}", e))?;
-        let path = entry
-            .path()
-            .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
+        let path = match entry.path() {
+            Ok(path) => path.to_string_lossy().replace('\\', "/"),
+            Err(err) => {
+                debug!(
+                    index,
+                    requested_path = %entry_path,
+                    error = %err,
+                    "Skipping TAR entry with unreadable path while locating native read target"
+                );
+                continue;
+            }
+        };
         let normalized = path
             .trim_start_matches('/')
             .trim_end_matches('/')

@@ -274,12 +274,6 @@ impl ReportGenerator {
     }
 }
 
-impl Default for ReportGenerator {
-    fn default() -> Self {
-        Self::new().expect("Failed to create default ReportGenerator")
-    }
-}
-
 /// Types of narratives that can be AI-generated
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NarrativeType {

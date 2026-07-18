@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use ffx_errors::ContainerError;
 
@@ -449,19 +449,108 @@ impl ZipIndex {
     /// Get cache file path for a given archive
     pub fn cache_path(archive_path: &str) -> PathBuf {
         let archive_path = Path::new(archive_path);
-        let cache_dir = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("core-ffx")
-            .join("zip-index");
-
-        // Create cache directory if needed
-        let _ = std::fs::create_dir_all(&cache_dir);
+        let cache_dir = zip_index_cache_dir();
 
         // Generate cache filename from archive path hash
         let hash = blake3::hash(archive_path.to_string_lossy().as_bytes());
         cache_dir.join(format!("{}.zidx", hex::encode(&hash.as_bytes()[..8])))
     }
 
+    /// Get or create index (loads from cache if valid, builds otherwise)
+    pub fn get_or_create(archive_path: &str) -> Result<Self, ContainerError> {
+        // Check in-memory cache first
+        if let Some(cached) = cache_get(archive_path) {
+            if cached.is_valid_for(archive_path) {
+                debug!(path = %archive_path, "Using in-memory cached ZIP index");
+                // Clone from Arc - this is relatively cheap for the index
+                return Ok((*cached).clone());
+            }
+        }
+
+        let cache_path = Self::cache_path(archive_path);
+        let disk_cache_available = match ensure_zip_index_cache_parent(&cache_path) {
+            Ok(()) => true,
+            Err(error) => {
+                warn!(error = %error, "ZIP index disk cache unavailable");
+                false
+            }
+        };
+
+        // Try to load from disk cache
+        if disk_cache_available && cache_path.exists() {
+            if let Ok(index) = Self::load(&cache_path) {
+                if index.is_valid_for(archive_path) {
+                    debug!(path = %archive_path, "Using disk-cached ZIP index");
+                    // Store in memory cache
+                    cache_put(archive_path, index.clone());
+                    return Ok(index);
+                }
+            }
+        }
+
+        // Build new index
+        debug!(path = %archive_path, "Building new ZIP index (this may take a moment for large archives)");
+        let index = Self::build(archive_path)?;
+
+        // Save to disk cache (best effort)
+        if disk_cache_available {
+            if let Err(e) = index.save(&cache_path) {
+                debug!(error = %e, "Failed to save ZIP index to cache");
+            }
+        }
+
+        // Store in memory cache
+        cache_put(archive_path, index.clone());
+
+        Ok(index)
+    }
+
+    /// Get root entries (fast - O(1))
+    pub fn get_root_entries(&self) -> &[ZipIndexEntry] {
+        &self.root_entries
+    }
+
+    /// Get children of a directory (fast - O(1))
+    pub fn get_children(&self, path: &str) -> Option<&Vec<ZipIndexEntry>> {
+        let normalized = path.trim_start_matches('/').trim_end_matches('/');
+        self.children.get(normalized)
+    }
+
+    /// Get total entry count
+    pub fn len(&self) -> usize {
+        self.entry_count as usize
+    }
+
+    /// Check if empty
+    pub fn is_empty(&self) -> bool {
+        self.entry_count == 0
+    }
+}
+
+fn zip_index_cache_dir() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("core-ffx")
+        .join("zip-index")
+}
+
+fn ensure_zip_index_cache_parent(cache_path: &Path) -> Result<(), ContainerError> {
+    let parent = cache_path.parent().ok_or_else(|| {
+        ContainerError::IoError(format!(
+            "ZIP index cache path has no parent: {}",
+            cache_path.display()
+        ))
+    })?;
+
+    std::fs::create_dir_all(parent).map_err(|error| {
+        ContainerError::IoError(format!(
+            "Failed to create ZIP index cache directory {}: {error}",
+            parent.display()
+        ))
+    })
+}
+
+impl ZipIndex {
     /// Save index to disk cache
     pub fn save(&self, cache_path: &Path) -> Result<(), ContainerError> {
         let file =
@@ -524,67 +613,6 @@ impl ZipIndex {
         } else {
             false
         }
-    }
-
-    /// Get or create index (loads from cache if valid, builds otherwise)
-    pub fn get_or_create(archive_path: &str) -> Result<Self, ContainerError> {
-        // Check in-memory cache first
-        if let Some(cached) = cache_get(archive_path) {
-            if cached.is_valid_for(archive_path) {
-                debug!(path = %archive_path, "Using in-memory cached ZIP index");
-                // Clone from Arc - this is relatively cheap for the index
-                return Ok((*cached).clone());
-            }
-        }
-
-        let cache_path = Self::cache_path(archive_path);
-
-        // Try to load from disk cache
-        if cache_path.exists() {
-            if let Ok(index) = Self::load(&cache_path) {
-                if index.is_valid_for(archive_path) {
-                    debug!(path = %archive_path, "Using disk-cached ZIP index");
-                    // Store in memory cache
-                    cache_put(archive_path, index.clone());
-                    return Ok(index);
-                }
-            }
-        }
-
-        // Build new index
-        debug!(path = %archive_path, "Building new ZIP index (this may take a moment for large archives)");
-        let index = Self::build(archive_path)?;
-
-        // Save to disk cache (ignore errors)
-        if let Err(e) = index.save(&cache_path) {
-            debug!(error = %e, "Failed to save ZIP index to cache");
-        }
-
-        // Store in memory cache
-        cache_put(archive_path, index.clone());
-
-        Ok(index)
-    }
-
-    /// Get root entries (fast - O(1))
-    pub fn get_root_entries(&self) -> &[ZipIndexEntry] {
-        &self.root_entries
-    }
-
-    /// Get children of a directory (fast - O(1))
-    pub fn get_children(&self, path: &str) -> Option<&Vec<ZipIndexEntry>> {
-        let normalized = path.trim_start_matches('/').trim_end_matches('/');
-        self.children.get(normalized)
-    }
-
-    /// Get total entry count
-    pub fn len(&self) -> usize {
-        self.entry_count as usize
-    }
-
-    /// Check if empty
-    pub fn is_empty(&self) -> bool {
-        self.entry_count == 0
     }
 }
 
@@ -657,6 +685,31 @@ mod tests {
 
         assert_eq!(path1, path2);
         assert_ne!(path1, path3);
+    }
+
+    #[test]
+    fn test_ensure_zip_index_cache_parent_creates_missing_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cache_path = temp.path().join("nested").join("archive.zidx");
+
+        ensure_zip_index_cache_parent(&cache_path).unwrap();
+
+        assert!(cache_path.parent().unwrap().is_dir());
+    }
+
+    #[test]
+    fn test_ensure_zip_index_cache_parent_reports_blocked_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let blocked = temp.path().join("blocked");
+        std::fs::write(&blocked, b"not a directory").unwrap();
+        let cache_path = blocked.join("archive.zidx");
+
+        let error = ensure_zip_index_cache_parent(&cache_path)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("Failed to create ZIP index cache directory"));
+        assert!(error.contains("blocked"));
     }
 
     #[test]

@@ -29,6 +29,18 @@ use crate::rdf::{self, RdfGraph};
 use crate::types::*;
 use crate::uri;
 
+fn remove_partial_aff4_output(path: &std::path::Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => eprintln!(
+            "Failed to remove partial AFF4 output {}: {}",
+            path.display(),
+            error
+        ),
+    }
+}
+
 // ─── AFF4 Writer ─────────────────────────────────────────────────────────────
 
 /// Writer for AFF4-Standard (v1.0) physical disk image containers.
@@ -154,7 +166,7 @@ impl Aff4Writer {
                 if flag.load(Ordering::Relaxed) {
                     // Clean up: drop zip writer to release file handle, delete output
                     drop(zip);
-                    let _ = std::fs::remove_file(&output_path);
+                    remove_partial_aff4_output(&output_path);
                     return Err(Aff4Error::Cancelled);
                 }
             }
@@ -505,6 +517,16 @@ fn build_information_turtle(
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn remove_partial_aff4_output_removes_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        remove_partial_aff4_output(&path);
+
+        assert!(!path.exists());
+    }
 
     #[test]
     fn test_write_physical_small() {

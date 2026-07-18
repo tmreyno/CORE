@@ -11,7 +11,7 @@
 
 use super::database::ProjectDatabase;
 use super::types::{APP_NAME, SCHEMA_VERSION};
-use rusqlite::{params, Result as SqlResult};
+use rusqlite::{params, OptionalExtension, Result as SqlResult};
 use tracing::warn;
 
 impl ProjectDatabase {
@@ -714,7 +714,7 @@ impl ProjectDatabase {
                 [],
                 |row| row.get(0),
             )
-            .ok();
+            .optional()?;
 
         if version.is_none() {
             conn2.execute(

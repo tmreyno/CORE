@@ -118,6 +118,34 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ProjectLogMakeWriter {
     }
 }
 
+fn collect_matching_log_files(
+    log_dir: &Path,
+    log_kind: &str,
+    matches_name: impl Fn(&str) -> bool,
+) -> Result<Vec<PathBuf>, String> {
+    let mut log_files = Vec::new();
+    for entry_result in std::fs::read_dir(log_dir)
+        .map_err(|e| format!("Failed to read {log_kind} directory: {e}"))?
+    {
+        let entry =
+            entry_result.map_err(|e| format!("Failed to read {log_kind} directory entry: {e}"))?;
+        if matches_name(&entry.file_name().to_string_lossy()) {
+            log_files.push(entry.path());
+        }
+    }
+    log_files.sort_by(|a, b| b.cmp(a));
+    Ok(log_files)
+}
+
+fn clear_project_log_state() -> (bool, Option<std::io::Error>) {
+    let mut guard = PROJECT_LOG.lock();
+    let had_writer = guard.writer.is_some();
+    let flush_error = guard.writer.as_mut().and_then(|w| w.flush().err());
+    guard.writer = None;
+    guard.dir = None;
+    (had_writer, flush_error)
+}
+
 /// Start writing project-scoped audit logs to the given project directory.
 ///
 /// Creates a `logs/` subdirectory alongside the project files and opens
@@ -125,8 +153,21 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ProjectLogMakeWriter {
 ///
 /// Log file naming: `ffx-project-audit.YYYY-MM-DD.log`
 pub fn set_project_log_dir(project_dir: &Path) {
+    let (had_previous_writer, flush_error) = clear_project_log_state();
+    if let Some(error) = flush_error {
+        tracing::warn!("Failed to flush previous project audit log before switching: {error}");
+    } else if had_previous_writer {
+        tracing::info!(target: "forensic_audit", "Previous project audit log closed");
+    }
+
     let log_dir = project_dir.join("logs");
-    let _ = std::fs::create_dir_all(&log_dir);
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        tracing::warn!(
+            "Failed to create project audit log directory {}: {e}",
+            log_dir.display()
+        );
+        return;
+    }
 
     // Build daily-stamped filename
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -138,9 +179,11 @@ pub fn set_project_log_dir(project_dir: &Path) {
         .open(&log_file)
     {
         Ok(file) => {
-            let mut guard = PROJECT_LOG.lock();
-            guard.writer = Some(BufWriter::new(file));
-            guard.dir = Some(log_dir);
+            {
+                let mut guard = PROJECT_LOG.lock();
+                guard.writer = Some(BufWriter::new(file));
+                guard.dir = Some(log_dir);
+            }
             tracing::info!(
                 target: "forensic_audit",
                 path = %log_file.display(),
@@ -159,13 +202,13 @@ pub fn set_project_log_dir(project_dir: &Path) {
 /// Stop writing project-scoped audit logs. Flushes and closes the log file.
 /// Called when a project database is closed.
 pub fn clear_project_log() {
-    let mut guard = PROJECT_LOG.lock();
-    if let Some(ref mut w) = guard.writer {
-        let _ = w.flush();
+    let (had_writer, flush_error) = clear_project_log_state();
+    if let Some(error) = flush_error {
+        tracing::warn!("Failed to flush project audit log while closing: {error}");
     }
-    guard.writer = None;
-    guard.dir = None;
-    tracing::info!(target: "forensic_audit", "Project audit log closed");
+    if had_writer {
+        tracing::info!(target: "forensic_audit", "Project audit log closed");
+    }
 }
 
 /// Get the project log directory, if a project log is currently active.
@@ -187,20 +230,9 @@ pub fn read_project_audit_logs(
         return Ok(Vec::new());
     }
 
-    let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
-        .map_err(|e| format!("Failed to read project log directory: {e}"))?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("ffx-project-audit.")
-        })
-        .map(|entry| entry.path())
-        .collect();
-
-    // Sort descending so newest files come first
-    log_files.sort_by(|a, b| b.cmp(a));
+    let log_files = collect_matching_log_files(&log_dir, "project log", |name| {
+        name.starts_with("ffx-project-audit.")
+    })?;
 
     let mut lines = Vec::new();
     for file_path in log_files {
@@ -262,29 +294,45 @@ pub fn init() {
         .compact();
 
     // File layer - daily-rotating JSON audit log (global, always-on)
-    // Best-effort: if we can't determine the log dir, skip file logging
+    // Best-effort: keep startup alive, but make setup failures visible because
+    // tracing is not installed yet and cannot report its own file sink failures.
     let file_layer = audit_log_dir().ok().and_then(|log_dir| {
-        // Ensure the log directory exists
-        let _ = std::fs::create_dir_all(&log_dir);
+        if let Err(error) = std::fs::create_dir_all(&log_dir) {
+            eprintln!(
+                "Failed to create global audit log directory {}: {error}",
+                log_dir.display()
+            );
+            return None;
+        }
 
-        tracing_appender::rolling::RollingFileAppender::builder()
+        match tracing_appender::rolling::RollingFileAppender::builder()
             .rotation(tracing_appender::rolling::Rotation::DAILY)
             .filename_prefix(crate::app_paths::AUDIT_LOG_BASENAME)
             .filename_suffix(crate::app_paths::AUDIT_LOG_SUFFIX)
             .build(&log_dir)
-            .ok()
-            .map(|file_appender| {
+        {
+            Ok(file_appender) => {
                 // File filter: info+ for audit trail (no debug/trace noise in files)
                 let file_filter = EnvFilter::new("ffx_check=info,ffx_check_lib=info");
 
-                fmt::layer()
-                    .with_target(true)
-                    .with_thread_ids(false)
-                    .with_ansi(false) // No ANSI colors in log files
-                    .json() // Structured JSON for machine parsing
-                    .with_writer(file_appender)
-                    .with_filter(file_filter)
-            })
+                Some(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_thread_ids(false)
+                        .with_ansi(false) // No ANSI colors in log files
+                        .json() // Structured JSON for machine parsing
+                        .with_writer(file_appender)
+                        .with_filter(file_filter),
+                )
+            }
+            Err(error) => {
+                eprintln!(
+                    "Failed to open global audit log in {}: {error}",
+                    log_dir.display()
+                );
+                None
+            }
+        }
     });
 
     // Project-scoped layer - writes to project directory when a project is open.
@@ -307,8 +355,7 @@ pub fn init() {
         .with(file_layer)
         .with(project_layer);
 
-    // Set as global default (ignore error if already set)
-    let _ = tracing::subscriber::set_global_default(subscriber);
+    set_global_logging_default(subscriber, "standard");
 }
 
 /// Initialize logging with verbose output (file:line, thread IDs)
@@ -325,7 +372,16 @@ pub fn init_verbose() {
             .pretty(), // Pretty multi-line format
     );
 
-    let _ = tracing::subscriber::set_global_default(subscriber);
+    set_global_logging_default(subscriber, "verbose");
+}
+
+fn set_global_logging_default<S>(subscriber: S, mode: &str)
+where
+    S: tracing::Subscriber + Send + Sync + 'static,
+{
+    if let Err(error) = tracing::subscriber::set_global_default(subscriber) {
+        eprintln!("CORE-FFX {mode} logging subscriber was not installed: {error}");
+    }
 }
 
 /// Check if debug logging is enabled
@@ -360,17 +416,9 @@ pub fn read_audit_logs(max_lines: usize) -> Result<Vec<String>, String> {
     }
 
     // Collect log files, sorted newest first by filename (date-stamped)
-    let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
-        .map_err(|e| format!("Failed to read log directory: {e}"))?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            crate::app_paths::is_global_audit_log_filename(&entry.file_name().to_string_lossy())
-        })
-        .map(|entry| entry.path())
-        .collect();
-
-    // Sort descending so newest files come first
-    log_files.sort_by(|a, b| b.cmp(a));
+    let log_files = collect_matching_log_files(&log_dir, "log", |name| {
+        crate::app_paths::is_global_audit_log_filename(name)
+    })?;
 
     let mut lines = Vec::new();
     for file_path in log_files {
@@ -453,16 +501,10 @@ mod tests {
         // Non-matching file should be ignored
         fs::write(log_dir.join("other.log"), "should be ignored\n").unwrap();
 
-        // Read all lines from log files manually (simulating read_audit_logs logic)
-        let mut log_files: Vec<_> = fs::read_dir(log_dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                crate::app_paths::is_global_audit_log_filename(&e.file_name().to_string_lossy())
-            })
-            .map(|e| e.path())
-            .collect();
-        log_files.sort_by(|a, b| b.cmp(a));
+        let log_files = collect_matching_log_files(log_dir, "test log", |name| {
+            crate::app_paths::is_global_audit_log_filename(name)
+        })
+        .unwrap();
 
         assert_eq!(log_files.len(), 2);
         // Newest file first
@@ -491,6 +533,32 @@ mod tests {
         assert!(lines[0].contains("new entry 2"));
         assert!(lines[1].contains("new entry 1"));
         assert!(lines[2].contains("old entry 2"));
+    }
+
+    #[test]
+    fn test_read_project_audit_logs_with_temp_dir() {
+        use std::fs;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let log_dir = temp_dir.path().join("logs");
+        fs::create_dir(&log_dir).unwrap();
+        fs::write(
+            log_dir.join("ffx-project-audit.2025-01-01.log"),
+            "{\"message\":\"old project entry\"}\n",
+        )
+        .unwrap();
+        fs::write(
+            log_dir.join("ffx-project-audit.2025-01-02.log"),
+            "{\"message\":\"new project entry 1\"}\n{\"message\":\"new project entry 2\"}\n",
+        )
+        .unwrap();
+        fs::write(log_dir.join("other.log"), "ignored\n").unwrap();
+
+        let lines = read_project_audit_logs(temp_dir.path(), 2).unwrap();
+
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("new project entry 2"));
+        assert!(lines[1].contains("new project entry 1"));
     }
 
     #[test]
@@ -529,5 +597,22 @@ mod tests {
         // Should have the last 10 entries (newest = highest index)
         assert!(lines[0].contains("\"line\":49"));
         assert!(lines[9].contains("\"line\":40"));
+    }
+
+    #[test]
+    fn project_log_switch_failure_clears_previous_writer() {
+        clear_project_log();
+
+        let active_project = tempfile::TempDir::new().unwrap();
+        set_project_log_dir(active_project.path());
+        assert_eq!(project_log_dir(), Some(active_project.path().join("logs")));
+
+        let blocked_project_root = active_project.path().join("blocked-project");
+        std::fs::write(&blocked_project_root, b"not a directory").unwrap();
+
+        set_project_log_dir(&blocked_project_root);
+        assert!(project_log_dir().is_none());
+
+        clear_project_log();
     }
 }

@@ -38,6 +38,7 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::debug;
 
 // =============================================================================
 // Progress State
@@ -332,8 +333,10 @@ impl ProgressChannelBuilder {
     #[allow(dead_code)]
     pub fn std_channel() -> (ProgressCallback, std::sync::mpsc::Receiver<Progress>) {
         let (tx, rx) = std::sync::mpsc::channel();
+        let receiver_disconnected = Arc::new(AtomicBool::new(false));
+        let receiver_disconnected_clone = Arc::clone(&receiver_disconnected);
         let callback: ProgressCallback = Box::new(move |p: &Progress| {
-            let _ = tx.send(p.clone());
+            send_progress_to_std_channel(&tx, &receiver_disconnected_clone, p);
         });
         (callback, rx)
     }
@@ -346,6 +349,25 @@ impl ProgressChannelBuilder {
             *last_clone.write() = Some(p.clone());
         });
         (callback, last)
+    }
+}
+
+fn send_progress_to_std_channel(
+    tx: &std::sync::mpsc::Sender<Progress>,
+    receiver_disconnected: &AtomicBool,
+    progress: &Progress,
+) -> bool {
+    if receiver_disconnected.load(Ordering::Relaxed) {
+        return false;
+    }
+
+    match tx.send(progress.clone()) {
+        Ok(()) => true,
+        Err(error) => {
+            receiver_disconnected.store(true, Ordering::Relaxed);
+            debug!(%error, "Progress receiver disconnected");
+            false
+        }
     }
 }
 
@@ -440,5 +462,49 @@ mod tests {
         let stored = last.read();
         assert!(stored.is_some());
         assert_eq!(stored.as_ref().unwrap().current, 42);
+    }
+
+    #[test]
+    fn test_progress_builder_std_channel_sends_progress() {
+        let (callback, rx) = ProgressChannelBuilder::std_channel();
+        let progress = Progress {
+            current: 42,
+            total: 100,
+            ..Default::default()
+        };
+
+        callback(&progress);
+
+        let received = rx
+            .recv_timeout(Duration::from_millis(100))
+            .expect("progress should be sent");
+        assert_eq!(received.current, 42);
+        assert_eq!(received.total, 100);
+    }
+
+    #[test]
+    fn send_progress_to_std_channel_marks_disconnected_receiver() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(rx);
+        let receiver_disconnected = AtomicBool::new(false);
+
+        let sent = send_progress_to_std_channel(&tx, &receiver_disconnected, &Progress::new(100));
+
+        assert!(!sent);
+        assert!(receiver_disconnected.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn send_progress_to_std_channel_skips_after_disconnect() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let receiver_disconnected = AtomicBool::new(true);
+
+        let sent = send_progress_to_std_channel(&tx, &receiver_disconnected, &Progress::new(100));
+
+        assert!(!sent);
+        assert!(matches!(
+            rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
     }
 }

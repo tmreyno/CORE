@@ -391,18 +391,21 @@ pub async fn ewf_create_image(
     }
 
     // Emit initial progress
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "ewf-export-progress",
-        EwfExportProgress {
-            output_path: options.output_path.clone(),
-            current_file: String::new(),
-            file_index: 0,
-            total_files: file_sizes.len(),
-            bytes_written: 0,
-            total_bytes,
-            percent: 0.0,
-            phase: "Initializing".to_string(),
-        },
+        window.emit(
+            "ewf-export-progress",
+            EwfExportProgress {
+                output_path: options.output_path.clone(),
+                current_file: String::new(),
+                file_index: 0,
+                total_files: file_sizes.len(),
+                bytes_written: 0,
+                total_bytes,
+                percent: 0.0,
+                phase: "Initializing".to_string(),
+            },
+        ),
     );
 
     // Build config
@@ -468,22 +471,25 @@ pub async fn ewf_create_image(
         );
 
         // Emit file start progress
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "ewf-export-progress",
-            EwfExportProgress {
-                output_path: options.output_path.clone(),
-                current_file: filename.clone(),
-                file_index: file_idx + 1,
-                total_files: file_sizes.len(),
-                bytes_written: global_bytes_written,
-                total_bytes,
-                percent: if total_bytes > 0 {
-                    (global_bytes_written as f64 / total_bytes as f64) * 100.0
-                } else {
-                    0.0
+            window.emit(
+                "ewf-export-progress",
+                EwfExportProgress {
+                    output_path: options.output_path.clone(),
+                    current_file: filename.clone(),
+                    file_index: file_idx + 1,
+                    total_files: file_sizes.len(),
+                    bytes_written: global_bytes_written,
+                    total_bytes,
+                    percent: if total_bytes > 0 {
+                        (global_bytes_written as f64 / total_bytes as f64) * 100.0
+                    } else {
+                        0.0
+                    },
+                    phase: format!("Writing {}", filename),
                 },
-                phase: format!("Writing {}", filename),
-            },
+            ),
         );
 
         // Read and write file in chunks
@@ -539,22 +545,25 @@ pub async fn ewf_create_image(
 
             // Emit progress every 1 MB
             if global_bytes_written % (1024 * 1024) < chunk_size as u64 {
-                let _ = window.emit(
+                crate::eventing::log_emit_result(
                     "ewf-export-progress",
-                    EwfExportProgress {
-                        output_path: options.output_path.clone(),
-                        current_file: filename.clone(),
-                        file_index: file_idx + 1,
-                        total_files: file_sizes.len(),
-                        bytes_written: global_bytes_written,
-                        total_bytes,
-                        percent: if total_bytes > 0 {
-                            (global_bytes_written as f64 / total_bytes as f64) * 100.0
-                        } else {
-                            100.0
+                    window.emit(
+                        "ewf-export-progress",
+                        EwfExportProgress {
+                            output_path: options.output_path.clone(),
+                            current_file: filename.clone(),
+                            file_index: file_idx + 1,
+                            total_files: file_sizes.len(),
+                            bytes_written: global_bytes_written,
+                            total_bytes,
+                            percent: if total_bytes > 0 {
+                                (global_bytes_written as f64 / total_bytes as f64) * 100.0
+                            } else {
+                                100.0
+                            },
+                            phase: format!("Writing {}", filename),
                         },
-                        phase: format!("Writing {}", filename),
-                    },
+                    ),
                 );
             }
         }
@@ -591,18 +600,21 @@ pub async fn ewf_create_image(
     }
 
     // Finalize
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "ewf-export-progress",
-        EwfExportProgress {
-            output_path: options.output_path.clone(),
-            current_file: String::new(),
-            file_index: file_sizes.len(),
-            total_files: file_sizes.len(),
-            bytes_written: global_bytes_written,
-            total_bytes,
-            percent: 99.0,
-            phase: "Finalizing container...".to_string(),
-        },
+        window.emit(
+            "ewf-export-progress",
+            EwfExportProgress {
+                output_path: options.output_path.clone(),
+                current_file: String::new(),
+                file_index: file_sizes.len(),
+                total_files: file_sizes.len(),
+                bytes_written: global_bytes_written,
+                total_bytes,
+                percent: 99.0,
+                phase: "Finalizing container...".to_string(),
+            },
+        ),
     );
 
     writer
@@ -614,18 +626,21 @@ pub async fn ewf_create_image(
     let format_str = format.extension().trim_start_matches('.').to_string();
 
     // Emit completion
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "ewf-export-progress",
-        EwfExportProgress {
-            output_path: options.output_path.clone(),
-            current_file: String::new(),
-            file_index: file_sizes.len(),
-            total_files: file_sizes.len(),
-            bytes_written: global_bytes_written,
-            total_bytes,
-            percent: 100.0,
-            phase: "Complete".to_string(),
-        },
+        window.emit(
+            "ewf-export-progress",
+            EwfExportProgress {
+                output_path: options.output_path.clone(),
+                current_file: String::new(),
+                file_index: file_sizes.len(),
+                total_files: file_sizes.len(),
+                bytes_written: global_bytes_written,
+                total_bytes,
+                percent: 100.0,
+                phase: "Complete".to_string(),
+            },
+        ),
     );
 
     info!(

@@ -30,6 +30,7 @@ use super::types::{
 };
 use super::DocumentFormat;
 
+#[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
 pub mod writer;
 
 const MAX_DOCX_XML_ENTRY_BYTES: u64 = 16 * 1024 * 1024;

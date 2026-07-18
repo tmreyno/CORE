@@ -30,6 +30,18 @@ use super::L01Writer;
 /// Type alias for the progress callback wrapped in a [`RefCell`].
 type ProgressCell = RefCell<Option<Box<dyn FnMut(L01WriteProgress) + Send>>>;
 
+fn remove_created_l01_output(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => eprintln!(
+            "Failed to remove incomplete L01 output {}: {}",
+            path.display(),
+            error
+        ),
+    }
+}
+
 #[derive(Debug)]
 struct CreatedL01Outputs {
     base_path: PathBuf,
@@ -65,7 +77,7 @@ impl Drop for CreatedL01Outputs {
         if let Ok(paths) = discover_l01_output_candidates(&self.base_path) {
             for path in paths {
                 if !self.preexisting.contains(&path) {
-                    let _ = std::fs::remove_file(path);
+                    remove_created_l01_output(&path);
                 }
             }
         }
@@ -1298,6 +1310,16 @@ mod tests {
         let err = CreatedL01Outputs::new(&output_path).unwrap_err();
 
         assert!(matches!(err, L01WriteError::OutputExists(path) if path == existing));
+    }
+
+    #[test]
+    fn remove_created_l01_output_removes_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        remove_created_l01_output(&path);
+
+        assert!(!path.exists());
     }
 
     #[test]

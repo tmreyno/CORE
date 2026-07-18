@@ -13,7 +13,8 @@
 //! - System provenance (hostname, OS)
 
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{hash_map::DefaultHasher, HashSet};
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use tauri::{Emitter, Window};
 use tracing::info;
@@ -226,21 +227,53 @@ fn collect_dir_files_at_depth(
 }
 
 fn unique_manifest_path(rel_path: String, used_manifest_paths: &mut HashSet<String>) -> String {
+    unique_manifest_path_from_index(rel_path, used_manifest_paths, 2)
+}
+
+fn unique_manifest_path_from_index(
+    rel_path: String,
+    used_manifest_paths: &mut HashSet<String>,
+    mut duplicate_index: usize,
+) -> String {
     if used_manifest_paths.insert(rel_path.clone()) {
         return rel_path;
     }
 
-    for duplicate_index in 2usize.. {
+    loop {
         let candidate = disambiguated_manifest_path(&rel_path, duplicate_index);
         if used_manifest_paths.insert(candidate.clone()) {
             return candidate;
         }
-    }
 
-    unreachable!("usize range is unbounded")
+        let Some(next_index) = duplicate_index.checked_add(1) else {
+            return unique_manifest_path_with_hash_suffix(&rel_path, used_manifest_paths);
+        };
+        duplicate_index = next_index;
+    }
 }
 
-fn disambiguated_manifest_path(rel_path: &str, duplicate_index: usize) -> String {
+fn unique_manifest_path_with_hash_suffix(
+    rel_path: &str,
+    used_manifest_paths: &mut HashSet<String>,
+) -> String {
+    let mut nonce = 0u64;
+
+    loop {
+        let mut hasher = DefaultHasher::new();
+        rel_path.hash(&mut hasher);
+        used_manifest_paths.len().hash(&mut hasher);
+        nonce.hash(&mut hasher);
+        let suffix = hasher.finish();
+        let candidate = disambiguated_manifest_path(rel_path, suffix);
+        if used_manifest_paths.insert(candidate.clone()) {
+            return candidate;
+        }
+
+        nonce = nonce.wrapping_add(1);
+    }
+}
+
+fn disambiguated_manifest_path(rel_path: &str, duplicate_index: impl std::fmt::Display) -> String {
     let path = Path::new(rel_path);
     let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
         return format!("{rel_path} ({duplicate_index})");
@@ -290,18 +323,21 @@ pub(super) fn generate_forensic_manifest(
     let total_files = all_files.len();
 
     // Emit manifest generation status
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "archive-create-progress",
-        ArchiveCreateProgress {
-            archive_path: archive_path.to_string(),
-            current_file: String::new(),
-            bytes_processed: 0,
-            bytes_total: 0,
-            current_file_bytes: 0,
-            current_file_total: 0,
-            percent: 0.0,
-            status: format!("Generating forensic manifest ({} files)...", total_files),
-        },
+        window.emit(
+            "archive-create-progress",
+            ArchiveCreateProgress {
+                archive_path: archive_path.to_string(),
+                current_file: String::new(),
+                bytes_processed: 0,
+                bytes_total: 0,
+                current_file_bytes: 0,
+                current_file_total: 0,
+                percent: 0.0,
+                status: format!("Generating forensic manifest ({} files)...", total_files),
+            },
+        ),
     );
 
     let mut manifest_files = Vec::with_capacity(total_files);
@@ -351,18 +387,21 @@ pub(super) fn generate_forensic_manifest(
         // Progress update (every 10 files or last file)
         if i % 10 == 0 || i == total_files - 1 {
             let percent = ((i + 1) as f64 / total_files as f64) * 100.0;
-            let _ = window.emit(
+            crate::eventing::log_emit_result(
                 "archive-create-progress",
-                ArchiveCreateProgress {
-                    archive_path: archive_path.to_string(),
-                    current_file: rel_path.clone(),
-                    bytes_processed: 0,
-                    bytes_total: 0,
-                    current_file_bytes: 0,
-                    current_file_total: 0,
-                    percent,
-                    status: format!("Hashing for manifest: {}/{} files", i + 1, total_files),
-                },
+                window.emit(
+                    "archive-create-progress",
+                    ArchiveCreateProgress {
+                        archive_path: archive_path.to_string(),
+                        current_file: rel_path.clone(),
+                        bytes_processed: 0,
+                        bytes_total: 0,
+                        current_file_bytes: 0,
+                        current_file_total: 0,
+                        percent,
+                        status: format!("Hashing for manifest: {}/{} files", i + 1, total_files),
+                    },
+                ),
             );
         }
 
@@ -378,18 +417,21 @@ pub(super) fn generate_forensic_manifest(
 
     // Hash the archive itself (SHA-256)
     let archive_sha256 = if Path::new(archive_path).exists() {
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "archive-create-progress",
-            ArchiveCreateProgress {
-                archive_path: archive_path.to_string(),
-                current_file: String::new(),
-                bytes_processed: 0,
-                bytes_total: 0,
-                current_file_bytes: 0,
-                current_file_total: 0,
-                percent: 0.0,
-                status: "Hashing archive file...".to_string(),
-            },
+            window.emit(
+                "archive-create-progress",
+                ArchiveCreateProgress {
+                    archive_path: archive_path.to_string(),
+                    current_file: String::new(),
+                    bytes_processed: 0,
+                    bytes_total: 0,
+                    current_file_bytes: 0,
+                    current_file_total: 0,
+                    percent: 0.0,
+                    status: "Hashing archive file...".to_string(),
+                },
+            ),
         );
         Some(
             hash_file(Path::new(archive_path), "sha256")
@@ -569,6 +611,23 @@ mod tests {
         let names: Vec<&str> = files.iter().map(|(rel, _)| rel.as_str()).collect();
 
         assert_eq!(names, vec!["same.bin", "same (2).bin"]);
+    }
+
+    #[test]
+    fn test_unique_manifest_path_falls_back_after_index_exhaustion() {
+        let mut used_manifest_paths =
+            HashSet::from(["same.bin".to_string(), format!("same ({}).bin", usize::MAX)]);
+
+        let path = unique_manifest_path_from_index(
+            "same.bin".to_string(),
+            &mut used_manifest_paths,
+            usize::MAX,
+        );
+
+        assert!(path.starts_with("same ("));
+        assert!(path.ends_with(").bin"));
+        assert_ne!(path, format!("same ({}).bin", usize::MAX));
+        assert!(used_manifest_paths.contains(&path));
     }
 
     #[test]

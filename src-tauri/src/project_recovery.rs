@@ -341,11 +341,23 @@ fn cleanup_old_versions(version_dir: &Path, max_versions: usize) -> Result<(), S
         // Also remove metadata file
         let metadata_path = path.with_extension("cffx.meta");
         if metadata_path.exists() {
-            let _ = fs::remove_file(&metadata_path);
+            remove_old_version_metadata(&metadata_path);
         }
     }
 
     Ok(())
+}
+
+fn remove_old_version_metadata(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => info!("Removed old version metadata: {}", path.display()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => warn!(
+            "Failed to remove old version metadata {}: {}",
+            path.display(),
+            error
+        ),
+    }
 }
 
 // =============================================================================
@@ -613,5 +625,16 @@ mod tests {
 
         assert!(!recovery.has_autosave);
         assert!(!recovery.has_backup);
+    }
+
+    #[test]
+    fn remove_old_version_metadata_removes_existing_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let metadata_path = dir.path().join("project.cffx.meta");
+        fs::write(&metadata_path, b"metadata").unwrap();
+
+        remove_old_version_metadata(&metadata_path);
+
+        assert!(!metadata_path.exists());
     }
 }

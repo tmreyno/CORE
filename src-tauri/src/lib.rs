@@ -99,6 +99,7 @@ pub mod commands; // Tauri command handlers (organized by feature)
 pub mod common; // Shared utilities (hash, binary, segments)
 pub mod containers; // Container abstraction layer
 pub mod database; // SQLite persistence layer
+pub(crate) mod eventing; // Best-effort frontend event delivery helpers
 pub mod ewf; // Expert Witness Format (E01/L01/Ex01/Lx01) parser
 pub mod formats; // Centralized format definitions and detection
 pub mod l01_writer; // Pure-Rust L01 logical evidence file writer
@@ -122,7 +123,7 @@ pub mod project_comparison; // Project comparison and merge
 pub mod project_recovery; // Project backup, recovery, and version history
 #[cfg(feature = "flavor-review")]
 pub mod project_templates; // Project templates for rapid initialization
-#[cfg(feature = "flavor-review")]
+#[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
 pub mod report; // Forensic report generation (PDF, DOCX, HTML)
 #[cfg(feature = "flavor-review")]
 pub mod search; // Full-text search engine (Tantivy)
@@ -186,7 +187,13 @@ fn deferred_init(app_handle: tauri::AppHandle, run_start: std::time::Instant) {
 
     // Clean stale preview/temp artifacts once per backend process start.
     // This avoids frontend reload/HMR teardown repeatedly invoking cache cleanup.
-    let _ = commands::system::cleanup_preview_cache_blocking();
+    let cleanup_result = commands::system::cleanup_preview_cache_blocking();
+    if !cleanup_result.errors.is_empty() {
+        tracing::warn!(
+            error_count = cleanup_result.errors.len(),
+            "Preview cache cleanup reported errors during startup"
+        );
+    }
 
     // Register archive operations bridge for UFED ZIP container support
     ufed::init_archive_bridge();
@@ -196,11 +203,21 @@ fn deferred_init(app_handle: tauri::AppHandle, run_start: std::time::Instant) {
 
     // Initialize database (after portable mode is resolved)
     let db_start = std::time::Instant::now();
-    let _ = database::get_db();
-    info!(
-        elapsed_ms = db_start.elapsed().as_millis(),
-        "Database initialized"
-    );
+    match database::get_db() {
+        Ok(_) => {
+            info!(
+                elapsed_ms = db_start.elapsed().as_millis(),
+                "Database initialized"
+            );
+        }
+        Err(error) => {
+            tracing::error!(
+                elapsed_ms = db_start.elapsed().as_millis(),
+                %error,
+                "Database initialization failed"
+            );
+        }
+    }
 
     // Start background system stats monitoring
     commands::system::start_system_stats_monitor(app_handle);
@@ -258,7 +275,7 @@ fn run_full(context: tauri::Context) {
     let run_start = std::time::Instant::now();
     info!("Tauri run() started (full build)");
 
-    tauri::Builder::default()
+    let app = match tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -729,8 +746,16 @@ fn run_full(context: tauri::Context) {
         ])
         .on_window_event(common_window_event)
         .build(context)
-        .expect("error while building tauri application")
-        .run(common_run_event);
+    {
+        Ok(app) => app,
+        Err(error) => {
+            tracing::error!(%error, "Failed to build Tauri application");
+            eprintln!("Failed to build Tauri application: {error}");
+            std::process::exit(1);
+        }
+    };
+
+    app.run(common_run_event);
 }
 
 // =============================================================================
@@ -742,7 +767,7 @@ pub fn run_acquire(context: tauri::Context) {
     let run_start = std::time::Instant::now();
     info!("Tauri run() started (acquire build)");
 
-    tauri::Builder::default()
+    let app = match tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1023,6 +1048,14 @@ pub fn run_acquire(context: tauri::Context) {
         ])
         .on_window_event(common_window_event)
         .build(context)
-        .expect("error while building tauri application")
-        .run(common_run_event);
+    {
+        Ok(app) => app,
+        Err(error) => {
+            tracing::error!(%error, "Failed to build Tauri acquire application");
+            eprintln!("Failed to build Tauri acquire application: {error}");
+            std::process::exit(1);
+        }
+    };
+
+    app.run(common_run_event);
 }

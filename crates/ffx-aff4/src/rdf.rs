@@ -394,8 +394,9 @@ fn parse_object(token: &str, prefixes: &HashMap<String, String>) -> String {
 
     // URI reference
     if token.starts_with('<') && token.contains('>') {
-        let end = token.find('>').unwrap();
-        return token[1..end].to_string();
+        if let Some(end) = token.find('>') {
+            return token[1..end].to_string();
+        }
     }
 
     // Prefixed name
@@ -606,5 +607,15 @@ mod tests {
     #[test]
     fn test_parse_string_literal_handles_trailing_escape() {
         assert_eq!(parse_string_literal("\"unterminated\\"), "unterminated\\");
+    }
+
+    #[test]
+    fn test_parse_object_keeps_unclosed_uri_as_plain_value() {
+        let prefixes = HashMap::new();
+
+        assert_eq!(
+            parse_object("<aff4://stream-without-close", &prefixes),
+            "<aff4://stream-without-close"
+        );
     }
 }

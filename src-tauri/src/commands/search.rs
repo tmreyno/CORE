@@ -120,9 +120,12 @@ pub async fn search_index_container(
         let state = IndexingState::new();
 
         // Emit initial progress
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "search-index-progress",
-            state.progress(&container, IndexPhase::Scanning, ""),
+            window_clone.emit(
+                "search-index-progress",
+                state.progress(&container, IndexPhase::Scanning, ""),
+            ),
         );
 
         // Delete existing entries for this container (re-index)
@@ -132,9 +135,12 @@ pub async fn search_index_container(
         let result = search::indexer::index_container(&idx, &container, indexContent, &state);
 
         // Emit done
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "search-index-progress",
-            state.progress(&container, IndexPhase::Done, ""),
+            window_clone.emit(
+                "search-index-progress",
+                state.progress(&container, IndexPhase::Done, ""),
+            ),
         );
 
         result
@@ -164,21 +170,24 @@ pub async fn search_index_all(
 
         for (i, container) in containerPaths.iter().enumerate() {
             // Emit progress
-            let _ = window_clone.emit(
+            crate::eventing::log_emit_result(
                 "search-index-progress",
-                IndexProgress {
-                    container_path: container.clone(),
-                    phase: IndexPhase::IndexingMetadata,
-                    files_indexed: state.files_indexed.load(Ordering::Relaxed),
-                    files_total: state.files_total.load(Ordering::Relaxed),
-                    content_extracted: state.content_extracted.load(Ordering::Relaxed),
-                    current_file: format!("Container {}/{}", i + 1, containerPaths.len()),
-                    percent: if !containerPaths.is_empty() {
-                        (i as f64 / containerPaths.len() as f64) * 100.0
-                    } else {
-                        0.0
+                window_clone.emit(
+                    "search-index-progress",
+                    IndexProgress {
+                        container_path: container.clone(),
+                        phase: IndexPhase::IndexingMetadata,
+                        files_indexed: state.files_indexed.load(Ordering::Relaxed),
+                        files_total: state.files_total.load(Ordering::Relaxed),
+                        content_extracted: state.content_extracted.load(Ordering::Relaxed),
+                        current_file: format!("Container {}/{}", i + 1, containerPaths.len()),
+                        percent: if !containerPaths.is_empty() {
+                            (i as f64 / containerPaths.len() as f64) * 100.0
+                        } else {
+                            0.0
+                        },
                     },
-                },
+                ),
             );
 
             // Delete existing entries for this container
@@ -193,17 +202,20 @@ pub async fn search_index_all(
         }
 
         // Emit done
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "search-index-progress",
-            IndexProgress {
-                container_path: String::new(),
-                phase: IndexPhase::Done,
-                files_indexed: state.files_indexed.load(Ordering::Relaxed),
-                files_total: state.files_total.load(Ordering::Relaxed),
-                content_extracted: state.content_extracted.load(Ordering::Relaxed),
-                current_file: String::new(),
-                percent: 100.0,
-            },
+            window_clone.emit(
+                "search-index-progress",
+                IndexProgress {
+                    container_path: String::new(),
+                    phase: IndexPhase::Done,
+                    files_indexed: state.files_indexed.load(Ordering::Relaxed),
+                    files_total: state.files_total.load(Ordering::Relaxed),
+                    content_extracted: state.content_extracted.load(Ordering::Relaxed),
+                    current_file: String::new(),
+                    percent: 100.0,
+                },
+            ),
         );
 
         info!(
@@ -232,32 +244,38 @@ pub async fn search_rebuild_index(
     tauri::async_runtime::spawn_blocking(move || {
         let state = IndexingState::new();
 
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "search-index-progress",
-            IndexProgress {
-                container_path: String::new(),
-                phase: IndexPhase::Scanning,
-                files_indexed: 0,
-                files_total: 0,
-                content_extracted: 0,
-                current_file: "Rebuilding index...".to_string(),
-                percent: 0.0,
-            },
+            window_clone.emit(
+                "search-index-progress",
+                IndexProgress {
+                    container_path: String::new(),
+                    phase: IndexPhase::Scanning,
+                    files_indexed: 0,
+                    files_total: 0,
+                    content_extracted: 0,
+                    current_file: "Rebuilding index...".to_string(),
+                    percent: 0.0,
+                },
+            ),
         );
 
         let result = search::indexer::rebuild_index(&idx, &containerPaths, indexContent, &state);
 
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "search-index-progress",
-            IndexProgress {
-                container_path: String::new(),
-                phase: IndexPhase::Done,
-                files_indexed: state.files_indexed.load(Ordering::Relaxed),
-                files_total: state.files_total.load(Ordering::Relaxed),
-                content_extracted: state.content_extracted.load(Ordering::Relaxed),
-                current_file: String::new(),
-                percent: 100.0,
-            },
+            window_clone.emit(
+                "search-index-progress",
+                IndexProgress {
+                    container_path: String::new(),
+                    phase: IndexPhase::Done,
+                    files_indexed: state.files_indexed.load(Ordering::Relaxed),
+                    files_total: state.files_total.load(Ordering::Relaxed),
+                    content_extracted: state.content_extracted.load(Ordering::Relaxed),
+                    current_file: String::new(),
+                    percent: 100.0,
+                },
+            ),
         );
 
         result

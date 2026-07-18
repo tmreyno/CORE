@@ -26,7 +26,7 @@
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, Metadata};
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
@@ -160,6 +160,20 @@ const CASE_DOCUMENT_FOLDERS: &[&str] = &[
 
 const TEXT_COC_SCAN_BYTES: u64 = 32 * 1024;
 const OFFICE_XML_COC_SCAN_BYTES: u64 = 64 * 1024;
+
+fn entry_metadata(entry: &fs::DirEntry, path: &Path) -> Option<Metadata> {
+    match entry.metadata() {
+        Ok(metadata) => Some(metadata),
+        Err(error) => {
+            tracing::warn!(
+                "Failed to get case document metadata for {}: {}",
+                path.display(),
+                error
+            );
+            None
+        }
+    }
+}
 
 /// Find case documents in a directory
 ///
@@ -324,7 +338,7 @@ fn find_documents_recursive(
         }
 
         // Get file metadata
-        let metadata = entry.metadata().ok();
+        let metadata = entry_metadata(&entry, &entry_path);
         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
         let modified = metadata.and_then(|m| m.modified().ok()).map(|t| {
             let datetime: chrono::DateTime<chrono::Utc> = t.into();

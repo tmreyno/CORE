@@ -43,7 +43,7 @@ fn open_ffxdb_for_analysis(ffxdb_path: &Path) -> Result<MergeDbConnection, Strin
 
     // Check if there's an active WAL file with data
     let has_active_wal =
-        wal_path.exists() && wal_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
+        super::merge_db::sqlite_wal_has_data(&wal_path, "merge analysis database")?;
 
     if has_active_wal {
         info!(
@@ -63,9 +63,11 @@ fn open_ffxdb_for_analysis(ffxdb_path: &Path) -> Result<MergeDbConnection, Strin
             .map_err(|e| format!("Failed to copy ffxdb to temp: {}", e))?;
         std::fs::copy(&wal_path, &temp_wal)
             .map_err(|e| format!("Failed to copy WAL to temp: {}", e))?;
-        if shm_path.exists() {
-            // SHM may not exist; WAL replay can proceed without it
-            let _ = std::fs::copy(&shm_path, &temp_shm);
+        if let Err(error) =
+            super::merge_db::copy_optional_sqlite_sidecar(&shm_path, &temp_shm, "SHM")
+        {
+            // SHM may not exist; WAL replay can proceed without it.
+            warn!("{error}");
         }
 
         // Open read-write so SQLite replays the WAL automatically
@@ -75,7 +77,13 @@ fn open_ffxdb_for_analysis(ffxdb_path: &Path) -> Result<MergeDbConnection, Strin
             .map_err(|e| format!("Failed to open temp ffxdb copy: {}", e))?;
 
         // Force a checkpoint to ensure all WAL data is in the main DB
-        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        if let Err(error) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+            warn!(
+                "Failed to checkpoint temp WAL for merge analysis {}: {}",
+                ffxdb_path.display(),
+                error
+            );
+        }
 
         Ok(MergeDbConnection {
             conn,
@@ -727,12 +735,7 @@ pub fn merge_projects(projects: &[FFXProject], merged_name: &str, merged_root: &
 
 /// Generate a unique project ID for the merged project
 fn generate_merge_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock after UNIX_EPOCH")
-        .as_millis();
-    format!("merged_{}", timestamp)
+    format!("merged_{}", super::unix_epoch_millis())
 }
 
 // =============================================================================

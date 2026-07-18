@@ -158,15 +158,13 @@ pub fn register(ops: Box<dyn ArchiveOps>) {
 }
 
 /// Get the registered archive operations provider.
-///
-/// # Panics
-/// Panics if [`register`] has not been called. In standalone/test mode,
-/// call [`register`] with a stub implementation.
-fn ops() -> &'static dyn ArchiveOps {
-    ARCHIVE_OPS
-        .get()
-        .map(|b| b.as_ref())
-        .expect("Archive operations not registered. Call ffx_ufed::archive_ops::register() first.")
+fn ops() -> Result<&'static dyn ArchiveOps, ContainerError> {
+    ARCHIVE_OPS.get().map(|b| b.as_ref()).ok_or_else(|| {
+        ContainerError::InternalError(
+            "Archive operations not registered. Call ffx_ufed::archive_ops::register() first."
+                .to_string(),
+        )
+    })
 }
 
 /// Check if archive operations have been registered.
@@ -180,17 +178,17 @@ pub fn is_registered() -> bool {
 
 /// Get or create a cached ZIP tree index
 pub fn get_zip_index(path: &str) -> Result<ZipTreeIndex, ContainerError> {
-    ops().get_zip_index(path)
+    ops()?.get_zip_index(path)
 }
 
 /// List all entries in a ZIP archive
 pub fn list_zip_entries(path: &str) -> Result<Vec<ArchiveListEntry>, ContainerError> {
-    ops().list_zip_entries(path)
+    ops()?.list_zip_entries(path)
 }
 
 /// Get total entry count in a ZIP archive
 pub fn get_zip_entry_count(path: &str) -> Result<usize, ContainerError> {
-    ops().get_zip_entry_count(path)
+    ops()?.get_zip_entry_count(path)
 }
 
 /// Extract a ZIP archive to an output directory
@@ -198,12 +196,12 @@ pub fn extract_archive(
     path: &str,
     output_dir: &str,
 ) -> Result<ArchiveExtractResult, ContainerError> {
-    ops().extract_archive(path, output_dir)
+    ops()?.extract_archive(path, output_dir)
 }
 
 /// Read a single file from an archive
 pub fn read_archive_file(archive_path: &str, entry_path: &str) -> Result<Vec<u8>, ContainerError> {
-    ops().read_archive_file(archive_path, entry_path)
+    ops()?.read_archive_file(archive_path, entry_path)
 }
 
 /// Read a byte range from a single file in an archive
@@ -213,7 +211,7 @@ pub fn read_archive_file_range(
     offset: u64,
     size: usize,
 ) -> Result<Vec<u8>, ContainerError> {
-    ops().read_archive_file_range(archive_path, entry_path, offset, size)
+    ops()?.read_archive_file_range(archive_path, entry_path, offset, size)
 }
 
 #[cfg(test)]

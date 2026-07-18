@@ -362,19 +362,22 @@ pub async fn raw_create_image(
     }
 
     // Emit initial progress
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "raw-export-progress",
-        RawExportProgress {
-            output_path: options.output_path.clone(),
-            current_file: String::new(),
-            file_index: 0,
-            total_files: file_sizes.len(),
-            bytes_written: 0,
-            total_bytes,
-            percent: 0.0,
-            phase: "Initializing".to_string(),
-            current_segment: 1,
-        },
+        window.emit(
+            "raw-export-progress",
+            RawExportProgress {
+                output_path: options.output_path.clone(),
+                current_file: String::new(),
+                file_index: 0,
+                total_files: file_sizes.len(),
+                bytes_written: 0,
+                total_bytes,
+                percent: 0.0,
+                phase: "Initializing".to_string(),
+                current_segment: 1,
+            },
+        ),
     );
 
     // Set up streaming hashers
@@ -434,23 +437,26 @@ pub async fn raw_create_image(
         );
 
         // Emit file start progress
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "raw-export-progress",
-            RawExportProgress {
-                output_path: options.output_path.clone(),
-                current_file: filename.clone(),
-                file_index: file_idx + 1,
-                total_files: file_sizes.len(),
-                bytes_written: global_bytes_written,
-                total_bytes,
-                percent: if total_bytes > 0 {
-                    (global_bytes_written as f64 / total_bytes as f64) * 100.0
-                } else {
-                    0.0
+            window.emit(
+                "raw-export-progress",
+                RawExportProgress {
+                    output_path: options.output_path.clone(),
+                    current_file: filename.clone(),
+                    file_index: file_idx + 1,
+                    total_files: file_sizes.len(),
+                    bytes_written: global_bytes_written,
+                    total_bytes,
+                    percent: if total_bytes > 0 {
+                        (global_bytes_written as f64 / total_bytes as f64) * 100.0
+                    } else {
+                        0.0
+                    },
+                    phase: format!("Writing {}", filename),
+                    current_segment,
                 },
-                phase: format!("Writing {}", filename),
-                current_segment,
-            },
+            ),
         );
 
         // Read and write file in chunks
@@ -553,23 +559,26 @@ pub async fn raw_create_image(
 
             // Emit progress every 1 MB
             if global_bytes_written % (1024 * 1024) < chunk_size as u64 {
-                let _ = window.emit(
+                crate::eventing::log_emit_result(
                     "raw-export-progress",
-                    RawExportProgress {
-                        output_path: options.output_path.clone(),
-                        current_file: filename.clone(),
-                        file_index: file_idx + 1,
-                        total_files: file_sizes.len(),
-                        bytes_written: global_bytes_written,
-                        total_bytes,
-                        percent: if total_bytes > 0 {
-                            (global_bytes_written as f64 / total_bytes as f64) * 100.0
-                        } else {
-                            100.0
+                    window.emit(
+                        "raw-export-progress",
+                        RawExportProgress {
+                            output_path: options.output_path.clone(),
+                            current_file: filename.clone(),
+                            file_index: file_idx + 1,
+                            total_files: file_sizes.len(),
+                            bytes_written: global_bytes_written,
+                            total_bytes,
+                            percent: if total_bytes > 0 {
+                                (global_bytes_written as f64 / total_bytes as f64) * 100.0
+                            } else {
+                                100.0
+                            },
+                            phase: format!("Writing {}", filename),
+                            current_segment,
                         },
-                        phase: format!("Writing {}", filename),
-                        current_segment,
-                    },
+                    ),
                 );
             }
         }
@@ -605,19 +614,22 @@ pub async fn raw_create_image(
     let sha256_hex = sha256_hasher.map(|h| hex::encode(h.finalize()));
 
     // Emit finalization progress
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "raw-export-progress",
-        RawExportProgress {
-            output_path: options.output_path.clone(),
-            current_file: String::new(),
-            file_index: file_sizes.len(),
-            total_files: file_sizes.len(),
-            bytes_written: global_bytes_written,
-            total_bytes,
-            percent: 99.0,
-            phase: "Finalizing...".to_string(),
-            current_segment,
-        },
+        window.emit(
+            "raw-export-progress",
+            RawExportProgress {
+                output_path: options.output_path.clone(),
+                current_file: String::new(),
+                file_index: file_sizes.len(),
+                total_files: file_sizes.len(),
+                bytes_written: global_bytes_written,
+                total_bytes,
+                percent: 99.0,
+                phase: "Finalizing...".to_string(),
+                current_segment,
+            },
+        ),
     );
 
     // Clean up cancel flag
@@ -626,19 +638,22 @@ pub async fn raw_create_image(
     let duration = start.elapsed();
 
     // Emit completion
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "raw-export-progress",
-        RawExportProgress {
-            output_path: options.output_path.clone(),
-            current_file: String::new(),
-            file_index: file_sizes.len(),
-            total_files: file_sizes.len(),
-            bytes_written: global_bytes_written,
-            total_bytes,
-            percent: 100.0,
-            phase: "Complete".to_string(),
-            current_segment,
-        },
+        window.emit(
+            "raw-export-progress",
+            RawExportProgress {
+                output_path: options.output_path.clone(),
+                current_file: String::new(),
+                file_index: file_sizes.len(),
+                total_files: file_sizes.len(),
+                bytes_written: global_bytes_written,
+                total_bytes,
+                percent: 100.0,
+                phase: "Complete".to_string(),
+                current_segment,
+            },
+        ),
     );
 
     let output_path_final = segment_path(&options.output_path, 1);

@@ -22,12 +22,8 @@ pub fn compress_chunk(
     method: Aff4Compression,
     chunk_size: u32,
 ) -> Aff4Result<(Vec<u8>, bool)> {
-    if method == Aff4Compression::Stored {
-        return Ok((data.to_vec(), true));
-    }
-
     let compressed = match method {
-        Aff4Compression::Stored => unreachable!(),
+        Aff4Compression::Stored => return Ok((data.to_vec(), true)),
         Aff4Compression::Deflate => compress_deflate(data)?,
         Aff4Compression::Lz4 => compress_lz4(data),
         Aff4Compression::Snappy => compress_snappy(data)?,
@@ -47,12 +43,12 @@ pub fn compress_chunk(
 ///
 /// `stored` indicates whether the chunk was stored uncompressed.
 pub fn decompress_chunk(data: &[u8], method: Aff4Compression, stored: bool) -> Aff4Result<Vec<u8>> {
-    if stored || method == Aff4Compression::Stored {
+    if stored {
         return Ok(data.to_vec());
     }
 
     match method {
-        Aff4Compression::Stored => unreachable!("handled by early return above"),
+        Aff4Compression::Stored => Ok(data.to_vec()),
         Aff4Compression::Deflate => decompress_deflate(data),
         Aff4Compression::Lz4 => decompress_lz4(data),
         Aff4Compression::Snappy => decompress_snappy(data),
@@ -160,6 +156,13 @@ mod tests {
         assert_eq!(output, data);
 
         let decompressed = decompress_chunk(&output, Aff4Compression::Stored, true).unwrap();
+        assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    fn test_stored_decompress_passthrough_without_stored_flag() {
+        let data = b"stored chunk".to_vec();
+        let decompressed = decompress_chunk(&data, Aff4Compression::Stored, false).unwrap();
         assert_eq!(decompressed, data);
     }
 

@@ -108,6 +108,11 @@ pub enum EvidenceSourceError {
         offset: u64,
         bytes_read: u64,
     },
+    #[error("Invalid evidence source kind for {operation}: {source_id}")]
+    InvalidSourceKind {
+        source_id: String,
+        operation: &'static str,
+    },
 }
 
 /// Result alias for evidence byte-source operations.
@@ -306,13 +311,16 @@ impl VfsEntryByteSource {
         }
     }
 
-    fn entry_path(&self) -> &str {
+    fn entry_path(&self) -> EvidenceSourceResult<&str> {
         match &self.source_ref {
-            EvidenceSourceRef::VfsEntry { entry_path, .. } => entry_path,
+            EvidenceSourceRef::VfsEntry { entry_path, .. } => Ok(entry_path),
             EvidenceSourceRef::LocalFile { .. }
             | EvidenceSourceRef::ContainerEntry { .. }
             | EvidenceSourceRef::NestedContainerEntry { .. } => {
-                unreachable!("VfsEntryByteSource source kind")
+                Err(EvidenceSourceError::InvalidSourceKind {
+                    source_id: self.source_ref.display_id(),
+                    operation: "VFS entry read",
+                })
             }
         }
     }
@@ -324,8 +332,9 @@ impl EvidenceByteSource for VfsEntryByteSource {
     }
 
     fn len(&self) -> EvidenceSourceResult<u64> {
+        let entry_path = self.entry_path()?;
         self.vfs
-            .file_size(self.entry_path())
+            .file_size(entry_path)
             .map_err(|e| EvidenceSourceError::Vfs {
                 source_id: self.source_ref.display_id(),
                 message: e.to_string(),
@@ -333,6 +342,7 @@ impl EvidenceByteSource for VfsEntryByteSource {
     }
 
     fn read_range(&self, offset: u64, size: usize) -> EvidenceSourceResult<Vec<u8>> {
+        let entry_path = self.entry_path()?;
         let total_size = self.len()?;
         let target_size = bounded_read_size(&self.source_ref, total_size, offset, size)?;
         if target_size == 0 {
@@ -347,7 +357,7 @@ impl EvidenceByteSource for VfsEntryByteSource {
             let read_size = remaining.min(READ_ALL_CHUNK_BYTES) as usize;
             let chunk = self
                 .vfs
-                .read(self.entry_path(), current_offset, read_size)
+                .read(entry_path, current_offset, read_size)
                 .map_err(|e| EvidenceSourceError::Vfs {
                     source_id: self.source_ref.display_id(),
                     message: e.to_string(),
@@ -778,6 +788,34 @@ mod tests {
                 requested: 5,
                 actual: 6,
             } if source_id == "/cases/disk.E01:/entry.bin"
+        ));
+    }
+
+    #[test]
+    fn vfs_entry_source_rejects_invalid_internal_source_kind() {
+        let source = VfsEntryByteSource {
+            vfs: Arc::new(ChunkedVfs::new(b"0123456789", 2)),
+            source_ref: EvidenceSourceRef::LocalFile {
+                path: "/not/a/vfs/source.bin".to_string(),
+            },
+        };
+
+        let len_err = source.len().unwrap_err();
+        assert!(matches!(
+            len_err,
+            EvidenceSourceError::InvalidSourceKind {
+                source_id,
+                operation: "VFS entry read",
+            } if source_id == "/not/a/vfs/source.bin"
+        ));
+
+        let read_err = source.read_range(0, 1).unwrap_err();
+        assert!(matches!(
+            read_err,
+            EvidenceSourceError::InvalidSourceKind {
+                source_id,
+                operation: "VFS entry read",
+            } if source_id == "/not/a/vfs/source.bin"
         ));
     }
 

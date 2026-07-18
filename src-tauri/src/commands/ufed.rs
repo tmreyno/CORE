@@ -80,14 +80,17 @@ pub async fn ufed_verify(
             } else {
                 0.0
             };
-            let _ = app.emit(
+            crate::eventing::log_emit_result(
                 "verify-progress",
-                VerifyProgress {
-                    path: path_for_closure.clone(),
-                    current,
-                    total,
-                    percent,
-                },
+                app.emit(
+                    "verify-progress",
+                    VerifyProgress {
+                        path: path_for_closure.clone(),
+                        current,
+                        total,
+                        percent,
+                    },
+                ),
             );
         })
     })

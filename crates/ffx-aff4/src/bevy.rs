@@ -47,9 +47,14 @@ impl BevyIndexEntry {
 
     /// Deserialize from 12 bytes (little-endian).
     pub fn from_bytes(data: &[u8; BEVY_INDEX_ENTRY_SIZE]) -> Self {
+        let mut offset = [0u8; 8];
+        offset.copy_from_slice(&data[..8]);
+        let mut length = [0u8; 4];
+        length.copy_from_slice(&data[8..12]);
+
         Self {
-            offset: u64::from_le_bytes(data[..8].try_into().unwrap()),
-            length: u32::from_le_bytes(data[8..12].try_into().unwrap()),
+            offset: u64::from_le_bytes(offset),
+            length: u32::from_le_bytes(length),
         }
     }
 }
@@ -199,13 +204,10 @@ impl BevyReader {
         let count = index_data.len() / BEVY_INDEX_ENTRY_SIZE;
         let mut entries = Vec::with_capacity(count);
 
-        for i in 0..count {
-            let start = i * BEVY_INDEX_ENTRY_SIZE;
-            let chunk: [u8; BEVY_INDEX_ENTRY_SIZE] = index_data
-                [start..start + BEVY_INDEX_ENTRY_SIZE]
-                .try_into()
-                .unwrap();
-            entries.push(BevyIndexEntry::from_bytes(&chunk));
+        for chunk in index_data.chunks_exact(BEVY_INDEX_ENTRY_SIZE) {
+            let mut entry_data = [0u8; BEVY_INDEX_ENTRY_SIZE];
+            entry_data.copy_from_slice(chunk);
+            entries.push(BevyIndexEntry::from_bytes(&entry_data));
         }
 
         Ok(Self {

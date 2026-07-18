@@ -286,7 +286,13 @@ fn copy_file_with_progress(
         // Check cancellation between chunks
         if cancel_flag.load(Ordering::Relaxed) {
             // Flush what's written so the partial file is valid
-            let _ = writer.flush();
+            if let Err(error) = writer.flush() {
+                warn!(
+                    path = %dest.display(),
+                    %error,
+                    "Failed to flush partial export during cancellation"
+                );
+            }
             return Err("Export cancelled".to_string());
         }
         let Some(read_size) = checked_export_copy_read_len(file_size, bytes_copied, source)? else {
@@ -325,32 +331,35 @@ fn copy_file_with_progress(
                 0.0
             };
 
-            let _ = window.emit(
+            crate::eventing::log_emit_result(
                 "copy-progress",
-                CopyProgress {
-                    operation_id: operation_id.to_string(),
-                    current_file: filename.clone(),
-                    current_index: file_index,
-                    total_files,
-                    current_file_bytes: bytes_copied,
-                    current_file_total: file_size,
-                    total_bytes_copied: total_copied,
-                    total_bytes,
-                    percent,
-                    status: if compute_hash {
-                        format!("Copying + Hashing: {}", filename)
-                    } else {
-                        format!("Copying: {}", filename)
+                window.emit(
+                    "copy-progress",
+                    CopyProgress {
+                        operation_id: operation_id.to_string(),
+                        current_file: filename.clone(),
+                        current_index: file_index,
+                        total_files,
+                        current_file_bytes: bytes_copied,
+                        current_file_total: file_size,
+                        total_bytes_copied: total_copied,
+                        total_bytes,
+                        percent,
+                        status: if compute_hash {
+                            format!("Copying + Hashing: {}", filename)
+                        } else {
+                            format!("Copying: {}", filename)
+                        },
+                        speed_bps: speed,
+                        phase: Some("copying".to_string()),
+                        hash_bytes_processed: if compute_hash {
+                            Some(bytes_copied)
+                        } else {
+                            None
+                        },
+                        hash_bytes_total: if compute_hash { Some(file_size) } else { None },
                     },
-                    speed_bps: speed,
-                    phase: Some("copying".to_string()),
-                    hash_bytes_processed: if compute_hash {
-                        Some(bytes_copied)
-                    } else {
-                        None
-                    },
-                    hash_bytes_total: if compute_hash { Some(file_size) } else { None },
-                },
+                ),
             );
 
             last_emit = std::time::Instant::now();
@@ -562,11 +571,14 @@ fn collect_dir_files_at_depth(
             let rel_path = path
                 .strip_prefix(base)
                 .map(relative_export_path)
-                .unwrap_or_else(|_| {
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                });
+                .map_err(|e| {
+                    format!(
+                        "Failed to derive export relative path for {} from base {}: {}",
+                        path.display(),
+                        base.display(),
+                        e
+                    )
+                })?;
             files.push((path.to_string_lossy().to_string(), rel_path));
         } else if file_type.is_dir() {
             collect_dir_files_at_depth(base, &path, files, depth + 1)?;
@@ -666,24 +678,27 @@ fn run_export_inner(
     }
 
     // Calculate total size and collect files
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "copy-progress",
-        CopyProgress {
-            operation_id: operation_id.to_string(),
-            current_file: String::new(),
-            current_index: 0,
-            total_files: 0,
-            current_file_bytes: 0,
-            current_file_total: 0,
-            total_bytes_copied: 0,
-            total_bytes: 0,
-            percent: 0.0,
-            status: "Calculating size...".to_string(),
-            speed_bps: 0,
-            phase: Some("calculating".to_string()),
-            hash_bytes_processed: None,
-            hash_bytes_total: None,
-        },
+        window.emit(
+            "copy-progress",
+            CopyProgress {
+                operation_id: operation_id.to_string(),
+                current_file: String::new(),
+                current_index: 0,
+                total_files: 0,
+                current_file_bytes: 0,
+                current_file_total: 0,
+                total_bytes_copied: 0,
+                total_bytes: 0,
+                percent: 0.0,
+                status: "Calculating size...".to_string(),
+                speed_bps: 0,
+                phase: Some("calculating".to_string()),
+                hash_bytes_processed: None,
+                hash_bytes_total: None,
+            },
+        ),
     );
 
     let total_bytes = calculate_total_size(source_paths)?;
@@ -801,28 +816,39 @@ fn run_export_inner(
                         let (known_hash, matches_known, known_hash_source) = if opts
                             .verify_against_known
                         {
-                            let db = database::get_db();
-                            match db.lookup_known_hash_by_path(source) {
-                                Ok(Some((stored_hash, hash_source))) => {
-                                    let matches = stored_hash.eq_ignore_ascii_case(sha256);
-                                    if matches {
-                                        files_verified_known += 1;
-                                        debug!("Known hash match for {}", rel_path);
-                                    } else {
-                                        files_mismatch_known += 1;
-                                        warn!(
-                                            "Known hash MISMATCH for {}: expected={}, got={}",
-                                            rel_path, stored_hash, sha256
-                                        );
+                            match database::get_db() {
+                                Ok(db) => match db.lookup_known_hash_by_path(source) {
+                                    Ok(Some((stored_hash, hash_source))) => {
+                                        let matches = stored_hash.eq_ignore_ascii_case(sha256);
+                                        if matches {
+                                            files_verified_known += 1;
+                                            debug!("Known hash match for {}", rel_path);
+                                        } else {
+                                            files_mismatch_known += 1;
+                                            warn!(
+                                                "Known hash MISMATCH for {}: expected={}, got={}",
+                                                rel_path, stored_hash, sha256
+                                            );
+                                        }
+                                        (Some(stored_hash), Some(matches), Some(hash_source))
                                     }
-                                    (Some(stored_hash), Some(matches), Some(hash_source))
-                                }
-                                Ok(None) => {
-                                    debug!("No known hash in database for {}", rel_path);
-                                    (None, None, None)
-                                }
+                                    Ok(None) => {
+                                        debug!("No known hash in database for {}", rel_path);
+                                        (None, None, None)
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to look up known hash for {}: {}",
+                                            rel_path, e
+                                        );
+                                        (None, None, None)
+                                    }
+                                },
                                 Err(e) => {
-                                    warn!("Failed to look up known hash for {}: {}", rel_path, e);
+                                    warn!(
+                                        "Known hash lookup skipped because database is unavailable: {}",
+                                        e
+                                    );
                                     (None, None, None)
                                 }
                             }
@@ -860,13 +886,15 @@ fn run_export_inner(
 
                 // Preserve timestamps
                 if opts.preserve_timestamps {
-                    if let Ok(meta) = fs::metadata(source_path) {
-                        if let Ok(mtime) = meta.modified() {
-                            let _ = filetime::set_file_mtime(
-                                &dest_file,
-                                filetime::FileTime::from_system_time(mtime),
-                            );
-                        }
+                    if let Err(error) = preserve_file_modified_time(source_path, &dest_file) {
+                        warn!(
+                            source = %source_path.display(),
+                            destination = %dest_file.display(),
+                            %error,
+                            "Failed to preserve exported file modification time"
+                        );
+                        failures.push((source.clone(), error));
+                        files_failed += 1;
                     }
                 }
 
@@ -987,24 +1015,27 @@ fn run_export_inner(
     }
 
     // Emit completion
-    let _ = window.emit(
+    crate::eventing::log_emit_result(
         "copy-progress",
-        CopyProgress {
-            operation_id: operation_id.to_string(),
-            current_file: String::new(),
-            current_index: total_files,
-            total_files,
-            current_file_bytes: 0,
-            current_file_total: 0,
-            total_bytes_copied: bytes_copied,
-            total_bytes,
-            percent: 100.0,
-            status: "Complete".to_string(),
-            speed_bps: avg_speed,
-            phase: Some("complete".to_string()),
-            hash_bytes_processed: None,
-            hash_bytes_total: None,
-        },
+        window.emit(
+            "copy-progress",
+            CopyProgress {
+                operation_id: operation_id.to_string(),
+                current_file: String::new(),
+                current_index: total_files,
+                total_files,
+                current_file_bytes: 0,
+                current_file_total: 0,
+                total_bytes_copied: bytes_copied,
+                total_bytes,
+                percent: 100.0,
+                status: "Complete".to_string(),
+                speed_bps: avg_speed,
+                phase: Some("complete".to_string()),
+                hash_bytes_processed: None,
+                hash_bytes_total: None,
+            },
+        ),
     );
 
     info!(
@@ -1030,6 +1061,19 @@ fn run_export_inner(
         files_verified_known,
         files_mismatch_known,
     })
+}
+
+fn preserve_file_modified_time(source: &Path, destination: &Path) -> Result<(), String> {
+    let modified_time = fs::metadata(source)
+        .map_err(|e| format!("Failed to read source metadata for timestamp preservation: {e}"))?
+        .modified()
+        .map_err(|e| format!("Failed to read source modification time: {e}"))?;
+
+    filetime::set_file_mtime(
+        destination,
+        filetime::FileTime::from_system_time(modified_time),
+    )
+    .map_err(|e| format!("Failed to set destination modification time: {e}"))
 }
 
 /// Cancel an in-progress export operation
@@ -1138,6 +1182,22 @@ mod tests {
     }
 
     #[test]
+    fn collect_dir_files_rejects_path_outside_base() {
+        let dir = TempDir::new().unwrap();
+        let evidence_dir = dir.path().join("Evidence");
+        let other_base = dir.path().join("Other");
+        std::fs::create_dir(&evidence_dir).unwrap();
+        std::fs::create_dir(&other_base).unwrap();
+        std::fs::write(evidence_dir.join("a.bin"), [0u8; 3]).unwrap();
+
+        let mut files = Vec::new();
+        let err = collect_dir_files(&other_base, &evidence_dir, &mut files).unwrap_err();
+
+        assert!(err.contains("Failed to derive export relative path"));
+        assert!(files.is_empty());
+    }
+
+    #[test]
     fn checked_export_copy_read_len_returns_none_when_file_complete() {
         let source = std::path::Path::new("complete.bin");
 
@@ -1220,5 +1280,35 @@ mod tests {
         let err = verify_copied_file(&missing, &expected).unwrap_err();
         assert!(err.starts_with("Hash verification error:"));
         assert!(err.contains("Failed to open file for verification"));
+    }
+
+    #[test]
+    fn preserve_file_modified_time_updates_destination_time() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("source.bin");
+        let destination = dir.path().join("destination.bin");
+        std::fs::write(&source, b"source").unwrap();
+        std::fs::write(&destination, b"destination").unwrap();
+
+        let source_time = filetime::FileTime::from_unix_time(1_700_000_000, 0);
+        filetime::set_file_mtime(&source, source_time).unwrap();
+
+        preserve_file_modified_time(&source, &destination).unwrap();
+
+        let destination_time = filetime::FileTime::from_last_modification_time(
+            &std::fs::metadata(&destination).unwrap(),
+        );
+        assert_eq!(destination_time.unix_seconds(), source_time.unix_seconds());
+    }
+
+    #[test]
+    fn preserve_file_modified_time_reports_missing_source() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("missing.bin");
+        let destination = dir.path().join("destination.bin");
+        std::fs::write(&destination, b"destination").unwrap();
+
+        let err = preserve_file_modified_time(&source, &destination).unwrap_err();
+        assert!(err.contains("Failed to read source metadata"));
     }
 }

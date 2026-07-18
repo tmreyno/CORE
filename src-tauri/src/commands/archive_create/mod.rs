@@ -46,6 +46,18 @@ fn checked_archive_size_add(total: u64, addition: u64, path: &Path) -> Result<u6
     })
 }
 
+fn remove_partial_archive_output(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => warn!(
+            "Failed to remove partial archive output {}: {}",
+            path.display(),
+            error
+        ),
+    }
+}
+
 /// Global cancel flags for active archive creation jobs
 static CANCEL_FLAGS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -253,33 +265,39 @@ pub async fn create_7z_archive(
         let sz = SevenZip::new().map_err(|e| format!("Failed to initialize 7z library: {}", e))?;
 
         // Emit starting status
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "archive-create-progress",
-            ArchiveCreateProgress {
-                archive_path: archive_path_clone.clone(),
-                current_file: String::new(),
-                bytes_processed: 0,
-                bytes_total: 0,
-                current_file_bytes: 0,
-                current_file_total: 0,
-                percent: 0.0,
-                status: "Initializing archive...".to_string(),
-            },
+            window_clone.emit(
+                "archive-create-progress",
+                ArchiveCreateProgress {
+                    archive_path: archive_path_clone.clone(),
+                    current_file: String::new(),
+                    bytes_processed: 0,
+                    bytes_total: 0,
+                    current_file_bytes: 0,
+                    current_file_total: 0,
+                    percent: 0.0,
+                    status: "Initializing archive...".to_string(),
+                },
+            ),
         );
 
         // Calculate total size to determine if streaming is needed
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "archive-create-progress",
-            ArchiveCreateProgress {
-                archive_path: archive_path_clone.clone(),
-                current_file: String::new(),
-                bytes_processed: 0,
-                bytes_total: 0,
-                current_file_bytes: 0,
-                current_file_total: 0,
-                percent: 0.0,
-                status: "Calculating archive size...".to_string(),
-            },
+            window_clone.emit(
+                "archive-create-progress",
+                ArchiveCreateProgress {
+                    archive_path: archive_path_clone.clone(),
+                    current_file: String::new(),
+                    bytes_processed: 0,
+                    bytes_total: 0,
+                    current_file_bytes: 0,
+                    current_file_total: 0,
+                    percent: 0.0,
+                    status: "Calculating archive size...".to_string(),
+                },
+            ),
         );
 
         let mut total_size: u64 = 0;
@@ -381,23 +399,26 @@ pub async fn create_7z_archive(
             }
 
             // Emit status before starting compression
-            let _ = window_clone.emit(
+            crate::eventing::log_emit_result(
                 "archive-create-progress",
-                ArchiveCreateProgress {
-                    archive_path: archive_path_clone.clone(),
-                    current_file: String::new(),
-                    bytes_processed: 0,
-                    bytes_total: total_size,
-                    current_file_bytes: 0,
-                    current_file_total: 0,
-                    percent: 0.0,
-                    status: format!(
-                        "Starting {} of {} files ({}GB)...",
-                        operation_name.to_lowercase(),
-                        input_paths.len(),
-                        total_size_gb
-                    ),
-                },
+                window_clone.emit(
+                    "archive-create-progress",
+                    ArchiveCreateProgress {
+                        archive_path: archive_path_clone.clone(),
+                        current_file: String::new(),
+                        bytes_processed: 0,
+                        bytes_total: total_size,
+                        current_file_bytes: 0,
+                        current_file_total: 0,
+                        percent: 0.0,
+                        status: format!(
+                            "Starting {} of {} files ({}GB)...",
+                            operation_name.to_lowercase(),
+                            input_paths.len(),
+                            total_size_gb
+                        ),
+                    },
+                ),
             );
 
             // Create with streaming and progress callback
@@ -421,18 +442,21 @@ pub async fn create_7z_archive(
                           current_file_name| {
                         // Check cancel flag
                         if cancel_flag_for_callback.load(Ordering::SeqCst) {
-                            let _ = window_for_callback.emit(
+                            crate::eventing::log_emit_result(
                                 "archive-create-progress",
-                                ArchiveCreateProgress {
-                                    archive_path: archive_path_for_callback.clone(),
-                                    current_file: String::new(),
-                                    bytes_processed,
-                                    bytes_total,
-                                    current_file_bytes: 0,
-                                    current_file_total: 0,
-                                    percent: 0.0,
-                                    status: "Cancelling...".to_string(),
-                                },
+                                window_for_callback.emit(
+                                    "archive-create-progress",
+                                    ArchiveCreateProgress {
+                                        archive_path: archive_path_for_callback.clone(),
+                                        current_file: String::new(),
+                                        bytes_processed,
+                                        bytes_total,
+                                        current_file_bytes: 0,
+                                        current_file_total: 0,
+                                        percent: 0.0,
+                                        status: "Cancelling...".to_string(),
+                                    },
+                                ),
                             );
                             return;
                         }
@@ -445,18 +469,24 @@ pub async fn create_7z_archive(
                             0.0
                         };
 
-                        let _ = window_for_callback.emit(
+                        crate::eventing::log_emit_result(
                             "archive-create-progress",
-                            ArchiveCreateProgress {
-                                archive_path: archive_path_for_callback.clone(),
-                                current_file: current_file_name.to_string(),
-                                bytes_processed,
-                                bytes_total,
-                                current_file_bytes,
-                                current_file_total,
-                                percent,
-                                status: format!("{}: {}", operation_name_clone, current_file_name),
-                            },
+                            window_for_callback.emit(
+                                "archive-create-progress",
+                                ArchiveCreateProgress {
+                                    archive_path: archive_path_for_callback.clone(),
+                                    current_file: current_file_name.to_string(),
+                                    bytes_processed,
+                                    bytes_total,
+                                    current_file_bytes,
+                                    current_file_total,
+                                    percent,
+                                    status: format!(
+                                        "{}: {}",
+                                        operation_name_clone, current_file_name
+                                    ),
+                                },
+                            ),
                         );
                     },
                 )),
@@ -466,12 +496,13 @@ pub async fn create_7z_archive(
             // Check if cancelled - clean up partial files
             if cancel_flag.load(Ordering::SeqCst) {
                 warn!("Archive creation was cancelled, cleaning up partial files");
-                let _ = std::fs::remove_file(&working_path_clone);
+                remove_partial_archive_output(Path::new(&working_path_clone));
                 // Also clean up split volumes
                 for i in 1.. {
                     let volume = format!("{}.{:03}", working_path_clone, i);
-                    if Path::new(&volume).exists() {
-                        let _ = std::fs::remove_file(&volume);
+                    let volume_path = Path::new(&volume);
+                    if volume_path.exists() {
+                        remove_partial_archive_output(volume_path);
                     } else {
                         break;
                     }
@@ -541,22 +572,25 @@ pub async fn create_7z_archive(
             );
 
             // Emit status before starting compression
-            let _ = window_clone.emit(
+            crate::eventing::log_emit_result(
                 "archive-create-progress",
-                ArchiveCreateProgress {
-                    archive_path: archive_path_clone.clone(),
-                    current_file: String::new(),
-                    bytes_processed: 0,
-                    bytes_total: total_size,
-                    current_file_bytes: 0,
-                    current_file_total: 0,
-                    percent: 0.0,
-                    status: format!(
-                        "Starting {} of {} files...",
-                        operation_name.to_lowercase(),
-                        input_paths.len()
-                    ),
-                },
+                window_clone.emit(
+                    "archive-create-progress",
+                    ArchiveCreateProgress {
+                        archive_path: archive_path_clone.clone(),
+                        current_file: String::new(),
+                        bytes_processed: 0,
+                        bytes_total: total_size,
+                        current_file_bytes: 0,
+                        current_file_total: 0,
+                        percent: 0.0,
+                        status: format!(
+                            "Starting {} of {} files...",
+                            operation_name.to_lowercase(),
+                            input_paths.len()
+                        ),
+                    },
+                ),
             );
 
             sz.create_archive(
@@ -572,18 +606,21 @@ pub async fn create_7z_archive(
 
         // Step 1: Verify archive integrity if requested
         if opts.verify_after_create.unwrap_or(false) {
-            let _ = window_clone.emit(
+            crate::eventing::log_emit_result(
                 "archive-create-progress",
-                ArchiveCreateProgress {
-                    archive_path: archive_path_clone.clone(),
-                    current_file: String::new(),
-                    bytes_processed: total_size,
-                    bytes_total: total_size,
-                    current_file_bytes: 0,
-                    current_file_total: 0,
-                    percent: 0.0,
-                    status: "Verifying archive integrity...".to_string(),
-                },
+                window_clone.emit(
+                    "archive-create-progress",
+                    ArchiveCreateProgress {
+                        archive_path: archive_path_clone.clone(),
+                        current_file: String::new(),
+                        bytes_processed: total_size,
+                        bytes_total: total_size,
+                        current_file_bytes: 0,
+                        current_file_total: 0,
+                        percent: 0.0,
+                        status: "Verifying archive integrity...".to_string(),
+                    },
+                ),
             );
 
             let verify_sz =
@@ -611,18 +648,21 @@ pub async fn create_7z_archive(
         }
 
         // Emit completion status
-        let _ = window_clone.emit(
+        crate::eventing::log_emit_result(
             "archive-create-progress",
-            ArchiveCreateProgress {
-                archive_path: archive_path_clone.clone(),
-                current_file: String::new(),
-                bytes_processed: total_size,
-                bytes_total: total_size,
-                current_file_bytes: 0,
-                current_file_total: 0,
-                percent: 100.0,
-                status: "Archive completed successfully".to_string(),
-            },
+            window_clone.emit(
+                "archive-create-progress",
+                ArchiveCreateProgress {
+                    archive_path: archive_path_clone.clone(),
+                    current_file: String::new(),
+                    bytes_processed: total_size,
+                    bytes_total: total_size,
+                    current_file_bytes: 0,
+                    current_file_total: 0,
+                    percent: 100.0,
+                    status: "Archive completed successfully".to_string(),
+                },
+            ),
         );
 
         info!("Archive created successfully: {}", archive_path_clone);
@@ -902,6 +942,16 @@ mod tests {
 
         assert!(err.contains("Archive size overflow"));
         assert!(err.contains("too-large.bin"));
+    }
+
+    #[test]
+    fn remove_partial_archive_output_removes_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        remove_partial_archive_output(&path);
+
+        assert!(!path.exists());
     }
 
     // ==================== Compression level mapping ====================

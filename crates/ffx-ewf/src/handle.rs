@@ -105,7 +105,7 @@ impl EwfHandle {
         let mut cumulative = 0u64;
         for &size in &segment_sizes {
             segment_cumulative_sizes.push(cumulative);
-            cumulative += size;
+            cumulative = checked_ewf_add(cumulative, size, "segment cumulative size")?;
         }
 
         // Step 4: Parse sections globally (not per-segment!)
@@ -191,7 +191,7 @@ impl EwfHandle {
                 Self::global_to_segment_offset(current_global_offset, segment_sizes)?;
 
             // Check if we have enough space for section descriptor
-            if offset_in_seg + 32 > segment_sizes[seg_idx] {
+            if offset_in_seg > segment_sizes[seg_idx].saturating_sub(32) {
                 trace!(
                     "Not enough space for section descriptor at global offset {}",
                     current_global_offset
@@ -238,7 +238,7 @@ impl EwfHandle {
             match section_type.as_str() {
                 "header" => {
                     // Header section contains zlib-compressed case metadata
-                    let data_global_offset = current_global_offset + 76;
+                    let data_global_offset = checked_section_data_offset(current_global_offset)?;
                     let (data_seg_idx, data_offset_in_seg) =
                         Self::global_to_segment_offset(data_global_offset, segment_sizes)?;
                     seg_section.data_offset = Some(data_global_offset);
@@ -262,7 +262,7 @@ impl EwfHandle {
                     }
                 }
                 "volume" | "disk" => {
-                    let data_global_offset = current_global_offset + 76;
+                    let data_global_offset = checked_section_data_offset(current_global_offset)?;
                     let (data_seg_idx, data_offset_in_seg) =
                         Self::global_to_segment_offset(data_global_offset, segment_sizes)?;
                     seg_section.data_offset = Some(data_global_offset);
@@ -276,7 +276,7 @@ impl EwfHandle {
                     }
                 }
                 "sectors" => {
-                    let data_global_offset = current_global_offset + 76;
+                    let data_global_offset = checked_section_data_offset(current_global_offset)?;
                     seg_section.data_offset = Some(data_global_offset);
                     last_sectors_offset = Some(data_global_offset);
 
@@ -284,7 +284,7 @@ impl EwfHandle {
                     sectors_data_size = Some(section_desc.size.saturating_sub(76));
                 }
                 "table" => {
-                    let data_global_offset = current_global_offset + 76;
+                    let data_global_offset = checked_section_data_offset(current_global_offset)?;
                     let (data_seg_idx, data_offset_in_seg) =
                         Self::global_to_segment_offset(data_global_offset, segment_sizes)?;
                     seg_section.data_offset = Some(data_global_offset);
@@ -332,7 +332,7 @@ impl EwfHandle {
                     trace!("  Skipping table2 section (contains checksums)");
                 }
                 "hash" => {
-                    let data_global_offset = current_global_offset + 76;
+                    let data_global_offset = checked_section_data_offset(current_global_offset)?;
                     let (data_seg_idx, data_offset_in_seg) =
                         Self::global_to_segment_offset(data_global_offset, segment_sizes)?;
 
@@ -344,7 +344,7 @@ impl EwfHandle {
                     }
                 }
                 "digest" => {
-                    let data_global_offset = current_global_offset + 76;
+                    let data_global_offset = checked_section_data_offset(current_global_offset)?;
                     let (data_seg_idx, data_offset_in_seg) =
                         Self::global_to_segment_offset(data_global_offset, segment_sizes)?;
 
@@ -374,8 +374,9 @@ impl EwfHandle {
                     segments[seg_idx].sections.push(seg_section);
                     if seg_idx + 1 < segments.len() {
                         seg_idx += 1;
-                        let next_segment_start: u64 = segment_sizes.iter().take(seg_idx).sum();
-                        current_global_offset = next_segment_start + 13;
+                        let next_segment_start = checked_segment_start(segment_sizes, seg_idx)?;
+                        current_global_offset =
+                            checked_ewf_add(next_segment_start, 13, "next segment header offset")?;
                         trace!(
                             "Moving to segment {} at global offset {}",
                             seg_idx,
@@ -397,8 +398,12 @@ impl EwfHandle {
                 break;
             }
 
-            let segment_start: u64 = segment_sizes.iter().take(seg_idx).sum();
-            current_global_offset = segment_start + section_desc.next_offset;
+            let segment_start = checked_segment_start(segment_sizes, seg_idx)?;
+            current_global_offset = checked_ewf_add(
+                segment_start,
+                section_desc.next_offset,
+                "next section offset",
+            )?;
         }
 
         trace!(
@@ -423,7 +428,11 @@ impl EwfHandle {
                     segment_sizes,
                     sectors_offset,
                     sectors_size,
-                    vol.chunk_count as usize,
+                    usize::try_from(vol.chunk_count).map_err(|_| {
+                        ContainerError::ParseError(
+                            "EWF volume chunk count cannot fit in memory index".to_string(),
+                        )
+                    })?,
                     vol.sectors_per_chunk,
                     vol.bytes_per_sector,
                 ) {
@@ -452,10 +461,10 @@ impl EwfHandle {
         sectors_per_chunk: u32,
         bytes_per_sector: u32,
     ) -> Result<Vec<ChunkLocation>, ContainerError> {
-        let chunk_size = sectors_per_chunk as usize * bytes_per_sector as usize;
+        let chunk_size = checked_ewf_chunk_size(sectors_per_chunk, bytes_per_sector)?;
         let mut locations = Vec::with_capacity(expected_chunks);
         let mut current_offset = sectors_offset;
-        let end_offset = sectors_offset + sectors_size;
+        let end_offset = checked_ewf_add(sectors_offset, sectors_size, "sectors section end")?;
 
         let (seg_idx, offset_in_seg) =
             Self::global_to_segment_offset(current_offset, segment_sizes)?;
@@ -470,7 +479,12 @@ impl EwfHandle {
                 break;
             }
 
-            let local_offset = current_offset - sectors_offset + offset_in_seg;
+            let local_delta = current_offset.checked_sub(sectors_offset).ok_or_else(|| {
+                ContainerError::ParseError(
+                    "Delta chunk offset precedes sectors section".to_string(),
+                )
+            })?;
+            let local_offset = checked_ewf_add(local_delta, offset_in_seg, "delta chunk offset")?;
 
             file.seek(SeekFrom::Start(local_offset))?;
 
@@ -502,7 +516,8 @@ impl EwfHandle {
                 is_delta_chunk: true,
             });
 
-            current_offset += 4 + data_size;
+            let advance = checked_ewf_add(4, data_size, "delta chunk size")?;
+            current_offset = checked_ewf_add(current_offset, advance, "next delta chunk offset")?;
 
             if data_size < chunk_size as u64 && !is_compressed {
                 trace!(
@@ -524,10 +539,11 @@ impl EwfHandle {
     ) -> Result<(usize, u64), ContainerError> {
         let mut cumulative = 0u64;
         for (idx, &size) in segment_sizes.iter().enumerate() {
-            if global_offset < cumulative + size {
+            let segment_end = checked_ewf_add(cumulative, size, "segment end")?;
+            if global_offset < segment_end {
                 return Ok((idx, global_offset - cumulative));
             }
-            cumulative += size;
+            cumulative = segment_end;
         }
         Err(ContainerError::ParseError(format!(
             "Global offset {} beyond all segments",
@@ -589,9 +605,12 @@ impl EwfHandle {
         count: usize,
     ) -> Result<Vec<Vec<u8>>, ContainerError> {
         let chunk_size =
-            (self.volume.sectors_per_chunk as usize) * (self.volume.bytes_per_sector as usize);
+            checked_ewf_chunk_size(self.volume.sectors_per_chunk, self.volume.bytes_per_sector)?;
         let total_chunks = self.get_chunk_count();
-        let end_chunk = (start_chunk + count).min(total_chunks);
+        if start_chunk >= total_chunks {
+            return Ok(Vec::new());
+        }
+        let end_chunk = start_chunk.saturating_add(count).min(total_chunks);
         let actual_count = end_chunk - start_chunk;
 
         if actual_count == 0 {
@@ -610,39 +629,20 @@ impl EwfHandle {
                 Some(loc) => loc.clone(),
                 None => {
                     // Zero-filled chunk
-                    if current_seg != usize::MAX {
-                        segment_groups
-                            .last_mut()
-                            .expect("segment_groups non-empty when current_seg is set")
-                            .1
-                            .push((
-                                chunk_idx,
-                                ChunkLocation {
-                                    segment_index: 0,
-                                    section_index: 0,
-                                    chunk_in_table: 0,
-                                    offset: 0,
-                                    base_offset: 0,
-                                    sectors_base: 0,
-                                    is_delta_chunk: false,
-                                },
-                            ));
+                    let zero_location = ChunkLocation {
+                        segment_index: 0,
+                        section_index: 0,
+                        chunk_in_table: 0,
+                        offset: 0,
+                        base_offset: 0,
+                        sectors_base: 0,
+                        is_delta_chunk: false,
+                    };
+
+                    if let Some((_, chunks)) = segment_groups.last_mut() {
+                        chunks.push((chunk_idx, zero_location));
                     } else {
-                        segment_groups.push((
-                            0,
-                            vec![(
-                                chunk_idx,
-                                ChunkLocation {
-                                    segment_index: 0,
-                                    section_index: 0,
-                                    chunk_in_table: 0,
-                                    offset: 0,
-                                    base_offset: 0,
-                                    sectors_base: 0,
-                                    is_delta_chunk: false,
-                                },
-                            )],
-                        ));
+                        segment_groups.push((0, vec![(chunk_idx, zero_location)]));
                         current_seg = 0;
                     }
                     continue;
@@ -650,17 +650,13 @@ impl EwfHandle {
             };
 
             if location.segment_index != current_seg {
+                current_seg = location.segment_index;
                 segment_groups.push((location.segment_index, vec![(chunk_idx, location)]));
-                current_seg = segment_groups
-                    .last()
-                    .expect("just pushed to segment_groups")
-                    .0;
+            } else if let Some((_, chunks)) = segment_groups.last_mut() {
+                chunks.push((chunk_idx, location));
             } else {
-                segment_groups
-                    .last_mut()
-                    .expect("segment_groups non-empty when current_seg is set")
-                    .1
-                    .push((chunk_idx, location));
+                current_seg = location.segment_index;
+                segment_groups.push((location.segment_index, vec![(chunk_idx, location)]));
             }
         }
 
@@ -677,7 +673,7 @@ impl EwfHandle {
                         let remaining =
                             self.volume.sector_count % self.volume.sectors_per_chunk as u64;
                         if remaining > 0 {
-                            (remaining * self.volume.bytes_per_sector as u64) as usize
+                            checked_final_chunk_size(remaining, self.volume.bytes_per_sector)?
                         } else {
                             chunk_size
                         }
@@ -691,7 +687,8 @@ impl EwfHandle {
                 // Calculate actual offset
                 let (offset_in_segment, is_compressed) = if location.is_delta_chunk {
                     let is_compressed = (location.offset & 0x80000000) != 0;
-                    let data_offset = location.sectors_base + 4;
+                    let data_offset =
+                        checked_ewf_add(location.sectors_base, 4, "delta chunk data offset")?;
                     let (_, offset_in_seg) =
                         Self::global_to_segment_offset(data_offset, &segment_sizes)?;
                     (offset_in_seg, is_compressed)
@@ -699,13 +696,17 @@ impl EwfHandle {
                     let is_compressed = (location.offset & 0x80000000) != 0;
                     let offset_value = location.offset & 0x7FFFFFFF;
                     let segment_local_offset = if location.base_offset > 0 {
-                        location.base_offset + offset_value
+                        checked_ewf_add(location.base_offset, offset_value, "chunk table offset")?
                     } else {
                         offset_value
                     };
-                    let segment_start: u64 =
-                        segment_sizes.iter().take(location.segment_index).sum();
-                    let absolute_offset = segment_start + segment_local_offset;
+                    let segment_start =
+                        checked_segment_start(&segment_sizes, location.segment_index)?;
+                    let absolute_offset = checked_ewf_add(
+                        segment_start,
+                        segment_local_offset,
+                        "chunk absolute offset",
+                    )?;
                     let (_, offset_in_seg) =
                         Self::global_to_segment_offset(absolute_offset, &segment_sizes)?;
                     (offset_in_seg, is_compressed)
@@ -714,8 +715,10 @@ impl EwfHandle {
                 file.seek(SeekFrom::Start(offset_in_segment))?;
 
                 let mut chunk_data = if is_compressed {
-                    let buffered =
-                        std::io::BufReader::with_capacity(65536, file.take(chunk_size as u64 * 2));
+                    let buffered = std::io::BufReader::with_capacity(
+                        65536,
+                        file.take(checked_chunk_read_limit(chunk_size)?),
+                    );
                     decompress_chunk_limited(buffered, chunk_size, chunk_idx)?
                 } else {
                     let mut uncompressed = vec![0u8; chunk_size];
@@ -727,7 +730,8 @@ impl EwfHandle {
                 if chunk_idx == total_chunks - 1 {
                     let remaining = self.volume.sector_count % self.volume.sectors_per_chunk as u64;
                     if remaining > 0 {
-                        let final_size = (remaining * self.volume.bytes_per_sector as u64) as usize;
+                        let final_size =
+                            checked_final_chunk_size(remaining, self.volume.bytes_per_sector)?;
                         if chunk_data.len() > final_size {
                             chunk_data.truncate(final_size);
                         }
@@ -749,19 +753,27 @@ impl EwfHandle {
 
     /// Get the total size of the decompressed image in bytes
     pub fn get_media_size(&self) -> u64 {
-        self.volume.sector_count * self.volume.bytes_per_sector as u64
+        self.volume
+            .sector_count
+            .saturating_mul(u64::from(self.volume.bytes_per_sector))
     }
 
     /// Get chunk size in bytes
     pub fn get_chunk_size(&self) -> u32 {
-        self.volume.sectors_per_chunk * self.volume.bytes_per_sector
+        self.volume
+            .sectors_per_chunk
+            .saturating_mul(self.volume.bytes_per_sector)
     }
 
     /// Read bytes at arbitrary offset from the decompressed image
     /// This is the primary method for filesystem parsing
     pub fn read_at(&mut self, offset: u64, length: usize) -> Result<Vec<u8>, ContainerError> {
-        let media_size = self.get_media_size();
-        let chunk_size = self.get_chunk_size() as u64;
+        let media_size = checked_ewf_media_size(&self.volume)?;
+        let chunk_size = u64::try_from(checked_ewf_chunk_size(
+            self.volume.sectors_per_chunk,
+            self.volume.bytes_per_sector,
+        )?)
+        .map_err(|_| ContainerError::ParseError("EWF chunk size exceeds u64".to_string()))?;
 
         let actual_length = bounded_media_read_len(media_size, offset, length)?;
         if actual_length == 0 {
@@ -770,7 +782,13 @@ impl EwfHandle {
 
         // Calculate which chunks we need
         let start_chunk = (offset / chunk_size) as usize;
-        let end_offset = offset + actual_length as u64;
+        let end_offset = checked_ewf_add(
+            offset,
+            u64::try_from(actual_length).map_err(|_| {
+                ContainerError::ParseError("EWF read length exceeds u64".to_string())
+            })?,
+            "media read end",
+        )?;
         let end_chunk = end_offset.div_ceil(chunk_size) as usize;
         let chunk_count = end_chunk - start_chunk;
 
@@ -782,14 +800,22 @@ impl EwfHandle {
         };
 
         // Concatenate chunk data
-        let mut all_data: Vec<u8> = Vec::with_capacity(chunk_count * chunk_size as usize);
+        let chunk_size_usize = usize::try_from(chunk_size).map_err(|_| {
+            ContainerError::ParseError("EWF chunk size exceeds memory address size".to_string())
+        })?;
+        let capacity = chunk_count.checked_mul(chunk_size_usize).ok_or_else(|| {
+            ContainerError::ParseError("EWF read buffer capacity overflow".to_string())
+        })?;
+        let mut all_data: Vec<u8> = Vec::with_capacity(capacity);
         for chunk in chunks {
             all_data.extend_from_slice(&chunk);
         }
 
         // Extract the requested byte range
         let offset_in_first_chunk = (offset % chunk_size) as usize;
-        let end_pos = offset_in_first_chunk + actual_length;
+        let end_pos = offset_in_first_chunk
+            .checked_add(actual_length)
+            .ok_or_else(|| ContainerError::ParseError("EWF read slice overflow".to_string()))?;
 
         if end_pos > all_data.len() {
             // Handle case where last chunk is smaller (end of media)
@@ -802,8 +828,13 @@ impl EwfHandle {
 
     /// Read a single sector at the given sector index
     pub fn read_sector(&mut self, sector_index: u64) -> Result<Vec<u8>, ContainerError> {
-        let offset = sector_index * self.volume.bytes_per_sector as u64;
-        self.read_at(offset, self.volume.bytes_per_sector as usize)
+        let offset = sector_index
+            .checked_mul(u64::from(self.volume.bytes_per_sector))
+            .ok_or_else(|| ContainerError::ParseError("EWF sector offset overflow".to_string()))?;
+        let length = usize::try_from(self.volume.bytes_per_sector).map_err(|_| {
+            ContainerError::ParseError("EWF sector size exceeds memory address size".to_string())
+        })?;
+        self.read_at(offset, length)
     }
 
     /// Read multiple consecutive sectors
@@ -812,8 +843,19 @@ impl EwfHandle {
         start_sector: u64,
         count: u64,
     ) -> Result<Vec<u8>, ContainerError> {
-        let offset = start_sector * self.volume.bytes_per_sector as u64;
-        let length = count as usize * self.volume.bytes_per_sector as usize;
+        let offset = start_sector
+            .checked_mul(u64::from(self.volume.bytes_per_sector))
+            .ok_or_else(|| ContainerError::ParseError("EWF sector offset overflow".to_string()))?;
+        let length_u64 = count
+            .checked_mul(u64::from(self.volume.bytes_per_sector))
+            .ok_or_else(|| {
+                ContainerError::ParseError("EWF sector read length overflow".to_string())
+            })?;
+        let length = usize::try_from(length_u64).map_err(|_| {
+            ContainerError::ParseError(
+                "EWF sector read length exceeds memory address size".to_string(),
+            )
+        })?;
         self.read_at(offset, length)
     }
 
@@ -840,7 +882,7 @@ impl EwfHandle {
         }
 
         let chunk_size =
-            (self.volume.sectors_per_chunk as usize) * (self.volume.bytes_per_sector as usize);
+            checked_ewf_chunk_size(self.volume.sectors_per_chunk, self.volume.bytes_per_sector)?;
 
         let location = match self.chunk_table.get(chunk_index) {
             Some(loc) => loc.clone(),
@@ -857,7 +899,7 @@ impl EwfHandle {
                     let remaining_sectors =
                         self.volume.sector_count % self.volume.sectors_per_chunk as u64;
                     if remaining_sectors > 0 {
-                        (remaining_sectors * self.volume.bytes_per_sector as u64) as usize
+                        checked_final_chunk_size(remaining_sectors, self.volume.bytes_per_sector)?
                     } else {
                         chunk_size
                     }
@@ -876,7 +918,7 @@ impl EwfHandle {
         // Use fast lookup with pre-computed cumulative sizes
         let (seg_idx, offset_in_segment, is_compressed) = if location.is_delta_chunk {
             let is_compressed = (location.offset & 0x80000000) != 0;
-            let data_offset = location.sectors_base + 4;
+            let data_offset = checked_ewf_add(location.sectors_base, 4, "delta chunk data offset")?;
 
             let (seg_idx, offset_in_seg) = self.global_to_segment_fast(data_offset)?;
 
@@ -898,14 +940,23 @@ impl EwfHandle {
             let offset_value = location.offset & 0x7FFFFFFF;
 
             let segment_local_offset = if location.base_offset > 0 {
-                location.base_offset + offset_value
+                checked_ewf_add(location.base_offset, offset_value, "chunk table offset")?
             } else {
                 offset_value
             };
 
             // Use fast lookup
-            let segment_start = self.segment_cumulative_sizes[location.segment_index];
-            let absolute_offset = segment_start + segment_local_offset;
+            let segment_start = *self
+                .segment_cumulative_sizes
+                .get(location.segment_index)
+                .ok_or_else(|| {
+                    ContainerError::ParseError(format!(
+                        "Chunk references missing segment {}",
+                        location.segment_index
+                    ))
+                })?;
+            let absolute_offset =
+                checked_ewf_add(segment_start, segment_local_offset, "chunk absolute offset")?;
 
             let (seg_idx, offset_in_segment) = self.global_to_segment_fast(absolute_offset)?;
 
@@ -922,8 +973,10 @@ impl EwfHandle {
         file.seek(SeekFrom::Start(offset_in_segment))?;
 
         let mut chunk_data = if is_compressed {
-            let buffered =
-                std::io::BufReader::with_capacity(65536, file.take(chunk_size as u64 * 2));
+            let buffered = std::io::BufReader::with_capacity(
+                65536,
+                file.take(checked_chunk_read_limit(chunk_size)?),
+            );
             decompress_chunk_limited(buffered, chunk_size, chunk_index)?
         } else {
             let mut uncompressed = vec![0u8; chunk_size];
@@ -936,10 +989,11 @@ impl EwfHandle {
             .volume
             .sector_count
             .div_ceil(self.volume.sectors_per_chunk as u64);
-        if chunk_index == (expected_chunks as usize - 1) {
+        if expected_chunks > 0 && chunk_index == (expected_chunks as usize - 1) {
             let remaining_sectors = self.volume.sector_count % self.volume.sectors_per_chunk as u64;
             if remaining_sectors > 0 {
-                let final_size = (remaining_sectors * self.volume.bytes_per_sector as u64) as usize;
+                let final_size =
+                    checked_final_chunk_size(remaining_sectors, self.volume.bytes_per_sector)?;
                 trace!(
                     "Last chunk {}: original size={}, remaining_sectors={}, truncating to {}",
                     chunk_index,
@@ -1069,11 +1123,18 @@ impl EwfHandle {
             header_bytes[15],
         ]);
 
+        let max_entries = u32::try_from((size.saturating_sub(24 + 4)) / 4).unwrap_or(u32::MAX);
         let chunk_count = if entry_count > 0 {
             entry_count
         } else {
-            ((size.saturating_sub(24 + 4)) / 4) as u32
+            max_entries
         };
+        if chunk_count > max_entries {
+            return Err(ContainerError::ParseError(format!(
+                "EWF table declares {} entries but section can only contain {}",
+                chunk_count, max_entries
+            )));
+        }
 
         trace!(
             "    Table: entry_count={}, base_offset={}, using_count={}",
@@ -1082,7 +1143,11 @@ impl EwfHandle {
             chunk_count
         );
 
-        let mut offsets = Vec::with_capacity(chunk_count as usize);
+        let mut offsets = Vec::with_capacity(usize::try_from(chunk_count).map_err(|_| {
+            ContainerError::ParseError(
+                "EWF table entry count exceeds memory address size".to_string(),
+            )
+        })?);
         for i in 0..chunk_count {
             let raw_offset = read_u32_le(file)? as u64;
             offsets.push(raw_offset);
@@ -1168,7 +1233,7 @@ impl EwfHandle {
                 offset: Some(current_offset),
                 size: Some(16),
             });
-            current_offset += 16;
+            current_offset = checked_ewf_add(current_offset, 16, "digest hash offset")?;
         }
 
         if size >= 36 {
@@ -1204,7 +1269,10 @@ impl EwfHandle {
         file.seek(SeekFrom::Start(offset))?;
 
         // Read compressed data
-        let mut compressed = vec![0u8; size as usize];
+        let compressed_len = usize::try_from(size).map_err(|_| {
+            ContainerError::ParseError("EWF header section exceeds memory address size".to_string())
+        })?;
+        let mut compressed = vec![0u8; compressed_len];
         file.read_exact(&mut compressed)?;
 
         // Find zlib magic (78 9c) and decompress
@@ -1277,6 +1345,79 @@ impl EwfHandle {
     }
 }
 
+fn checked_ewf_add(a: u64, b: u64, context: &str) -> Result<u64, ContainerError> {
+    a.checked_add(b)
+        .ok_or_else(|| ContainerError::ParseError(format!("EWF {context} overflow")))
+}
+
+fn checked_section_data_offset(section_offset: u64) -> Result<u64, ContainerError> {
+    checked_ewf_add(section_offset, 76, "section data offset")
+}
+
+fn checked_segment_start(
+    segment_sizes: &[u64],
+    segment_index: usize,
+) -> Result<u64, ContainerError> {
+    if segment_index > segment_sizes.len() {
+        return Err(ContainerError::ParseError(format!(
+            "Segment index {} beyond {} segment sizes",
+            segment_index,
+            segment_sizes.len()
+        )));
+    }
+
+    segment_sizes
+        .iter()
+        .take(segment_index)
+        .try_fold(0u64, |total, &size| {
+            checked_ewf_add(total, size, "segment start")
+        })
+}
+
+fn checked_ewf_chunk_size(
+    sectors_per_chunk: u32,
+    bytes_per_sector: u32,
+) -> Result<usize, ContainerError> {
+    let size = u64::from(sectors_per_chunk)
+        .checked_mul(u64::from(bytes_per_sector))
+        .ok_or_else(|| ContainerError::ParseError("EWF chunk size overflow".to_string()))?;
+    if size == 0 {
+        return Err(ContainerError::ParseError(
+            "EWF chunk size cannot be zero".to_string(),
+        ));
+    }
+    usize::try_from(size).map_err(|_| {
+        ContainerError::ParseError("EWF chunk size exceeds memory address size".to_string())
+    })
+}
+
+fn checked_chunk_read_limit(chunk_size: usize) -> Result<u64, ContainerError> {
+    let chunk_size = u64::try_from(chunk_size)
+        .map_err(|_| ContainerError::ParseError("EWF chunk size exceeds u64".to_string()))?;
+    chunk_size
+        .checked_mul(2)
+        .ok_or_else(|| ContainerError::ParseError("EWF chunk read limit overflow".to_string()))
+}
+
+fn checked_final_chunk_size(
+    remaining_sectors: u64,
+    bytes_per_sector: u32,
+) -> Result<usize, ContainerError> {
+    let size = remaining_sectors
+        .checked_mul(u64::from(bytes_per_sector))
+        .ok_or_else(|| ContainerError::ParseError("EWF final chunk size overflow".to_string()))?;
+    usize::try_from(size).map_err(|_| {
+        ContainerError::ParseError("EWF final chunk size exceeds memory address size".to_string())
+    })
+}
+
+fn checked_ewf_media_size(volume: &VolumeSection) -> Result<u64, ContainerError> {
+    volume
+        .sector_count
+        .checked_mul(u64::from(volume.bytes_per_sector))
+        .ok_or_else(|| ContainerError::ParseError("EWF media size overflow".to_string()))
+}
+
 fn bounded_media_read_len(
     media_size: u64,
     offset: u64,
@@ -1341,5 +1482,48 @@ mod tests {
     fn test_bounded_media_read_len_clamps_to_remaining() {
         assert_eq!(bounded_media_read_len(10, 8, 5).unwrap(), 2);
         assert_eq!(bounded_media_read_len(u64::MAX, 0, 8).unwrap(), 8);
+    }
+
+    #[test]
+    fn test_checked_section_data_offset_rejects_overflow() {
+        let err = checked_section_data_offset(u64::MAX).unwrap_err();
+        assert!(err.to_string().contains("section data offset overflow"));
+    }
+
+    #[test]
+    fn test_checked_segment_start_rejects_overflow_and_out_of_bounds() {
+        assert_eq!(checked_segment_start(&[10, 20, 30], 2).unwrap(), 30);
+
+        let overflow = checked_segment_start(&[u64::MAX, 1], 2).unwrap_err();
+        assert!(overflow.to_string().contains("segment start overflow"));
+
+        let out_of_bounds = checked_segment_start(&[10], 2).unwrap_err();
+        assert!(out_of_bounds.to_string().contains("beyond 1 segment sizes"));
+    }
+
+    #[test]
+    fn test_checked_chunk_size_rejects_zero_and_address_overflow() {
+        let zero = checked_ewf_chunk_size(0, 512).unwrap_err();
+        assert!(zero.to_string().contains("cannot be zero"));
+
+        assert_eq!(checked_ewf_chunk_size(64, 512).unwrap(), 32768);
+    }
+
+    #[test]
+    fn test_checked_final_chunk_and_media_size_reject_overflow() {
+        let final_chunk = checked_final_chunk_size(u64::MAX, 512).unwrap_err();
+        assert!(final_chunk
+            .to_string()
+            .contains("final chunk size overflow"));
+
+        let volume = VolumeSection {
+            chunk_count: 1,
+            sectors_per_chunk: 64,
+            bytes_per_sector: 512,
+            sector_count: u64::MAX,
+            compression_level: 1,
+        };
+        let media_size = checked_ewf_media_size(&volume).unwrap_err();
+        assert!(media_size.to_string().contains("media size overflow"));
     }
 }

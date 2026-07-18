@@ -43,12 +43,16 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Helper functions for serde defaults (used by FFXProject's serde attributes)
 fn generate_id() -> String {
+    format!("proj_{}", unix_epoch_millis())
+}
+
+pub(crate) fn unix_epoch_millis() -> u128 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
+
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("system clock after UNIX_EPOCH")
-        .as_millis();
-    format!("proj_{}", timestamp)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
 }
 
 fn default_app_version() -> String {

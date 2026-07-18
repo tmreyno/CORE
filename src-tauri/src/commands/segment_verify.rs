@@ -11,7 +11,7 @@
 //! - Combined hash: all segments fed into one hasher → single container hash
 //! - Individual hashes: each segment file hashed independently
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::Emitter;
 use tracing::{debug, info};
 
@@ -148,16 +148,19 @@ pub async fn hash_container_segments(
                         0.0
                     };
 
-                    let _ = window_clone.emit(
+                    crate::eventing::log_emit_result(
                         "segment-hash-progress",
-                        SegmentHashProgress {
-                            current_segment: current_seg.min(segment_count - 1) + 1,
-                            total_segments: segment_count,
-                            bytes_hashed: bytes_done,
-                            total_bytes: bytes_total,
-                            percent,
-                            phase: "combined".to_string(),
-                        },
+                        window_clone.emit(
+                            "segment-hash-progress",
+                            SegmentHashProgress {
+                                current_segment: current_seg.min(segment_count - 1) + 1,
+                                total_segments: segment_count,
+                                bytes_hashed: bytes_done,
+                                total_bytes: bytes_total,
+                                percent,
+                                phase: "combined".to_string(),
+                            },
+                        ),
                     );
                 },
             )
@@ -188,25 +191,25 @@ pub async fn hash_container_segments(
                             0.0
                         };
 
-                        let _ = window_clone.emit(
+                        crate::eventing::log_emit_result(
                             "segment-hash-progress",
-                            SegmentHashProgress {
-                                current_segment: i + 1,
-                                total_segments: segment_count,
-                                bytes_hashed: overall_done,
-                                total_bytes,
-                                percent,
-                                phase: "individual".to_string(),
-                            },
+                            window_clone.emit(
+                                "segment-hash-progress",
+                                SegmentHashProgress {
+                                    current_segment: i + 1,
+                                    total_segments: segment_count,
+                                    bytes_hashed: overall_done,
+                                    total_bytes,
+                                    percent,
+                                    phase: "individual".to_string(),
+                                },
+                            ),
                         );
                     },
                 )
                 .map_err(|e| format!("Segment {} hash failed: {}", i + 1, e))?;
 
-                let seg_name = seg_path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
+                let seg_name = segment_result_name(seg_path)?;
 
                 segment_hashes.push(SegmentHashResult {
                     segment_name: seg_name,
@@ -303,6 +306,16 @@ fn bytes_before_segment(sizes: &[u64], index: usize) -> u64 {
         .fold(0u64, |total, size| total.saturating_add(*size))
 }
 
+fn segment_result_name(path: &Path) -> Result<String, String> {
+    let Some(name) = path.file_name().filter(|name| !name.is_empty()) else {
+        return Err(format!(
+            "Segment path has no file name for verification result: {}",
+            path.display()
+        ));
+    };
+    Ok(name.to_string_lossy().to_string())
+}
+
 fn current_segment_index(bytes_done: u64, sizes: &[u64]) -> usize {
     if sizes.is_empty() {
         return 0;
@@ -392,6 +405,21 @@ mod tests {
 
         assert_eq!(total_segment_bytes(&sizes).unwrap(), 60);
         assert_eq!(bytes_before_segment(&sizes, 2), 30);
+    }
+
+    #[test]
+    fn segment_result_name_rejects_path_without_file_name() {
+        let err = segment_result_name(Path::new("/")).unwrap_err();
+
+        assert!(err.contains("has no file name"));
+    }
+
+    #[test]
+    fn segment_result_name_uses_terminal_file_name() {
+        assert_eq!(
+            segment_result_name(Path::new("/tmp/evidence.E01")).unwrap(),
+            "evidence.E01"
+        );
     }
 
     #[test]

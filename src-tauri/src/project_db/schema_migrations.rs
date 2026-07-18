@@ -14,6 +14,15 @@ use super::types::SCHEMA_VERSION;
 use rusqlite::{params, Result as SqlResult};
 use tracing::{info, warn};
 
+fn table_column_names(conn: &rusqlite::Connection, table: &str) -> SqlResult<Vec<String>> {
+    let escaped_table = table.replace('\'', "''");
+    let mut stmt = conn.prepare(&format!(
+        "SELECT name FROM pragma_table_info('{escaped_table}')"
+    ))?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(0))?.collect();
+    columns
+}
+
 impl ProjectDatabase {
     /// Run schema migrations if needed (future-proofing)
     pub(crate) fn check_migrations(&self) -> SqlResult<()> {
@@ -440,8 +449,7 @@ impl ProjectDatabase {
                 let has_status: bool = conn
                     .prepare("SELECT COUNT(*) FROM pragma_table_info('evidence_collections') WHERE name = 'status'")?
                     .query_row([], |row| row.get::<_, i64>(0))
-                    .map(|count| count > 0)
-                    .unwrap_or(false);
+                    .map(|count| count > 0)?;
                 if !has_status {
                     info!(
                         "Running v6 → v7 migration: adding status column to evidence_collections"
@@ -483,11 +491,7 @@ impl ProjectDatabase {
                     "storage_notes",
                 ];
 
-                let existing_columns: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('collected_items')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_columns = table_column_names(&conn, "collected_items")?;
 
                 let mut added = 0;
                 for col in &columns_to_add {
@@ -531,11 +535,7 @@ impl ProjectDatabase {
                     "destruction_date",
                 ];
 
-                let existing_coc_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('coc_items')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_coc_cols = table_column_names(&conn, "coc_items")?;
 
                 let mut coc_added = 0;
                 for col in &coc_columns_to_add {
@@ -549,11 +549,7 @@ impl ProjectDatabase {
                 }
 
                 // coc_transfers: add storage_location and storage_date
-                let existing_transfer_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('coc_transfers')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_transfer_cols = table_column_names(&conn, "coc_transfers")?;
 
                 let transfer_columns_to_add = vec!["storage_location", "storage_date"];
                 let mut transfer_added = 0;
@@ -624,11 +620,7 @@ impl ProjectDatabase {
 
             // v11 → v12: Preserve additive shared packaging/storage fields on desktop DB rows
             if current_version < 12 {
-                let existing_collected_item_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('collected_items')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_collected_item_cols = table_column_names(&conn, "collected_items")?;
 
                 let mut collected_item_added = 0;
                 for col in ["packaging_type", "packaging_detail"] {
@@ -641,11 +633,7 @@ impl ProjectDatabase {
                     }
                 }
 
-                let existing_coc_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('coc_items')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_coc_cols = table_column_names(&conn, "coc_items")?;
 
                 let mut coc_item_added = 0;
                 for col in ["storage_class", "storage_location_detail"] {
@@ -658,11 +646,7 @@ impl ProjectDatabase {
                     }
                 }
 
-                let existing_transfer_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('coc_transfers')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_transfer_cols = table_column_names(&conn, "coc_transfers")?;
 
                 let mut transfer_added = 0;
                 for col in ["storage_class", "storage_location_detail"] {
@@ -757,11 +741,7 @@ impl ProjectDatabase {
 
             // v14 → v15: Source identity columns on hash records
             if current_version < 15 {
-                let existing_hash_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('hashes')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_hash_cols = table_column_names(&conn, "hashes")?;
 
                 if !existing_hash_cols.iter().any(|c| c == "source_id") {
                     conn.execute("ALTER TABLE hashes ADD COLUMN source_id TEXT", [])?;
@@ -850,11 +830,7 @@ impl ProjectDatabase {
 
             // v18 → v19: Persisted source-analysis text indicators
             if current_version < 19 {
-                let existing_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('source_analyses')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_cols = table_column_names(&conn, "source_analyses")?;
                 if !existing_cols.iter().any(|c| c == "indicators_json") {
                     conn.execute(
                         "ALTER TABLE source_analyses ADD COLUMN indicators_json TEXT",
@@ -883,11 +859,7 @@ impl ProjectDatabase {
 
             // v19 → v20: Collected item source/hash snapshots
             if current_version < 20 {
-                let existing_cols: Vec<String> = conn
-                    .prepare("SELECT name FROM pragma_table_info('collected_items')")?
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .filter_map(|r| r.ok())
-                    .collect();
+                let existing_cols = table_column_names(&conn, "collected_items")?;
 
                 for col in [
                     "source_id",

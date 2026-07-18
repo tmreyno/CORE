@@ -119,6 +119,19 @@ fn checked_triage_copy_advance(
     })
 }
 
+fn remove_partial_triage_file(path: &Path, context: &str) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => warn!(
+            "Failed to remove partial triage file after {} ({}): {}",
+            context,
+            path.display(),
+            error
+        ),
+    }
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -1273,17 +1286,7 @@ pub async fn triage_collect(
         );
 
         // Pre-create all destination directories (sequential — avoids race conditions)
-        {
-            let mut dirs_seen = std::collections::HashSet::new();
-            for (_src, rel_dest, _category) in &all_files {
-                let dest = output_path.join(rel_dest);
-                if let Some(parent) = dest.parent() {
-                    if dirs_seen.insert(parent.to_path_buf()) {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                }
-            }
-        }
+        precreate_triage_destination_dirs(output_path, &all_files)?;
 
         // Shared atomic counters for parallel progress
         let a_collected = AtomicU64::new(0);
@@ -1348,7 +1351,7 @@ pub async fn triage_collect(
                 }
                 if TRIAGE_CANCEL_FLAG.load(Ordering::Relaxed) {
                     a_cancelled.store(true, Ordering::Relaxed);
-                    let _ = std::fs::remove_file(&dest);
+                    remove_partial_triage_file(&dest, "cancel");
                     break Err(std::io::Error::new(
                         std::io::ErrorKind::Interrupted,
                         "cancelled",
@@ -1362,7 +1365,7 @@ pub async fn triage_collect(
                     );
                     // Thread is stuck in a kernel syscall — we can't kill it
                     // but we can move on. Clean up any partial output.
-                    let _ = std::fs::remove_file(&dest);
+                    remove_partial_triage_file(&dest, "timeout");
                     break Err(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         "copy stuck in blocked I/O",
@@ -1390,7 +1393,7 @@ pub async fn triage_collect(
                 }
                 Err(e) => {
                     warn!("Failed to copy {}: {e}", src.display());
-                    let _ = std::fs::remove_file(&dest);
+                    remove_partial_triage_file(&dest, "copy failure");
                     a_failed.fetch_add(1, Ordering::Relaxed);
                     let mut details = lock_mutex_recover(shared_category_details.as_ref());
                     if let Some(cat_result) = details.get_mut(category.as_str()) {
@@ -1411,20 +1414,23 @@ pub async fn triage_collect(
                     } else {
                         0.0
                     };
-                    let _ = window.emit(
+                    crate::eventing::log_emit_result(
                         "triage-progress",
-                        TriageProgress {
-                            phase: "collecting".to_string(),
-                            current_file: src
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_default(),
-                            files_collected: a_collected.load(Ordering::Relaxed),
-                            files_total: total,
-                            bytes_collected: a_bytes.load(Ordering::Relaxed),
-                            percent: pct,
-                            current_category: category.clone(),
-                        },
+                        window.emit(
+                            "triage-progress",
+                            TriageProgress {
+                                phase: "collecting".to_string(),
+                                current_file: src
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                                files_collected: a_collected.load(Ordering::Relaxed),
+                                files_total: total,
+                                bytes_collected: a_bytes.load(Ordering::Relaxed),
+                                percent: pct,
+                                current_category: category.clone(),
+                            },
+                        ),
                     );
                 }
             }
@@ -1467,17 +1473,20 @@ pub async fn triage_collect(
         // Secret scanning phase
         let mut findings = Vec::new();
         if options.scan_for_secrets && collected > 0 {
-            let _ = window.emit(
+            crate::eventing::log_emit_result(
                 "triage-progress",
-                TriageProgress {
-                    phase: "scanning".to_string(),
-                    current_file: String::new(),
-                    files_collected: collected,
-                    files_total: total,
-                    bytes_collected: bytes,
-                    percent: 90.0,
-                    current_category: "secrets".to_string(),
-                },
+                window.emit(
+                    "triage-progress",
+                    TriageProgress {
+                        phase: "scanning".to_string(),
+                        current_file: String::new(),
+                        files_collected: collected,
+                        files_total: total,
+                        bytes_collected: bytes,
+                        percent: 90.0,
+                        current_category: "secrets".to_string(),
+                    },
+                ),
             );
 
             findings = scan_for_secrets(output_path, &window, collected);
@@ -1489,17 +1498,20 @@ pub async fn triage_collect(
         // Container packaging phase (7z)
         let container_path = if let Some(ref fmt) = options.container_format {
             if fmt == "7z" && collected > 0 {
-                let _ = window.emit(
+                crate::eventing::log_emit_result(
                     "triage-progress",
-                    TriageProgress {
-                        phase: "packaging".to_string(),
-                        current_file: String::new(),
-                        files_collected: collected,
-                        files_total: total,
-                        bytes_collected: bytes,
-                        percent: 95.0,
-                        current_category: String::new(),
-                    },
+                    window.emit(
+                        "triage-progress",
+                        TriageProgress {
+                            phase: "packaging".to_string(),
+                            current_file: String::new(),
+                            files_collected: collected,
+                            files_total: total,
+                            bytes_collected: bytes,
+                            percent: 95.0,
+                            current_category: String::new(),
+                        },
+                    ),
                 );
 
                 // Build output archive path alongside the staging directory
@@ -1536,17 +1548,20 @@ pub async fn triage_collect(
         };
 
         // Final progress
-        let _ = window.emit(
+        crate::eventing::log_emit_result(
             "triage-progress",
-            TriageProgress {
-                phase: "complete".to_string(),
-                current_file: String::new(),
-                files_collected: collected,
-                files_total: total,
-                bytes_collected: bytes,
-                percent: 100.0,
-                current_category: String::new(),
-            },
+            window.emit(
+                "triage-progress",
+                TriageProgress {
+                    phase: "complete".to_string(),
+                    current_file: String::new(),
+                    files_collected: collected,
+                    files_total: total,
+                    bytes_collected: bytes,
+                    percent: 100.0,
+                    current_category: String::new(),
+                },
+            ),
         );
 
         info!(
@@ -1622,6 +1637,27 @@ fn push_triage_collection_file(
     true
 }
 
+fn precreate_triage_destination_dirs(
+    output_path: &Path,
+    all_files: &[(PathBuf, String, String)],
+) -> Result<(), String> {
+    let mut dirs_seen = std::collections::HashSet::new();
+    for (_src, rel_dest, _category) in all_files {
+        let dest = output_path.join(rel_dest);
+        if let Some(parent) = dest.parent() {
+            if dirs_seen.insert(parent.to_path_buf()) {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    format!(
+                        "Failed to create triage destination directory {}: {e}",
+                        parent.display()
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Package the staging directory contents into a 7z archive.
 fn package_to_7z(staging_dir: &Path, archive_path: &Path) -> Result<(), String> {
     let sz =
@@ -1671,8 +1707,15 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
             return Ok(());
         }
 
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Ok(());
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(error) => {
+                warn!(
+                    "Skipping triage manifest directory {}: failed to read entries: {error}",
+                    dir.display()
+                );
+                return Ok(());
+            }
         };
         for entry in entries.flatten() {
             if *rows_written >= TRIAGE_MAX_TRAVERSAL_FILES {
@@ -1702,12 +1745,29 @@ fn write_triage_manifest(output_dir: &Path) -> Result<(), String> {
                     .next()
                     .map(|c| c.as_os_str().to_string_lossy().to_string())
                     .unwrap_or_default();
-                let meta = std::fs::metadata(&path);
+                let meta = match std::fs::metadata(&path) {
+                    Ok(meta) => Some(meta),
+                    Err(error) => {
+                        warn!(
+                            "Triage manifest metadata unavailable for {}: {error}",
+                            path.display()
+                        );
+                        None
+                    }
+                };
                 let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
                 let modified = meta
                     .as_ref()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
+                    .and_then(|m| match m.modified() {
+                        Ok(t) => Some(t),
+                        Err(error) => {
+                            warn!(
+                                "Triage manifest modified timestamp unavailable for {}: {error}",
+                                path.display()
+                            );
+                            None
+                        }
+                    })
                     .and_then(|t| {
                         let dur = t.duration_since(std::time::UNIX_EPOCH).ok()?;
                         let secs = dur.as_secs() as i64;
@@ -1954,17 +2014,20 @@ fn scan_for_secrets(
                     } else {
                         95.0
                     };
-                    let _ = window.emit(
+                    crate::eventing::log_emit_result(
                         "triage-progress",
-                        TriageProgress {
-                            phase: "scanning".to_string(),
-                            current_file: rel_path,
-                            files_collected: total_collected,
-                            files_total: total_collected,
-                            bytes_collected: 0,
-                            percent: pct.min(99.0),
-                            current_category: "secrets".to_string(),
-                        },
+                        window.emit(
+                            "triage-progress",
+                            TriageProgress {
+                                phase: "scanning".to_string(),
+                                current_file: rel_path,
+                                files_collected: total_collected,
+                                files_total: total_collected,
+                                bytes_collected: 0,
+                                percent: pct.min(99.0),
+                                current_category: "secrets".to_string(),
+                            },
+                        ),
                     );
                 }
             }
@@ -2276,7 +2339,8 @@ mod tests {
     use super::{
         checked_triage_copy_advance, checked_triage_copy_read_len, collect_dir_recursive,
         copy_triage_file_snapshot, detect_target_platform, get_platform_artifacts,
-        into_inner_recover, lock_mutex_recover, push_secret_finding, push_triage_collection_file,
+        into_inner_recover, lock_mutex_recover, precreate_triage_destination_dirs,
+        push_secret_finding, push_triage_collection_file, remove_partial_triage_file,
         write_triage_manifest, SecretFinding, TargetPlatform, TRIAGE_COPY_CHUNK_SIZE,
         TRIAGE_MAX_COLLECTION_FILES, TRIAGE_MAX_SECRET_FINDINGS, TRIAGE_MAX_TRAVERSAL_DEPTH,
     };
@@ -2447,6 +2511,16 @@ mod tests {
     }
 
     #[test]
+    fn remove_partial_triage_file_removes_existing_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let (_handle, path) = file.keep().unwrap();
+
+        remove_partial_triage_file(&path, "test");
+
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn push_triage_collection_file_caps_collection_queue() {
         let mut all_files = Vec::new();
         for index in 0..TRIAGE_MAX_COLLECTION_FILES {
@@ -2465,6 +2539,36 @@ mod tests {
             "logs".to_string(),
         ));
         assert_eq!(all_files.len(), TRIAGE_MAX_COLLECTION_FILES);
+    }
+
+    #[test]
+    fn precreate_triage_destination_dirs_creates_nested_parents() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![(
+            std::path::PathBuf::from("source.txt"),
+            "system/logs/source.txt".to_string(),
+            "system".to_string(),
+        )];
+
+        precreate_triage_destination_dirs(dir.path(), &files).unwrap();
+
+        assert!(dir.path().join("system/logs").is_dir());
+    }
+
+    #[test]
+    fn precreate_triage_destination_dirs_reports_blocked_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("system"), b"not a directory").unwrap();
+        let files = vec![(
+            std::path::PathBuf::from("source.txt"),
+            "system/logs/source.txt".to_string(),
+            "system".to_string(),
+        )];
+
+        let err = precreate_triage_destination_dirs(dir.path(), &files).unwrap_err();
+
+        assert!(err.contains("Failed to create triage destination directory"));
+        assert!(err.contains("system"));
     }
 
     #[test]

@@ -235,9 +235,8 @@ fn compute_timeline_summary(project: &FFXProject) -> TimelineSummary {
         .filter_map(|a| chrono::DateTime::parse_from_rfc3339(&a.timestamp).ok())
         .collect();
 
-    let (start, end) = if !timestamps.is_empty() {
-        let min = timestamps.iter().min().expect("timestamps is non-empty");
-        let max = timestamps.iter().max().expect("timestamps is non-empty");
+    let timestamp_bounds = timestamps.iter().min().zip(timestamps.iter().max());
+    let (start, end) = if let Some((min, max)) = timestamp_bounds {
         (min.to_rfc3339(), max.to_rfc3339())
     } else {
         (String::new(), String::new())
@@ -245,11 +244,18 @@ fn compute_timeline_summary(project: &FFXProject) -> TimelineSummary {
 
     // Total duration
     let total_duration_hours = if timestamps.len() >= 2 {
-        let duration = timestamps
-            .iter()
-            .max()
-            .expect("len >= 2")
-            .signed_duration_since(*timestamps.iter().min().expect("len >= 2"));
+        let Some((min, max)) = timestamps.iter().min().zip(timestamps.iter().max()) else {
+            return TimelineSummary {
+                total_activities,
+                unique_users: unique_users.len(),
+                date_range: (start, end),
+                total_duration_hours: 0.0,
+                most_active_day: String::new(),
+                most_active_hour: 0,
+                avg_activities_per_session: 0.0,
+            };
+        };
+        let duration = max.signed_duration_since(*min);
         duration.num_hours() as f64 + (duration.num_minutes() % 60) as f64 / 60.0
     } else {
         0.0
@@ -453,32 +459,30 @@ fn compute_user_activity(project: &FFXProject) -> Vec<UserActivity> {
 /// Identify peak activity periods
 fn identify_peak_periods(project: &FFXProject) -> Vec<PeakPeriod> {
     // Group activities into 30-minute windows
-    let mut windows: HashMap<String, Vec<&ActivityLogEntry>> = HashMap::new();
+    let mut windows: HashMap<chrono::DateTime<chrono::FixedOffset>, Vec<&ActivityLogEntry>> =
+        HashMap::new();
 
     for activity in &project.activity_log {
         if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&activity.timestamp) {
             // Round down to 30-minute window
-            let window_start = dt
+            if let Some(window_start) = dt
                 .with_minute((dt.minute() / 30) * 30)
-                .expect("valid minute value")
-                .with_second(0)
-                .expect("0 is valid second");
-            let key = window_start.to_rfc3339();
-            windows.entry(key).or_default().push(activity);
+                .and_then(|window| window.with_second(0))
+            {
+                windows.entry(window_start).or_default().push(activity);
+            }
         }
     }
 
     // Find top 5 peak periods
     let mut peaks: Vec<_> = windows
         .into_iter()
-        .map(|(start, activities)| {
+        .map(|(start_dt, activities)| {
             let count = activities.len();
-            let start_dt = chrono::DateTime::parse_from_rfc3339(&start)
-                .expect("key was produced by to_rfc3339()");
             let end_dt = start_dt + chrono::Duration::minutes(30);
 
             PeakPeriod {
-                start_time: start,
+                start_time: start_dt.to_rfc3339(),
                 end_time: end_dt.to_rfc3339(),
                 duration_minutes: 30.0,
                 activity_count: count,

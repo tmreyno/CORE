@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 
@@ -245,15 +245,17 @@ pub async fn scan_directory_streaming(
     let (tx, mut rx) =
         mpsc::channel::<containers::DiscoveredFile>(DISCOVERY_STREAM_CHANNEL_CAPACITY);
     let callback_emitted = Arc::new(AtomicUsize::new(0));
+    let progress_receiver_closed = Arc::new(AtomicBool::new(false));
 
     // Spawn blocking directory scan in background thread
     let dir_path_clone = dirPath.clone();
     let callback_emitted_clone = Arc::clone(&callback_emitted);
+    let progress_receiver_closed_clone = Arc::clone(&progress_receiver_closed);
     let scan_handle = tauri::async_runtime::spawn_blocking(move || {
         containers::scan_directory_streaming(&dir_path_clone, recursive, |file| {
             let current = callback_emitted_clone.fetch_add(1, Ordering::Relaxed);
             if current < DISCOVERY_MAX_SCAN_RESULTS {
-                let _ = tx.blocking_send(bounded_discovered_file(file.clone()));
+                send_discovery_progress(&tx, &progress_receiver_closed_clone, file.clone());
             }
         })
     });
@@ -262,7 +264,7 @@ pub async fn scan_directory_streaming(
     let mut emitted = 0usize;
     while let Some(file) = rx.recv().await {
         debug!(file = %file.filename, "Found file");
-        let _ = window.emit("scan-file-found", &file);
+        crate::eventing::log_emit_result("scan-file-found", window.emit("scan-file-found", &file));
         emitted += 1;
     }
 
@@ -701,6 +703,25 @@ fn bounded_discovered_file(mut file: containers::DiscoveredFile) -> containers::
     file
 }
 
+fn send_discovery_progress(
+    tx: &tokio::sync::mpsc::Sender<containers::DiscoveredFile>,
+    receiver_closed: &AtomicBool,
+    file: containers::DiscoveredFile,
+) -> bool {
+    if receiver_closed.load(Ordering::Relaxed) {
+        return false;
+    }
+
+    match tx.blocking_send(bounded_discovered_file(file)) {
+        Ok(()) => true,
+        Err(error) => {
+            receiver_closed.store(true, Ordering::Relaxed);
+            debug!(%error, "Discovery progress receiver closed before scan completed");
+            false
+        }
+    }
+}
+
 fn bounded_case_documents(
     mut documents: Vec<containers::CaseDocument>,
 ) -> Vec<containers::CaseDocument> {
@@ -840,6 +861,57 @@ mod tests {
             bounded[0].segment_files.as_ref().unwrap().len(),
             DISCOVERY_MAX_SCAN_RESULTS
         );
+    }
+
+    #[test]
+    fn send_discovery_progress_sends_when_receiver_is_open() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let receiver_closed = AtomicBool::new(false);
+
+        let sent = send_discovery_progress(
+            &tx,
+            &receiver_closed,
+            discovered_file("/case/file.E01".to_string()),
+        );
+
+        assert!(sent);
+        assert!(!receiver_closed.load(Ordering::Relaxed));
+        let received = rx.try_recv().expect("progress item should be queued");
+        assert_eq!(received.path, "/case/file.E01");
+    }
+
+    #[test]
+    fn send_discovery_progress_marks_receiver_closed() {
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        drop(rx);
+        let receiver_closed = AtomicBool::new(false);
+
+        let sent = send_discovery_progress(
+            &tx,
+            &receiver_closed,
+            discovered_file("/case/file.E01".to_string()),
+        );
+
+        assert!(!sent);
+        assert!(receiver_closed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn send_discovery_progress_skips_after_receiver_closed() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let receiver_closed = AtomicBool::new(true);
+
+        let sent = send_discovery_progress(
+            &tx,
+            &receiver_closed,
+            discovered_file("/case/file.E01".to_string()),
+        );
+
+        assert!(!sent);
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
     }
 
     #[test]

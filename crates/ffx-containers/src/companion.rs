@@ -26,18 +26,18 @@ const MAX_COMPANION_LOG_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Pre-compiled regex for matching hex hash values (32-128 chars)
 /// Compiled once on first use via OnceLock
-fn hash_regex() -> &'static Regex {
-    static HASH_REGEX: OnceLock<Regex> = OnceLock::new();
+fn hash_regex() -> Result<&'static Regex, regex::Error> {
+    static HASH_REGEX: OnceLock<Result<Regex, regex::Error>> = OnceLock::new();
     HASH_REGEX.get_or_init(|| {
         Regex::new(
             r"(?i)(?:^|[^a-f0-9])([a-f0-9]{128}|[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})(?:$|[^a-f0-9])",
         )
-        .expect("Invalid hash regex")
-    })
+    }).as_ref().map_err(|err| err.clone())
 }
 
 fn find_hash_value(text: &str) -> Option<&str> {
     hash_regex()
+        .ok()?
         .captures(text)
         .and_then(|captures| captures.get(1))
         .map(|hash| hash.as_str())

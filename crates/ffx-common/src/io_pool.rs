@@ -69,10 +69,12 @@ impl FileIoPool {
             // Add to front
             self.lru_queue.push_front(file_index);
             trace!(file_index, "File handle cache hit");
-            return Ok(self
-                .open_handles
-                .get_mut(&file_index)
-                .expect("contains_key was true"));
+            return self.open_handles.get_mut(&file_index).ok_or_else(|| {
+                ContainerError::SegmentError(format!(
+                    "File handle cache entry {} disappeared after cache hit",
+                    file_index
+                ))
+            });
         }
 
         // Need to open the file - check if we need to close one first
@@ -93,10 +95,12 @@ impl FileIoPool {
         self.open_handles.insert(file_index, file);
         self.lru_queue.push_front(file_index);
 
-        Ok(self
-            .open_handles
-            .get_mut(&file_index)
-            .expect("just inserted"))
+        self.open_handles.get_mut(&file_index).ok_or_else(|| {
+            ContainerError::SegmentError(format!(
+                "File handle cache entry {} was not available after insert",
+                file_index
+            ))
+        })
     }
 
     /// Get the number of files in the pool

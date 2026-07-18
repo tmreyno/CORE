@@ -6,6 +6,8 @@
 
 //! AD1 container operations including tree navigation, data reading, and verification.
 
+use std::fmt::Display;
+
 use tracing::debug;
 
 use crate::ad1;
@@ -21,6 +23,24 @@ const CONTAINER_CHUNK_MAX_BYTES: usize = 16 * 1024 * 1024;
 const CONTAINER_PREVIEW_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const CONTAINER_PREVIEW_COPY_CHUNK_BYTES: usize = 1024 * 1024;
 const CONTAINER_METADATA_BATCH_MAX_ITEMS: usize = 10_000;
+
+fn detector_matches<E>(path: &str, format: &str, result: Result<bool, E>) -> bool
+where
+    E: Display,
+{
+    match result {
+        Ok(matches) => matches,
+        Err(err) => {
+            debug!(
+                path = %path,
+                format = %format,
+                error = %err,
+                "Container command detector failed; treating as no match"
+            );
+            false
+        }
+    }
+}
 
 // =============================================================================
 // V1 Container Commands
@@ -230,19 +250,19 @@ fn infer_preview_container_type(
     if is_archive_entry {
         return Ok("archive".to_string());
     }
-    if ewf::is_l01_file(container_path).unwrap_or(false) {
+    if detector_matches(container_path, "L01", ewf::is_l01_file(container_path)) {
         return Ok("l01".to_string());
     }
-    if ewf::is_ewf(container_path).unwrap_or(false) {
+    if detector_matches(container_path, "EWF", ewf::is_ewf(container_path)) {
         return Ok("e01".to_string());
     }
-    if raw::is_raw(container_path).unwrap_or(false) {
+    if detector_matches(container_path, "raw", raw::is_raw(container_path)) {
         return Ok("raw".to_string());
     }
     if ufed::is_ufed(container_path) {
         return Ok("ufed".to_string());
     }
-    if ad1::is_ad1(container_path).unwrap_or(false) {
+    if detector_matches(container_path, "AD1", ad1::is_ad1(container_path)) {
         return Ok("ad1".to_string());
     }
     if is_vfs_entry {
@@ -270,10 +290,10 @@ pub async fn container_read_entry_chunk(
 ) -> Result<Vec<u8>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let requested_size = checked_container_chunk_request_size(size)?;
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        if detector_matches(&containerPath, "AD1", ad1::is_ad1(&containerPath)) {
             ad1::read_entry_chunk(&containerPath, &entryPath, offset, requested_size)
                 .map_err(|e| e.to_string())
-        } else if ewf::is_l01_file(&containerPath).unwrap_or(false) {
+        } else if detector_matches(&containerPath, "L01", ewf::is_l01_file(&containerPath)) {
             // L01 logical evidence - read chunk using ltree offsets
             let tree = ewf::parse_l01_file_tree(&containerPath)
                 .map_err(|e| format!("Failed to parse L01 file tree: {}", e))?;
@@ -294,12 +314,12 @@ pub async fn container_read_entry_chunk(
                 .map_err(|e| format!("Failed to read L01 chunk: {}", e))?;
             ensure_container_chunk_read_len(data.len(), actual_size, "L01 reader", &entryPath)?;
             Ok(data)
-        } else if ewf::is_ewf(&containerPath).unwrap_or(false) {
+        } else if detector_matches(&containerPath, "EWF", ewf::is_ewf(&containerPath)) {
             // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
             let vfs = ewf::vfs::EwfVfs::open(&containerPath)
                 .map_err(|e| format!("Failed to open E01: {:?}", e))?;
             read_bounded_vfs_entry_chunk(&vfs, &entryPath, offset, requested_size, "EWF")
-        } else if raw::is_raw(&containerPath).unwrap_or(false) {
+        } else if detector_matches(&containerPath, "raw", raw::is_raw(&containerPath)) {
             // Fallback: VFS entry reached container_read_entry_chunk without isVfsEntry flag
             let vfs = raw::vfs::RawVfs::open_with_physical_fallback(&containerPath)
                 .map_err(|e| format!("Failed to open raw: {:?}", e))?;
@@ -398,7 +418,7 @@ pub async fn container_get_root_children_v2(
 ) -> Result<Vec<ad1::TreeEntry>, String> {
     debug!("container_get_root_children_v2: {}", containerPath);
     tauri::async_runtime::spawn_blocking(move || {
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        if detector_matches(&containerPath, "AD1", ad1::is_ad1(&containerPath)) {
             ad1::get_root_children_v2(&containerPath).map_err(|e| e.to_string())
         } else {
             Err(format!("Container type not supported: {}", containerPath))
@@ -420,7 +440,7 @@ pub async fn container_get_children_at_addr_v2(
         containerPath, addr, parentPath
     );
     tauri::async_runtime::spawn_blocking(move || {
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        if detector_matches(&containerPath, "AD1", ad1::is_ad1(&containerPath)) {
             ad1::get_children_at_addr_v2(&containerPath, addr, &parentPath)
                 .map_err(|e| e.to_string())
         } else {
@@ -443,7 +463,7 @@ pub async fn container_get_item_metadata_v2(
         containerPath, itemAddr
     );
     tauri::async_runtime::spawn_blocking(move || {
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        if detector_matches(&containerPath, "AD1", ad1::is_ad1(&containerPath)) {
             ad1::get_item_metadata_v2(&containerPath, itemAddr).map_err(|e| e.to_string())
         } else {
             Err(format!("Container type not supported: {}", containerPath))
@@ -467,7 +487,7 @@ pub async fn container_get_items_metadata_v2(
     );
     tauri::async_runtime::spawn_blocking(move || {
         checked_container_metadata_batch_size(itemAddrs.len())?;
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        if detector_matches(&containerPath, "AD1", ad1::is_ad1(&containerPath)) {
             ad1::get_items_metadata_v2(&containerPath, &itemAddrs).map_err(|e| e.to_string())
         } else {
             Err(format!("Container type not supported: {}", containerPath))
@@ -484,7 +504,7 @@ pub async fn container_get_status_v2(
 ) -> Result<ad1::ContainerStatus, String> {
     debug!("container_get_status_v2: {}", containerPath);
     tauri::async_runtime::spawn_blocking(move || {
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        if detector_matches(&containerPath, "AD1", ad1::is_ad1(&containerPath)) {
             ad1::get_container_status_v2(&containerPath).map_err(|e| e.to_string())
         } else {
             Err(format!("Container type not supported: {}", containerPath))
@@ -507,9 +527,9 @@ pub(crate) fn classify_extraction_route(
     is_vfs_entry: bool,
     is_archive_entry: bool,
 ) -> &'static str {
-    let is_ewf = ewf::is_ewf(container_path).unwrap_or(false);
-    let is_raw = raw::is_raw(container_path).unwrap_or(false);
-    let is_ad1 = ad1::is_ad1(container_path).unwrap_or(false);
+    let is_ewf = detector_matches(container_path, "EWF", ewf::is_ewf(container_path));
+    let is_raw = detector_matches(container_path, "raw", raw::is_raw(container_path));
+    let is_ad1 = detector_matches(container_path, "AD1", ad1::is_ad1(container_path));
 
     if is_archive_entry {
         if parse_nested_archive_path(entry_path).is_some() {
@@ -560,7 +580,7 @@ pub async fn container_get_info_v2(
         containerPath, includeTree
     );
     tauri::async_runtime::spawn_blocking(move || {
-        if ad1::is_ad1(&containerPath).unwrap_or(false) {
+        if detector_matches(&containerPath, "AD1", ad1::is_ad1(&containerPath)) {
             ad1::get_container_info_v2(&containerPath, includeTree).map_err(|e| e.to_string())
         } else {
             Err(format!("Container type not supported: {}", containerPath))
@@ -593,14 +613,17 @@ pub async fn ad1_hash_segments(
             } else {
                 0.0
             };
-            let _ = app.emit(
+            crate::eventing::log_emit_result(
                 "verify-progress",
-                VerifyProgress {
-                    path: path_for_closure.clone(),
-                    current,
-                    total,
-                    percent,
-                },
+                app.emit(
+                    "verify-progress",
+                    VerifyProgress {
+                        path: path_for_closure.clone(),
+                        current,
+                        total,
+                        percent,
+                    },
+                ),
             );
         })
         .map_err(|e| e.to_string())

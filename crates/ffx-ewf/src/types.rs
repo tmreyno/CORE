@@ -31,6 +31,7 @@
 //! - `TableSection`: Chunk offset table data
 //! - `ChunkLocation`: Maps logical chunks to physical storage
 
+use ffx_errors::ContainerError;
 use serde::Serialize;
 
 /// Stored hash from container metadata or companion log files
@@ -166,6 +167,44 @@ pub struct VolumeSection {
     pub sector_count: u64,
     /// Compression level (0=none, 1=fast, 2=best)
     pub compression_level: u8,
+}
+
+pub(crate) fn checked_volume_media_size(volume: &VolumeSection) -> Result<u64, ContainerError> {
+    volume
+        .sector_count
+        .checked_mul(u64::from(volume.bytes_per_sector))
+        .ok_or_else(|| ContainerError::ParseError("EWF media size overflow".to_string()))
+}
+
+pub(crate) fn checked_volume_chunk_size(volume: &VolumeSection) -> Result<usize, ContainerError> {
+    let size = u64::from(volume.sectors_per_chunk)
+        .checked_mul(u64::from(volume.bytes_per_sector))
+        .ok_or_else(|| ContainerError::ParseError("EWF chunk size overflow".to_string()))?;
+    if size == 0 {
+        return Err(ContainerError::ParseError(
+            "EWF chunk size cannot be zero".to_string(),
+        ));
+    }
+    usize::try_from(size).map_err(|_| {
+        ContainerError::ParseError("EWF chunk size exceeds memory address size".to_string())
+    })
+}
+
+pub(crate) fn checked_volume_byte_add(
+    current: u64,
+    added: usize,
+    context: &str,
+) -> Result<u64, ContainerError> {
+    let added = u64::try_from(added).map_err(|_| {
+        ContainerError::ParseError(format!("EWF {context} exceeds 64-bit byte count"))
+    })?;
+    current
+        .checked_add(added)
+        .ok_or_else(|| ContainerError::ParseError(format!("EWF {context} overflow")))
+}
+
+pub(crate) fn saturating_usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 // =============================================================================
@@ -743,6 +782,58 @@ mod tests {
         // Verify chunk size calculation
         let chunk_size = volume.sectors_per_chunk * volume.bytes_per_sector;
         assert_eq!(chunk_size, 32768); // 64 * 512 = 32KB
+    }
+
+    #[test]
+    fn test_checked_volume_media_size_rejects_overflow() {
+        let volume = VolumeSection {
+            chunk_count: 1,
+            sectors_per_chunk: 64,
+            bytes_per_sector: 2,
+            sector_count: u64::MAX,
+            compression_level: 0,
+        };
+
+        let err = checked_volume_media_size(&volume).unwrap_err();
+        assert!(err.to_string().contains("media size overflow"));
+    }
+
+    #[test]
+    fn test_checked_volume_chunk_size_rejects_zero_and_address_overflow() {
+        let zero = VolumeSection {
+            chunk_count: 1,
+            sectors_per_chunk: 0,
+            bytes_per_sector: 512,
+            sector_count: 1,
+            compression_level: 0,
+        };
+        assert!(checked_volume_chunk_size(&zero)
+            .unwrap_err()
+            .to_string()
+            .contains("cannot be zero"));
+
+        let large = VolumeSection {
+            chunk_count: 1,
+            sectors_per_chunk: u32::MAX,
+            bytes_per_sector: u32::MAX,
+            sector_count: 1,
+            compression_level: 0,
+        };
+
+        if u64::BITS > usize::BITS {
+            assert!(checked_volume_chunk_size(&large)
+                .unwrap_err()
+                .to_string()
+                .contains("memory address size"));
+        } else {
+            assert!(checked_volume_chunk_size(&large).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_checked_volume_byte_add_rejects_overflow() {
+        let err = checked_volume_byte_add(u64::MAX, 1, "test count").unwrap_err();
+        assert!(err.to_string().contains("test count overflow"));
     }
 
     #[test]

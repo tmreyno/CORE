@@ -14,7 +14,8 @@
 
 use crate::project::{FFXProject, ProjectBookmark, ProjectNote};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 /// Project comparison result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,7 +186,10 @@ pub struct MergeResult {
 }
 
 /// Compare two projects
-pub fn compare_projects(project_a: &FFXProject, project_b: &FFXProject) -> ProjectComparison {
+pub fn compare_projects(
+    project_a: &FFXProject,
+    project_b: &FFXProject,
+) -> Result<ProjectComparison, String> {
     let bookmark_diff = compare_bookmarks(&project_a.bookmarks, &project_b.bookmarks);
     let note_diff = compare_notes(&project_a.notes, &project_b.notes);
     let evidence_diff = compare_evidence(project_a, project_b);
@@ -209,13 +213,13 @@ pub fn compare_projects(project_a: &FFXProject, project_b: &FFXProject) -> Proje
     };
 
     // Detect conflicts
-    let conflicts = detect_conflicts(&bookmark_diff, &note_diff);
+    let conflicts = detect_conflicts(&bookmark_diff, &note_diff)?;
 
     // Generate recommendations
     let recommendations =
         generate_merge_recommendations(&bookmark_diff, &note_diff, &evidence_diff);
 
-    ProjectComparison {
+    Ok(ProjectComparison {
         project_a_name: project_a.name.clone(),
         project_b_name: project_b.name.clone(),
         compared_at: chrono::Utc::now().to_rfc3339(),
@@ -233,7 +237,7 @@ pub fn compare_projects(project_a: &FFXProject, project_b: &FFXProject) -> Proje
         activity_diff,
         conflicts,
         recommendations,
-    }
+    })
 }
 
 /// Compare bookmarks
@@ -427,7 +431,10 @@ fn find_note_differences(a: &ProjectNote, b: &ProjectNote) -> Vec<String> {
 }
 
 /// Detect merge conflicts
-fn detect_conflicts(bookmark_diff: &BookmarkDiff, note_diff: &NoteDiff) -> Vec<MergeConflict> {
+fn detect_conflicts(
+    bookmark_diff: &BookmarkDiff,
+    note_diff: &NoteDiff,
+) -> Result<Vec<MergeConflict>, String> {
     let mut conflicts = Vec::new();
 
     // Bookmark conflicts
@@ -435,8 +442,8 @@ fn detect_conflicts(bookmark_diff: &BookmarkDiff, note_diff: &NoteDiff) -> Vec<M
         conflicts.push(MergeConflict {
             conflict_type: ConflictType::BookmarkConflict,
             description: format!("Bookmark '{}' has different content", pair.from_a.name),
-            item_a: Some(serde_json::to_value(&pair.from_a).expect("Bookmark serializes to JSON")),
-            item_b: Some(serde_json::to_value(&pair.from_b).expect("Bookmark serializes to JSON")),
+            item_a: Some(conflict_payload("bookmark from Project A", &pair.from_a)?),
+            item_b: Some(conflict_payload("bookmark from Project B", &pair.from_b)?),
             resolution: "Choose which version to keep or merge manually".to_string(),
         });
     }
@@ -446,13 +453,18 @@ fn detect_conflicts(bookmark_diff: &BookmarkDiff, note_diff: &NoteDiff) -> Vec<M
         conflicts.push(MergeConflict {
             conflict_type: ConflictType::NoteConflict,
             description: format!("Note '{}' has different content", pair.from_a.title),
-            item_a: Some(serde_json::to_value(&pair.from_a).expect("Note serializes to JSON")),
-            item_b: Some(serde_json::to_value(&pair.from_b).expect("Note serializes to JSON")),
+            item_a: Some(conflict_payload("note from Project A", &pair.from_a)?),
+            item_b: Some(conflict_payload("note from Project B", &pair.from_b)?),
             resolution: "Choose which version to keep or merge content".to_string(),
         });
     }
 
-    conflicts
+    Ok(conflicts)
+}
+
+fn conflict_payload<T: Serialize>(label: &str, value: &T) -> Result<serde_json::Value, String> {
+    serde_json::to_value(value)
+        .map_err(|err| format!("Failed to serialize {label} for conflict payload: {err}"))
 }
 
 /// Generate merge recommendations
@@ -548,20 +560,16 @@ pub fn merge_projects(
                         items_skipped += 1;
                     }
                     MergeStrategy::Manual => {
+                        let item_a = conflict_payload("bookmark from Project A", bookmark_a)?;
+                        let item_b = conflict_payload("bookmark from Project B", bookmark_b)?;
                         conflicts.push(MergeConflict {
                             conflict_type: ConflictType::BookmarkConflict,
                             description: format!(
                                 "Bookmark '{}' exists in both projects",
                                 bookmark_b.name
                             ),
-                            item_a: Some(
-                                serde_json::to_value(bookmark_a)
-                                    .expect("Bookmark serializes to JSON"),
-                            ),
-                            item_b: Some(
-                                serde_json::to_value(bookmark_b)
-                                    .expect("Bookmark serializes to JSON"),
-                            ),
+                            item_a: Some(item_a),
+                            item_b: Some(item_b),
                             resolution: "Manual resolution required".to_string(),
                         });
                         items_skipped += 1;
@@ -609,15 +617,13 @@ pub fn merge_projects(
                         items_skipped += 1;
                     }
                     MergeStrategy::Manual => {
+                        let item_a = conflict_payload("note from Project A", note_a)?;
+                        let item_b = conflict_payload("note from Project B", note_b)?;
                         conflicts.push(MergeConflict {
                             conflict_type: ConflictType::NoteConflict,
                             description: format!("Note '{}' exists in both projects", note_b.title),
-                            item_a: Some(
-                                serde_json::to_value(note_a).expect("Note serializes to JSON"),
-                            ),
-                            item_b: Some(
-                                serde_json::to_value(note_b).expect("Note serializes to JSON"),
-                            ),
+                            item_a: Some(item_a),
+                            item_b: Some(item_b),
                             resolution: "Manual resolution required".to_string(),
                         });
                         items_skipped += 1;
@@ -654,19 +660,48 @@ pub fn merge_projects(
 }
 
 fn unique_merge_name(base: &str, existing: &mut HashSet<String>) -> String {
+    unique_merge_name_from_index(base, existing, 2)
+}
+
+fn unique_merge_name_from_index(
+    base: &str,
+    existing: &mut HashSet<String>,
+    mut index: usize,
+) -> String {
     let candidate = format!("{base} (from B)");
     if existing.insert(candidate.clone()) {
         return candidate;
     }
 
-    for index in 2usize.. {
+    loop {
         let candidate = format!("{base} (from B {index})");
         if existing.insert(candidate.clone()) {
             return candidate;
         }
-    }
 
-    unreachable!("unbounded suffix search should return");
+        let Some(next_index) = index.checked_add(1) else {
+            return unique_merge_name_with_hash_suffix(base, existing);
+        };
+        index = next_index;
+    }
+}
+
+fn unique_merge_name_with_hash_suffix(base: &str, existing: &mut HashSet<String>) -> String {
+    let mut nonce = 0u64;
+
+    loop {
+        let mut hasher = DefaultHasher::new();
+        base.hash(&mut hasher);
+        existing.len().hash(&mut hasher);
+        nonce.hash(&mut hasher);
+        let suffix = hasher.finish();
+        let candidate = format!("{base} (from B {suffix:016x})");
+        if existing.insert(candidate.clone()) {
+            return candidate;
+        }
+
+        nonce = nonce.wrapping_add(1);
+    }
 }
 
 // =============================================================================
@@ -724,7 +759,7 @@ mod tests {
         let project_a = FFXProject::new("/tmp/test_project_a");
         let project_b = FFXProject::new("/tmp/test_project_b");
 
-        let comparison = compare_projects(&project_a, &project_b);
+        let comparison = compare_projects(&project_a, &project_b).unwrap();
         assert_eq!(comparison.summary.similarity_percent, 100.0);
         assert_eq!(comparison.summary.total_differences, 0);
     }
@@ -740,7 +775,7 @@ mod tests {
             .open_directories
             .push(open_directory("/evidence/common.E01"));
 
-        let comparison = compare_projects(&project_a, &project_b);
+        let comparison = compare_projects(&project_a, &project_b).unwrap();
 
         assert_eq!(comparison.summary.common, 1);
         assert_eq!(comparison.summary.similarity_percent, 100.0);
@@ -760,7 +795,7 @@ mod tests {
             .open_directories
             .push(open_directory("/evidence/extra.E01"));
 
-        let comparison = compare_projects(&project_a, &project_b);
+        let comparison = compare_projects(&project_a, &project_b).unwrap();
 
         assert_eq!(comparison.summary.common, 1);
         assert_eq!(comparison.summary.unique_to_b, 1);
@@ -855,5 +890,19 @@ mod tests {
         assert!(titles.contains("Finding"));
         assert!(titles.contains("Finding (from B)"));
         assert!(titles.contains("Finding (from B 2)"));
+    }
+
+    #[test]
+    fn unique_merge_name_falls_back_after_suffix_index_exhaustion() {
+        let mut existing = HashSet::from([
+            "Finding (from B)".to_string(),
+            format!("Finding (from B {})", usize::MAX),
+        ]);
+
+        let name = unique_merge_name_from_index("Finding", &mut existing, usize::MAX);
+
+        assert!(name.starts_with("Finding (from B "));
+        assert_ne!(name, format!("Finding (from B {})", usize::MAX));
+        assert!(existing.contains(&name));
     }
 }

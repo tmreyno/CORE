@@ -24,6 +24,7 @@ use super::error::{DocumentError, DocumentResult};
 use super::types::*;
 use super::DocumentFormat;
 
+#[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
 pub mod writer;
 
 const MAX_PDF_SOURCE_BYTES: u64 = 100 * 1024 * 1024;
@@ -64,6 +65,7 @@ fn truncate_option_string(value: &mut Option<String>, max_chars: usize) {
 /// PDF document handler with read/write capabilities
 pub struct PdfDocument {
     /// Cached font family for writing (currently unused, reserved for future caching)
+    #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
     #[allow(dead_code)]
     font_family: Option<genpdf::fonts::FontFamily<genpdf::fonts::FontData>>,
 }
@@ -71,7 +73,10 @@ pub struct PdfDocument {
 impl PdfDocument {
     /// Create a new PDF document handler
     pub fn new() -> Self {
-        Self { font_family: None }
+        Self {
+            #[cfg(any(feature = "flavor-review", feature = "mod-reports"))]
+            font_family: None,
+        }
     }
 
     // =========================================================================

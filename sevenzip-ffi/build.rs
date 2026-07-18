@@ -15,8 +15,9 @@
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+fn main() -> Result<(), String> {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
+        .map_err(|e| format!("CARGO_MANIFEST_DIR is not set for sevenzip-ffi build: {e}"))?;
     let manifest_path = PathBuf::from(&manifest_dir);
     let target = env::var("TARGET").unwrap_or_default();
     let is_windows_target = target.contains("windows");
@@ -69,7 +70,12 @@ fn main() {
     };
 
     if effective_path.exists() {
-        let lib_dir = effective_path.parent().unwrap();
+        let lib_dir = effective_path.parent().ok_or_else(|| {
+            format!(
+                "Could not determine parent directory for 7z_ffi library path: {}",
+                effective_path.display()
+            )
+        })?;
         println!(
             "cargo:warning=Using pre-built 7z_ffi from: {}",
             lib_dir.display()
@@ -103,8 +109,10 @@ fn main() {
                 .compile("7z_ffi");
             // cc::Build emits the correct rustc-link-lib and rustc-link-search
         } else {
-            println!("cargo:warning=stub.c not found at: {}", stub_path.display());
-            println!("cargo:rustc-link-lib=static=7z_ffi");
+            return Err(format!(
+                "7z_ffi library was not found and fallback stub.c is missing at {}",
+                stub_path.display()
+            ));
         }
     }
 
@@ -115,4 +123,6 @@ fn main() {
     println!("cargo:rerun-if-changed=prebuilt/macos-arm64/lib7z_ffi.a");
     println!("cargo:rerun-if-changed=prebuilt/windows-x64-msvc/7z_ffi.lib");
     println!("cargo:rerun-if-changed=src/stub.c");
+
+    Ok(())
 }

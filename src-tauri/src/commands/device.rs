@@ -675,6 +675,99 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
 }
 
 #[cfg(target_os = "linux")]
+fn read_sysfs_text(path: impl AsRef<std::path::Path>, label: &str, device: &str) -> Option<String> {
+    let path = path.as_ref();
+    match std::fs::read_to_string(path) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(
+                device,
+                label,
+                path = %path.display(),
+                "failed to read Linux block-device sysfs value: {error}"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_sysfs_u64(path: impl AsRef<std::path::Path>, label: &str, device: &str) -> Option<u64> {
+    let path = path.as_ref();
+    let value = read_sysfs_text(path, label, device)?;
+    let trimmed = value.trim();
+    match trimmed.parse::<u64>() {
+        Ok(parsed) => Some(parsed),
+        Err(error) => {
+            tracing::warn!(
+                device,
+                label,
+                value = trimmed,
+                path = %path.display(),
+                "failed to parse Linux block-device sysfs value as u64: {error}"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_sysfs_u32(path: impl AsRef<std::path::Path>, label: &str, device: &str) -> Option<u32> {
+    let path = path.as_ref();
+    let value = read_sysfs_text(path, label, device)?;
+    let trimmed = value.trim();
+    match trimmed.parse::<u32>() {
+        Ok(parsed) => Some(parsed),
+        Err(error) => {
+            tracing::warn!(
+                device,
+                label,
+                value = trimmed,
+                path = %path.display(),
+                "failed to parse Linux block-device sysfs value as u32: {error}"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_sysfs_partitions(sys_path: &str, device: &str) -> Vec<String> {
+    let entries = match std::fs::read_dir(sys_path) {
+        Ok(entries) => entries,
+        Err(error) => {
+            tracing::warn!(
+                device,
+                path = sys_path,
+                "failed to read Linux block-device partition directory: {error}"
+            );
+            return Vec::new();
+        }
+    };
+
+    let mut partitions = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                tracing::warn!(
+                    device,
+                    path = sys_path,
+                    "failed to read Linux block-device partition entry: {error}"
+                );
+                continue;
+            }
+        };
+        let partition_name = entry.file_name().to_string_lossy().into_owned();
+        if partition_name.starts_with(device) && partition_name != device {
+            partitions.push(format!("/dev/{partition_name}"));
+        }
+    }
+
+    partitions
+}
+
+#[cfg(target_os = "linux")]
 fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
     let mut disks = Vec::new();
 
@@ -700,10 +793,17 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
         let device_path = format!("/dev/{}", name);
 
         // Read size (in 512-byte sectors)
-        let size_bytes = std::fs::read_to_string(format!("{}/size", sys_path))
-            .ok()
-            .and_then(|s| s.trim().parse::<u64>().ok())
-            .map(|sectors| sectors * 512)
+        let size_bytes = parse_sysfs_u64(format!("{}/size", sys_path), "size sectors", &name)
+            .and_then(|sectors| {
+                sectors.checked_mul(512).or_else(|| {
+                    tracing::warn!(
+                        device = name.as_str(),
+                        sectors,
+                        "Linux block-device sector count overflowed byte-size calculation"
+                    );
+                    None
+                })
+            })
             .unwrap_or(0);
 
         // Skip zero-size devices
@@ -712,32 +812,32 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
         }
 
         // Read model
-        let model = std::fs::read_to_string(format!("{}/device/model", sys_path))
-            .unwrap_or_else(|_| "Unknown".to_string())
+        let model = read_sysfs_text(format!("{}/device/model", sys_path), "model", &name)
+            .unwrap_or_else(|| "Unknown".to_string())
             .trim()
             .to_string();
 
         // Read serial
-        let serial = std::fs::read_to_string(format!("{}/device/serial", sys_path))
+        let serial = read_sysfs_text(format!("{}/device/serial", sys_path), "serial", &name)
             .unwrap_or_default()
             .trim()
             .to_string();
 
         // Read vendor / manufacturer
-        let vendor = std::fs::read_to_string(format!("{}/device/vendor", sys_path))
+        let vendor = read_sysfs_text(format!("{}/device/vendor", sys_path), "vendor", &name)
             .unwrap_or_default()
             .trim()
             .to_string();
 
         // Detect SSD vs HDD
-        let rotational = std::fs::read_to_string(format!("{}/queue/rotational", sys_path))
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(1);
+        let rotational = parse_sysfs_u32(
+            format!("{}/queue/rotational", sys_path),
+            "rotational",
+            &name,
+        )
+        .unwrap_or(1);
 
-        let removable = std::fs::read_to_string(format!("{}/removable", sys_path))
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
+        let removable = parse_sysfs_u32(format!("{}/removable", sys_path), "removable", &name)
             .unwrap_or(0)
             == 1;
 
@@ -750,36 +850,22 @@ fn list_physical_disks_impl() -> Result<Vec<PhysicalDisk>, String> {
         };
 
         // Detect connection type from sysfs transport or device name pattern
-        let connection_type = std::fs::read_to_string(format!("{}/device/transport", sys_path))
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| {
-                if name.starts_with("nvme") {
-                    "NVMe".to_string()
-                } else if removable {
-                    "USB".to_string()
-                } else {
-                    String::new()
-                }
-            });
+        let connection_type =
+            read_sysfs_text(format!("{}/device/transport", sys_path), "transport", &name)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    if name.starts_with("nvme") {
+                        "NVMe".to_string()
+                    } else if removable {
+                        "USB".to_string()
+                    } else {
+                        String::new()
+                    }
+                });
 
         // List partitions
-        let partitions: Vec<String> = std::fs::read_dir(&sys_path)
-            .ok()
-            .map(|rd| {
-                rd.flatten()
-                    .filter_map(|e| {
-                        let pname = e.file_name().to_string_lossy().into_owned();
-                        if pname.starts_with(&name) && pname != name {
-                            Some(format!("/dev/{}", pname))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let partitions = linux_sysfs_partitions(&sys_path, &name);
 
         // Boot disk heuristic: check if "/" is on one of our partitions
         let is_boot = is_boot_disk_linux(&device_path, &partitions);
@@ -1010,14 +1096,17 @@ pub async fn read_raw_device(
                 // Emit progress at 0.5% granularity
                 let percent = (bytes_read_total as f64 / total_bytes as f64 * 100.0).min(100.0);
                 if percent - last_percent >= 0.5 || bytes_read_total >= total_bytes {
-                    let _ = window_clone.emit(
+                    crate::eventing::log_emit_result(
                         "device-read-progress",
-                        DeviceReadProgress {
-                            device_path: device.clone(),
-                            bytes_read: bytes_read_total,
-                            total_bytes,
-                            percent,
-                        },
+                        window_clone.emit(
+                            "device-read-progress",
+                            DeviceReadProgress {
+                                device_path: device.clone(),
+                                bytes_read: bytes_read_total,
+                                total_bytes,
+                                percent,
+                            },
+                        ),
                     );
                     last_percent = percent;
                 }

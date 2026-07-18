@@ -144,14 +144,14 @@ default = ["full"]
 # Edition Features — select ONE when building
 # =============================================================================
 full = ["flavor-review", "flavor-acquire", "ai-assistant", "unrar"]  # Everything (default)
-acquire = ["flavor-acquire"]               # Acquisition-only (E01/L01/7z creation, hashing, drive ops)
+acquire = ["flavor-acquire"]               # Acquisition command surface (viewer commands still gated)
 review = ["flavor-review"]                 # Review-only (viewers, reports, search, processed DBs)
 
 # =============================================================================
 # Capability Modules — composable building blocks for custom editions
 # =============================================================================
 # Internal flavor markers (not meant to be selected directly)
-flavor-acquire = []  # Enables acquisition command surface (always-compiled core)
+flavor-acquire = ["mod-viewers"]  # Shared project artifact enrichment uses viewer parsers.
 flavor-review = [    # Enables review/analysis surface — pulls in all sub-modules
   "mod-viewers",
   "mod-search",
@@ -178,13 +178,15 @@ mod-viewers = [      # Document viewers (PDF, Office, Email, Spreadsheet, Binary
 ]
 mod-search = [       # Full-text search engine (Tantivy) + file deduplication
   "dep:tantivy",
+  "mod-viewers",     # Shared project artifact enrichment uses viewer parsers.
 ]
 mod-reports = [      # Forensic report generation (PDF, DOCX, HTML templates)
   "dep:genpdf",
   "dep:docx-rs",
   "dep:tera",
+  "mod-viewers",     # Report/project artifact enrichment reuses document parsers.
 ]
-mod-processed = []   # Processed forensic database parsers (AXIOM, Cellebrite, Autopsy)
+mod-processed = ["mod-viewers"]   # Processed DB workflows share artifact enrichment parsers.
 
 # Optional integrations
 ai-assistant = ["async-openai", "reqwest", "url"]  # AI-powered report assistance

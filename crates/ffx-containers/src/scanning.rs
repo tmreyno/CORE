@@ -11,7 +11,7 @@
 
 use super::ContainerError;
 use std::collections::HashSet;
-use std::fs;
+use std::fs::{self, Metadata};
 use std::path::Path;
 use tracing::debug;
 
@@ -24,6 +24,16 @@ use crate::formats::detect_format_by_extension;
 
 const MAX_SCAN_DEPTH: usize = 128;
 const MAX_SCAN_RESULTS: usize = 250_000;
+
+fn entry_metadata(entry: &fs::DirEntry, path: &Path) -> Option<Metadata> {
+    match entry.metadata() {
+        Ok(metadata) => Some(metadata),
+        Err(error) => {
+            tracing::warn!("Failed to get metadata for {}: {}", path.display(), error);
+            None
+        }
+    }
+}
 
 /// Scan a directory for forensic container files (non-recursive)
 pub fn scan_directory(dir_path: &str) -> Result<Vec<DiscoveredFile>, ContainerError> {
@@ -155,14 +165,20 @@ where
         if *count >= MAX_SCAN_RESULTS {
             break;
         }
-        let _ = scan_dir_streaming_internal(
+        scan_dir_streaming_internal(
             &subdir,
             seen_basenames,
             recursive,
             on_file_found,
             count,
             depth + 1,
-        );
+        )
+        .map_err(|error| {
+            ContainerError::from(format!(
+                "Failed to scan subdirectory {}: {error}",
+                subdir.display()
+            ))
+        })?;
     }
 
     // Second pass: process files
@@ -248,7 +264,7 @@ where
                     .unwrap_or(filename.clone());
 
                 // Use DirEntry metadata (cached from readdir syscall) - fast
-                let metadata = entry.metadata().ok();
+                let metadata = entry_metadata(&entry, &entry_path);
                 let file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
 
                 // Extract timestamps from metadata
@@ -393,7 +409,14 @@ fn scan_dir_internal(
         if discovered.len() >= MAX_SCAN_RESULTS {
             break;
         }
-        let _ = scan_dir_internal(&subdir, discovered, seen_basenames, recursive, depth + 1);
+        scan_dir_internal(&subdir, discovered, seen_basenames, recursive, depth + 1).map_err(
+            |error| {
+                ContainerError::from(format!(
+                    "Failed to scan subdirectory {}: {error}",
+                    subdir.display()
+                ))
+            },
+        )?;
     }
 
     // Second pass: process files
@@ -482,7 +505,7 @@ fn scan_dir_internal(
                     .unwrap_or(filename.clone());
 
                 // Use DirEntry metadata (cached from readdir syscall) - fast
-                let metadata = entry.metadata().ok();
+                let metadata = entry_metadata(&entry, &entry_path);
                 let file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
 
                 // Extract timestamps from metadata
@@ -625,7 +648,28 @@ mod tests {
     use super::*;
     use std::fs::{self, File};
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
+
+    #[cfg(unix)]
+    fn make_unreadable_subdir(parent: &Path) -> PathBuf {
+        let subdir = parent.join("blocked");
+        fs::create_dir(&subdir).unwrap();
+        let mut permissions = fs::metadata(&subdir).unwrap().permissions();
+        permissions.set_mode(0o000);
+        fs::set_permissions(&subdir, permissions).unwrap();
+        subdir
+    }
+
+    #[cfg(unix)]
+    fn restore_readable_dir(path: &Path) {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(path, permissions).unwrap();
+    }
 
     // ==================== detect_container_type_by_extension tests ====================
 
@@ -1013,6 +1057,28 @@ mod tests {
         assert!(files.is_empty());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_scan_directory_recursive_reports_unreadable_child() {
+        let temp = TempDir::new().unwrap();
+        let blocked = make_unreadable_subdir(temp.path());
+
+        if fs::read_dir(&blocked).is_ok() {
+            restore_readable_dir(&blocked);
+            return;
+        }
+
+        let result = scan_directory_recursive(temp.path().to_str().unwrap());
+        restore_readable_dir(&blocked);
+
+        let error = match result {
+            Ok(_) => panic!("recursive scan should report unreadable child directory"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("Failed to scan subdirectory"));
+        assert!(error.contains("blocked"));
+    }
+
     // ==================== scan_directory_streaming tests ====================
 
     #[test]
@@ -1064,5 +1130,24 @@ mod tests {
 
         assert_eq!(count, 0);
         assert_eq!(callback_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_scan_directory_streaming_reports_unreadable_child() {
+        let temp = TempDir::new().unwrap();
+        let blocked = make_unreadable_subdir(temp.path());
+
+        if fs::read_dir(&blocked).is_ok() {
+            restore_readable_dir(&blocked);
+            return;
+        }
+
+        let result = scan_directory_streaming(temp.path().to_str().unwrap(), true, |_| {});
+        restore_readable_dir(&blocked);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("Failed to scan subdirectory"));
+        assert!(error.contains("blocked"));
     }
 }

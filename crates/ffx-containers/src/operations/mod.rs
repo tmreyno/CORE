@@ -15,8 +15,9 @@ mod search;
 pub use export::{export_metadata_csv, export_metadata_json};
 pub use search::search;
 
+use std::fmt::Display;
 use std::path::Path;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::ad1;
 use crate::archive;
@@ -66,6 +67,37 @@ fn enrich_l01_info(path: &str, info: &mut ewf::EwfInfo) {
         }
         Err(e) => {
             debug!("L01 ltree parse failed (non-fatal): {}", e);
+        }
+    }
+}
+
+fn detector_matches<E>(path: &str, format: &str, result: Result<bool, E>) -> bool
+where
+    E: Display,
+{
+    match result {
+        Ok(matches) => matches,
+        Err(err) => {
+            debug!(
+                path = %path,
+                format = %format,
+                error = %err,
+                "Container signature detector failed; treating as no match"
+            );
+            false
+        }
+    }
+}
+
+fn serialize_format_specific<T: serde::Serialize>(label: &str, data: &T) -> Option<String> {
+    match serde_json::to_string(data) {
+        Ok(serialized) => Some(serialized),
+        Err(error) => {
+            warn!(
+                label,
+                "Failed to serialize container format-specific stats: {error}"
+            );
+            None
         }
     }
 }
@@ -616,7 +648,7 @@ impl ContainerStats {
     /// Set format-specific data
     #[inline]
     pub fn with_format_specific<T: serde::Serialize>(mut self, data: &T) -> Self {
-        self.format_specific = serde_json::to_string(data).ok();
+        self.format_specific = serialize_format_specific(&self.container_type, data);
         self
     }
 }
@@ -641,7 +673,7 @@ pub fn get_stats(path: &str) -> Result<ContainerStats, String> {
                 segment_count,
                 entry_count: Some(stats.total_files + stats.total_folders),
                 has_stored_hashes: true,
-                format_specific: serde_json::to_string(&stats).ok(),
+                format_specific: serialize_format_specific("AD1", &stats),
             })
         }
         ContainerKind::E01 | ContainerKind::L01 => {
@@ -658,12 +690,12 @@ pub fn get_stats(path: &str) -> Result<ContainerStats, String> {
                 segment_count: stats.total_segments,
                 entry_count: None,
                 has_stored_hashes: stats.stored_hash_count > 0,
-                format_specific: serde_json::to_string(&stats).ok(),
+                format_specific: serialize_format_specific("EWF", &stats),
             })
         }
         ContainerKind::Raw => {
             let stats = raw::get_stats(path)?;
-            let format_specific = serde_json::to_string(&stats).ok();
+            let format_specific = serialize_format_specific("RAW", &stats);
             Ok(ContainerStats {
                 container_type: "RAW".to_string(),
                 total_size: stats.total_size,
@@ -676,7 +708,7 @@ pub fn get_stats(path: &str) -> Result<ContainerStats, String> {
         }
         ContainerKind::Archive => {
             let stats = archive::get_stats(path)?;
-            let format_specific = serde_json::to_string(&stats).ok();
+            let format_specific = serialize_format_specific("archive", &stats);
             Ok(ContainerStats {
                 container_type: format!("Archive ({})", stats.format),
                 total_size: stats.total_size,
@@ -696,7 +728,7 @@ pub fn get_stats(path: &str) -> Result<ContainerStats, String> {
                 segment_count: stats.associated_file_count as u32 + 1,
                 entry_count: None,
                 has_stored_hashes: stats.stored_hash_count > 0,
-                format_specific: serde_json::to_string(&stats).ok(),
+                format_specific: serialize_format_specific("UFED", &stats),
             })
         }
     }
@@ -747,7 +779,7 @@ pub(crate) fn detect_container(path: &str) -> Result<ContainerKind, String> {
         || lower.contains(".ex")
     {
         debug!("Checking E01 signature for: {}", path);
-        if ewf::is_e01(path).unwrap_or(false) {
+        if detector_matches(path, "E01", ewf::is_e01(path)) {
             return Ok(ContainerKind::E01);
         } else {
             debug!("E01 signature check failed for: {}", path);
@@ -759,7 +791,7 @@ pub(crate) fn detect_container(path: &str) -> Result<ContainerKind, String> {
         || lower.ends_with(".lx01")
         || lower.contains(".l0")
         || lower.contains(".lx"))
-        && ewf::is_l01_file(path).unwrap_or(false)
+        && detector_matches(path, "L01", ewf::is_l01_file(path))
     {
         return Ok(ContainerKind::L01);
     }
@@ -770,12 +802,12 @@ pub(crate) fn detect_container(path: &str) -> Result<ContainerKind, String> {
     }
 
     // Check archive formats (7z, ZIP, RAR, etc.) - before raw to catch .7z.001 properly
-    if archive::is_archive(path).unwrap_or(false) {
+    if detector_matches(path, "archive", archive::is_archive(path)) {
         return Ok(ContainerKind::Archive);
     }
 
     // Check raw disk images (.dd, .raw, .img, .001, .002, etc.)
-    if raw::is_raw(path).unwrap_or(false) {
+    if detector_matches(path, "raw", raw::is_raw(path)) {
         return Ok(ContainerKind::Raw);
     }
 
@@ -834,6 +866,24 @@ mod tests {
         let result = detect_container(temp.path().to_str().unwrap());
         // Should be an error (unsupported format)
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_specific_serialization_failure_returns_none() {
+        struct FailingSerialize;
+
+        impl serde::Serialize for FailingSerialize {
+            fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Err(serde::ser::Error::custom("intentional test failure"))
+            }
+        }
+
+        let stats = ContainerStats::new("test", 42).with_format_specific(&FailingSerialize);
+
+        assert!(stats.format_specific.is_none());
     }
 
     // ==================== info_fast error handling tests ====================

@@ -9,6 +9,7 @@
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use std::sync::mpsc;
 use tracing::debug;
 
 use super::super::parser::Session;
@@ -443,9 +444,7 @@ where
                 }
             }
         }
-        // Signal completion
-        let _ = tx.send(None);
-        Ok(())
+        send_hash_completion_signal(&tx)
     });
 
     // Hashing thread: receives buffers and updates hash
@@ -511,6 +510,16 @@ fn ensure_ad1_segment_bytes_hashed(actual: u64, expected: u64) -> Result<(), Con
     )))
 }
 
+fn send_hash_completion_signal(
+    tx: &mpsc::SyncSender<Option<Vec<u8>>>,
+) -> Result<(), ContainerError> {
+    tx.send(None).map_err(|_| {
+        ContainerError::InternalError(
+            "Hash thread terminated before AD1 completion signal".to_string(),
+        )
+    })
+}
+
 /// Hash a single AD1 segment file.
 ///
 /// This is a thin wrapper around `ffx_common::hash_segment_with_progress`.
@@ -543,6 +552,25 @@ mod tests {
         file.write_all(b"ADSEGMENTEDFILE\0").unwrap();
         file.write_all(&[0u8; 496]).unwrap();
         path
+    }
+
+    #[test]
+    fn send_hash_completion_signal_sends_sentinel() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+
+        send_hash_completion_signal(&tx).expect("completion sentinel should send");
+
+        assert!(rx.recv().expect("sentinel should be queued").is_none());
+    }
+
+    #[test]
+    fn send_hash_completion_signal_reports_closed_receiver() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        drop(rx);
+
+        let err = send_hash_completion_signal(&tx).unwrap_err();
+
+        assert!(err.to_string().contains("completion signal"));
     }
 
     #[test]

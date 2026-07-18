@@ -46,6 +46,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # libewf 20251220 is from libyal HEAD, not a release tarball.
+  # The older 20240506 release tarball lacks APIs used by libewf-ffi.
+  LIBEWF_HEAD_REF: "main"
   LIBEWF_VERSION: "20240506"
 
 permissions:
@@ -63,6 +66,10 @@ jobs:
     steps:
       - name: Checkout CORE-1
         uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          brew install autoconf automake libtool pkg-config
 
       # ─── Build libarchive ─────────────────────────────────────────────────
       - name: Build libarchive (static, no OpenSSL)
@@ -155,11 +162,13 @@ jobs:
           PREBUILT_DIR="$GITHUB_WORKSPACE/libewf-ffi/prebuilt/macos-arm64"
           mkdir -p "$PREBUILT_DIR"
 
-          echo "=== Downloading libewf ${LIBEWF_VERSION} ==="
-          curl -L -o libewf.tar.gz \
-            "https://github.com/libyal/libewf/releases/download/${LIBEWF_VERSION}/libewf-experimental-${LIBEWF_VERSION}.tar.gz"
-          tar xzf libewf.tar.gz
-          cd libewf-${LIBEWF_VERSION}
+          echo "=== Cloning libewf HEAD (${LIBEWF_HEAD_REF}) ==="
+          git clone --depth 1 --branch "$LIBEWF_HEAD_REF" https://github.com/libyal/libewf.git libewf-head
+          cd libewf-head
+
+          echo "=== Preparing libewf bundled libraries ==="
+          ./synclibs.sh
+          ./autogen.sh
 
           echo "=== Configuring libewf ==="
           ./configure \
@@ -319,11 +328,13 @@ jobs:
           PREBUILT_DIR="$GITHUB_WORKSPACE/libewf-ffi/prebuilt/linux-x64"
           mkdir -p "$PREBUILT_DIR"
 
-          echo "=== Downloading libewf ${LIBEWF_VERSION} ==="
-          curl -L -o libewf.tar.gz \
-            "https://github.com/libyal/libewf/releases/download/${LIBEWF_VERSION}/libewf-experimental-${LIBEWF_VERSION}.tar.gz"
-          tar xzf libewf.tar.gz
-          cd libewf-${LIBEWF_VERSION}
+          echo "=== Cloning libewf HEAD (${LIBEWF_HEAD_REF}) ==="
+          git clone --depth 1 --branch "$LIBEWF_HEAD_REF" https://github.com/libyal/libewf.git libewf-head
+          cd libewf-head
+
+          echo "=== Preparing libewf bundled libraries ==="
+          ./synclibs.sh
+          ./autogen.sh
 
           echo "=== Configuring libewf ==="
           CFLAGS="-fPIC" ./configure \

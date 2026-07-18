@@ -30,6 +30,7 @@ use std::path::Path;
 
 use ffx_common::lazy_loading::ContainerSummary;
 use ffx_errors::ContainerError;
+use tracing::debug;
 
 const LIBARCHIVE_READ_BUFFER_BYTES: usize = 64 * 1024;
 
@@ -199,7 +200,15 @@ impl LibarchiveHandler {
         let mut index = 0;
 
         while let Ok(Some(entry)) = archive.next_entry() {
-            let raw_path = entry.pathname().unwrap_or_default().to_string();
+            let Some(raw_path) = entry.pathname() else {
+                debug!(
+                    archive_path = %self.path,
+                    index,
+                    "Skipping libarchive entry without pathname while listing"
+                );
+                index += 1;
+                continue;
+            };
             // Normalize to forward slashes — archive paths always use '/' but
             // Path::new() on Windows may introduce backslashes in parent/name.
             let path = raw_path.replace('\\', "/");
@@ -317,8 +326,18 @@ impl LibarchiveHandler {
         let search_path = entry_path.replace('\\', "/");
         let search_path = search_path.trim_start_matches('/').trim_end_matches('/');
 
+        let mut index = 0usize;
         while let Ok(Some(entry)) = archive.next_entry() {
-            let raw_path = entry.pathname().unwrap_or_default();
+            let Some(raw_path) = entry.pathname() else {
+                debug!(
+                    archive_path = %self.path,
+                    index,
+                    requested_path = %search_path,
+                    "Skipping libarchive entry without pathname while reading"
+                );
+                index += 1;
+                continue;
+            };
             // Normalize archive path: forward slashes, strip leading/trailing slashes
             let normalized_path = raw_path.replace('\\', "/");
             let normalized_path = normalized_path
@@ -343,6 +362,8 @@ impl LibarchiveHandler {
 
                 return Ok(data);
             }
+
+            index += 1;
         }
 
         Err(ContainerError::from(format!(
@@ -368,8 +389,18 @@ impl LibarchiveHandler {
         let search_path = entry_path.replace('\\', "/");
         let search_path = search_path.trim_start_matches('/').trim_end_matches('/');
 
+        let mut index = 0usize;
         while let Ok(Some(entry)) = archive.next_entry() {
-            let raw_path = entry.pathname().unwrap_or_default();
+            let Some(raw_path) = entry.pathname() else {
+                debug!(
+                    archive_path = %self.path,
+                    index,
+                    requested_path = %search_path,
+                    "Skipping libarchive entry without pathname while reading range"
+                );
+                index += 1;
+                continue;
+            };
             // Normalize archive path: forward slashes, strip leading/trailing slashes
             let normalized_path = raw_path.replace('\\', "/");
             let normalized_path = normalized_path
@@ -394,6 +425,8 @@ impl LibarchiveHandler {
                 let end = offset.saturating_add(size as u64).min(declared_size);
                 return read_libarchive_entry_range_limited(&mut archive, offset, end, search_path);
             }
+
+            index += 1;
         }
 
         Err(ContainerError::from(format!(

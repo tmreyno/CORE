@@ -427,7 +427,7 @@ pub fn start_system_stats_monitor(app_handle: tauri::AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_secs(2));
         let stats = collect_system_stats();
-        let _ = app_handle.emit("system-stats", stats);
+        crate::eventing::log_emit_result("system-stats", app_handle.emit("system-stats", stats));
     });
 }
 
@@ -440,33 +440,38 @@ pub struct CleanupResult {
     pub errors: Vec<String>,
 }
 
-/// Blocking preview cache cleanup used by backend-owned lifecycle paths.
-pub fn cleanup_preview_cache_blocking() -> CleanupResult {
-    let temp = super::portable::portable_temp_dir();
-    let dirs = [
-        crate::app_paths::PREVIEW_TEMP_DIR_NAME,
-        crate::app_paths::THUMBNAIL_TEMP_DIR_NAME,
-    ];
+fn cleanup_preview_cache_dirs(temp: &std::path::Path, dirs: &[&str]) -> CleanupResult {
     let mut files_removed: u64 = 0;
     let mut bytes_freed: u64 = 0;
     let mut errors = Vec::new();
 
-    for dir_name in &dirs {
+    for dir_name in dirs {
         let dir_path = temp.join(dir_name);
         if !dir_path.exists() {
             continue;
         }
         match std::fs::read_dir(&dir_path) {
             Ok(entries) => {
-                for entry in entries.flatten() {
+                for entry_result in entries {
+                    let entry = match entry_result {
+                        Ok(entry) => entry,
+                        Err(e) => {
+                            errors.push(format!(
+                                "Failed to read directory entry in {}: {}",
+                                dir_path.display(),
+                                e
+                            ));
+                            continue;
+                        }
+                    };
                     let path = entry.path();
                     match std::fs::metadata(&path) {
                         Ok(meta) => {
-                            bytes_freed += meta.len();
                             if let Err(e) = std::fs::remove_file(&path) {
                                 errors.push(format!("Failed to remove {}: {}", path.display(), e));
                             } else {
                                 files_removed += 1;
+                                bytes_freed += meta.len();
                             }
                         }
                         Err(e) => {
@@ -489,24 +494,40 @@ pub fn cleanup_preview_cache_blocking() -> CleanupResult {
         }
     }
 
-    if !errors.is_empty() {
-        tracing::warn!(
-            files_removed,
-            bytes_freed,
-            error_count = errors.len(),
-            "Preview cache cleanup completed with errors"
-        );
-    } else if files_removed > 0 || bytes_freed > 0 {
-        info!(files_removed, bytes_freed, "Preview cache cleanup complete");
-    } else {
-        tracing::debug!("Preview cache cleanup found no files to remove");
-    }
-
     CleanupResult {
         files_removed,
         bytes_freed,
         errors,
     }
+}
+
+/// Blocking preview cache cleanup used by backend-owned lifecycle paths.
+pub fn cleanup_preview_cache_blocking() -> CleanupResult {
+    let temp = super::portable::portable_temp_dir();
+    let dirs = [
+        crate::app_paths::PREVIEW_TEMP_DIR_NAME,
+        crate::app_paths::THUMBNAIL_TEMP_DIR_NAME,
+    ];
+    let result = cleanup_preview_cache_dirs(&temp, &dirs);
+
+    if !result.errors.is_empty() {
+        tracing::warn!(
+            files_removed = result.files_removed,
+            bytes_freed = result.bytes_freed,
+            error_count = result.errors.len(),
+            "Preview cache cleanup completed with errors"
+        );
+    } else if result.files_removed > 0 || result.bytes_freed > 0 {
+        info!(
+            files_removed = result.files_removed,
+            bytes_freed = result.bytes_freed,
+            "Preview cache cleanup complete"
+        );
+    } else {
+        tracing::debug!("Preview cache cleanup found no files to remove");
+    }
+
+    result
 }
 
 /// Clean up temporary files created by preview extraction and thumbnail generation.
@@ -906,6 +927,18 @@ pub struct WritabilityCheck {
     pub is_read_only: bool,
 }
 
+fn remove_writability_probe_file(path: &std::path::Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => tracing::warn!(
+            "Failed to remove writability probe {}: {}",
+            path.display(),
+            error
+        ),
+    }
+}
+
 /// Check whether a path (or its parent volume) is writable.
 ///
 /// Uses a write-probe (create + remove a temporary file) as the ground truth.
@@ -960,7 +993,7 @@ pub fn check_path_writable(path: String) -> WritabilityCheck {
     let probe_file = probe_dir.join(".core_ffx_write_probe");
     match std::fs::File::create(&probe_file) {
         Ok(_) => {
-            let _ = std::fs::remove_file(&probe_file);
+            remove_writability_probe_file(&probe_file);
 
             // Probe succeeded — path is writable.  Grab FS type for info.
             let disks = Disks::new_with_refreshed_list();
@@ -1021,7 +1054,7 @@ pub fn check_path_writable(path: String) -> WritabilityCheck {
         match std::fs::File::create(&probe_file) {
             Ok(_) => {
                 // Race: became writable between attempts (unlikely)
-                let _ = std::fs::remove_file(&probe_file);
+                remove_writability_probe_file(&probe_file);
                 return WritabilityCheck {
                     writable: true,
                     reason: String::new(),
@@ -1344,19 +1377,54 @@ fn device_for_mount_point(mount_point: &str) -> Result<String, String> {
 /// output.
 #[cfg(target_os = "macos")]
 fn is_currently_read_only(mount_point: &str) -> bool {
-    let output = std::process::Command::new("mount").output().ok();
-    if let Some(out) = output {
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        for line in stdout.lines() {
-            // Lines look like: /dev/disk4s1 on /Volumes/USB (apfs, local, nodev, nosuid, read-only, journaled)
-            if line.contains(&format!("on {mount_point} "))
-                || line.contains(&format!("on {mount_point}\t"))
-            {
-                return line.contains("read-only");
-            }
+    let output = match std::process::Command::new("mount").output() {
+        Ok(output) => output,
+        Err(error) => {
+            tracing::warn!("Failed to inspect mount output for {mount_point}: {error}");
+            return false;
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        // Lines look like: /dev/disk4s1 on /Volumes/USB (apfs, local, nodev, nosuid, read-only, journaled)
+        if line.contains(&format!("on {mount_point} "))
+            || line.contains(&format!("on {mount_point}\t"))
+        {
+            return line.contains("read-only");
         }
     }
     false
+}
+
+#[cfg(target_os = "macos")]
+fn log_diskutil_recovery_mount_result(
+    device_id: &str,
+    result: std::io::Result<std::process::Output>,
+) -> bool {
+    match result {
+        Ok(output) if output.status.success() => {
+            info!("Recovered normal mount for {}", device_id);
+            true
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!(
+                "Failed to recover normal mount for {}: {}",
+                device_id,
+                stderr.trim()
+            );
+            false
+        }
+        Err(error) => {
+            tracing::warn!(
+                "Failed to run diskutil recovery mount for {}: {}",
+                device_id,
+                error
+            );
+            false
+        }
+    }
 }
 
 // =============================================================================
@@ -1468,9 +1536,12 @@ pub async fn remount_read_only(mount_point: String) -> Result<MountResult, Strin
 
         if !remount.status.success() {
             // Try to remount read-write as recovery
-            let _ = std::process::Command::new("diskutil")
-                .args(["mount", &device_id])
-                .output();
+            log_diskutil_recovery_mount_result(
+                &device_id,
+                std::process::Command::new("diskutil")
+                    .args(["mount", &device_id])
+                    .output(),
+            );
             let stderr = String::from_utf8_lossy(&remount.stderr);
             return Err(format!(
                 "Failed to remount {} as read-only: {}. The volume has been re-mounted normally.",
@@ -1777,6 +1848,18 @@ pub fn get_system_health_report() -> crate::common::health::SystemHealth {
 // Support Log Collection
 // =============================================================================
 
+fn add_text_to_zip<W: std::io::Write + std::io::Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    zip_name: &str,
+    content: &str,
+    options: zip::write::SimpleFileOptions,
+) -> Result<(), String> {
+    zip.start_file(zip_name, options)
+        .map_err(|e| format!("Failed to add {zip_name} to ZIP: {e}"))?;
+    std::io::Write::write_all(zip, content.as_bytes())
+        .map_err(|e| format!("Failed to write {zip_name} into ZIP: {e}"))
+}
+
 /// Collect application logs, system info, and configuration into a ZIP archive
 /// for support/debugging purposes.
 ///
@@ -1875,16 +1958,13 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
 
     // 2. System info manifest
     let sys_info = build_system_info_text();
-    if zip
-        .start_file(
-            "system-info.txt",
-            zip_options_for_time(Some(std::time::SystemTime::now())),
-        )
-        .is_ok()
-    {
-        let _ = zip.write_all(sys_info.as_bytes());
-        files_added += 1;
-    }
+    add_text_to_zip(
+        &mut zip,
+        "system-info.txt",
+        &sys_info,
+        zip_options_for_time(Some(std::time::SystemTime::now())),
+    )?;
+    files_added += 1;
 
     // 3. App database copy (read-only snapshot)
     let db_path = crate::app_paths::global_db_path();
@@ -1917,92 +1997,122 @@ pub async fn collect_support_logs(dest_path: String) -> Result<String, String> {
 
 /// Build a human-readable system info text block for the support bundle.
 fn build_system_info_text() -> String {
-    use std::fmt::Write;
-
     let mut out = String::with_capacity(2048);
-    let _ = writeln!(out, "CORE-FFX Support Information");
-    let _ = writeln!(out, "============================");
-    let _ = writeln!(
-        out,
-        "Generated: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z")
+    push_system_info_line(&mut out, "CORE-FFX Support Information");
+    push_system_info_line(&mut out, "============================");
+    push_system_info_line(
+        &mut out,
+        format!(
+            "Generated: {}",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z")
+        ),
     );
-    let _ = writeln!(out);
+    push_system_info_blank_line(&mut out);
 
     // App version
-    let _ = writeln!(out, "App Version: {}", env!("CARGO_PKG_VERSION"));
-    let _ = writeln!(
-        out,
-        "Edition: {}",
-        if cfg!(feature = "flavor-review") {
-            "Full (FFX)"
-        } else {
-            "Acquire"
-        }
+    push_system_info_line(
+        &mut out,
+        format!("App Version: {}", env!("CARGO_PKG_VERSION")),
     );
-    let _ = writeln!(out);
+    push_system_info_line(
+        &mut out,
+        format!(
+            "Edition: {}",
+            if cfg!(feature = "flavor-review") {
+                "Full (FFX)"
+            } else {
+                "Acquire"
+            }
+        ),
+    );
+    push_system_info_blank_line(&mut out);
 
     // OS info
-    let _ = writeln!(
-        out,
-        "OS: {} {}",
-        sysinfo::System::name().unwrap_or_default(),
-        sysinfo::System::os_version().unwrap_or_default()
+    push_system_info_line(
+        &mut out,
+        format!(
+            "OS: {} {}",
+            sysinfo::System::name().unwrap_or_default(),
+            sysinfo::System::os_version().unwrap_or_default()
+        ),
     );
-    let _ = writeln!(
-        out,
-        "Kernel: {}",
-        sysinfo::System::kernel_version().unwrap_or_default()
+    push_system_info_line(
+        &mut out,
+        format!(
+            "Kernel: {}",
+            sysinfo::System::kernel_version().unwrap_or_default()
+        ),
     );
-    let _ = writeln!(
-        out,
-        "Hostname: {}",
-        sysinfo::System::host_name().unwrap_or_default()
+    push_system_info_line(
+        &mut out,
+        format!(
+            "Hostname: {}",
+            sysinfo::System::host_name().unwrap_or_default()
+        ),
     );
-    let _ = writeln!(
-        out,
-        "Arch: {}",
-        sysinfo::System::cpu_arch().unwrap_or_default()
+    push_system_info_line(
+        &mut out,
+        format!("Arch: {}", sysinfo::System::cpu_arch().unwrap_or_default()),
     );
-    let _ = writeln!(out);
+    push_system_info_blank_line(&mut out);
 
     // Hardware
     {
         let Ok(sys) = get_system().lock() else {
-            let _ = writeln!(out, "Hardware: (unavailable — lock contended)");
+            push_system_info_line(&mut out, "Hardware: (unavailable — lock contended)");
             return out;
         };
-        let _ = writeln!(
-            out,
-            "CPU: {} ({} cores)",
-            sys.cpus().first().map(|c| c.brand()).unwrap_or("unknown"),
-            sys.cpus().len()
+        push_system_info_line(
+            &mut out,
+            format!(
+                "CPU: {} ({} cores)",
+                sys.cpus().first().map(|c| c.brand()).unwrap_or("unknown"),
+                sys.cpus().len()
+            ),
         );
-        let _ = writeln!(out, "Memory: {} MB total", sys.total_memory() / 1_048_576);
-        let _ = writeln!(out, "Memory Used: {} MB", sys.used_memory() / 1_048_576);
+        push_system_info_line(
+            &mut out,
+            format!("Memory: {} MB total", sys.total_memory() / 1_048_576),
+        );
+        push_system_info_line(
+            &mut out,
+            format!("Memory Used: {} MB", sys.used_memory() / 1_048_576),
+        );
     }
 
     // Portable mode
     if let Some(config) = crate::commands::portable::get_config() {
-        let _ = writeln!(out);
-        let _ = writeln!(out, "Portable Mode: YES");
-        let _ = writeln!(out, "Data Dir: {}", config.data_dir);
-        let _ = writeln!(out, "Detection Reason: {}", config.detection_reason);
+        push_system_info_blank_line(&mut out);
+        push_system_info_line(&mut out, "Portable Mode: YES");
+        push_system_info_line(&mut out, format!("Data Dir: {}", config.data_dir));
+        push_system_info_line(
+            &mut out,
+            format!("Detection Reason: {}", config.detection_reason),
+        );
     }
 
     // Log directory
     if let Ok(log_dir) = crate::logging::audit_log_dir() {
-        let _ = writeln!(out);
-        let _ = writeln!(out, "Log Directory: {}", log_dir.display());
+        push_system_info_blank_line(&mut out);
+        push_system_info_line(&mut out, format!("Log Directory: {}", log_dir.display()));
         if log_dir.exists() {
             let count = std::fs::read_dir(&log_dir)
                 .map(|entries| entries.flatten().count())
                 .unwrap_or(0);
-            let _ = writeln!(out, "Log Files: {count}");
+            push_system_info_line(&mut out, format!("Log Files: {count}"));
         }
     }
 
     out
+}
+
+fn push_system_info_line(out: &mut String, line: impl AsRef<str>) {
+    out.push_str(line.as_ref());
+    out.push('\n');
+}
+
+fn push_system_info_blank_line(out: &mut String) {
+    out.push('\n');
 }
 
 // =============================================================================
@@ -2208,5 +2318,105 @@ mod tests {
 
         let err = read_text_file_with_limit(&path).unwrap_err();
         assert!(err.contains("Failed to decode file as UTF-8"));
+    }
+
+    #[test]
+    fn remove_writability_probe_file_removes_existing_probe() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".core_ffx_write_probe");
+        std::fs::write(&path, b"probe").unwrap();
+
+        remove_writability_probe_file(&path);
+
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn build_system_info_text_contains_core_sections() {
+        let info = build_system_info_text();
+
+        assert!(info.starts_with("CORE-FFX Support Information\n"));
+        assert!(info.contains("App Version:"));
+        assert!(info.contains("Edition:"));
+        assert!(info.contains("OS:"));
+        assert!(info.ends_with('\n'));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn log_diskutil_recovery_mount_result_classifies_result() {
+        use std::os::unix::process::ExitStatusExt;
+
+        assert!(log_diskutil_recovery_mount_result(
+            "disk9s1",
+            Ok(std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            }),
+        ));
+        assert!(!log_diskutil_recovery_mount_result(
+            "disk9s1",
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
+        ));
+    }
+
+    #[test]
+    fn cleanup_preview_cache_dirs_counts_only_removed_file_bytes() {
+        let dir = TempDir::new().unwrap();
+        let cache_dir = dir.path().join("preview-cache");
+        std::fs::create_dir(&cache_dir).unwrap();
+        std::fs::write(cache_dir.join("one.bin"), [1u8; 3]).unwrap();
+        std::fs::write(cache_dir.join("two.bin"), [2u8; 5]).unwrap();
+
+        let result = cleanup_preview_cache_dirs(dir.path(), &["preview-cache"]);
+
+        assert_eq!(result.files_removed, 2);
+        assert_eq!(result.bytes_freed, 8);
+        assert!(result.errors.is_empty());
+        assert!(!cache_dir.join("one.bin").exists());
+        assert!(!cache_dir.join("two.bin").exists());
+    }
+
+    #[test]
+    fn cleanup_preview_cache_dirs_reports_unremoved_entries_without_counting_bytes() {
+        let dir = TempDir::new().unwrap();
+        let cache_dir = dir.path().join("preview-cache");
+        std::fs::create_dir(&cache_dir).unwrap();
+        std::fs::write(cache_dir.join("removed.bin"), [1u8; 7]).unwrap();
+        std::fs::create_dir(cache_dir.join("nested-dir")).unwrap();
+
+        let result = cleanup_preview_cache_dirs(dir.path(), &["preview-cache"]);
+
+        assert_eq!(result.files_removed, 1);
+        assert_eq!(result.bytes_freed, 7);
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0].contains("Failed to remove"));
+        assert!(cache_dir.join("nested-dir").exists());
+    }
+
+    #[test]
+    fn add_text_to_zip_writes_named_entry() {
+        use std::io::{Cursor, Read};
+
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = zip::ZipWriter::new(cursor);
+
+        add_text_to_zip(
+            &mut writer,
+            "system-info.txt",
+            "CORE-FFX Support Information\n",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated),
+        )
+        .unwrap();
+
+        let cursor = writer.finish().unwrap();
+        let mut archive = zip::ZipArchive::new(Cursor::new(cursor.into_inner())).unwrap();
+        let mut entry = archive.by_name("system-info.txt").unwrap();
+        let mut contents = String::new();
+        entry.read_to_string(&mut contents).unwrap();
+
+        assert_eq!(contents, "CORE-FFX Support Information\n");
     }
 }

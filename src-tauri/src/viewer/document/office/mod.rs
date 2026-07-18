@@ -215,10 +215,7 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
 
     let format = OfficeFormat::from_extension(&ext);
     if format == OfficeFormat::Unknown {
-        return Err(DocumentError::Parse(format!(
-            "Unsupported office format: .{}",
-            ext
-        )));
+        return Err(unsupported_office_format_error(&ext));
     }
 
     let mut warnings = Vec::new();
@@ -283,7 +280,7 @@ pub fn read_office_document(path: impl AsRef<Path>) -> DocumentResult<OfficeDocu
             metadata = OfficeMetadata::default();
             sections = rtf::extract_rtf_text(path)?;
         }
-        OfficeFormat::Unknown => unreachable!(),
+        OfficeFormat::Unknown => return Err(unsupported_office_format_error(&ext)),
     }
 
     Ok(build_office_document_info(
@@ -313,10 +310,7 @@ pub fn read_office_document_bytes(
 
     let format = OfficeFormat::from_extension(&ext);
     if format == OfficeFormat::Unknown {
-        return Err(DocumentError::Parse(format!(
-            "Unsupported office format: .{}",
-            ext
-        )));
+        return Err(unsupported_office_format_error(&ext));
     }
 
     let mut warnings = Vec::new();
@@ -387,7 +381,7 @@ pub fn read_office_document_bytes(
             metadata = OfficeMetadata::default();
             sections = rtf::extract_rtf_text_from_bytes(data)?;
         }
-        OfficeFormat::Unknown => unreachable!(),
+        OfficeFormat::Unknown => return Err(unsupported_office_format_error(&ext)),
     }
 
     Ok(build_office_document_info(
@@ -398,6 +392,10 @@ pub fn read_office_document_bytes(
         extraction_complete,
         warnings,
     ))
+}
+
+fn unsupported_office_format_error(ext: &str) -> DocumentError {
+    DocumentError::Parse(format!("Unsupported office format: .{}", ext))
 }
 
 fn build_office_document_info(

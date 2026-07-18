@@ -12,8 +12,19 @@ use crate::common::{hash::is_valid_hash, HashAlgorithm};
 use rusqlite::{params, Connection, Result as SqlResult};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use tracing::warn;
 
 const MAX_COLLECTED_ITEM_SOURCE_REF_JSON_BYTES: usize = 1024 * 1024;
+
+fn rollback_collection_import(conn: &Connection) -> bool {
+    match conn.execute_batch("ROLLBACK") {
+        Ok(()) => true,
+        Err(error) => {
+            warn!("Failed to rollback evidence collection package import: {error}");
+            false
+        }
+    }
+}
 
 fn load_id_set(conn: &Connection, sql: &str) -> SqlResult<HashSet<String>> {
     let mut stmt = conn.prepare(sql)?;
@@ -771,7 +782,7 @@ impl ProjectDatabase {
                 Ok(summary)
             }
             Err(error) => {
-                let _ = conn.execute_batch("ROLLBACK");
+                rollback_collection_import(&conn);
                 Err(error)
             }
         }
@@ -1060,5 +1071,25 @@ impl ProjectDatabase {
             params![collected_item_id],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rollback_collection_import_reports_clean_rollback() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+        assert!(rollback_collection_import(&conn));
+    }
+
+    #[test]
+    fn rollback_collection_import_reports_failure() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        assert!(!rollback_collection_import(&conn));
     }
 }
