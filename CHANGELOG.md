@@ -4,6 +4,11 @@ All notable changes to CORE-FFX are documented here. Format follows Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.119] - 2026-07-18
+
+### Changed
+- Nightly release build (patch bump)
+
 ## [0.1.118] - 2026-07-07
 
 ### Added
@@ -1382,7 +1387,8 @@ Cumulative release covering all changes from v0.1.31 through v0.1.41.
 [0.1.89]: https://github.com/tmreyno/CORE/releases/tag/v0.1.89
 [0.1.88]: https://github.com/tmreyno/CORE/releases/tag/v0.1.88
 [0.1.87]: https://github.com/tmreyno/CORE/releases/tag/v0.1.87
-[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.118...HEAD
+[Unreleased]: https://github.com/tmreyno/CORE/compare/v0.1.119...HEAD
+[0.1.119]: https://github.com/tmreyno/CORE/compare/v0.1.118...v0.1.119
 [0.1.118]: https://github.com/tmreyno/CORE/compare/v0.1.117...v0.1.118
 [0.1.117]: https://github.com/tmreyno/CORE/compare/v0.1.116...v0.1.117
 [0.1.116]: https://github.com/tmreyno/CORE/compare/v0.1.115...v0.1.116
